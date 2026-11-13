@@ -38,46 +38,16 @@ func runProjectStart(args []string, stdout io.Writer) (err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	lock, err := state.StartLock(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, lock.Close()) }()
-	created, err := state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
+	client, created, err := attachOrStartProject(ctx, state, func(ctx context.Context, state *project.State) error { return startProjectTerminal(ctx, state, args) })
 	if err != nil {
 		return err
 	}
 	if created {
-		if _, err := fmt.Fprintln(stdout, "Created a new, empty Surla project. Moving or renaming this folder starts a new project."); err != nil {
+		if err := writeProjectCreatedNotice(stdout); err != nil {
 			return err
 		}
 	}
-	inUse, err := controlplane.CardStoreInUse(state.CardsDir())
-	if err != nil {
-		return err
-	}
-	if !inUse {
-		listener, err := net.Listen("tcp", state.Address())
-		if err != nil {
-			return fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
-		}
-		if err := listener.Close(); err != nil {
-			return err
-		}
-		if err := startProjectTerminal(ctx, state, args); err != nil {
-			return err
-		}
-	}
-	client, err := projectClient(state)
-	if err != nil {
-		return err
-	}
-	if err := waitForProject(ctx, state, client); err != nil {
-		if inUse {
-			return fmt.Errorf("the project server is running but not answering; no second server was started: %w", err)
-		}
-		return fmt.Errorf("the project server did not start answering: %w", err)
-	}
+
 	link, err := client.BrowserLink(ctx)
 	if err != nil {
 		return err
@@ -87,6 +57,56 @@ func runProjectStart(args []string, stdout io.Writer) (err error) {
 	}
 	_, err = fmt.Fprintf(stdout, "Surla is running for %s at %s\n", state.Record.Directory, state.Origin())
 	return err
+}
+
+// writeProjectCreatedNotice explains the folder-identity rule whenever the CLI creates a project.
+func writeProjectCreatedNotice(stdout io.Writer) error {
+	_, err := fmt.Fprintln(stdout, "Created a new, empty Surla project. Moving or renaming this folder starts a new project.")
+	return err
+}
+
+// attachOrStartProject holds the start lock until one authenticated server answers.
+func attachOrStartProject(
+	ctx context.Context,
+	state *project.State,
+	launch func(context.Context, *project.State) error,
+) (client *genproject.Client, created bool, err error) {
+	lock, err := state.StartLock(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { err = errors.Join(err, lock.Close()) }()
+	created, err = state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
+	if err != nil {
+		return nil, false, err
+	}
+	inUse, err := controlplane.CardStoreInUse(state.CardsDir())
+	if err != nil {
+		return nil, false, err
+	}
+	if !inUse {
+		listener, err := net.Listen("tcp", state.Address())
+		if err != nil {
+			return nil, false, fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
+		}
+		if err := listener.Close(); err != nil {
+			return nil, false, err
+		}
+		if err := launch(ctx, state); err != nil {
+			return nil, false, err
+		}
+	}
+	client, err = projectClient(state)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := waitForProject(ctx, state, client); err != nil {
+		if inUse {
+			return nil, false, fmt.Errorf("the project server is running but not answering; no second server was started: %w", err)
+		}
+		return nil, false, fmt.Errorf("the project server did not start answering: %w", err)
+	}
+	return client, created, nil
 }
 
 // runProjectStop authenticates the current project and waits until ordered cleanup releases the store.
@@ -161,9 +181,6 @@ func runServe(args []string) (err error) {
 		return errors.New("start the project with surla")
 	}
 	cfg.projectDir = state.Record.Directory
-	cfg.projectSet = true
-	cfg.cardsDir = state.CardsDir()
-	cfg.cardsDirExplicit = true
 	provider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
 	if err != nil {
 		return err
@@ -181,18 +198,14 @@ func runServe(args []string) (err error) {
 		return err
 	}
 	opts.TracerProvider = provider
+	opts.BeforeStoreRelease = state.RemoveRunning
 	cp, err := controlplane.New(opts)
 	if err != nil {
 		return err
 	}
-	// The record is removed only after Close has finished all owned work and released the writer lock.
-	defer func() {
-		closeErr := cp.Close()
-		err = errors.Join(err, closeErr)
-		if closeErr == nil {
-			err = errors.Join(err, state.RemoveRunning())
-		}
-	}()
+	// Close removes the running record before releasing the store writer lock.
+	defer func() { err = errors.Join(err, cp.Close()) }()
+
 	listener, err := net.Listen("tcp", state.Address())
 	if err != nil {
 		return fmt.Errorf("project port is occupied: %w", err)
@@ -207,7 +220,11 @@ func runServe(args []string) (err error) {
 	if err := state.SaveRunning(project.Running{PID: os.Getpid(), Terminal: os.Getenv("HC_TERMINAL_ID")}); err != nil {
 		return errors.Join(err, listener.Close())
 	}
-	writeServeStatus(os.Stderr, listener.Addr().(*net.TCPAddr), opts, cfg.projectDir)
+	starterProject := cfg.projectDir
+	if opts.ResolveVerification == nil {
+		starterProject = ""
+	}
+	writeServeStatus(os.Stderr, listener.Addr().(*net.TCPAddr), opts, starterProject)
 	result := make(chan error, 1)
 	go func() { result <- server.Serve(listener) }()
 	select {
@@ -238,7 +255,7 @@ func parseProjectFlags(name string, args []string) (serveConfig, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	var cfg serveConfig
 	bindServeConfigFlags(fs, &cfg)
-	if err := parseServeConfigFlags(fs, args, &cfg); err != nil {
+	if err := parseServeConfigFlags(fs, args); err != nil {
 		return serveConfig{}, err
 	}
 	return cfg, nil

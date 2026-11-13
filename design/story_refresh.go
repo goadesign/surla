@@ -81,7 +81,7 @@ func storyRefreshMethods() {
 		Description("Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.")
 		Result(StoryRefreshResult)
 		Error("unprocessable", ErrorResult, "The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.")
-		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.")
+		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane; start Surla from a project directory.")
 		Error("unavailable", ErrorResult, "The control plane is shutting down and is no longer starting Story refresh operations.")
 		Tool("refresh_story", "Start or reuse a sandboxed Story evaluation of the bound workspace's current design files and return op_id, state, and snapshot_digest promptly. Takes no input. Poll get_story_refresh until state is succeeded or failed.")
 		HTTP(func() {
@@ -96,7 +96,7 @@ func storyRefreshMethods() {
 	Method("get_story_refresh", func() {
 		Description("Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.")
 		Result(StoryRefreshResult)
-		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.")
+		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane; start Surla from a project directory.")
 		Tool("get_story_refresh", "Read the current Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, stories, or diagnostic. Takes no input. When state is none, call refresh_story first.")
 		HTTP(func() {
 			GET("/workspace/story/refresh")

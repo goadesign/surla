@@ -1070,7 +1070,7 @@ paths:
             tags:
                 - surla
             summary: approve_merge surla
-            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.
+            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.
             operationId: surla#approve_merge
             requestBody:
                 description: Request body for approve_merge.
@@ -3214,7 +3214,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
+            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
             operationId: surla#propose_change
             requestBody:
                 description: Request body for propose_change.
@@ -5388,7 +5388,7 @@ paths:
             tags:
                 - surla
             summary: list_traces surla
-            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.
+            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.
             operationId: surla#list_traces
             parameters:
                 - name: status
@@ -7166,7 +7166,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
+                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -7769,7 +7769,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
+                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -7918,7 +7918,7 @@ components:
             properties:
                 approved_by:
                     type: string
-                    description: Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.
+                    description: User who approved the result.
                     example: Quia fuga rem fugiat quasi.
                 artifacts:
                     type: object
@@ -8858,7 +8858,7 @@ components:
                     example: Molestiae autem quas reprehenderit fugit.
                 confirmed_by:
                     type: string
-                    description: Authenticated principal that confirmed the Change Card.
+                    description: User who confirmed the Change Card.
                     example: Accusamus harum velit earum libero ad.
                 examples:
                     type: array
@@ -13290,7 +13290,7 @@ components:
             properties:
                 attributes:
                     type: object
-                    description: Selected operation identifiers and results; at most six values of 1024 bytes each.
+                    description: Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.
                     example:
                         Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
                         Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.

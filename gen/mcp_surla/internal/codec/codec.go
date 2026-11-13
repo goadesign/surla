@@ -88,9 +88,7 @@ func ValidateApproveMergeResultAmbiguityQuestionTransport(value *ApproveMergeRes
 
 // ApproveMergeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -413,7 +411,7 @@ type ApproveMergeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ApproveMergeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -773,9 +771,7 @@ func ValidateConfirmIntentResultAmbiguityQuestionTransport(value *ConfirmIntentR
 
 // ConfirmIntentResultApprovalItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -1098,7 +1094,7 @@ type ConfirmIntentResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ConfirmIntentResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -1494,9 +1490,7 @@ func ValidateGetChangeResultAmbiguityQuestionTransport(value *GetChangeResultAmb
 
 // GetChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type GetChangeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -1819,7 +1813,7 @@ type GetChangeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*GetChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -2692,8 +2686,8 @@ type ListTracesResultTraceSpanTransport struct {
 	Status *string `json:"status"`
 	// Safe operation summary, at most 2048 bytes; never a raw error message.
 	Summary *string `json:"summary"`
-	// Selected operation identifiers and results; at most six values of 1024 bytes
-	// each.
+	// Selected operation identifiers, results, and private caller attribution; at
+	// most seven values of 1024 bytes each.
 	Attributes map[string]string `json:"attributes"`
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
@@ -3716,9 +3710,7 @@ func ValidateProposeChangeResultAmbiguityQuestionTransport(value *ProposeChangeR
 
 // ProposeChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -4041,7 +4033,7 @@ type ProposeChangeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ProposeChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -4754,9 +4746,7 @@ func ValidateReviseChangeResultAmbiguityQuestionTransport(value *ReviseChangeRes
 
 // ReviseChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -5079,7 +5069,7 @@ type ReviseChangeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ReviseChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`

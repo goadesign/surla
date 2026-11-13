@@ -18,8 +18,10 @@ import (
 	"testing"
 	"time"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/project"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 	"github.com/stretchr/testify/assert"
@@ -49,7 +51,7 @@ func startSharedServerSession(t *testing.T, principal string) *sharedServerSessi
 	opts.TracerProvider = provider
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
-	server := httptest.NewServer(controlplane.NewHTTPHandler(cp, controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{"test-token": {ID: principal}})))
+	server := httptest.NewServer(controlplane.NewHTTPHandler(cp, workflowAuthenticator(map[string]controlplane.Principal{"test-token": {ID: principal}})))
 	session := &sharedServerSession{t: t, server: server, cp: cp}
 	t.Cleanup(func() {
 		if session.server != nil {
@@ -62,6 +64,11 @@ func startSharedServerSession(t *testing.T, principal string) *sharedServerSessi
 
 // call executes one MCP JSON-RPC request over authenticated HTTP.
 func (s *sharedServerSession) call(id, method string, params map[string]any) map[string]any {
+	return s.callWithCredential("test-token", id, method, params)
+}
+
+// callWithCredential selects one fixture actor without expanding its permissions.
+func (s *sharedServerSession) callWithCredential(token, id, method string, params map[string]any) map[string]any {
 	s.t.Helper()
 	meta, _ := params["_meta"].(map[string]any)
 	if meta == nil {
@@ -77,7 +84,7 @@ func (s *sharedServerSession) call(id, method string, params map[string]any) map
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
-	req.Header.Set("Authorization", "Bearer test-token")
+	workflowAuthorization(req, token)
 	req.Header.Set("Mcp-Method", method)
 	if name, ok := params["name"].(string); ok {
 		req.Header.Set("Mcp-Name", name)
@@ -129,7 +136,22 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	toolsRes := s1.call("2", "tools/list", map[string]any{})
 	rawTools, ok := toolsRes["tools"].([]any)
 	require.True(t, ok)
-	assert.Len(t, rawTools, 22)
+	for _, actor := range []struct {
+		token string
+		kind  controlplane.CallerKind
+	}{{"test-token-guide", controlplane.CallerGuide}, {"test-token-builder", controlplane.CallerBuilder}} {
+		catalog := s1.callWithCredential(actor.token, "2-"+string(actor.kind), "tools/list", map[string]any{})
+		tools, ok := catalog["tools"].([]any)
+		require.True(t, ok)
+		for _, item := range tools {
+			tool, ok := item.(map[string]any)
+			require.True(t, ok)
+			name, ok := tool["name"].(string)
+			require.True(t, ok)
+			assert.True(t, controlplane.OperationAllowed(actor.kind, name), name)
+		}
+		rawTools = append(rawTools, tools...)
+	}
 	toolNames := map[string]bool{}
 	uiTools := map[string]bool{}
 	for _, item := range rawTools {
@@ -162,6 +184,7 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	rawResources, ok := resourcesRes["resources"].([]any)
 	require.True(t, ok)
 	assert.Len(t, rawResources, 2)
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources))
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)
@@ -301,6 +324,12 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	})
 	aliceCard, err := gensurla.DecodeChangeCardResult(aliceCardRaw)
 	require.NoError(t, err)
+	assert.Nil(t, aliceCard.ConfirmedBy)
+	var wire map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(aliceCardRaw, &wire))
+	aliceConfirmedRaw := s3.callTool("22-confirm", "confirm_intent", map[string]any{"change_id": aliceCard.ChangeID, "request_revision": aliceCard.RequestRevision, "answers": map[string]string{}, "examples": wire["examples"]})
+	aliceCard, err = gensurla.DecodeChangeCardResult(aliceConfirmedRaw)
+	require.NoError(t, err)
 	require.NotNil(t, aliceCard.ConfirmedBy)
 	assert.Equal(t, "alice@example.com", *aliceCard.ConfirmedBy)
 	s3.closeAndWait()
@@ -386,7 +415,7 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 	wsDir := isolateServeWorkspace(t)
 	cfgDir, err := userConfigDir()
 	require.NoError(t, err)
-	defaultPrincipal := "operator@example.com"
+	defaultPrincipal := fmt.Sprintf("uid:%d", os.Geteuid())
 
 	opsDir := filepath.Join(t.TempDir(), "ops")
 	runsDir := filepath.Join(opsDir, "runs")
@@ -396,11 +425,15 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 	suiteCommit := strings.Repeat("b", 40)
 	candCommit := strings.Repeat("c", 40)
 	verPath := filepath.Join(opsDir, "verification.json")
-	verJSON := `{"runs_dir":"` + runsDir + `","report_dir":"` + reportsDir + `",` +
-		`"candidate_repo":"` + wsDir + `","candidate_module":".","binaries":{"shop":"./cmd/shop"},` +
+	verJSON := `{"candidate_repo":"` + wsDir + `","candidate_module":".","binaries":{"shop":"./cmd/shop"},` +
 		`"suite_repo":"` + wsDir + `","suite_commit":"` + suiteCommit + `",` +
 		`"suite_module":"eval","suite_command":"./cmd/shop-evals","timeout":"5m"}`
 	require.NoError(t, os.WriteFile(verPath, []byte(verJSON), 0o600))
+	require.NoError(t, runProjectSettings("verification", []string{"set", verPath}, io.Discard))
+	workspace, err := configureServeWorkspace(serveConfig{})
+	require.NoError(t, err)
+	runsDir = workspace.runsDir
+	reportsDir = workspace.verification.Plan.ReportDir
 
 	// Start a detached verification supervisor in runsDir that waits for a release
 	// file before writing its terminal state, proving it survives the shared server exiting.
@@ -439,8 +472,8 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 		assert.NoError(t, os.WriteFile(releaseFile, []byte("done"), 0o600))
 	})
 
-	first := startSharedServerProcess(t, wsDir, cfgDir, verPath)
-	running := readSharedVerification(t, first.url, runID)
+	first := startSharedServerProcess(t, wsDir, cfgDir)
+	running := readSharedVerification(t, first.url, runID, first.token)
 	_, ok := running.State.AsRunning()
 	assert.True(t, ok)
 	first.stop()
@@ -450,8 +483,8 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 		_, state, err := verifyrun.Read(runsDir, runID)
 		return err == nil && state.Kind == verifyrun.StateNotCompleted
 	}, 5*time.Second, 50*time.Millisecond)
-	second := startSharedServerProcess(t, wsDir, cfgDir, verPath)
-	finished := readSharedVerification(t, second.url, runID)
+	second := startSharedServerProcess(t, wsDir, cfgDir)
+	finished := readSharedVerification(t, second.url, runID, second.token)
 	result, ok := finished.State.AsNotCompleted()
 	require.True(t, ok)
 	assert.Contains(t, result.Summary, "synthetic check finished")
@@ -470,6 +503,7 @@ type sharedServerProcess struct {
 	done chan error
 	// stopped prevents duplicate cleanup after the process was reaped.
 	stopped bool
+	token   string
 }
 
 // TestSharedServerSubprocessHelper runs the CLI without the test runner's output.
@@ -491,17 +525,32 @@ func TestSharedServerSubprocessHelper(t *testing.T) {
 }
 
 // startSharedServerProcess waits for the shared server's bound address or a bounded setup failure.
-func startSharedServerProcess(t *testing.T, workspace, config, verification string) *sharedServerProcess {
+func startSharedServerProcess(t *testing.T, workspace, config string) *sharedServerProcess {
 	t.Helper()
 	exe, err := os.Executable()
 	require.NoError(t, err)
-	cmd := exec.Command(exe, "-test.run=^TestSharedServerSubprocessHelper$", "--", "serve", "-addr", "127.0.0.1:0", "-auth-token", "test-token", "-principal", "operator@example.com", "-verification-config", verification)
+	root := filepath.Join(config, "surla", "operator")
+	state, err := project.Discover(root, workspace)
+	require.NoError(t, err)
+	lock, err := state.StartLock(t.Context())
+	require.NoError(t, err)
+	_, err = state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
+	require.NoError(t, err)
+	require.NoError(t, lock.Close())
+	if _, exists := state.Record.Agents["guide"]; !exists {
+		server := project.NewServer(state, func() {})
+		_, err = server.AddAgent(controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement}), &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
+		require.NoError(t, err)
+	}
+	raw, err := os.ReadFile(state.AgentFile("guide"))
+	require.NoError(t, err)
+	cmd := exec.Command(exe, "serve")
 	cmd.Dir = workspace
 	cmd.Env = append(os.Environ(), "SURLA_TEST_SERVER_SUBPROCESS=1", "SURLA_TEST_USER_CONFIG_DIR="+config)
 	stderr, err := cmd.StderrPipe()
 	require.NoError(t, err)
 	require.NoError(t, cmd.Start())
-	p := &sharedServerProcess{t: t, cmd: cmd, done: make(chan error, 1)}
+	p := &sharedServerProcess{t: t, cmd: cmd, done: make(chan error, 1), token: string(raw)}
 	t.Cleanup(func() {
 		if !p.stopped {
 			assert.NoError(t, cmd.Process.Kill())
@@ -543,11 +592,11 @@ func (p *sharedServerProcess) stop() {
 }
 
 // readSharedVerification reads a persisted run through the public authenticated HTTP endpoint.
-func readSharedVerification(t *testing.T, origin, id string) *gensurla.VerificationStatusResult {
+func readSharedVerification(t *testing.T, origin, id, token string) *gensurla.VerificationStatusResult {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, origin+"/verifications/"+id, nil)
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Authorization", "Bearer "+token)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	require.NoError(t, err)

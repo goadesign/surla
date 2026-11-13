@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	genprojectserver "github.com/goadesign/surla/gen/http/project/server"
 	"github.com/goadesign/surla/internal/abspath"
 )
 
@@ -29,22 +30,32 @@ type (
 		Dir string
 		// Record is read or changed under mu after the start lock or card-store lock is acquired.
 		Record Record
-		mu     sync.Mutex
+		// mu serializes the running server's credential and record changes.
+		mu sync.Mutex
 	}
 	// Record is the current-format project persistence contract; credentials live in separate private files.
 	Record struct {
-		ID         string            `json:"id"`
-		Directory  string            `json:"directory"`
-		Owner      string            `json:"owner"`
-		Port       int               `json:"port"`
-		Workspaces []string          `json:"workspaces"`
-		Agents     map[string]string `json:"agents"`
+		// ID is the stable project identity proved to the CLI at the saved address.
+		ID string `json:"id"`
+		// Directory is the physical folder, independent of any Git root.
+		Directory string `json:"directory"`
+		// Owner is the immutable operating-system account identity.
+		Owner string `json:"owner"`
+		// Port is selected once and reused so existing agent connections survive restart.
+		Port int `json:"port"`
+		// Agents maps each stable actor ID to its trusted role; secrets are separate files.
+		Agents map[string]string `json:"agents"`
 	}
 	// Lock serializes CLI starts until an answering server owns the existing store lock.
-	Lock struct{ file *os.File }
+	Lock struct {
+		// file holds the exclusive project start lock until Close.
+		file *os.File
+	}
 	// Running is evidence of the last server process, never the authority for liveness.
 	Running struct {
-		PID      int    `json:"pid"`
+		// PID identifies the owned process for diagnostics, never for liveness decisions.
+		PID int `json:"pid"`
+		// Terminal identifies the Herdr terminal that owns this server program.
 		Terminal string `json:"terminal"`
 	}
 )
@@ -52,7 +63,7 @@ type (
 // Discover finds the nearest existing physical project record, or prepares a new project folder.
 // It never considers the Git root. Call Initialize only after StartLock.
 func Discover(root, directory string) (*State, error) {
-	physical, err := abspath.Eval(directory)
+	physical, err := abspath.Stored(directory)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +155,7 @@ func (s *State) Initialize(owner string) (bool, error) {
 	if err := writePrivate(s.ManagementFile(), []byte(credential)); err != nil {
 		return false, err
 	}
-	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Workspaces: []string{s.Record.Directory}, Agents: map[string]string{}}
+	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Agents: map[string]string{}}
 	if err := s.save(); err != nil {
 		return false, err
 	}
@@ -168,8 +179,7 @@ func (s *State) AgentFile(id string) string { return filepath.Join(s.Dir, "agent
 
 // ManagementCredential reads only the CLI's private management credential.
 func (s *State) ManagementCredential() (string, error) {
-	raw, err := readPrivate(s.ManagementFile())
-	return string(raw), err
+	return readCredential(s.ManagementFile())
 }
 
 // SaveRunning records a server that already holds the existing writer lock and listener.
@@ -193,6 +203,34 @@ func (s *State) ReadRunning() (Running, error) {
 	return r, err
 }
 
+// ReadSettings returns one owner-private startup configuration. The CLI validates it before SaveSettings.
+func (s *State) ReadSettings(kind string) ([]byte, error) {
+	if kind != "verification" && kind != "promotion" {
+		return nil, errors.New("unknown project settings")
+	}
+	return readPrivate(filepath.Join(s.Dir, kind+".json"))
+}
+
+// SaveSettings atomically replaces a validated startup configuration under the caller's StartLock.
+func (s *State) SaveSettings(kind string, raw []byte) error {
+	if kind != "verification" && kind != "promotion" {
+		return errors.New("unknown project settings")
+	}
+	return writePrivate(filepath.Join(s.Dir, kind+".json"), raw)
+}
+
+// RemoveSettings removes only the named startup settings, taking effect at the next server start.
+func (s *State) RemoveSettings(kind string) error {
+	if kind != "verification" && kind != "promotion" {
+		return errors.New("unknown project settings")
+	}
+	err := os.Remove(filepath.Join(s.Dir, kind+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // projectDirectory derives one private state folder from the canonical folder identity.
 func projectDirectory(root, directory string) string {
 	sum := sha256.Sum256([]byte(directory))
@@ -201,8 +239,13 @@ func projectDirectory(root, directory string) string {
 
 // validateRecord rejects missing or changed durable identity instead of silently creating another store.
 func validateRecord(r Record, directory string) error {
-	if r.ID == "" || r.Owner == "" || r.Directory != directory || r.Port < 1 || r.Port > 65535 || r.Agents == nil || len(r.Workspaces) == 0 {
+	if r.ID == "" || r.Owner == "" || r.Directory != directory || r.Port < 1 || r.Port > 65535 || r.Agents == nil {
 		return errors.New("invalid project record")
+	}
+	for actor, role := range r.Agents {
+		if err := genprojectserver.ValidateAddAgentRequestBody(&genprojectserver.AddAgentRequestBody{ActorID: &actor, Role: &role}); err != nil {
+			return fmt.Errorf("invalid stored agent: %w", err)
+		}
 	}
 	return nil
 }
@@ -273,7 +316,7 @@ func readPrivate(path string) (raw []byte, err error) {
 	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || int(st.Uid) != os.Geteuid() {
 		return nil, errors.New("project state file must be private and owned by this account")
 	}
-	return io.ReadAll(io.LimitReader(f, 1024*1024))
+	return io.ReadAll(f)
 }
 
 // writePrivate atomically publishes and syncs a private file, never following a destination symlink.
@@ -301,4 +344,19 @@ func writePrivate(path string, raw []byte) (err error) {
 		return err
 	}
 	return errors.Join(d.Sync(), d.Close())
+}
+
+// readCredential validates the persisted random-token format without exposing credential bytes in errors.
+func readCredential(path string) (string, error) {
+	raw, err := readPrivate(path)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) != 64 {
+		return "", errors.New("invalid credential file")
+	}
+	if _, err := hex.DecodeString(string(raw)); err != nil {
+		return "", errors.New("invalid credential file")
+	}
+	return string(raw), nil
 }

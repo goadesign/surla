@@ -69,7 +69,7 @@ func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 			},
 		}
 	}
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	initServer, err := New(options())
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 // and request.json both carry the evaluator commit init_project pinned.
 func assertPinnedSuite(t *testing.T, cp *ControlPlane, cardsDir, runsDir, changeID string) {
 	t.Helper()
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	candidate := strings.Repeat("b", 40)
 
 	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: candidate})
@@ -115,6 +115,7 @@ func assertPinnedSuite(t *testing.T, cp *ControlPlane, cardsDir, runsDir, change
 
 	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: changeID, Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
 	require.NoError(t, err)
+	card = mustConfirmNoop(t, cp, alice, card)
 	require.Equal(t, StatusConfirmed, card.Status)
 	run, err := cp.VerifyChange(alice, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: candidate})
 	require.NoError(t, err)

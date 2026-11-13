@@ -54,7 +54,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -171,7 +171,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -308,7 +308,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -543,7 +543,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -671,7 +671,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -822,9 +822,7 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	ApprovalItemTransport struct {
-		// Authenticated principal that owns the card and called approve_merge.
-		// Authentication does not prove that a human, rather than a coding agent, made
-		// the call.
+		// User who approved the result.
 		ApprovedBy *string `json:"approved_by"`
 		// SHA-256 digest of the approved CP4 verification report.
 		ReportDigest *string `json:"report_digest"`
@@ -1174,8 +1172,8 @@ type (
 		Status *string `json:"status"`
 		// Safe operation summary, at most 2048 bytes; never a raw error message.
 		Summary *string `json:"summary"`
-		// Selected operation identifiers and results; at most six values of 1024 bytes
-		// each.
+		// Selected operation identifiers, results, and private caller attribution; at
+		// most seven values of 1024 bytes each.
 		Attributes map[string]string `json:"attributes"`
 		// True when text was shortened to fit this diagnostic record; use operator
 		// telemetry for the full values.

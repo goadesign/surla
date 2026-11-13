@@ -15,6 +15,6 @@ type bearerDoer struct {
 
 // Do attaches bearer authentication before issuing a test request.
 func (d *bearerDoer) Do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", "Bearer "+d.token)
+	workflowAuthorization(req, d.token)
 	return d.client.Do(req)
 }

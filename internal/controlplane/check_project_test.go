@@ -367,7 +367,7 @@ func TestOutputKeepsMultiByteCharactersWhole(t *testing.T) {
 		outputMetaFile: fmt.Sprintf(`{"captured":%d,"dropped":0}`, len(text)),
 	})
 	c := &ControlPlane{checkWorkDir: workDir}
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	var pages []string
 	p := &gensurla.ReadCheckOutputPayload{OpID: id}
 	for {
@@ -422,7 +422,7 @@ func TestCheckAdmissionIsOrderedWithClose(t *testing.T) {
 	assert.NoDirExists(t, filepath.Join(cp.checkWorkDir, id, "src"), "recovery ran after the operation ended")
 
 	// Calls after Close are refused before any work.
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err = cp.CheckProject(ctx)
 	assertServiceError(t, err, "unavailable")
 	_, err = cp.UpdateDependencies(ctx)
@@ -506,7 +506,7 @@ func TestReadCheckOutputBudgetsTheTextTheCallerReceives(t *testing.T) {
 		outputFile:     string(raw),
 		outputMetaFile: fmt.Sprintf(`{"captured":%d,"dropped":0}`, len(raw)),
 	})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"generation-token": {ID: "developer@example.com"},
 	})))
 	t.Cleanup(srv.Close)
@@ -542,7 +542,7 @@ func TestReadCheckOutputBudgetsTheTextTheCallerReceives(t *testing.T) {
 }
 
 func TestReadCheckOutputRefusesDamagedOutput(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
 		name    string
 		output  string
@@ -767,7 +767,7 @@ func TestNewRequiresACheckHelperWithAChecker(t *testing.T) {
 // tools then report not_implemented.
 func TestNewNeedsNoCheckHelperWithoutAChecker(t *testing.T) {
 	cp := newControlPlane(t, Options{CardsDir: filepath.Join(realTempDir(t), "cards")})
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err := cp.CheckProject(ctx)
 	assertServiceError(t, err, "not_implemented")
 	_, err = cp.UpdateDependencies(ctx)
@@ -907,7 +907,7 @@ func TestReadCheckOutputPages(t *testing.T) {
 	raw, _ := json.Marshal(outputMeta{Captured: int64(len(text)), Dropped: 3})
 	require.NoError(t, os.WriteFile(filepath.Join(opDir, outputMetaFile), raw, 0o600))
 	c := &ControlPlane{checkWorkDir: workDir}
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	first, err := c.ReadCheckOutput(ctx, &gensurla.ReadCheckOutputPayload{OpID: id})
 	require.NoError(t, err)

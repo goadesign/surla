@@ -27,7 +27,7 @@ var suiteCommit = strings.Repeat("b", 40)
 // TestLoadPromotionConfig checks that only a complete configuration with
 // distinct plain binary names outside the bound workspace starts serve.
 func TestLoadPromotionConfig(t *testing.T) {
-	valid := `{"report_dir":"/r","release_dir":"/rel","suite_id":"orders","suite_commit":"` + suiteCommit +
+	valid := `{"release_dir":"/rel","suite_id":"orders","suite_commit":"` + suiteCommit +
 		`","environment":"sim","binaries":["orders","orders-worker"]}`
 	cases := []struct {
 		name    string
@@ -35,7 +35,7 @@ func TestLoadPromotionConfig(t *testing.T) {
 		wantErr string
 	}{
 		{"complete", valid, ""},
-		{"missing fields", `{"report_dir":"/r","binaries":[]}`, "is missing release_dir, suite_id, suite_commit, environment, binaries"},
+		{"missing fields", `{"binaries":[]}`, "is missing release_dir, suite_id, suite_commit, environment, binaries"},
 		{"unknown field", strings.TrimSuffix(valid, "}") + `,"extra":1}`, "unknown field"},
 		{"trailing data", valid + "{}", "data after the configuration"},
 		{"64-digit suite commit", strings.Replace(valid, suiteCommit, strings.Repeat("b", 64), 1), ""},
@@ -163,7 +163,7 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	commit := strings.Repeat("c", 40)
 	release := t.TempDir()
 	publish(t, release, commit, map[string]string{"orders": "api v1", "orders-worker": "worker v1"})
-	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: controlplane.CallerUser})
 
 	// The card is confirmed first, then the evaluator's report for its
 	// revision is saved, and serve restarts with the promotion target.
@@ -171,6 +171,8 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	cp, err := controlplane.New(controlplane.Options{CardsDir: cardsDir})
 	require.NoError(t, err)
 	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: confirmedAnalysis()})
+	require.NoError(t, err)
+	card, err = cp.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples})
 	require.NoError(t, err)
 	require.NoError(t, cp.Close())
 	report := saveReport(t, verify.Binding{
@@ -246,11 +248,12 @@ func newReleaseTarget(t *testing.T, release, reports string) controlplane.Promot
 	dir := t.TempDir()
 	wsDir := t.TempDir()
 	path := filepath.Join(dir, "promotion.json")
-	content := `{"report_dir":"` + reports + `","release_dir":"` + release + `","suite_id":"orders","suite_commit":"` +
+	content := `{"release_dir":"` + release + `","suite_id":"orders","suite_commit":"` +
 		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	target, _, err := loadWorkspacePromotionTarget(path, dir, wsDir, wsDir)
 	require.NoError(t, err)
+	target.(*releaseTarget).cfg.ReportDir = reports
 	return target
 }
 

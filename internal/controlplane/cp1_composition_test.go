@@ -45,7 +45,7 @@ type mcpResultFrame struct {
 // composition in the analysis is saved byte for byte, bound to the revision it
 // was sent with, and kept out of request_revision.
 func TestProposeChangeBindsTheCallerCompositionToTheRevision(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
 		ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(&[]string{compositionProgram}[0]),
@@ -69,7 +69,7 @@ func TestProposeChangeBindsTheCallerCompositionToTheRevision(t *testing.T) {
 // server never judges a composition: an empty, blank or invalid program is
 // saved as sent, and the card's questions and examples are saved with it.
 func TestProposeChangeCarriesAnyCallerCompositionVerbatim(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
 		name    string
 		program *string
@@ -104,7 +104,7 @@ func TestProposeChangeCarriesAnyCallerCompositionVerbatim(t *testing.T) {
 // confirmation that changes answers drops the composition, and that reads
 // never restore it.
 func TestCompositionDescribesOnlyTheRevisionItWasComposedFor(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
 		ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(&[]string{compositionProgram}[0]),
@@ -131,31 +131,29 @@ func TestCompositionDescribesOnlyTheRevisionItWasComposedFor(t *testing.T) {
 	assert.Nil(t, noop.UIComposition)
 }
 
-// TestCompositionSurvivesAnUnchangedResubmission verifies that an unchanged
-// confirmation keeps the composition of its revision and an edited example
-// drops it.
-func TestCompositionSurvivesAnUnchangedResubmission(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+// TestConfirmationDropsDraftCompositionAtTheNewRevision verifies that an unchanged
+// confirmation creates a new revision and drops the draft composition.
+func TestConfirmationDropsDraftCompositionAtTheNewRevision(t *testing.T) {
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	analysis := compositionAnalysis(&[]string{compositionProgram}[0])
 	analysis.Ambiguities = []*gensurla.CP1AnalysisAmbiguity{}
 	cp := newControlPlane(t, Options{})
 	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
-	require.Equal(t, StatusConfirmed, proposed.Status)
+	require.Equal(t, StatusNeedsConfirmation, proposed.Status)
 	require.NotNil(t, proposed.UIComposition)
 
 	same, err := cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{
 		ChangeID: "chg", RequestRevision: proposed.RequestRevision, Answers: map[string]string{}, Examples: proposed.Examples,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, proposed.RequestRevision, same.RequestRevision)
-	require.NotNil(t, same.UIComposition, "an unchanged card keeps the composition composed for its revision")
-	assert.Equal(t, proposed.RequestRevision, same.UIComposition.ComposedForRevision)
+	assert.NotEqual(t, proposed.RequestRevision, same.RequestRevision)
+	assert.Nil(t, same.UIComposition, "confirming creates a revision the draft composition does not describe")
 
 	ex := *proposed.Examples[0]
 	ex.ExpectedOutcome = "Waits for a manager"
 	changed, err := cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{
-		ChangeID: "chg", RequestRevision: proposed.RequestRevision, Answers: map[string]string{}, Examples: []*gensurla.ExampleItem{&ex},
+		ChangeID: "chg", RequestRevision: same.RequestRevision, Answers: map[string]string{}, Examples: []*gensurla.ExampleItem{&ex},
 	})
 	require.NoError(t, err)
 	assert.Nil(t, changed.UIComposition, "an edited example creates a revision the composition does not describe")
@@ -168,7 +166,7 @@ func TestCompositionSurvivesAnUnchangedResubmission(t *testing.T) {
 // no slow step to report.
 func TestProposeChangeOverMCPCarriesTheCompositionVerbatim(t *testing.T) {
 	cp := newControlPlane(t, Options{})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	defer srv.Close()
 
 	args := proposeArgs(t, &gensurla.ProposeChangePayload{
@@ -179,7 +177,7 @@ func TestProposeChangeOverMCPCarriesTheCompositionVerbatim(t *testing.T) {
 		`"_meta":{"progressToken":"p1","io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer alice-token")
+	req.Header.Set("Authorization", "Bearer alice-token-guide")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
@@ -231,7 +229,7 @@ func TestReportProgressWithoutARequestedTokenIsANoOp(t *testing.T) {
 // point at the playbook and decision catalog, and that the guidance resource
 // serves the decision catalog the ui_composition field names.
 func TestAnalysisToolsDescribeWhatAGoodAnalysisContains(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 	tools, err := adapter.ToolsList(ctx, &genmcpadapter.ToolsListPayload{})

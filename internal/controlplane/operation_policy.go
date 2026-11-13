@@ -3,10 +3,13 @@ package controlplane
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	genmcp "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	goa "goa.design/goa/v3/pkg"
 )
 
@@ -28,6 +31,7 @@ const (
 
 // operationRoles is the only role-to-operation table. Missing operations are refused.
 var operationRoles = map[string][]CallerKind{
+	"identity": {CallerManagement}, "stop": {CallerManagement}, "add_agent": {CallerManagement}, "remove_agent": {CallerManagement}, "browser_link": {CallerManagement},
 	"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
 	"propose_change": {CallerGuide}, "revise_change": {CallerGuide}, "refresh_story": {CallerGuide},
 	"get_story_refresh": {CallerUser, CallerGuide, CallerBuilder}, "init_project": {CallerGuide},
@@ -56,8 +60,20 @@ func OperationAllowed(kind CallerKind, operation string) bool {
 }
 
 // authorizeOperation refuses before the operation touches domain state.
-func authorizeOperation(name string, next goa.Endpoint) goa.Endpoint {
-	return func(ctx context.Context, req any) (any, error) {
+func authorizeOperation(name string, next goa.Endpoint, recorder trace.Tracer) goa.Endpoint {
+	return func(ctx context.Context, req any) (result any, err error) {
+		ctx, span := recorder.Start(ctx, "surla.request."+name)
+		defer span.End()
+		defer func() {
+			if err != nil {
+				var domain *goa.ServiceError
+				if !errors.As(err, &domain) || domain.Fault {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "operation failed")
+				}
+			}
+		}()
+
 		principal, ok := PrincipalFromContext(ctx)
 		if !ok || !OperationAllowed(principal.Kind, name) {
 			return nil, gensurla.MakeForbidden(fmt.Errorf("caller may not call %s", name))
@@ -67,31 +83,32 @@ func authorizeOperation(name string, next goa.Endpoint) goa.Endpoint {
 }
 
 // applyOperationPolicy wraps the one endpoint set supplied to both generated transports.
-func applyOperationPolicy(e *gensurla.Endpoints) {
-	e.CheckpointUI = authorizeOperation("checkpoint_ui", e.CheckpointUI)
-	e.GoldenPath = authorizeOperation("golden_path", e.GoldenPath)
-	e.ProposeChange = authorizeOperation("propose_change", e.ProposeChange)
-	e.ReviseChange = authorizeOperation("revise_change", e.ReviseChange)
-	e.ConfirmIntent = authorizeOperation("confirm_intent", e.ConfirmIntent)
-	e.GetChange = authorizeOperation("get_change", e.GetChange)
-	e.PreviewArchitecture = authorizeOperation("preview_architecture", e.PreviewArchitecture)
-	e.DraftOverride = authorizeOperation("draft_override", e.DraftOverride)
-	e.StartLiveTarget = authorizeOperation("start_live_target", e.StartLiveTarget)
-	e.StopLiveTarget = authorizeOperation("stop_live_target", e.StopLiveTarget)
-	e.VerifyChange = authorizeOperation("verify_change", e.VerifyChange)
-	e.GetVerification = authorizeOperation("get_verification", e.GetVerification)
-	e.ListVerifications = authorizeOperation("list_verifications", e.ListVerifications)
-	e.ApproveMerge = authorizeOperation("approve_merge", e.ApproveMerge)
-	e.Diff = authorizeOperation("diff", e.Diff)
-	e.ConfigureModel = authorizeOperation("configure_model", e.ConfigureModel)
-	e.InitProject = authorizeOperation("init_project", e.InitProject)
-	e.GenerateCode = authorizeOperation("generate_code", e.GenerateCode)
-	e.CheckProject = authorizeOperation("check_project", e.CheckProject)
-	e.UpdateDependencies = authorizeOperation("update_dependencies", e.UpdateDependencies)
-	e.ReadCheckOutput = authorizeOperation("read_check_output", e.ReadCheckOutput)
-	e.ListTraces = authorizeOperation("list_traces", e.ListTraces)
-	e.RefreshStory = authorizeOperation("refresh_story", e.RefreshStory)
-	e.GetStoryRefresh = authorizeOperation("get_story_refresh", e.GetStoryRefresh)
+func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
+	wrap := func(name string, next goa.Endpoint) goa.Endpoint { return authorizeOperation(name, next, recorder) }
+	e.CheckpointUI = wrap("checkpoint_ui", e.CheckpointUI)
+	e.GoldenPath = wrap("golden_path", e.GoldenPath)
+	e.ProposeChange = wrap("propose_change", e.ProposeChange)
+	e.ReviseChange = wrap("revise_change", e.ReviseChange)
+	e.ConfirmIntent = wrap("confirm_intent", e.ConfirmIntent)
+	e.GetChange = wrap("get_change", e.GetChange)
+	e.PreviewArchitecture = wrap("preview_architecture", e.PreviewArchitecture)
+	e.DraftOverride = wrap("draft_override", e.DraftOverride)
+	e.StartLiveTarget = wrap("start_live_target", e.StartLiveTarget)
+	e.StopLiveTarget = wrap("stop_live_target", e.StopLiveTarget)
+	e.VerifyChange = wrap("verify_change", e.VerifyChange)
+	e.GetVerification = wrap("get_verification", e.GetVerification)
+	e.ListVerifications = wrap("list_verifications", e.ListVerifications)
+	e.ApproveMerge = wrap("approve_merge", e.ApproveMerge)
+	e.Diff = wrap("diff", e.Diff)
+	e.ConfigureModel = wrap("configure_model", e.ConfigureModel)
+	e.InitProject = wrap("init_project", e.InitProject)
+	e.GenerateCode = wrap("generate_code", e.GenerateCode)
+	e.CheckProject = wrap("check_project", e.CheckProject)
+	e.UpdateDependencies = wrap("update_dependencies", e.UpdateDependencies)
+	e.ReadCheckOutput = wrap("read_check_output", e.ReadCheckOutput)
+	e.ListTraces = wrap("list_traces", e.ListTraces)
+	e.RefreshStory = wrap("refresh_story", e.RefreshStory)
+	e.GetStoryRefresh = wrap("get_story_refresh", e.GetStoryRefresh)
 }
 
 // filterMCPDiscovery derives each caller's catalog from the invocation policy.

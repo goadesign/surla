@@ -141,10 +141,11 @@ func SafeSpan(span sdktrace.ReadOnlySpan) *gensurla.TraceSpan {
 }
 
 // Record appends one bounded safe view for the authenticated operation's
-// principal. An empty principal is rejected; ownership remains only in the
-// private file and never modifies the span. Calls after Close discard late
+// principal and records its trusted caller attribution only in the private
+// view. An empty principal is rejected; the original SDK span never changes.
+// Calls after Close discard late
 // spans without reopening storage after the card-directory lock is released.
-func (s *Store) Record(principal string, span sdktrace.ReadOnlySpan) error {
+func (s *Store) Record(principal, callerID, callerKind string, span sdktrace.ReadOnlySpan) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -156,7 +157,12 @@ func (s *Store) Record(principal string, span sdktrace.ReadOnlySpan) error {
 	if s.writeErr != nil {
 		return s.writeErr
 	}
-	line, err := json.Marshal(savedSpan{PrincipalHash: principalHash(principal), Span: SafeSpan(span)})
+	view := SafeSpan(span)
+	if callerID != "" {
+		view.Attributes["surla.caller_id"] = callerID
+		view.Attributes["surla.caller_kind"] = callerKind
+	}
+	line, err := json.Marshal(savedSpan{PrincipalHash: principalHash(principal), Span: view})
 	if err != nil {
 		return fmt.Errorf("encode trace history record: %w", err)
 	}

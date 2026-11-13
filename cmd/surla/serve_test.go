@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -104,7 +105,7 @@ func TestValidateModelConfigChecksModelFlags(t *testing.T) {
 // token, plus the SURLA_LIVE_MODEL_* choice; a provider whose key is missing
 // is refused as unprocessable and names the key, never its value.
 func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
-	environ := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=ant-k"}
+	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k"}
 	env := map[string]string{"ANTHROPIC_API_KEY": "ant-k"}
 	build := newLiveModelEnv(func(k string) string { return env[k] }, environ)
 	gw, provider, model, other := "127.0.0.1:9090", "anthropic", "claude-sonnet-4-6", "openai"
@@ -128,10 +129,11 @@ func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
 func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	isolateServeWorkspace(t)
 	path := filepath.Join(t.TempDir(), "verification.json")
-	require.NoError(t, os.WriteFile(path, []byte(`{"runs_dir":"/r","report_dir":"/p","candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
+	require.NoError(t, os.WriteFile(path, []byte(`{"candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
-	opts, err := serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, verificationPath: path}, func(string) string { return "" },
-		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k"})
+	require.NoError(t, runProjectSettings("verification", []string{"set", path}, io.Discard))
+	opts, err := serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" },
+		[]string{"PATH=/bin", "ANTHROPIC_API_KEY=k"})
 	require.NoError(t, err)
 	defer closeServeOptions(t, opts)
 	assert.Nil(t, opts.ResolveVerification, "explicit -verification-config must not set starter ResolveVerification")
@@ -150,18 +152,21 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 	self, err := selfCommand()
 	require.NoError(t, err)
 	verificationPath := filepath.Join(t.TempDir(), "verification.json")
-	require.NoError(t, os.WriteFile(verificationPath, []byte(`{"runs_dir":"/r","report_dir":"/p","candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
+	require.NoError(t, os.WriteFile(verificationPath, []byte(`{"candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
 	cases := []struct {
 		name string
 		cfg  serveConfig
 	}{
-		{name: "verification config", cfg: serveConfig{checkTimeout: defaultCheckTimeout, verificationPath: verificationPath}},
+		{name: "verification config", cfg: serveConfig{checkTimeout: defaultCheckTimeout}},
 		{name: "workspace starter", cfg: serveConfig{checkTimeout: defaultCheckTimeout}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateServeWorkspace(t)
+			if tc.name == "verification config" {
+				require.NoError(t, runProjectSettings("verification", []string{"set", verificationPath}, io.Discard))
+			}
 			opts, err := serveOptions(tc.cfg, func(string) string { return "" }, nil)
 			require.NoError(t, err)
 			defer closeServeOptions(t, opts)
@@ -175,7 +180,7 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 }
 
 func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
-	environ := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=stale:1"}
+	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=stale:1"}
 	cases := []struct {
 		name string
 		cfg  serveConfig
@@ -229,7 +234,7 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 }
 
 func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
-	baseEnviron := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k"}
+	baseEnviron := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k"}
 	cases := []struct {
 		name        string
 		cfg         serveConfig
@@ -351,7 +356,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, cp.Close()) })
 			_, err = cp.StartLiveTarget(
-				controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"}),
+				controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: controlplane.CallerUser}),
 				&gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)},
 			)
 			require.Error(t, err)
@@ -372,16 +377,16 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	isolateServeWorkspace(t)
 	env := map[string]string{}
 	opts, err := serveOptions(
-		serveConfig{checkTimeout: defaultCheckTimeout, cardsDir: t.TempDir(), cardsDirExplicit: true},
+		serveConfig{checkTimeout: defaultCheckTimeout},
 		func(k string) string { return env[k] },
-		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret"},
+		[]string{"PATH=/bin"},
 	)
 	require.NoError(t, err)
 
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
+	auth := workflowAuthenticator(map[string]controlplane.Principal{
 		"test-token": {ID: "operator@example.com"},
 	})
 	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
@@ -389,7 +394,7 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	post := func(path, body string) (int, []byte) {
 		req, reqErr := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(body))
 		require.NoError(t, reqErr)
-		req.Header.Set("Authorization", "Bearer test-token")
+		workflowAuthorization(req, "test-token")
 		req.Header.Set("Content-Type", "application/json")
 		resp, doErr := http.DefaultClient.Do(req)
 		require.NoError(t, doErr)
@@ -416,9 +421,8 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 		} `json:"examples"`
 	}
 	require.NoError(t, json.Unmarshal(body, &card))
-	assert.Equal(t, controlplane.StatusConfirmed, card.Status)
-	require.NotNil(t, card.ConfirmedBy)
-	assert.Equal(t, "operator@example.com", *card.ConfirmedBy)
+	assert.Equal(t, controlplane.StatusNeedsConfirmation, card.Status)
+	assert.Nil(t, card.ConfirmedBy)
 	require.Len(t, card.Examples, 1)
 	assert.Equal(t, "check_01", card.Examples[0].ID)
 	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{64}$`), card.RequestRevision)
@@ -483,9 +487,9 @@ surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token (
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
-surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (initialize a committed starter or use surla verification set, or run surla verify on the CLI)
+surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 		},
 		{
@@ -497,9 +501,9 @@ surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (a
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
-surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (initialize a committed starter or use surla verification set, or run surla verify on the CLI)
+surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 		},
 		{
@@ -513,9 +517,9 @@ surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (a
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
-surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (initialize a committed starter or use surla verification set, or run surla verify on the CLI)
+surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 		},
 		{
@@ -564,7 +568,7 @@ surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
-surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 	})
 	suite := strings.Repeat("c", 40)
@@ -594,8 +598,8 @@ surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /work/shop/.surla/runs, reports in /work/shop/reports, evaluator suite commit ` + suite + `)
-surla: -project .: the evaluator suite commit is the project's HEAD at startup; commit and restart surla serve to use a later suite
-surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+surla: project .: the evaluator suite commit is the project's HEAD at startup; commit and restart Surla to use a later suite
+surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 	})
 	cases = append(cases, struct {
@@ -619,9 +623,9 @@ surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (a
 surla: saving Change Cards in /srv/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
-surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 	})
 	for _, tc := range cases {

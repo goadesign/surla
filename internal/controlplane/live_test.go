@@ -234,7 +234,7 @@ func goaErrorName(err error) string {
 
 func TestLiveTargetAppliesDraftsThroughTheGeneratedContract(t *testing.T) {
 	cp, root := newLiveControlPlane(t, "serve")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	commit := strings.Repeat("a", 40)
 
 	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
@@ -281,7 +281,7 @@ func TestLiveTargetAppliesDraftsThroughTheGeneratedContract(t *testing.T) {
 
 func TestLiveTargetRejectsAWrongKey(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "serve")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	lt := cp.boundLive()
@@ -293,7 +293,7 @@ func TestLiveTargetRejectsAWrongKey(t *testing.T) {
 
 func TestLiveTargetReportsAnUnconfirmedUpdate(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "drop")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	_, err = draft(alice, cp, fakePromptID, "x")
@@ -302,7 +302,7 @@ func TestLiveTargetReportsAnUnconfirmedUpdate(t *testing.T) {
 
 func TestLiveTargetThatEndsIsUnboundAndCleanedUp(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "serve")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	lt := cp.boundLive()
@@ -329,7 +329,7 @@ func TestLiveTargetThatEndsIsUnboundAndCleanedUp(t *testing.T) {
 }
 
 func TestLiveTargetStartFailuresAreTyped(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp, root := newLiveControlPlane(t, "fail")
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
@@ -350,7 +350,7 @@ func TestLiveTargetStartFailuresAreTyped(t *testing.T) {
 
 func TestLiveTargetReplacementNeverReachesTwoTargets(t *testing.T) {
 	cp, root := newLiveControlPlane(t, "serve")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	first, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	oldProc := cp.boundLive().proc
@@ -416,7 +416,7 @@ func TestCloseStopsTheLiveTarget(t *testing.T) {
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	proc := cp.boundLive().proc
@@ -442,7 +442,7 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 			StartTimeout: time.Hour},
 	})
 	require.NoError(t, err)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	first := make(chan error, 1)
 	go func() {
 		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
@@ -482,7 +482,7 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	lt := cp.boundLive()
@@ -545,17 +545,17 @@ func workspaces(t *testing.T, dir string) []string {
 
 func TestTargetMessagesNeverReachCallers(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "leaky")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	args, err := json.Marshal(map[string]string{"target_kind": TargetKindPromptTemplate, "prompt_id": fakePromptID, "new_content": "x"})
 	require.NoError(t, err)
 
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
 	defer srv.Close()
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/sandbox/draft", strings.NewReader(string(args)))
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Authorization", "Bearer tok-builder")
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -582,7 +582,7 @@ func TestTargetMessagesNeverReachCallers(t *testing.T) {
 }
 
 func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
 		name    string
 		version string
@@ -620,7 +620,7 @@ func TestStaticUpdaterAndLiveCannotBeCombined(t *testing.T) {
 	cp, err := New(Options{CardsDir: t.TempDir(), TargetUpdater: staticUpdater{}, Verification: &VerificationConfig{RunsDir: t.TempDir()}})
 	require.NoError(t, err, "a static updater with verification and no Live keeps working")
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	out, err := draft(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}), cp, "orders.refund.system", "x")
+	out, err := draft(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}), cp, "orders.refund.system", "x")
 	require.NoError(t, err)
 	assert.Equal(t, "static-v1", *out.PromptVersion)
 }
@@ -628,7 +628,7 @@ func TestStaticUpdaterAndLiveCannotBeCombined(t *testing.T) {
 func TestServersWithDifferentCardsDirectoriesNeverSeeEachOthersTargets(t *testing.T) {
 	a, rootA := newLiveControlPlane(t, "serve")
 	_, rootB := newLiveControlPlane(t, "serve")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err := a.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	dirsA, err := verifyrun.LeftoverLiveDirs(rootA)
@@ -679,7 +679,7 @@ func TestAStartThatFailsBeforeReadyAndCannotBeCleanedUpKeepsItsOwner(t *testing.
 			require.NoError(t, exec.Command("chflags", "nouchg", m).Run())
 		}
 	})
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
@@ -712,7 +712,7 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
 	assert.Contains(t, err.Error(), "did not become ready within the configured start timeout (300ms)")
@@ -724,7 +724,7 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 
 func TestLiveTargetAnsweringForAnotherPromptIsNotConfirmed(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "other-prompt")
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	out, err := draft(alice, cp, fakePromptID, "x")

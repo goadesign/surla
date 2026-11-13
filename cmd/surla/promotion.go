@@ -1,5 +1,4 @@
-// This file holds the promotion target `surla serve -promotion-config`
-// binds: it approves staged release binaries for a fresh launch.
+// This file holds the project server's promotion target for independently measured staged binaries.
 
 package main
 
@@ -20,12 +19,11 @@ import (
 )
 
 type (
-	// promotionFile is the operator's CP5 configuration read from
-	// -promotion-config. Every field is required.
+	// promotionFile is a validated CP5 settings snapshot plus its derived report store.
 	promotionFile struct {
-		// ReportDir holds the full reports the evaluator wrote, named by
-		// digest; it is the report_dir verification writes to.
-		ReportDir string `json:"report_dir"`
+		// ReportDir is derived from private project state and is neither accepted
+		// nor written in the operator settings JSON.
+		ReportDir string `json:"-"`
 		// ReleaseDir holds one directory per candidate commit, each holding
 		// the binaries to deploy for that commit.
 		ReleaseDir string `json:"release_dir"`

@@ -81,8 +81,8 @@ type recordedSpan struct {
 // across a no-op confirmation, and drops it when the revision changes, even
 // when the change lands while the report is being loaded.
 func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	analysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
@@ -108,6 +108,7 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 		})
 		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 		require.NoError(t, err)
+		card = mustConfirmNoop(t, cp, aliceCtx, card)
 		require.Equal(t, StatusConfirmed, card.Status)
 		target.report = passingReport(t, card.RequestRevision, commit, inputs)
 		return cp, target, card
@@ -406,7 +407,7 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 			require.ErrorContains(t, err, c.wantErr)
 			assert.Equal(t, c.isStale, errors.Is(err, verify.ErrStaleReport))
 
-			handler := NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+			handler := NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 				"alice-token": {ID: "alice@example.com"},
 				"bob-token":   {ID: "bob@example.com"},
 			}))
@@ -444,7 +445,7 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 	otel.SetTracerProvider(recorder)
 	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
 
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	const secretHostPath = "/var/lib/surla/secret-releases/0123456789abcdef0123456789abcdef01234567/orders"
 
@@ -468,7 +469,7 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 		CardsDir:        cardsDir,
 		PromotionTarget: target,
 	})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srv.Close)
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 
@@ -586,9 +587,10 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 		return decodeWireCard(t, complete.StructuredContent)
 	}
 
-	// State 1: no record.
+	// State 1: no approval record.
 	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
+	card = mustConfirmNoop(t, cp, aliceCtx, card)
 	for _, got := range []*gensurla.ChangeCardResult{
 		mustGetChange(t, cp, aliceCtx, "chg"),
 		mustConfirmNoop(t, cp, aliceCtx, card),
@@ -673,7 +675,7 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 	cpNoTarget := newControlPlane(t, Options{
 		CardsDir: cardsDir,
 	})
-	srvNoTarget := httptest.NewServer(NewHTTPHandler(cpNoTarget, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srvNoTarget := httptest.NewServer(NewHTTPHandler(cpNoTarget, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srvNoTarget.Close)
 	adapterNoTarget := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cpNoTarget), nil)
 	for _, got := range []*gensurla.ChangeCardResult{
@@ -687,7 +689,7 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 		assert.Nil(t, got.Approval)
 		require.NotNil(t, got.UnverifiedApproval)
 		assert.Equal(t, approved.Approval, got.UnverifiedApproval.Approval)
-		assert.Contains(t, got.UnverifiedApproval.Reason, "-promotion-config")
+		assert.Contains(t, got.UnverifiedApproval.Reason, "surla promotion set")
 	}
 }
 

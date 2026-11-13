@@ -119,12 +119,10 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	gatewayAddr := startModelGateway(t, &scriptedModelProvider{})
 	workspace := t.TempDir()
 	opts, err := serveOptions(serveConfig{
-		checkTimeout:     defaultCheckTimeout,
-		projectDir:       workspace,
-		projectSet:       true,
-		cardsDir:         t.TempDir(),
-		cardsDirExplicit: true,
-		gatewayAddr:      gatewayAddr,
+		checkTimeout: defaultCheckTimeout,
+		projectDir:   workspace,
+
+		gatewayAddr: gatewayAddr,
 	}, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
 	// A test executable has no released module version in its build info.
@@ -134,7 +132,7 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	// Registered after the temporary directories, so it runs before they
 	// are removed.
 	t.Cleanup(func() { closeRetaining(cp, workspace, opts.CardsDir) })
-	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
+	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, workflowAuthenticator(map[string]controlplane.Principal{
 		"test-token": {ID: "operator@example.com"},
 	})))
 	t.Cleanup(srv.Close)

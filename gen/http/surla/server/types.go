@@ -203,7 +203,7 @@ type ProposeChangeResponseBody struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
@@ -253,7 +253,7 @@ type ReviseChangeResponseBody struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
@@ -303,7 +303,7 @@ type ConfirmIntentResponseBody struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
@@ -353,7 +353,7 @@ type GetChangeResponseBody struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
@@ -509,7 +509,7 @@ type ApproveMergeResponseBody struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
@@ -2178,9 +2178,7 @@ type UICompositionItemResponseBody struct {
 
 // ApprovalItemResponseBody is used to define fields on response body types.
 type ApprovalItemResponseBody struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy string `form:"approved_by" json:"approved_by" xml:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest string `form:"report_digest" json:"report_digest" xml:"report_digest"`
@@ -2425,8 +2423,8 @@ type TraceSpanResponseBody struct {
 	Status string `form:"status" json:"status" xml:"status"`
 	// Safe operation summary, at most 2048 bytes; never a raw error message.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
-	// Selected operation identifiers and results; at most six values of 1024 bytes
-	// each.
+	// Selected operation identifiers, results, and private caller attribution; at
+	// most seven values of 1024 bytes each.
 	Attributes map[string]string `form:"attributes" json:"attributes" xml:"attributes"`
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.

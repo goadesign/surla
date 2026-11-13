@@ -82,7 +82,7 @@ func (c *ControlPlane) RefreshStory(ctx context.Context) (*gensurla.StoryRefresh
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	if wsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errors.New(
-			"no workspace directory is bound to this control plane; start Surla from a project directory or pass -project",
+			"no workspace directory is bound to this control plane; start Surla from a project directory",
 		))
 	}
 	files, err := readWorkspaceSnapshotForStoryRefresh(wsDir, wsDev, wsIno)
@@ -166,7 +166,7 @@ func (c *ControlPlane) GetStoryRefresh(ctx context.Context) (*gensurla.StoryRefr
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	if wsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errors.New(
-			"no workspace directory is bound to this control plane; start Surla from a project directory or pass -project",
+			"no workspace directory is bound to this control plane; start Surla from a project directory",
 		))
 	}
 	key := storyRefreshKey{
@@ -254,7 +254,7 @@ func (c *ControlPlane) adoptStoryRefresh(
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	if wsDir == "" {
 		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf(
-			"cannot adopt story_refresh_op_id %q because no workspace directory is bound to this control plane; start Surla from a project directory or pass -project, then call refresh_story",
+			"cannot adopt story_refresh_op_id %q because no workspace directory is bound to this control plane; start Surla from a project directory, then call refresh_story",
 			opID,
 		))
 	}

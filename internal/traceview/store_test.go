@@ -41,14 +41,14 @@ func TestHistoryIsolationAndContinuation(t *testing.T) {
 		if i == 4 {
 			owner = "bob"
 		}
-		require.NoError(t, s.Record(owner, testSpan(i, codes.Error)))
+		require.NoError(t, s.Record(owner, "", "", testSpan(i, codes.Error)))
 	}
 	page, err = s.List("alice", "error", 2, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"operation-5", "operation-3"}, spanNames(page.Spans))
 	require.NotNil(t, page.NextCursor)
 	assert.True(t, page.HasMore)
-	require.NoError(t, s.Record("alice", testSpan(6, codes.Ok)))
+	require.NoError(t, s.Record("alice", "", "", testSpan(6, codes.Ok)))
 	older, err := s.List("alice", "error", 100, page.NextCursor)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"operation-2", "operation-1", "operation-0"}, spanNames(older.Spans))
@@ -73,7 +73,7 @@ func TestHistoryIsolationAndContinuation(t *testing.T) {
 	require.NoError(t, s.Close())
 	_, err = s.List("alice", "all", 20, nil)
 	assert.ErrorIs(t, err, errClosed)
-	assert.NoError(t, s.Record("alice", testSpan(7, codes.Ok)), "late spans are discarded after Close")
+	assert.NoError(t, s.Record("alice", "", "", testSpan(7, codes.Ok)), "late spans are discarded after Close")
 
 	reopened, err := Open(dir)
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestSparseHistoryMakesBoundedProgress(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, s.Close()) })
 	fixture := testSpan(1, codes.Ok)
 	for range 1200 {
-		require.NoError(t, s.Record("bob", fixture))
+		require.NoError(t, s.Record("bob", "", "", fixture))
 	}
 	info, err := s.file.Stat()
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestRestartRepairsOnlyInterruptedTail(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
 	require.NoError(t, err)
-	require.NoError(t, s.Record("alice", testSpan(1, codes.Unset)))
+	require.NoError(t, s.Record("alice", "", "", testSpan(1, codes.Unset)))
 	require.NoError(t, s.Close())
 	path := filepath.Join(dir, "traces.jsonl")
 	before, err := os.ReadFile(path)
@@ -247,9 +247,9 @@ func TestUnknownAndTrailingStoredFieldsReject(t *testing.T) {
 		_, err := decodeSpan([]byte(line))
 		assert.Error(t, err)
 	}
-	assert.Error(t, s.Record("", testSpan(1, codes.Error)))
+	assert.Error(t, s.Record("", "", "", testSpan(1, codes.Error)))
 	require.NoError(t, s.Close())
-	assert.NoError(t, s.Record("alice", testSpan(1, codes.Error)))
+	assert.NoError(t, s.Record("alice", "", "", testSpan(1, codes.Error)))
 
 }
 
@@ -264,7 +264,7 @@ func TestFailedCheckResultKeepsItsOriginalStatus(t *testing.T) {
 	stub.Name = "surla.controlplane.check_project"
 	stub.Attributes = append(stub.Attributes, attribute.Bool("surla.check.passed", false))
 	original := stub.Snapshot()
-	require.NoError(t, s.Record("alice", original))
+	require.NoError(t, s.Record("alice", "", "", original))
 	failed, err := s.List("alice", "error", 20, nil)
 	require.NoError(t, err)
 	assert.Empty(t, failed.Spans)

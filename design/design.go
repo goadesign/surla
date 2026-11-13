@@ -187,7 +187,7 @@ var UICompositionItem = Type("UICompositionItem", func() {
 // revision.
 var ApprovalItem = Type("ApprovalItem", func() {
 	Description("Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.")
-	Attribute("approved_by", String, "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.")
+	Attribute("approved_by", String, "User who approved the result.")
 	Attribute("report_digest", String, "SHA-256 digest of the approved CP4 verification report.")
 	Attribute("candidate_commit", String, "Candidate commit the report was checked against.")
 	Attribute("suite_id", String, "Evaluator suite the promotion target requires.")
@@ -221,7 +221,7 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 	Attribute("examples", ArrayOf(ExampleItem), "Concrete examples mapped to evaluator checks.")
 	Attribute("preserved_behaviors", ArrayOf(String), "Existing contract invariants preserved by this change.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.")
-	Attribute("confirmed_by", String, "Authenticated principal that confirmed the Change Card.")
+	Attribute("confirmed_by", String, "User who confirmed the Change Card.")
 	Attribute("request_revision", String, "SHA-256 digest of the canonical versioned Change Card.")
 	Attribute("ui_composition", UICompositionItem, "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.")
 	Attribute("approval", ApprovalItem, "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.")
@@ -602,12 +602,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("propose_change", func() {
-		Description("Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
+		Description("Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
 		Payload(ProposeChangePayload)
 		Result(ChangeCardResult)
 		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; nothing was saved.")
-		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. When adopting a workspace Story, pass the succeeded refresh_story operation's op_id in story_refresh_op_id. Surla assigns the IDs and request_revision and saves the card; a card without open questions is confirmed at once. When story_refresh_op_id is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.", func() {
+		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. When adopting a workspace Story, pass the succeeded refresh_story operation's op_id in story_refresh_op_id. Surla assigns the IDs and request_revision and saves the card; every card awaits the user's confirmation, including a card without open questions. When story_refresh_op_id is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -798,14 +798,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("approve_merge", func() {
-		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.")
+		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.")
 		Payload(ApproveMergePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The verification report did not pass or does not match the Change Card and promotion target inputs.")
 		Error("not_implemented", ErrorResult, "This control plane has no promotion target bound to it.")
-		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, such as surla serve -promotion-config.", func() {
+		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, configured with surla promotion set.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {

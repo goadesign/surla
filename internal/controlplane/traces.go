@@ -10,7 +10,6 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/traceview"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -35,6 +34,9 @@ type (
 		store *traceview.Store
 		// principal is taken from authenticated context when the operation starts.
 		principal string
+		// callerID and callerKind are private attribution and never added to SDK spans.
+		callerID   string
+		callerKind string
 		// ended lets only the first End export and append this operation.
 		ended atomic.Bool
 	}
@@ -78,17 +80,17 @@ func (t diagnosticTracer) Start(
 	opts ...trace.SpanStartOption,
 ) (context.Context, trace.Span) {
 	principal, ok := PrincipalFromContext(ctx)
-	if ok {
-		opts = append(opts, trace.WithAttributes(attribute.String("surla.caller_id", principal.CallerID), attribute.String("surla.caller_kind", string(principal.Kind))))
-	}
 	next, span := t.Tracer.Start(ctx, name, opts...)
-	if !span.IsRecording() || !ok {
+	// The browser waiting read stays in exported traces without adding periodic observations to local operation history.
+	if !span.IsRecording() || !ok || name == "surla.request.wait_for_changes" {
 		return next, span
 	}
 	return next, &diagnosticSpan{
 		ReadWriteSpan: span.(sdktrace.ReadWriteSpan),
 		store:         t.store,
 		principal:     principal.ID,
+		callerID:      principal.CallerID,
+		callerKind:    string(principal.Kind),
 	}
 }
 
@@ -124,7 +126,7 @@ func (c *ControlPlane) tracer(scope string) trace.Tracer {
 // recordCompleted saves the ended SDK span even while its End resumes a panic.
 // It holds no span history and reports only actual storage failures to the host.
 func (s *diagnosticSpan) recordCompleted() {
-	if err := s.store.Record(s.principal, s.ReadWriteSpan); err != nil {
+	if err := s.store.Record(s.principal, s.callerID, s.callerKind, s.ReadWriteSpan); err != nil {
 		otel.Handle(err)
 	}
 }

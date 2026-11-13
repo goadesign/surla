@@ -413,7 +413,7 @@ func (c *Client) ListTraces(ctx context.Context, p *ListTracesPayload) (res *Tra
 // RefreshStory calls the "refresh_story" endpoint of the "surla" service.
 // RefreshStory may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.
-//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.
+//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane; start Surla from a project directory.
 //   - "unavailable" (type *goa.ServiceError): The control plane is shutting down and is no longer starting Story refresh operations.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
@@ -429,7 +429,7 @@ func (c *Client) RefreshStory(ctx context.Context) (res *StoryRefreshResult, err
 // GetStoryRefresh calls the "get_story_refresh" endpoint of the "surla"
 // service.
 // GetStoryRefresh may return the following errors:
-//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.
+//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane; start Surla from a project directory.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) GetStoryRefresh(ctx context.Context) (res *StoryRefreshResult, err error) {

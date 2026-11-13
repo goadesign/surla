@@ -1267,7 +1267,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that confirmed the Change Card.",
+		Description: "User who confirmed the Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
@@ -1297,7 +1297,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -1352,7 +1352,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -1822,7 +1822,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that confirmed the Change Card.",
+		Description: "User who confirmed the Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
@@ -1852,7 +1852,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -1907,7 +1907,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -2440,7 +2440,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that confirmed the Change Card.",
+		Description: "User who confirmed the Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
@@ -2470,7 +2470,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -2525,7 +2525,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -3295,12 +3295,12 @@ var listTracesResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("attributes")},
 		JSONType:    "object",
-		Description: "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+		Description: "Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("attributes"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+		Description: "Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("shortened")},
@@ -4364,7 +4364,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that confirmed the Change Card.",
+		Description: "User who confirmed the Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
@@ -4394,7 +4394,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -4449,7 +4449,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -5169,7 +5169,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that confirmed the Change Card.",
+		Description: "User who confirmed the Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
@@ -5199,7 +5199,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -5254,7 +5254,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
 		JSONType:    "string",
-		Description: "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+		Description: "User who approved the result.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
@@ -11397,7 +11397,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "confirmed_by":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Authenticated principal that confirmed the Change Card.",
+				typed[key], "User who confirmed the Change Card.",
 			); err != nil {
 				return err
 			}
@@ -11614,7 +11614,7 @@ func validateProposeChangeResultApprovalItemTransportJSONValue(path string, valu
 		case "approved_by":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
+				typed[key], "User who approved the result.",
 			); err != nil {
 				return err
 			}
@@ -15222,7 +15222,7 @@ func validateListTracesResultTraceSpanTransportJSONValue(path string, value any,
 		case "attributes":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+				typed[key], "Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.",
 			); err != nil {
 				return err
 			}

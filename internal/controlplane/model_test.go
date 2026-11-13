@@ -45,7 +45,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		require.NoError(t, tp.Shutdown(context.Background()))
 	})
 
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	initialEnv := []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}
 
 	t.Run("unauthenticated ConfigureModel is rejected before starting a span", func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 				return []string{"SURLA_LIVE_MODEL_GATEWAY=unused"}, nil
 			},
 		})
-		handler := NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+		handler := NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 			"alice-token": {ID: "alice@example.com"},
 		}))
 		mcpAdapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)

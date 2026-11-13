@@ -113,6 +113,11 @@ type (
 		// Change Cards, one file per card. It is required, and one process at
 		// a time may use it.
 		CardsDir string
+		// BeforeStoreRelease removes the composition root's running record after
+		// owned work closes, while the card-store lock remains held. Close calls
+		// it once before release; a live-target failure retaining the store never
+		// calls it.
+		BeforeStoreRelease func() error
 		// TracerProvider optionally supplies the host-owned SDK provider used
 		// to record authenticated operation diagnostics from construction.
 		// When nil, operations keep global telemetry but ListTraces returns
@@ -255,6 +260,8 @@ type (
 
 	// ControlPlane implements gensurla.Service.
 	ControlPlane struct {
+		// beforeStoreRelease finishes the host running record under the card-store lock.
+		beforeStoreRelease func() error
 		// traces owns the bounded diagnostic records under the card-store lock.
 		traces *traceview.Store
 		// traceProvider is fixed at construction; only this control plane's
@@ -483,6 +490,7 @@ func New(opts Options) (*ControlPlane, error) {
 	}
 	cp := &ControlPlane{
 		cards:                  cards,
+		beforeStoreRelease:     opts.BeforeStoreRelease,
 		traces:                 traces,
 		traceProvider:          opts.TracerProvider,
 		liveModelEnv:           initialLiveEnv,
@@ -545,7 +553,11 @@ func New(opts Options) (*ControlPlane, error) {
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)
-	applyOperationPolicy(endpoints)
+	recorder := otel.Tracer("surla/requests")
+	if owner, ok := svc.(*ControlPlane); ok {
+		recorder = owner.tracer("surla/requests")
+	}
+	applyOperationPolicy(endpoints, recorder)
 	httpServer := gensurlahttp.New(
 		endpoints,
 		mux,
@@ -749,7 +761,11 @@ func (c *ControlPlane) Close() error {
 	defer c.workspaceMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return errors.Join(evalErr, checkErr, c.traces.Close(), c.cards.close())
+	var recordErr error
+	if c.cards.lock != nil && c.beforeStoreRelease != nil {
+		recordErr = c.beforeStoreRelease()
+	}
+	return errors.Join(evalErr, checkErr, c.traces.Close(), recordErr, c.cards.close())
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It

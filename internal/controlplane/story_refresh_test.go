@@ -26,7 +26,7 @@ import (
 // request" advice, expected absence ("none") before any refresh and after a
 // server restart, and replaced-workspace rejection.
 func TestStoryRefreshPreconditionsAndExpectedAbsence(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	t.Run("unauthenticated callers are rejected", func(t *testing.T) {
 		cp := newControlPlane(t, Options{})
@@ -40,19 +40,19 @@ func TestStoryRefreshPreconditionsAndExpectedAbsence(t *testing.T) {
 		cp := newControlPlane(t, Options{})
 		_, err := cp.RefreshStory(alice)
 		assertServiceError(t, err, "not_implemented")
-		assert.ErrorContains(t, err, "start Surla from a project directory or pass -project")
+		assert.ErrorContains(t, err, "start Surla from a project directory")
 		assert.NotContains(t, err.Error(), "pass design in the request")
 
 		_, err = cp.GetStoryRefresh(alice)
 		assertServiceError(t, err, "not_implemented")
-		assert.ErrorContains(t, err, "start Surla from a project directory or pass -project")
+		assert.ErrorContains(t, err, "start Surla from a project directory")
 		assert.NotContains(t, err.Error(), "pass design in the request")
 	})
 
 	t.Run("bound workspace without go.mod returns none on get and unprocessable on refresh", func(t *testing.T) {
 		wsDir := t.TempDir()
 		cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
-		srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+		srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 			"alice-token": {ID: "alice@example.com"},
 		})))
 		t.Cleanup(srv.Close)
@@ -151,7 +151,7 @@ func TestStoryRefreshPreconditionsAndExpectedAbsence(t *testing.T) {
 // propose_change, get_change, nor verify_change, and that refreshing an
 // unchanged snapshot while running reuses the running operation.
 func TestSlowStoryRefreshDoesNotBlockGetChangeVerifyChangeOrProposeChange(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()
 	files := validWorkspaceStub("package design\n")
 	writeWorkspaceFiles(t, wsDir, files)
@@ -239,7 +239,7 @@ func TestStoryRefreshSurvivesClientDisconnect(t *testing.T) {
 	installFakeGo(t, "#!/bin/sh\n: > "+startedFile+"\nwhile [ ! -f "+releaseFile+" ]; do sleep 0.02; done\necho 'reached after client disconnect' >&2\nexit 1\n")
 
 	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
-	reqCtx, reqCancel := context.WithCancel(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}))
+	reqCtx, reqCancel := context.WithCancel(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}))
 
 	started, err := cp.RefreshStory(reqCtx)
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func TestStoryRefreshSurvivesClientDisconnect(t *testing.T) {
 	// Simulate client disconnect by canceling the request context.
 	reqCancel()
 
-	readCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	readCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	stillRunning, err := cp.GetStoryRefresh(readCtx)
 	require.NoError(t, err)
 	assert.Equal(t, storyRefreshStateRunning, stillRunning.State)
@@ -272,7 +272,7 @@ func TestStoryRefreshSurvivesClientDisconnect(t *testing.T) {
 // exit before returning, leaves no operation running or published, and writes
 // nothing to disk afterwards.
 func TestStoryRefreshCloseCancelsWaitsAndWritesNothingAfterwards(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()
 	cardsDir := filepath.Join(t.TempDir(), "cards")
 	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design\n"))
@@ -326,7 +326,7 @@ func TestStoryRefreshCloseCancelsWaitsAndWritesNothingAfterwards(t *testing.T) {
 //  3. the same snapshot after an expired run reads failed with a diagnostic
 //     naming the deadline and evaluates again on the next refresh.
 func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	t.Run("changed snapshot replaces running operation and replaced evaluation publishes nothing", func(t *testing.T) {
 		wsDir := t.TempDir()
@@ -469,8 +469,8 @@ func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
 // TestStoryRefreshPrincipalIsolation verifies that another authenticated
 // principal cannot read or replace a caller's Story refresh operation.
 func TestStoryRefreshPrincipalIsolation(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()
 	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design\n"))
 
@@ -510,7 +510,7 @@ func TestStoryRefreshEvaluatesStoryOnlyAndNonStoryDesignsWhilePreviewRejectsStor
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()
 
 	storyOnlyDesign := `package design

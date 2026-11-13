@@ -8,6 +8,16 @@ Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/golde
 
 ---
 
+Surla's project server owns one private state tree and stable operating-system
+account identity per physical folder. A start lock serializes launches; the
+existing card-store lock controls server liveness and is released after ordered
+cleanup and running-record removal. Trusted credentials add a caller and role
+without changing resource ownership. One endpoint policy governs HTTP, MCP and
+tool discovery. Browser sessions live only in server and page memory; the CLI's
+management credential cannot confirm or approve. Verification and promotion
+settings are validated and copied into project state by the CLI and read at
+startup. See the [project server contract](REFERENCE.md#surla-serve).
+
 ## The 7 Golden Path Rules
 
 ### 1. Design Is the Single Source of Truth (`design/*.go` → `goa gen`)

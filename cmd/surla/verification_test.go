@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -26,7 +27,7 @@ func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, cfg, "no file means verification is not configured")
 
-	complete := `{"runs_dir":"/srv/runs","report_dir":"/srv/reports","candidate_repo":"/srv/app.git",
+	complete := `{"candidate_repo":"/srv/app.git",
 		"candidate_module":".","binaries":{"app":"./cmd/app"},"suite_repo":"/srv/eval.git",
 		"suite_commit":"` + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" + `","suite_module":".","suite_command":"./cmd/app-evals","timeout":"30m"}`
 	write := func(t *testing.T, content string) string {
@@ -38,8 +39,8 @@ func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 
 	cfg, err = loadVerificationConfig(write(t, complete))
 	require.NoError(t, err)
-	assert.Equal(t, "/srv/runs", cfg.RunsDir)
-	assert.Equal(t, "/srv/reports", cfg.Plan.ReportDir)
+	assert.Empty(t, cfg.RunsDir, "project supplies runs storage")
+	assert.Empty(t, cfg.Plan.ReportDir, "project supplies reports storage")
 	assert.Equal(t, map[string]string{"app": "./cmd/app"}, cfg.Plan.Binaries)
 	assert.Equal(t, "./cmd/app-evals", cfg.Plan.SuiteCommand)
 	assert.Empty(t, cfg.Plan.CandidateCommit, "the candidate commit comes from each verify_change call")
@@ -51,7 +52,7 @@ func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 		name, content, wantErr string
 	}{
 		{"unknown field", `{"runs_dir":"x","suite":"y"}`, "unknown field"},
-		{"missing fields", `{"runs_dir":"/srv/runs"}`, "is missing report_dir, candidate_repo, candidate_module, suite_repo, suite_commit, suite_module, suite_command, timeout, binaries"},
+		{"missing fields", `{}`, "is missing candidate_repo, candidate_module, suite_repo, suite_commit, suite_module, suite_command, timeout, binaries"},
 		{"trailing data", complete + `{}`, "data after the configuration"},
 		{"bad timeout", strings.Replace(complete, `"30m"`, `"soon"`, 1), "must be a positive duration"},
 	} {
@@ -61,11 +62,11 @@ func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 		})
 	}
 	_, err = loadVerificationConfig(filepath.Join(t.TempDir(), "missing.json"))
-	assert.ErrorContains(t, err, "read -verification-config")
+	assert.ErrorContains(t, err, "read verification settings")
 }
 
 // TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD checks the
-// configuration `surla serve -project` builds from a committed starter: the
+// configuration `the project server` builds from a committed starter: the
 // layout, modules and suite commit all come from one HEAD commit, whatever
 // the directory is called, wherever the project sits in its repository, and
 // whatever the working files or the environment say.
@@ -122,8 +123,8 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		for _, start := range []struct{ dir, arg string }{{project, "."}, {repo, "services/shop"}} {
 			isolateServeWorkspace(t)
 			t.Chdir(start.dir)
-			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: start.arg, projectSet: true})
-			require.NoError(t, err, "-project %s from %s", start.arg, start.dir)
+			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: start.arg})
+			require.NoError(t, err, "project %s from %s", start.arg, start.dir)
 			require.NotNil(t, ws.verification)
 			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo)
 			assert.Equal(t, "services/shop", ws.verification.Plan.CandidateModule)
@@ -149,12 +150,12 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		for _, arg := range []string{"alias/..", other + "/alias/.."} {
 			isolateServeWorkspace(t)
 			t.Chdir(other)
-			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: arg, projectSet: true})
-			require.NoError(t, err, "-project %s", arg)
+			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: arg})
+			require.NoError(t, err, "project %s", arg)
 			require.NotNil(t, ws.verification)
-			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo, "-project %s", arg)
-			assert.Equal(t, repo, ws.verification.Plan.SuiteRepo, "-project %s", arg)
-			assert.Equal(t, head, ws.verification.Plan.SuiteCommit, "-project %s", arg)
+			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo, "project %s", arg)
+			assert.Equal(t, repo, ws.verification.Plan.SuiteRepo, "project %s", arg)
+			assert.Equal(t, head, ws.verification.Plan.SuiteCommit, "project %s", arg)
 			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, ws.verification.Plan.Binaries)
 			assertOutsideDirectory(t, ws.verification.RunsDir, repo)
 			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, repo)
@@ -225,7 +226,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 }
 
 // TestLoadProjectVerificationConfigRejectsUnusableProjects checks that every
-// project -project cannot use stops startup with an error, naming the next
+// project project cannot use stops startup with an error, naming the next
 // step (git init, a commit, or the starter layout) where there is one, instead
 // of searching for another layout or starting without verification.
 func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
@@ -238,7 +239,7 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 		{
 			name:    "missing directory",
 			prepare: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") },
-			wantErr: "read -project",
+			wantErr: "read project",
 		},
 		{
 			name: "regular file",
@@ -352,9 +353,9 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 			_, err := starterVerificationAtHEAD(t.Context(), dir, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 			require.ErrorContains(t, err, tc.wantErr)
 
-			ws, wsErr := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: dir, projectSet: true})
+			ws, wsErr := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: dir})
 			if wsErr != nil {
-				require.ErrorContains(t, wsErr, tc.wantErr)
+				require.Error(t, wsErr)
 				return
 			}
 			assert.Nil(t, ws.verification)
@@ -366,14 +367,11 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 }
 
 // TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig
-// verifies that -project (workspace binding) and -verification-config (external
+// verifies that project (workspace binding) and -verification-config (external
 // evaluator suite) compose independently, and that an explicitly empty
-// -project="" flag is rejected.
+// project="" flag is rejected.
 func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(t *testing.T) {
 	isolateServeWorkspace(t)
-
-	_, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectSet: true})
-	assert.ErrorContains(t, err, "-project requires a directory")
 
 	root := t.TempDir()
 	opsSessionDir := filepath.Join(root, "ops", "session")
@@ -394,19 +392,17 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	verPath := filepath.Join(root, "ops", "shop-eval.json")
-	verContent := `{"runs_dir":"` + filepath.Join(root, "ops", "runs") + `","report_dir":"` + filepath.Join(root, "ops", "reports") + `",` +
-		`"candidate_repo":"` + shopDir + `","candidate_module":".","binaries":{"shop":"./cmd/shop"},` +
+	verContent := `{"candidate_repo":"` + shopDir + `","candidate_module":".","binaries":{"shop":"./cmd/shop"},` +
 		`"suite_repo":"` + filepath.Join(root, "ops", "eval-repo") + `","suite_commit":"` + strings.Repeat("d", 40) + `",` +
 		`"suite_module":".","suite_command":"./cmd/shop-evals","timeout":"15m"}`
 	require.NoError(t, os.WriteFile(verPath, []byte(verContent), 0o600))
 
-	t.Chdir(opsSessionDir)
+	t.Chdir(shopDir)
+	require.NoError(t, runProjectSettings("verification", []string{"set", verPath}, io.Discard))
 	opts, err := serveOptions(
 		serveConfig{
-			checkTimeout:     defaultCheckTimeout,
-			projectDir:       shopDir,
-			projectSet:       true,
-			verificationPath: verPath,
+			checkTimeout: defaultCheckTimeout,
+			projectDir:   shopDir,
 		},
 		func(string) string { return "" },
 		nil,
@@ -414,14 +410,16 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	require.NoError(t, err)
 	require.NotNil(t, opts.Verification)
 	assert.Nil(t, opts.ResolveVerification, "explicit -verification-config must not fall back to starter verification resolution")
-	assert.Equal(t, filepath.Join(root, "ops", "eval-repo"), opts.Verification.Plan.SuiteRepo)
+	expectedSuite, err := filepath.EvalSymlinks(filepath.Join(root, "ops"))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(expectedSuite, "eval-repo"), opts.Verification.Plan.SuiteRepo)
 	assert.Equal(t, 15*time.Minute, opts.Verification.Timeout)
 
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
 	defer cp.Close()
 
-	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: controlplane.CallerUser})
 	_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-shop-with-external-eval",
 		Prompt:   "Add coupon validation",
@@ -446,7 +444,7 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 		DesignSource string `json:"design_source"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &saved))
-	assert.Contains(t, saved.DesignSource, "shop workspace design", "-project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
+	assert.Contains(t, saved.DesignSource, "shop workspace design", "project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
 }
 
 // isolateGitConfig points HOME and XDG_CONFIG_HOME at empty directories for
@@ -468,7 +466,7 @@ func newGitRepo(t *testing.T) string {
 	return dir
 }
 
-// writeStarter writes the files `surla serve -project` reads from a starter
+// writeStarter writes the files `the project server` reads from a starter
 // created by surla init with module modulePath: both go.mod files and one file
 // in each command directory.
 func writeStarter(t *testing.T, dir, modulePath string) {

@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"errors"
+	"go.opentelemetry.io/otel/trace/noop"
 	"testing"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -29,9 +30,10 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 				for _, allowed := range expected[name] {
 					permitted = permitted || role == allowed
 				}
+				recorder := noop.NewTracerProvider().Tracer("test")
 				mutated := false
 				marker := errors.New("called domain operation")
-				endpoint := authorizeOperation(name, func(context.Context, any) (any, error) { mutated = true; return nil, marker })
+				endpoint := authorizeOperation(name, func(context.Context, any) (any, error) { mutated = true; return nil, marker }, recorder)
 				_, err := endpoint(WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "caller", Kind: role}), nil)
 				assert.Equal(t, permitted, mutated)
 				if permitted {

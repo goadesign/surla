@@ -80,12 +80,10 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
 	cfg := serveConfig{
-		checkTimeout:     defaultCheckTimeout,
-		projectDir:       workspace,
-		projectSet:       true,
-		cardsDir:         t.TempDir(),
-		cardsDirExplicit: true,
-		gatewayAddr:      gatewayAddr,
+		checkTimeout: defaultCheckTimeout,
+		projectDir:   workspace,
+
+		gatewayAddr: gatewayAddr,
 	}
 	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
@@ -96,7 +94,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	// Registered after the temporary directories, so it runs before they
 	// are removed.
 	t.Cleanup(func() { closeRetaining(cp, workspace, opts.CardsDir, opts.RunsDir) })
-	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
+	auth := workflowAuthenticator(map[string]controlplane.Principal{
 		"test-token": {ID: "operator@example.com"},
 	})
 	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))

@@ -369,7 +369,7 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 // TestInitProjectErrorAndSpanClassificationAndEndToEndTransition verifies InitProject's
 // error contracts, OpenTelemetry span status codes, and in-place workspace transition.
 func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	withTrackedSpans := func(t *testing.T) *tracetest.InMemoryExporter {
 		t.Helper()
@@ -518,7 +518,7 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		defer cp.Close()
 
 		handler := NewHTTPHandler(cp, func(_ *http.Request) (Principal, error) {
-			return Principal{ID: "alice@example.com"}, nil
+			return Principal{ID: "alice@example.com", CallerID: "guide", Kind: CallerGuide}, nil
 		})
 
 		// 1. Verify HTTP POST /workspace/init returns 500 Fault without leaking Log or Tail.
@@ -670,7 +670,7 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 // TestInitProjectUsesSavedSourceToProtectAnExistingProject exercises the real
 // admission boundary after design files disappear, and permits a pre-init card.
 func TestInitProjectUsesSavedSourceToProtectAnExistingProject(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	for _, withSource := range []bool{false, true} {
 		name := "empty pre-init card"
 		if withSource {
@@ -718,7 +718,7 @@ func TestInitProjectUsesSavedSourceToProtectAnExistingProject(t *testing.T) {
 // and waits for an in-flight InitProject before releasing the card store's lock.
 func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing.T) {
 	t.Parallel()
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	t.Run("close_during_prepare_cancels_context_and_waits_for_init_cleanup", func(t *testing.T) {
 		t.Parallel()
@@ -887,7 +887,7 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 // request_revision; nothing interprets it.
 func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testing.T) {
 	t.Parallel()
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	root := t.TempDir()
 	wsDir := filepath.Join(root, "ws")
 	cardsDir := filepath.Join(root, "cards")

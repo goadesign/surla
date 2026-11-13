@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,12 +22,18 @@ import (
 type (
 	// Server is the sole owner of credentials for a running project. Browser credentials never leave memory.
 	Server struct {
-		state    *State
-		stop     func()
-		mu       sync.Mutex
-		links    map[string]time.Time
+		// state holds durable owner identity and agent credential metadata for this server.
+		state *State
+		// stop requests the composition root's ordered shutdown.
+		stop func()
+		// mu serializes memory-only link consumption and session issuance.
+		mu sync.Mutex
+		// links maps single-use credentials to their expiration, only for this server lifetime.
+		links map[string]time.Time
+		// sessions maps random session credentials to separately generated public caller IDs.
 		sessions map[string]string
-		now      func() time.Time
+		// now supplies the link-expiration clock; tests replace it deterministically.
+		now func() time.Time
 	}
 )
 
@@ -63,14 +68,14 @@ func (s *Server) Authenticate(r *http.Request) (controlplane.Principal, error) {
 	s.state.mu.Lock()
 	defer s.state.mu.Unlock()
 	for id, role := range s.state.Record.Agents {
-		raw, err := readPrivate(s.state.AgentFile(id))
+		credential, err := readCredential(s.state.AgentFile(id))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
 			return controlplane.Principal{}, err
 		}
-		if credentialEqual(token, string(raw)) {
+		if credentialEqual(token, credential) {
 			return controlplane.Principal{ID: owner, CallerID: id, Kind: controlplane.CallerKind(role)}, nil
 		}
 	}
@@ -82,7 +87,7 @@ func (s *Server) Authenticate(r *http.Request) (controlplane.Principal, error) {
 func (s *Server) Handler(application http.Handler) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := genproject.NewEndpoints(s)
-	server := genprojectserver.New(endpoints, mux, strictDecoder, goahttp.ResponseEncoder, nil, nil)
+	server := genprojectserver.New(endpoints, mux, controlplane.StrictJSONRequestDecoder, goahttp.ResponseEncoder, nil, nil)
 	genprojectserver.Mount(mux, server)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -120,7 +125,7 @@ func (s *Server) Handler(application http.Handler) http.Handler {
 
 // Identity proves the answering address belongs to the CLI's project.
 func (s *Server) Identity(ctx context.Context) (*genproject.ProjectIdentity, error) {
-	if err := managementOnly(ctx); err != nil {
+	if err := managementOnly(ctx, "identity"); err != nil {
 		return nil, err
 	}
 	r := s.state.Record
@@ -129,7 +134,7 @@ func (s *Server) Identity(ctx context.Context) (*genproject.ProjectIdentity, err
 
 // Stop requests the composition root's ordered shutdown without blocking its own HTTP request.
 func (s *Server) Stop(ctx context.Context) error {
-	if err := managementOnly(ctx); err != nil {
+	if err := managementOnly(ctx, "stop"); err != nil {
 		return err
 	}
 	s.stop()
@@ -138,7 +143,7 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // AddAgent publishes a credential file and its immutable role as one admitted management operation.
 func (s *Server) AddAgent(ctx context.Context, p *genproject.AddAgentPayload) (*genproject.ProjectAgent, error) {
-	if err := managementOnly(ctx); err != nil {
+	if err := managementOnly(ctx, "add_agent"); err != nil {
 		return nil, err
 	}
 	s.state.mu.Lock()
@@ -169,7 +174,7 @@ func (s *Server) AddAgent(ctx context.Context, p *genproject.AddAgentPayload) (*
 
 // RemoveAgent revokes the credential before persisting removal of its roster identity.
 func (s *Server) RemoveAgent(ctx context.Context, p *genproject.RemoveAgentPayload) error {
-	if err := managementOnly(ctx); err != nil {
+	if err := managementOnly(ctx, "remove_agent"); err != nil {
 		return err
 	}
 	s.state.mu.Lock()
@@ -186,7 +191,7 @@ func (s *Server) RemoveAgent(ctx context.Context, p *genproject.RemoveAgentPaylo
 
 // BrowserLink creates a short-lived value usable for one browser exchange only.
 func (s *Server) BrowserLink(ctx context.Context) (*genproject.BrowserLinkResult, error) {
-	if err := managementOnly(ctx); err != nil {
+	if err := managementOnly(ctx, "browser_link"); err != nil {
 		return nil, err
 	}
 	token, err := randomCredential()
@@ -229,9 +234,9 @@ func (s *Server) ExchangeBrowserLink(_ context.Context, p *genproject.ExchangeBr
 }
 
 // managementOnly checks trusted caller purpose rather than naming conventions or payload claims.
-func managementOnly(ctx context.Context) error {
+func managementOnly(ctx context.Context, operation string) error {
 	p, ok := controlplane.PrincipalFromContext(ctx)
-	if !ok || p.Kind != controlplane.CallerManagement {
+	if !ok || !controlplane.OperationAllowed(p.Kind, operation) {
 		return genproject.MakeForbidden(errors.New("this operation requires the surla command's management credential"))
 	}
 	return nil
@@ -240,12 +245,9 @@ func managementOnly(ctx context.Context) error {
 // credentialEqual compares opaque credentials without leaking their common prefix.
 func credentialEqual(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
-// strictDecoder rejects unknown fields and trailing JSON using the shared HTTP boundary.
-func strictDecoder(r *http.Request) goahttp.Decoder { return controlplane.StrictJSONRequestDecoder(r) }
-
 // writeAccessError preserves the generated service error shape even before routing or authentication.
 func writeAccessError(w http.ResponseWriter, r *http.Request, status int, name, message string) {
-	accessErr := genproject.MakeForbidden(fmt.Errorf("%s", message))
+	accessErr := genproject.MakeForbidden(errors.New(message))
 	accessErr.Name = name
 	response := goahttp.NewErrorResponse(r.Context(), accessErr)
 	w.Header().Set("Content-Type", "application/json")

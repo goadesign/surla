@@ -20,7 +20,7 @@ var TraceSpan = Type("TraceSpan", func() {
 		Enum("unset", "ok", "error")
 	})
 	Attribute("summary", String, "Safe operation summary, at most 2048 bytes; never a raw error message.")
-	Attribute("attributes", MapOf(String, String), "Selected operation identifiers and results; at most six values of 1024 bytes each.")
+	Attribute("attributes", MapOf(String, String), "Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.")
 	Attribute("shortened", Boolean, "True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.")
 	Required("trace_id", "span_id", "parent_span_id", "name", "start_time", "end_time", "duration_ms", "status", "summary", "attributes", "shortened")
 })
@@ -52,12 +52,12 @@ var TraceList = Type("TraceList", func() {
 // traceMethods exposes the card-store owner's diagnostic history over HTTP/MCP.
 func traceMethods() {
 	Method("list_traces", func() {
-		Description("Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.")
+		Description("Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.")
 		Payload(ListTracesPayload)
 		Result(TraceList)
 		Error("unprocessable", ErrorResult, "The cursor is invalid; omit it to refresh the history.")
 		Error("not_implemented", ErrorResult, "Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.")
-		Tool("list_traces", "Read your saved operation diagnostics, newest first. status filters all spans, recorded errors, or spans without an error status. Empty spans with has_more true still leaves older history to examine: pass next_cursor as cursor with the same filter. Omit cursor to refresh. Summaries exclude raw errors and inputs; unset status does not prove success. No top-level span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override; requests rejected before span creation and separate verification processes are also absent. An instrumented child operation may appear separately. not_implemented means the server operator must enable recording; it is not an empty history.")
+		Tool("list_traces", "Read your saved operation diagnostics, newest first. status filters all spans, recorded errors, or spans without an error status. Empty spans with has_more true still leaves older history to examine: pass next_cursor as cursor with the same filter. Omit cursor to refresh. Summaries exclude raw errors and inputs; unset status does not prove success. Authenticated HTTP/MCP domain calls have a request boundary span and may also have child domain spans. Waiting reads do not enter the private history. Requests rejected before authentication or decoding and separate verification processes are absent. not_implemented means the server operator must enable recording; it is not an empty history.")
 		HTTP(func() {
 			GET("/traces")
 			Param("status")

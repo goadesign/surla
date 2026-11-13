@@ -59,7 +59,7 @@ type (
 		Examples []*gensurla.ExampleItem
 		// PreservedBehaviors lists contract invariants preserved by this change.
 		PreservedBehaviors []string
-		// ConfirmedBy is the authenticated principal that confirmed the card.
+		// ConfirmedBy is the project owner whose user session confirmed the card.
 		ConfirmedBy *string
 		// RequestRevision is the SHA-256 digest of the canonical versioned card.
 		RequestRevision string

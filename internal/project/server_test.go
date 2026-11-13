@@ -65,6 +65,18 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	guideRaw, err := os.ReadFile(guide.CredentialFile)
 	require.NoError(t, err)
 	assert.NotEqual(t, state.ManagementFile(), guide.CredentialFile)
+	actorTokens := map[controlplane.CallerKind]string{controlplane.CallerGuide: string(guideRaw)}
+	for _, role := range []string{"builder", "test_writer"} {
+		actor, err := client.AddAgent(t.Context(), &genproject.AddAgentPayload{ActorID: role, Role: role})
+		require.NoError(t, err)
+		raw, err := os.ReadFile(actor.CredentialFile)
+		require.NoError(t, err)
+		actorTokens[controlplane.CallerKind(role)] = string(raw)
+	}
+	rejectedRole := testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/project/agents", `{"actor_id":"forbidden-manager","role":"management"}`, management, false)
+	assert.Equal(t, http.StatusBadRequest, rejectedRole.StatusCode)
+	require.NoError(t, rejectedRole.Body.Close())
+
 	link, err := client.BrowserLink(t.Context())
 	require.NoError(t, err)
 	u, err := url.Parse(link.URL)
@@ -107,7 +119,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	confirmed, err := gensurla.DecodeChangeCardResult(confirmedRaw)
 	require.NoError(t, err)
 	require.NotNil(t, confirmed.ConfirmedBy)
-	assert.True(t, strings.HasPrefix(*confirmed.ConfirmedBy, "user-"))
+	assert.Equal(t, state.Record.Owner, *confirmed.ConfirmedBy)
 	// Native clients cannot accidentally use browser sessions without browser same-origin metadata.
 	unmarked := testRequest(t, api.Client(), http.MethodGet, state.Origin()+"/changes/change", "", session.Session, false)
 	assert.Equal(t, http.StatusUnauthorized, unmarked.StatusCode)
@@ -135,32 +147,94 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	for _, tc := range []struct {
 		role  controlplane.CallerKind
 		token string
-	}{{controlplane.CallerGuide, string(guideRaw)}, {controlplane.CallerUser, session.Session}, {controlplane.CallerManagement, management}} {
+	}{{controlplane.CallerGuide, string(guideRaw)}, {controlplane.CallerBuilder, actorTokens[controlplane.CallerBuilder]}, {controlplane.CallerTestWriter, actorTokens[controlplane.CallerTestWriter]}, {controlplane.CallerUser, session.Session}, {controlplane.CallerManagement, management}} {
 		t.Run(string(tc.role), func(t *testing.T) {
 			list := testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`, tc.token, tc.role == controlplane.CallerUser)
 			var body struct {
-				Result struct {
-					Tools []struct {
+				Error  any `json:"error"`
+				Result *struct {
+					ResultType string `json:"resultType"`
+					Tools      []struct {
 						Name string `json:"name"`
 					} `json:"tools"`
 				} `json:"result"`
 			}
+			require.Equal(t, http.StatusOK, list.StatusCode)
 			require.NoError(t, json.NewDecoder(list.Body).Decode(&body))
 			require.NoError(t, list.Body.Close())
+			require.Nil(t, body.Error)
+			require.NotNil(t, body.Result)
+			assert.Equal(t, "complete", body.Result.ResultType)
+			listed := map[string]bool{}
 			for _, tool := range body.Result.Tools {
-				assert.True(t, controlplane.OperationAllowed(tc.role, tool.Name))
+				listed[tool.Name] = true
+			}
+			for _, name := range gensurla.MethodNames {
+				if name != "golden_path" && name != "checkpoint_ui" {
+					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
+				}
+			}
+			guidance := testRequest(t, api.Client(), http.MethodGet, state.Origin()+"/golden-path", "", tc.token, tc.role == controlplane.CallerUser)
+			if tc.role == controlplane.CallerManagement {
+				assert.Equal(t, http.StatusForbidden, guidance.StatusCode)
+			} else {
+				assert.Equal(t, http.StatusOK, guidance.StatusCode)
+			}
+			require.NoError(t, guidance.Body.Close())
+			read := testRequest(t, api.Client(), http.MethodGet, state.Origin()+"/changes/change", "", tc.token, tc.role == controlplane.CallerUser)
+			if tc.role == controlplane.CallerManagement || tc.role == controlplane.CallerTestWriter {
+				assert.Equal(t, http.StatusForbidden, read.StatusCode)
+			} else {
+				assert.Equal(t, http.StatusOK, read.StatusCode)
+			}
+			require.NoError(t, read.Body.Close())
+			if tc.role == controlplane.CallerUser || tc.role == controlplane.CallerGuide || tc.role == controlplane.CallerBuilder {
+				called := testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/mcp", `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_change","arguments":{"change_id":"change"}}}`, tc.token, tc.role == controlplane.CallerUser)
+				require.Equal(t, http.StatusOK, called.StatusCode)
+				var envelope struct {
+					Error  any `json:"error"`
+					Result *struct {
+						StructuredContent json.RawMessage `json:"structuredContent"`
+						IsError           *bool           `json:"isError"`
+					} `json:"result"`
+				}
+				require.NoError(t, json.NewDecoder(called.Body).Decode(&envelope))
+				require.NoError(t, called.Body.Close())
+				require.Nil(t, envelope.Error)
+				require.NotNil(t, envelope.Result)
+				assert.False(t, envelope.Result.IsError != nil && *envelope.Result.IsError)
+				saved, err := gensurla.DecodeChangeCardResult(envelope.Result.StructuredContent)
+				require.NoError(t, err)
+				assert.Equal(t, confirmed.ChangeID, saved.ChangeID)
+				assert.Equal(t, confirmed.RequestRevision, saved.RequestRevision)
 			}
 			if tc.role != controlplane.CallerUser {
 				call := testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/mcp", fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"confirm_intent","arguments":%s}}`, confirmRaw), tc.token, false)
 				var denied map[string]any
 				require.NoError(t, json.NewDecoder(call.Body).Decode(&denied))
-				assert.NotNil(t, denied["error"])
+				assert.Nil(t, denied["error"])
+				result, ok := denied["result"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, true, result["isError"])
+				assert.Contains(t, fmt.Sprint(result["content"]), "may not call confirm_intent")
 				require.NoError(t, call.Body.Close())
 			}
 		})
 	}
 	// Restart discards user sessions while keeping the agent file and role.
 	fresh := NewServer(state, func() {})
+	oldSession := httptest.NewRequest(http.MethodGet, state.Origin()+"/changes/change", nil)
+	oldSession.Header.Set("Authorization", "Bearer "+session.Session)
+	oldSession.Header.Set("Sec-Fetch-Site", "same-origin")
+	recorder := httptest.NewRecorder()
+	fresh.Handler(controlplane.NewHTTPHandler(cp, fresh.Authenticate)).ServeHTTP(recorder, oldSession)
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
+	assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
+	var failure map[string]any
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &failure))
+	assert.NotEmpty(t, failure["name"])
+	assert.NotEmpty(t, failure["message"])
+
 	request := httptest.NewRequest(http.MethodGet, state.Origin()+"/changes/change", nil)
 	request.Header.Set("Authorization", "Bearer "+session.Session)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -223,10 +297,37 @@ func testClient(state *State, client *http.Client, token string, browser bool) *
 }
 func testRequest(t *testing.T, client *http.Client, method, target, body, token string, browser bool) *http.Response {
 	t.Helper()
+	if strings.HasSuffix(target, "/mcp") {
+		var envelope map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal([]byte(body), &envelope))
+		var params map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(envelope["params"], &params))
+		params["_meta"] = json.RawMessage(`{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}`)
+		raw, err := json.Marshal(params)
+		require.NoError(t, err)
+		envelope["params"] = raw
+		raw, err = json.Marshal(envelope)
+		require.NoError(t, err)
+		body = string(raw)
+	}
 	r, err := http.NewRequest(method, target, strings.NewReader(body))
 	require.NoError(t, err)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Accept", "application/json")
+	if strings.HasSuffix(target, "/mcp") {
+		r.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		var call struct {
+			Method string `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(body), &call))
+		r.Header.Set("Mcp-Method", call.Method)
+		if call.Params.Name != "" {
+			r.Header.Set("Mcp-Name", call.Params.Name)
+		}
+	}
 	response, err := (headerDoer{client: client, token: token, browser: browser}).Do(r)
 	require.NoError(t, err)
 	return response
