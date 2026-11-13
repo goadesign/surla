@@ -20149,7 +20149,7 @@ components:
             properties:
                 accepted_at:
                     type: string
-                    description: When the live target accepted that text.
+                    description: When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.
                     example: "2010-02-28T15:11:55Z"
                     format: date-time
                 prompt_id:

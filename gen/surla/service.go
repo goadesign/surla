@@ -1059,7 +1059,9 @@ type LivePromptItem struct {
 	PromptID string
 	// Version of the text in force, as the live target returned it.
 	Version string
-	// When the live target accepted that text.
+	// When the live target first accepted the version in force. A later draft that
+	// the target answers with the same version, such as the same text sent again,
+	// keeps this time.
 	AcceptedAt string
 }
 
@@ -4008,7 +4010,9 @@ type jsonLivePromptItemTransport struct {
 	PromptID *string `json:"prompt_id"`
 	// Version of the text in force, as the live target returned it.
 	Version *string `json:"version"`
-	// When the live target accepted that text.
+	// When the live target first accepted the version in force. A later draft that
+	// the target answers with the same version, such as the same text sent again,
+	// keeps this time.
 	AcceptedAt *string `json:"accepted_at"`
 }
 
@@ -28521,7 +28525,7 @@ func validateLivePromptItemJSONValue(path string, value any, description string)
 		case "accepted_at":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "When the live target accepted that text.",
+				typed[key], "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.",
 			); err != nil {
 				return err
 			}

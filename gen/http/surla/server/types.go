@@ -3388,7 +3388,9 @@ type LivePromptItemResponseBody struct {
 	PromptID string `form:"prompt_id" json:"prompt_id" xml:"prompt_id"`
 	// Version of the text in force, as the live target returned it.
 	Version string `form:"version" json:"version" xml:"version"`
-	// When the live target accepted that text.
+	// When the live target first accepted the version in force. A later draft that
+	// the target answers with the same version, such as the same text sent again,
+	// keeps this time.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 }
 

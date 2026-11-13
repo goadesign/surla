@@ -413,13 +413,18 @@ func (c *ControlPlane) show(lt *liveTarget, phase livePhase) {
 }
 
 // recordDraft keeps, on lt while it is still the bound target, the version
-// now in force for promptID, replacing any earlier entry for that prompt. A
-// draft answered after its target was stopped or replaced is not recorded:
-// its text ended with that target.
+// now in force for promptID, replacing an earlier entry for that prompt only
+// when the version changed: the same version keeps its first acceptance
+// time, so the entry, the page and the change list's version agree. A draft
+// answered after its target was stopped or replaced is not recorded: its
+// text ended with that target.
 func (c *ControlPlane) recordDraft(lt *liveTarget, promptID, version string) {
 	c.bindMu.Lock()
 	defer c.bindMu.Unlock()
 	if c.bound != lt {
+		return
+	}
+	if earlier, ok := lt.drafts[promptID]; ok && earlier.version == version {
 		return
 	}
 	lt.drafts[promptID] = liveDraft{version: version, acceptedAt: time.Now()}

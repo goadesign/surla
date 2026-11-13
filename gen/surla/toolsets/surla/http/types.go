@@ -1378,7 +1378,9 @@ type (
 		PromptID *string `json:"prompt_id"`
 		// Version of the text in force, as the live target returned it.
 		Version *string `json:"version"`
-		// When the live target accepted that text.
+		// When the live target first accepted the version in force. A later draft that
+		// the target answers with the same version, such as the same text sent again,
+		// keeps this time.
 		AcceptedAt *string `json:"accepted_at"`
 	}
 	// LiveTargetNoneTransport is the internal JSON transport type for LiveTargetNoneTransport.

@@ -461,7 +461,7 @@ var LivePromptItem = Type("LivePromptItem", func() {
 	Description("A prompt whose text the live target replaced with an accepted draft, and the version now in force. There is one entry per prompt: a later draft of the same prompt replaces it. The text itself is never returned.")
 	Attribute("prompt_id", String, "Registered prompt identifier.")
 	Attribute("version", String, "Version of the text in force, as the live target returned it.")
-	Attribute("accepted_at", String, "When the live target accepted that text.", func() { Format(FormatDateTime) })
+	Attribute("accepted_at", String, "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.", func() { Format(FormatDateTime) })
 	Required("prompt_id", "version", "accepted_at")
 })
 

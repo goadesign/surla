@@ -644,6 +644,10 @@ func TestDraftWithNoLiveTargetNamesTheStepThatEnablesIt(t *testing.T) {
 	}
 }
 
+// TestLiveTargetVersionsMustNotBeBlank verifies that the generated client
+// refuses a version the target answers that is blank or longer than 256
+// characters, counted in characters, as an unconfirmed draft that leaves no
+// entry, and passes any other opaque version through unchanged.
 func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
@@ -658,6 +662,10 @@ func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 		{name: "ideographic space", version: "\u3000"},
 		{name: "opaque ASCII", version: "v1", valid: true},
 		{name: "opaque Unicode", version: "版本-α\u00a01", valid: true},
+		{name: "a 71-character digest", version: "sha256:" + strings.Repeat("0", 64), valid: true},
+		{name: "256 characters", version: strings.Repeat("v", 256), valid: true},
+		{name: "256 characters of three bytes each", version: strings.Repeat("版", 256), valid: true},
+		{name: "257 characters", version: strings.Repeat("v", 257)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -667,11 +675,13 @@ func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 			require.NoError(t, err)
 			out, err := draft(alice, cp, fakePromptID, "x")
 			if !tc.valid {
-				assert.Equal(t, "update_not_confirmed", goaErrorName(err), "the generated client rejects a blank version")
+				assert.Equal(t, "update_not_confirmed", goaErrorName(err), "the generated client rejects the version")
+				assert.Empty(t, readRunning(t, cp).Prompts, "a refused version leaves no entry")
 				return
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.version, *out.PromptVersion, "an opaque version is passed through unchanged")
+			assert.Equal(t, tc.version, readRunning(t, cp).Prompts[0].Version)
 		})
 	}
 }
@@ -820,6 +830,13 @@ func TestGetLiveTargetFollowsEachTransition(t *testing.T) {
 	assert.Equal(t, fakePromptID, running.Prompts[0].PromptID)
 	assert.Equal(t, textVersion(first), running.Prompts[0].Version)
 	firstAccepted := parseLiveTime(t, running.Prompts[0].AcceptedAt)
+	_, err = draft(alice, cp, fakePromptID, first)
+	require.NoError(t, err)
+	running = readRunning(t, cp)
+	require.Len(t, running.Prompts, 1)
+	assert.Equal(t, textVersion(first), running.Prompts[0].Version)
+	assert.Equal(t, firstAccepted, parseLiveTime(t, running.Prompts[0].AcceptedAt),
+		"the same text sent again keeps its first acceptance time")
 	_, err = draft(alice, cp, fakePromptID, second)
 	require.NoError(t, err)
 	_, err = draft(alice, cp, "homes.helper.unknown", "Hello.")
@@ -1072,4 +1089,17 @@ func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
 	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindNone },
 		30*time.Second, 20*time.Millisecond)
 	assert.NotEqual(t, redrafted, version(), "a target that ended changes the version")
+
+	// A stop and a new start of the same commit, between two reads of the
+	// version, still change it: only the start time tells the targets apart.
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	before := version()
+	_, err = cp.StopLiveTarget(alice)
+	require.NoError(t, err)
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	assert.NotEqual(t, before, version(), "a new target of the same commit changes the version")
+	_, err = cp.StopLiveTarget(alice)
+	require.NoError(t, err)
 }

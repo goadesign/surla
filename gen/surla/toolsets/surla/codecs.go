@@ -5252,7 +5252,7 @@ var getLiveTargetResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("prompts"), tools.DynamicField{}, tools.FixedField("accepted_at")},
 		JSONType:    "string",
-		Description: "When the live target accepted that text.",
+		Description: "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
@@ -20370,7 +20370,7 @@ func validateGetLiveTargetResultLivePromptItemTransportJSONValue(path string, va
 		case "accepted_at":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "When the live target accepted that text.",
+				typed[key], "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.",
 			); err != nil {
 				return err
 			}

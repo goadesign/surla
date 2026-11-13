@@ -1135,7 +1135,9 @@ type (
 		PromptID string
 		// Version of the text in force, as the live target returned it.
 		Version string
-		// When the live target accepted that text.
+		// When the live target first accepted the version in force. A later draft that
+		// the target answers with the same version, such as the same text sent again,
+		// keeps this time.
 		AcceptedAt string
 	}
 	// LiveTargetNone is a nested type used by the generated JSON contract.
