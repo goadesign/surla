@@ -4,11 +4,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,9 +58,20 @@ func fixtureTeamDependencies(state *project.State) project.TeamDependencies {
 }
 
 // bindFixtureTeamEffects explicitly opts a journey into test-owned team effects.
+// When SURLA_TEST_PRESENCE_DIR names a folder, the team step reports there, by
+// names and booleans only, which provider variables the server's process and
+// Herdr's copy of its environment hold (writePresence).
 func bindFixtureTeamEffects(runtime *projectRuntime) {
 	runtime.startTeamPrograms = func(context.Context) error { return nil }
-	runtime.teamDependencies = func(ctx context.Context, _ []string) (project.TeamDependencies, error) {
+	runtime.teamDependencies = func(ctx context.Context, herdrEnv []string) (project.TeamDependencies, error) {
+		if dir := os.Getenv("SURLA_TEST_PRESENCE_DIR"); dir != "" {
+			if err := errors.Join(
+				writePresence(filepath.Join(dir, "server-process"), os.Environ()),
+				writePresence(filepath.Join(dir, "server-herdr"), herdrEnv),
+			); err != nil {
+				return project.TeamDependencies{}, err
+			}
+		}
 		root, err := runtime.configRoot()
 		if err != nil {
 			return project.TeamDependencies{}, err

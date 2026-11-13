@@ -275,6 +275,7 @@ func TestOlderProjectServerNamesRestartStep(t *testing.T) {
 // TestCLIAlreadyOpenAndCredentialNonleak runs the actual CLI with generated management transport and recorded commands.
 func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 	isolateServeWorkspace(t)
+	isolateProviderFamilies(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})

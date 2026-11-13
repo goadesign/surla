@@ -5,8 +5,11 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,6 +100,95 @@ func TestServeEntryRemovesProviderFamiliesAndKeepsHerdrsCopy(t *testing.T) {
 	require.NoError(t, verifyrun.Wait(runs, runID))
 	assert.Equal(t, "ANTHROPIC_API_KEY=handed\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nARGS_HOLD_SENTINEL=no\n",
 		readPresence(t, reports, "supervise"), "a stored evaluator run gets only the handed-over snapshot")
+}
+
+// TestServeProcessKeepsProviderValuesOutOfItsOutputAndFiles runs the real
+// serve entry in its own process with inherited core values, hands settings
+// over through the surla command's client and stops it: the server's
+// process held no inherited value while Herdr's copy kept them all, and
+// neither its standard output and error nor any file in the project's state
+// folder holds a value.
+func TestServeProcessKeepsProviderValuesOutOfItsOutputAndFiles(t *testing.T) {
+	isolateServeWorkspace(t)
+	isolateProviderFamilies(t)
+	reports := t.TempDir()
+	state, err := fixtureProjectState("")
+	require.NoError(t, err)
+	serve := exec.Command(os.Args[0], "serve", "-state", state.Dir)
+	serve.Env = append(os.Environ(), "SURLA_TEST_PRESENCE_DIR="+reports)
+	for name, value := range coreFamily {
+		serve.Env = append(serve.Env, name+"="+value)
+	}
+	var stdout, stderr bytes.Buffer
+	serve.Stdout, serve.Stderr = &stdout, &stderr
+	require.NoError(t, serve.Start())
+	// exited is closed once serve was reaped; waitErr is then its result.
+	exited := make(chan struct{})
+	var waitErr error
+	go func() { waitErr = serve.Wait(); close(exited) }()
+	t.Cleanup(func() {
+		select {
+		case <-exited:
+		default:
+			assert.NoError(t, serve.Process.Kill())
+			<-exited
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	_, err = waitForRunning(ctx, state)
+	require.NoError(t, err)
+	var line bytes.Buffer
+	shell := modelsettings.Select([]string{
+		"ANTHROPIC_API_KEY=sentinel-handed-key", "ANTHROPIC_BASE_URL=https://gateway.invalid/sentinel-url-credential/",
+		"ANTHROPIC_ADMIN_KEY=sentinel-shell-admin",
+	})
+	require.NoError(t, handOverModelSettings(ctx, state, shell, &line))
+	assert.Contains(t, line.String(), "Model settings held by the project server: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL (from this shell)")
+	require.NoError(t, projectClient(state).Stop(ctx))
+	select {
+	case <-exited:
+		require.NoError(t, waitErr, "serve output: %s", stderr.String())
+	case <-ctx.Done():
+		t.Fatal("serve did not stop")
+	}
+
+	assert.Equal(t, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nARGS_HOLD_SENTINEL=no\n",
+		readPresence(t, reports, "server-process"), "serve's process keeps no inherited provider value")
+	assert.Equal(t, "ANTHROPIC_API_KEY=set\nANTHROPIC_AUTH_TOKEN=set\nANTHROPIC_BASE_URL=set\nANTHROPIC_ADMIN_KEY=set\nOPENAI_API_KEY=set\nARGS_HOLD_SENTINEL=no\n",
+		readPresence(t, reports, "server-herdr"), "Herdr's copy keeps the core's values")
+	for _, out := range []string{stdout.String(), stderr.String(), line.String()} {
+		assert.NotContains(t, out, "sentinel")
+	}
+	require.NoError(t, filepath.WalkDir(state.Dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || !entry.Type().IsRegular() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		assert.NotContains(t, string(raw), "sentinel", path)
+		return nil
+	}))
+}
+
+// writePresence writes, to path, whether environ sets each provider variable
+// presenceScript reports, in its format; it reports names and booleans only.
+func writePresence(path string, environ []string) error {
+	var b strings.Builder
+	for _, name := range presenceNames {
+		state := ""
+		for _, kv := range environ {
+			if k, v, _ := strings.Cut(kv, "="); k == name && v != "" {
+				state = "set"
+			}
+		}
+		b.WriteString(name + "=" + state + "\n")
+	}
+	b.WriteString("ARGS_HOLD_SENTINEL=no\n")
+	return os.WriteFile(path, []byte(b.String()), 0o600)
 }
 
 // presenceScript reports, to $SURLA_TEST_PRESENCE_DIR/$0, whether each

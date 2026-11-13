@@ -25,8 +25,10 @@ import (
 	"unicode/utf8"
 
 	genprojectclient "github.com/goadesign/surla/gen/http/project/client"
+	gensurlaclient "github.com/goadesign/surla/gen/http/surla/client"
 	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/project"
 	"go.opentelemetry.io/otel"
 	goahttp "goa.design/goa/v3/http"
@@ -180,6 +182,14 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		err = errors.Join(err, writeProjectCreatedNotice(stdout))
 	}
 	if err != nil {
+		return err
+	}
+
+	// The server answered for this project, so this shell's model provider
+	// settings go to it before anything else; a refusal stops the start.
+	settingsCtx, stopSettings := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopSettings()
+	if err := handOverModelSettings(settingsCtx, state, modelsettings.Select(os.Environ()), stdout); err != nil {
 		return err
 	}
 
@@ -606,17 +616,38 @@ func teamManagementEndpoint(state *project.State) goa.Endpoint {
 }
 
 // managementEndpoint preserves generated transport behavior without printing peer-authored
-// error text. Only declared error names select fixed CLI wording; other replies name status.
-// Response status belongs to this invocation's Doer, including a changed-key retry.
+// error text for one project service operation (see managementCall).
 func managementEndpoint(
 	state *project.State,
 	client *http.Client,
 	endpoint func(*genprojectclient.Client) goa.Endpoint,
 ) goa.Endpoint {
+	return managementCall(state, client, func(doer goahttp.Doer) goa.Endpoint {
+		return endpoint(genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false))
+	})
+}
+
+// modelSettingsEndpoint is the management call of the surla service's
+// hand_over_model_settings, with the same credential, retry and wording as
+// the project service's management calls.
+func modelSettingsEndpoint(state *project.State) goa.Endpoint {
+	return managementCall(state, projectHTTPClient(), func(doer goahttp.Doer) goa.Endpoint {
+		return gensurlaclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false).HandOverModelSettings()
+	})
+}
+
+// managementCall preserves generated transport behavior without printing peer-authored
+// error text. endpoint builds the generated operation on a fresh Doer for each invocation.
+// Only declared error names select fixed CLI wording; other replies name status.
+// Response status belongs to this invocation's Doer, including a changed-key retry.
+func managementCall(
+	state *project.State,
+	client *http.Client,
+	endpoint func(goahttp.Doer) goa.Endpoint,
+) goa.Endpoint {
 	return func(ctx context.Context, payload any) (any, error) {
 		doer := &managementDoer{state: state, client: client}
-		transport := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-		result, err := endpoint(transport)(ctx, payload)
+		result, err := endpoint(doer)(ctx, payload)
 		if err == nil {
 			return result, nil
 		}
@@ -631,8 +662,13 @@ func managementEndpoint(
 		}
 		var responseErr *goahttp.ClientError
 		if errors.As(err, &responseErr) && responseErr.Name == "invalid_response" {
-			if responseErr.Method == "ensure_team" && doer.lastStatus == http.StatusNotFound {
+			newOperation := responseErr.Method == "ensure_team" || responseErr.Method == "hand_over_model_settings"
+			if newOperation && doer.lastStatus == http.StatusNotFound {
 				return nil, errors.New("this project’s server was started by another version; run surla stop, then surla")
+			}
+			if responseErr.Method == "hand_over_model_settings" && doer.lastStatus == http.StatusBadRequest {
+				return nil, fmt.Errorf("the project server refused the model settings from this shell (HTTP %d); "+
+					"each ANTHROPIC_ and OPENAI_ request setting must be at most 4096 characters", doer.lastStatus)
 			}
 			return nil, goahttp.ErrInvalidResponse(responseErr.Service, responseErr.Method, doer.lastStatus, "")
 		}

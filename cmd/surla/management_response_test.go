@@ -24,12 +24,17 @@ import (
 	goahttp "goa.design/goa/v3/http"
 )
 
+// noModelSettings is a project server's hand-over answer when it holds no
+// provider settings and no model is chosen.
+const noModelSettings = `{"held":{},"connection":{"kind":"none"}}`
+
 // TestStartOpensOnlyProjectViewsLinks drives the generated management consumer and
 // actual CLI start boundary while replacing the browser opener with a recording stand-in.
 func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 	for _, scenario := range []string{"valid", "foreign origin", "other scheme", "filesystem path", "wrong page", "short token", "nonhex token", "extra fragment", "query string"} {
 		t.Run(scenario, func(t *testing.T) {
 			isolateServeWorkspace(t)
+			isolateProviderFamilies(t)
 			state, err := fixtureProjectState("")
 			require.NoError(t, err)
 			cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
@@ -64,6 +69,11 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 				}
 				if r.URL.Path == "/project/team" {
 					_, err := io.WriteString(w, `{"team":"fixture-team","space":"fixture-space","roles":[{"role":"guide","handle":"guide-fixture","running":true}],"dialog":"not_needed","step":"Fixture team instructions."}`)
+					assert.NoError(t, err)
+					return
+				}
+				if r.URL.Path == "/cp1/model/settings" {
+					_, err := io.WriteString(w, noModelSettings)
 					assert.NoError(t, err)
 					return
 				}
@@ -336,6 +346,7 @@ func TestStartPrintsProjectTeamStep(t *testing.T) {
 	for _, dialog := range []string{"opened", "already_open", "not_needed"} {
 		t.Run(dialog, func(t *testing.T) {
 			isolateServeWorkspace(t)
+			isolateProviderFamilies(t)
 			state, err := fixtureProjectState("")
 			require.NoError(t, err)
 			cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
@@ -353,6 +364,9 @@ func TestStartPrintsProjectTeamStep(t *testing.T) {
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 						"team": "fixture-team", "space": "fixture-space", "roles": []any{}, "dialog": dialog, "step": step,
 					}))
+				case "/cp1/model/settings":
+					_, err := io.WriteString(w, noModelSettings)
+					assert.NoError(t, err)
 				case "/project/browser-link":
 					w.WriteHeader(http.StatusCreated)
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{

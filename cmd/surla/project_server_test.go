@@ -416,6 +416,7 @@ func TestProjectStartLeavesLiveTerminalUnread(t *testing.T) {
 // TestProjectStartThatAnswersReadsNothing proves a normal start never reads its terminal.
 func TestProjectStartThatAnswersReadsNothing(t *testing.T) {
 	t.Chdir(t.TempDir())
+	isolateProviderFamilies(t)
 	runtime := projectDispatchRuntime(t)
 	runtime.readTerminal = func(context.Context, string) (string, error) {
 		t.Error("an answering server's terminal must not be read")
