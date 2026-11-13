@@ -591,7 +591,7 @@ var _ = Service("orders", func() {
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
 		"check_project", "update_dependencies", "read_check_output",
-		"list_traces", "refresh_story", "get_story_refresh", "list_changes",
+		"list_traces", "refresh_story", "get_story_refresh", "list_changes", "decline_revision",
 		"get_build", "list_builder_assignments", "get_builder_assignment",
 		"list_test_writer_assignments", "get_test_writer_assignment", "report_tests_finished",
 	}, toolNames)
