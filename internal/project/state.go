@@ -98,6 +98,67 @@ func Discover(root, directory string) (*State, error) {
 	return &State{Dir: projectDirectory(root, physical), Record: Record{Directory: physical}}, nil
 }
 
+// Open loads the initialized project whose private state folder dir the
+// `surla` command found with Discover and passed to the project server it
+// launched, so the server serves exactly that state and never derives a
+// folder from its own environment. dir must be the absolute, physical
+// (symlink-free) path of a folder private to this account, hold a valid
+// project record whose project folder exists and is named by its stored
+// physical path, carry the name Discover derives from that folder, and lie
+// outside it; otherwise Open refuses, naming dir and
+// never a credential. A folder without a record was never initialized by `surla`.
+func Open(dir string) (*State, error) {
+	if !filepath.IsAbs(dir) {
+		return nil, fmt.Errorf("project state folder %q is not an absolute path; start the project with surla", dir)
+	}
+	if err := privateDirectory(dir); err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	physical, err := abspath.Eval(dir)
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	if physical != dir {
+		return nil, fmt.Errorf("project state folder %s is not its physical path %s; start the project with surla", dir, physical)
+	}
+	var record Record
+	err = readJSON(filepath.Join(dir, "project.json"), &record)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("project state folder %s holds no project; start the project with surla", dir)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	// The record's project folder is compared with the path the volume stores
+	// for it, resolved here as Discover resolves it and never taken from the
+	// record itself: a record that names its folder by a relative path, through
+	// a link or in another spelling is not one `surla` wrote.
+	if !filepath.IsAbs(record.Directory) {
+		return nil, fmt.Errorf("project state folder %s: invalid project record", dir)
+	}
+	project, err := abspath.Stored(record.Directory)
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: project folder %s: %w", dir, record.Directory, err)
+	}
+	if project != record.Directory {
+		return nil, fmt.Errorf("project state folder %s names its project folder %s, which is not that folder's stored path %s", dir, record.Directory, project)
+	}
+	if err := validateRecord(record, project); err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	if projectDirectory(filepath.Dir(dir), record.Directory) != dir {
+		return nil, fmt.Errorf("project state folder %s does not belong to the project folder %s", dir, record.Directory)
+	}
+	inside, err := abspath.Within(record.Directory, dir)
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	if inside {
+		return nil, fmt.Errorf("project state folder %s must lie outside the project folder %s", dir, record.Directory)
+	}
+	return &State{Dir: dir, Record: record}, nil
+}
+
 // StartLock bounds waiting for a concurrent start and keeps start/attach/stop decisions serialized.
 func (s *State) StartLock(ctx context.Context) (*Lock, error) {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {

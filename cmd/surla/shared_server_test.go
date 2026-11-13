@@ -493,7 +493,8 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	t.Helper()
 	exe, err := os.Executable()
 	require.NoError(t, err)
-	root := filepath.Join(config, "surla", "operator")
+	root, err := testProjectRuntimeAt(config).operatorRoot(workspace)
+	require.NoError(t, err)
 	state, err := project.Discover(root, workspace)
 	require.NoError(t, err)
 	lock, err := state.StartLock(t.Context())
@@ -508,7 +509,7 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	require.NotEmpty(t, team.Roles)
 	raw, err := os.ReadFile(state.AgentFile(team.Roles[0].Handle))
 	require.NoError(t, err)
-	cmd := exec.Command(exe, "serve")
+	cmd := exec.Command(exe, "serve", "-state", state.Dir)
 	cmd.Dir = workspace
 	cmd.Env = append(os.Environ(), "SURLA_TEST_USER_CONFIG_DIR="+config)
 	stderr, err := cmd.StderrPipe()
