@@ -489,6 +489,10 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"sandbox could not start", "Operation not permitted"}, wantStep: stepSandbox},
 		{name: "the history was replaced", tests: &standInCopy{check: failing(fmt.Errorf("measure the copy's changes: %w", testwriter.ErrNoCommonBase))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"share no history"}, wantStep: stepNoCommonBase},
+		{name: "the required tests cannot be written", tests: &standInCopy{prepareErr: fmt.Errorf(
+			"%w: create staging directory: mkdirat /Users/someone/shop/.surla-tests/eval/.surla-gen-abc: permission denied", testwriter.ErrWriteGenerated)},
+			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"could not write the required tests", "permission denied"},
+			wantStep: stepWriteCopy + ", then ask the test writer to report again."},
 		{name: "git fails", tests: &standInCopy{check: failing(errors.New("git write-tree in /private/var/folders/x/check: exit status 128"))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"check could not run", "git write-tree in <absolute path>: exit status 128"}, wantStep: stepFailure},
 		{name: "recording fails", tests: &standInCopy{check: accepting, record: func(context.Context, int) (string, error) {
@@ -530,7 +534,10 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 			assert.Equal(t, tc.wantStep, failed.Step)
 		})
 	}
-	for _, step := range []string{stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit, stepFailure} {
+	for _, step := range []string{
+		stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit, stepFailure,
+		stepWriteCopy + ", then ask the test writer to report again.",
+	} {
 		assert.True(t, boundedText(step, maxCheckStep), "each step fits the contract: %s", step)
 	}
 }

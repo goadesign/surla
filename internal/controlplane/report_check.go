@@ -110,6 +110,12 @@ const (
 	stepFailure = "Make sure the project's git repository works (git status in the project folder) " +
 		"and the disk has free space, then ask the test writer to report again."
 
+	// stepWriteCopy is what the user does when Surla could not write the
+	// required tests into the test writer's working copy. A check and a
+	// build start each end it with their own way to run again.
+	stepWriteCopy = "Make sure the test module in the test writer's working copy " +
+		"(the .surla-tests folder of the project) can be written and the disk has free space"
+
 	// replacedEvent is the span event of a judgment whose report a newer
 	// report or build replaced before its verdict was saved.
 	replacedEvent = "a newer report or build replaced the one checked; nothing saved"
@@ -447,6 +453,9 @@ func (r *reportChecker) couldNotRun(err error, deadline time.Time, failed string
 		reason, step = "Surla's sandbox could not start: "+err.Error(), stepSandbox
 	case errors.Is(err, testwriter.ErrNoCommonBase):
 		reason, step = "Surla cannot tell which files the test writer changed: "+err.Error(), stepNoCommonBase
+	case errors.Is(err, testwriter.ErrWriteGenerated):
+		reason = "Surla could not write the required tests into the test writer's working copy or its snapshot: " + err.Error()
+		step = stepWriteCopy + ", then ask the test writer to report again."
 	default:
 		reason, step = failed+": "+err.Error(), stepFailure
 	}

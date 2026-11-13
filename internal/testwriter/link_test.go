@@ -116,8 +116,8 @@ func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 
 // TestPrepareSeparatesFailuresTheAuthorCannotFix runs Prepare where the
 // failure is not the copy's author's: the caller's context already ended, or
-// the evaluator was closed. Each is a plain error, not an *AuthorError, and
-// the copy's generated folder is not written.
+// the evaluator was closed. Each is an error marked ErrGeneration, not an
+// *AuthorError, and the copy's generated folder is not written.
 func TestPrepareSeparatesFailuresTheAuthorCannotFix(t *testing.T) {
 	t.Parallel()
 	module := testmodule.Module(t, "example.com/shop/eval", "", map[string]string{"design/design.go": fixtureDesign})
@@ -147,6 +147,7 @@ func TestPrepareSeparatesFailuresTheAuthorCannotFix(t *testing.T) {
 			require.Error(t, err)
 			var author *AuthorError
 			assert.False(t, errors.As(err, &author), "not the author's to fix: %v", err)
+			assert.ErrorIs(t, err, ErrGeneration, "the generator failed, not the writing of its result")
 			assert.NoDirExists(t, filepath.Join(wc.Project(), "eval", "gen"))
 		})
 	}

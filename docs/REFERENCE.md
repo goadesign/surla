@@ -199,8 +199,11 @@ if that second check refuses the start, the reusable copy remains, but no new
 build or agent is saved. After saving, Surla immediately registers the roles,
 then writes the required tests. A generation failure caused by the copy becomes
 `needs_changes`, with the finding and the step to correct it and report again.
-An operational failure becomes `could_not_run`. The generation's verdict cannot
-overwrite a report or a newer build saved while generation was running.
+An operational failure becomes `could_not_run`, with a reason that says which
+step failed (the start's limit or a server stop, the generator and its phase,
+or writing the generated folder into the copy) and the user's step. The
+generation's verdict cannot overwrite a report or a newer build saved while
+generation was running.
 
 Accepted preparation continues if the page disconnects. Work on the copy has a
 five-minute limit. Another build or a test check holding the project's turn

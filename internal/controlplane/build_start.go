@@ -158,6 +158,13 @@ func (c *ControlPlane) StartBuild(
 		if err == nil {
 			err = copy.Prepare(work, saved.Stories)
 		}
+		// An author's failure becomes a finding. Any other is a failure of
+		// this start: the saved reason is worded for the page, and the trace
+		// keeps the cause as it was.
+		if author := (*testwriter.AuthorError)(nil); err != nil && !errors.As(err, &author) {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "prepare required tests")
+		}
 		current, saveErr := c.saveBuildPreparation(work, saved, err)
 		if saveErr != nil {
 			span.RecordError(errors.New("saved build preparation could not be recorded"))
@@ -206,14 +213,8 @@ func (c *ControlPlane) saveBuildPreparation(
 			tw.Findings = []string{author.Finding.Message + "\nCorrect the problem in the test module, then report_tests_finished."}
 		} else {
 			tw.State = testsCouldNotRun
-			reason := designeval.GenerationDiagnostic(prepareErr)
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				reason = "The build-start time limit ended before the required tests could be prepared."
-			} else if errors.Is(ctx.Err(), context.Canceled) {
-				reason = "The server stopped before the required tests could be prepared."
-			}
-			tw.Reason = boundedBuildReason(reason)
-			tw.Step = "Build this change again on the views page."
+			reason, step := preparationFailure(ctx, prepareErr)
+			tw.Reason, tw.Step = boundedBuildReason(reason), step
 		}
 		if err := c.cards.saveBuild(current); err != nil {
 			return heldBuild{}, err
@@ -224,6 +225,33 @@ func (c *ControlPlane) saveBuildPreparation(
 		return heldBuild{}, err
 	}
 	return heldBuild{file: current, inForce: buildInForce(current, record), storedEvaluator: c.storedEvaluator()}, nil
+}
+
+// preparationFailure returns the reason and the user's step saved when a
+// build's required tests could not be prepared for a cause the test writer
+// cannot fix. ctx is the start's limit and err what the preparation returned.
+// The reason says which step failed: the limit or a server stop, the
+// generator (worded by designeval.GenerationDiagnostic, which names its
+// phase), or writing the generated folder, whose cause is quoted without
+// absolute paths and whose step names what to repair before building again.
+// Any other failure has no text safe to show: its reason points at the server
+// trace, where StartBuild records the cause.
+func preparationFailure(ctx context.Context, err error) (reason, step string) {
+	const buildAgain = "Build this change again on the views page."
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return "The build-start time limit ended before the required tests could be prepared.", buildAgain
+	case errors.Is(ctx.Err(), context.Canceled):
+		return "The server stopped before the required tests could be prepared.", buildAgain
+	case errors.Is(err, testwriter.ErrGeneration):
+		return designeval.GenerationDiagnostic(err), buildAgain
+	case errors.Is(err, testwriter.ErrWriteGenerated):
+		return "Surla generated the required tests but could not write them into the test writer's working copy: " +
+			testwriter.WithoutAbsolutePaths(err.Error()), stepWriteCopy + ", then build this change again on the views page."
+	default:
+		return "Surla could not prepare the required tests, for a cause outside the test module. " +
+			"The server trace of this build start has the details.", buildAgain
+	}
 }
 
 // buildStartError preserves named library steps and maps only pre-save refusals.

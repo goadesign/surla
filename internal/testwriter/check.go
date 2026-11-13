@@ -190,6 +190,24 @@ const (
 // again.
 var ErrNoCommonBase = errors.New("the tests branch and the project share no history")
 
+// ErrGeneration and ErrWriteGenerated mark the two steps of Prepare and Check
+// that write the required tests, for a failure the copy's author cannot fix.
+// Callers tell them apart with errors.Is to say what failed.
+var (
+	// ErrGeneration marks a failure of the generator itself: while it
+	// prepared or removed its own files, started its sandbox or read its
+	// output, or because ctx ended or the platform has no sandbox. It wraps
+	// the evaluator's error, from which designeval.GenerationDiagnostic
+	// derives the caller-safe text.
+	ErrGeneration = errors.New("generate the required tests")
+	// ErrWriteGenerated marks a failure to replace the test module's
+	// generated folder after generation succeeded, for example because the
+	// disk is full or the module cannot be written. Its text names files
+	// only inside the module, apart from absolute paths that
+	// WithoutAbsolutePaths removes.
+	ErrWriteGenerated = errors.New("write the generated folder")
+)
+
 // absolutePath matches an absolute file path where a word starts: a slash at
 // the start of a line or after a space, a quote, a parenthesis, a bracket, an
 // equals sign or a comma, followed by a name character, up to the next
@@ -262,13 +280,12 @@ func WithoutAbsolutePaths(text string) string {
 // A failure the copy's author can fix is an *AuthorError carrying the finding
 // Check would give, worded relative to the copy; a symbolic link on the way
 // also wraps ErrLinkedFolder. Any other error is a failure the author cannot
-// fix: the context ended, the platform has no sandbox (it wraps
-// candidate.ErrIsolationUnavailable), the generator failed while preparing
-// its own files, or the generated folder could not be written. A generation
-// failure wraps the evaluator's error, from which
-// designeval.GenerationDiagnostic derives the caller-safe text. A staging
-// folder that an interrupted publication left in the module is removed and
-// never a failure (publish).
+// fix. Two are marked so a caller can say what failed: ErrGeneration, when
+// the generator failed (the context ended, the platform has no sandbox, which
+// also wraps candidate.ErrIsolationUnavailable, or it failed while preparing
+// its own files), and ErrWriteGenerated, when the generated folder could not
+// be written. A staging folder that an interrupted publication left in the
+// module is removed and never a failure (publish).
 func (c *Checker) Prepare(
 	ctx context.Context, wc WorkingCopy, s Suite, stories []designeval.StorySummary,
 ) ([]designeval.StoryScenario, error) {
@@ -412,7 +429,7 @@ func (v Verdict) Accepted() bool {
 }
 
 // publish replaces the gen/ folder of the module open at root with files. An
-// error means gen/ was not replaced.
+// error means gen/ was not replaced and wraps ErrWriteGenerated.
 //
 // It first removes the staging folders that publications cut short by a
 // server's death left in the module (genpublish.RemoveLeftoverStages). Surla
@@ -438,7 +455,7 @@ func publish(ctx context.Context, root *os.Root, files map[string][]byte) error 
 	}
 	res, err := genpublish.Publish(ctx, root, files)
 	if err != nil {
-		return fmt.Errorf("write the generated folder: %w", err)
+		return fmt.Errorf("%w: %w", ErrWriteGenerated, err)
 	}
 	if len(res.Warnings) > 0 {
 		span.AddEvent("the generated folder was written with warnings",
@@ -694,8 +711,9 @@ func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
 // copy's root, in Prepare as in Check: the module cannot be opened, including
 // through a symbolic link, or read; its generation failed while working on
 // the module's own files; its design does not declare exactly one evaluation
-// suite; or no program was generated at s.Command. Any other failure is
-// returned as it is.
+// suite; or no program was generated at s.Command. A failure of the generator
+// that is not the author's wraps ErrGeneration, and a failure to write the
+// generated folder ErrWriteGenerated.
 func (c *Checker) generate(
 	ctx context.Context, top, copyDir, modulePath string, s Suite, stories []designeval.StorySummary,
 ) (_ []designeval.StoryScenario, err error) {
@@ -718,7 +736,7 @@ func (c *Checker) generate(
 	gen, err := c.evaluator.GenerateWithStories(ctx, files, stories)
 	if err != nil {
 		if isFailure(ctx, err) || !designeval.FailedOnModule(err) {
-			return nil, fmt.Errorf("generate the required tests: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrGeneration, err)
 		}
 		return nil, author(err, designeval.GenerationDiagnostic(err))
 	}
