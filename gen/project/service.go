@@ -21,14 +21,16 @@ import (
 )
 
 // Owns one local project's server identity, agent credentials, and one-use
-// browser access. Management credentials never authorize application
-// decisions. This service is not exposed as agent tools.
+// browser access. Management credentials last for one listening server and
+// never authorize application decisions. This service is not exposed as agent
+// tools.
 type Service interface {
-	// The CLI proves the answering server belongs to its project using the
-	// management credential.
+	// The CLI checks the answering server reports its expected project identity
+	// using the current server-lifetime management credential.
 	Identity(context.Context) (res *ProjectIdentity, err error)
-	// The CLI requests ordered server shutdown; the server removes its running
-	// record only after its owned work closes.
+	// The CLI requests ordered server shutdown. Before its listener closes, the
+	// server revokes management access and withdraws its running record; an
+	// authorized stop response can finish.
 	Stop(context.Context) (err error)
 	// The CLI creates one persistent agent credential and returns only its private
 	// file path. The credential and role survive server restart.

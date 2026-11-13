@@ -87,16 +87,14 @@ func TestHC(t *testing.T) {
 			return
 		}
 		if current != nil {
-			client, err := projectClient(current)
-			if err == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				stopErr := client.Stop(ctx)
-				cancel()
-				if stopErr != nil {
-					held, probeErr := controlplane.CardStoreInUse(current.CardsDir())
-					if probeErr == nil && held {
-						t.Log("server stop needed terminal cleanup")
-					}
+			client := projectClient(current)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			stopErr := client.Stop(ctx)
+			cancel()
+			if stopErr != nil {
+				held, probeErr := controlplane.CardStoreInUse(current.CardsDir())
+				if probeErr == nil && held {
+					t.Log("server stop needed terminal cleanup")
 				}
 			}
 		}
@@ -158,8 +156,7 @@ func TestHC(t *testing.T) {
 	callerTerminal = ""
 	state, err := discoverProject()
 	require.NoError(t, err)
-	client, err := projectClient(state)
-	require.NoError(t, err)
+	client := projectClient(state)
 	launch := func(ctx context.Context, state *project.State) (string, error) {
 		return startProjectTerminal(ctx, state)
 	}
@@ -179,8 +176,7 @@ func TestHC(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(metadata, &terminal))
 	assert.Nil(t, terminal.Parent)
-	management, err := state.ManagementCredential()
-	require.NoError(t, err)
+	management := running.ManagementCredential
 	assert.False(t, strings.Contains(string(metadata), management), "management credential must not appear in terminal metadata")
 	actor, err := client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
 	require.NoError(t, err)

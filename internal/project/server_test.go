@@ -47,15 +47,18 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cp.Close()) })
-	server := NewServer(state, func() {})
+	server, err := NewServer(state, func() {})
+	require.NoError(t, err)
 	api := httptest.NewUnstartedServer(server.Handler(controlplane.NewHTTPHandler(cp, server.Authenticate)))
 	require.NoError(t, api.Listener.Close())
 	api.Listener, err = net.Listen("tcp", state.Address())
 	require.NoError(t, err)
 	api.Start()
 	t.Cleanup(api.Close)
-	management, err := state.ManagementCredential()
+	require.NoError(t, server.PublishRunning(os.Getpid(), "test"))
+	running, err := state.ReadRunning()
 	require.NoError(t, err)
+	management := running.ManagementCredential
 	client := testClient(state, api.Client(), management, false)
 	identity, err := client.Identity(t.Context())
 	require.NoError(t, err)
@@ -64,7 +67,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	require.NoError(t, err)
 	guideRaw, err := os.ReadFile(guide.CredentialFile)
 	require.NoError(t, err)
-	assert.NotEqual(t, state.ManagementFile(), guide.CredentialFile)
+	assert.Equal(t, state.AgentFile("guide"), guide.CredentialFile)
 	actorTokens := map[controlplane.CallerKind]string{controlplane.CallerGuide: string(guideRaw)}
 	for _, role := range []string{"builder", "test_writer"} {
 		actor, err := client.AddAgent(t.Context(), &genproject.AddAgentPayload{ActorID: role, Role: role})
@@ -295,7 +298,8 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 		})
 	}
 	// Restart discards user sessions while keeping the agent file and role.
-	fresh := NewServer(state, func() {})
+	fresh, err := NewServer(state, func() {})
+	require.NoError(t, err)
 	oldSession := httptest.NewRequest(http.MethodGet, state.Origin()+"/changes/change", nil)
 	oldSession.Header.Set("Authorization", "Bearer "+session.Session)
 	oldSession.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -326,7 +330,8 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 // TestBrowserLinkExpiryAndDiscovery proves path aliases and nearest parent project records select one identity.
 func TestBrowserLinkExpiryAndDiscovery(t *testing.T) {
 	state := testState(t)
-	server := NewServer(state, func() {})
+	server, err := NewServer(state, func() {})
+	require.NoError(t, err)
 	management := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
 	now := time.Now()
 	server.now = func() time.Time { return now }

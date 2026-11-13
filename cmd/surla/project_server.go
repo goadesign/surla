@@ -10,13 +10,13 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,6 +38,15 @@ type projectRuntime struct {
 	openViews      func(context.Context, string) error
 	waitTerminal   func(context.Context, string) (bool, error)
 	removeTerminal func(context.Context, string) error
+}
+
+// ownedProjectListener ends management authority before every underlying listener close,
+// including the close deferred inside http.Server.Serve on an accept failure.
+type ownedProjectListener struct {
+	net.Listener
+	management *project.Server
+	once       sync.Once
+	err        error
 }
 
 // productionProjectRuntime is selected only by the executable's composition root.
@@ -145,6 +154,9 @@ func attachOrStartProject(
 	}
 	terminal := ""
 	if !inUse {
+		if err := state.RemoveRunning(); err != nil {
+			return nil, created, err
+		}
 		listener, err := net.Listen("tcp", state.Address())
 		if err != nil {
 			return nil, created, fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
@@ -156,11 +168,8 @@ func attachOrStartProject(
 			return nil, created, err
 		}
 	}
-	client, err = projectClient(state)
-	if err != nil {
-		return nil, created, err
-	}
-	if err := waitForProject(ctx, state, client); err != nil {
+	client = projectClient(state)
+	if err := confirmProject(ctx, state, client); err != nil {
 		if inUse {
 			return nil, created, fmt.Errorf("the project server is running but not answering; no second server was started: %w", err)
 		}
@@ -200,10 +209,7 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 		_, err := fmt.Fprintln(stdout, "Surla is stopped.")
 		return err
 	}
-	client, err := projectClient(state)
-	if err != nil {
-		return err
-	}
+	client := projectClient(state)
 	if err := confirmProject(ctx, state, client); err != nil {
 		return fmt.Errorf("project server is running but not answering: %w", err)
 	}
@@ -253,12 +259,11 @@ func (runtime projectRuntime) serve() (err error) {
 		return err
 	}
 	opts.TracerProvider = provider
-	opts.BeforeStoreRelease = state.RemoveRunning
 	cp, err := controlplane.New(opts)
 	if err != nil {
 		return err
 	}
-	// Close removes the running record before releasing the store writer lock.
+	// Close drains owned work before releasing the store writer lock.
 	defer func() { err = errors.Join(err, cp.Close()) }()
 
 	listener, err := net.Listen("tcp", state.Address())
@@ -267,32 +272,54 @@ func (runtime projectRuntime) serve() (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	management := project.NewServer(state, stop)
+	management, err := project.NewServer(state, stop)
+	if err != nil {
+		return errors.Join(err, listener.Close())
+	}
 	application := http.NewServeMux()
 	application.Handle("GET /views", controlplane.ViewsPage())
 	application.Handle("/", controlplane.NewHTTPHandler(cp, management.Authenticate))
 	server := &http.Server{Handler: management.Handler(application), ReadHeaderTimeout: 10 * time.Second}
-	if err := state.SaveRunning(project.Running{PID: os.Getpid(), Terminal: os.Getenv("HC_TERMINAL_ID")}); err != nil {
-		return errors.Join(err, listener.Close())
-	}
 	starterProject := state.Record.Directory
 	if opts.ResolveVerification == nil {
 		starterProject = ""
 	}
 	writeServeStatus(os.Stderr, listener.Addr().(*net.TCPAddr), opts, starterProject)
+	return serveProjectHTTP(ctx, server, &ownedProjectListener{Listener: listener, management: management})
+}
+
+func (l *ownedProjectListener) Close() error {
+	l.once.Do(func() {
+		revokeErr := l.management.RevokeManagement()
+		l.err = errors.Join(revokeErr, l.Listener.Close())
+	})
+	return l.err
+}
+
+// serveProjectHTTP publishes management access only for an owned listener and drains
+// accepted requests during ordered shutdown so the authorized Stop response can finish.
+func serveProjectHTTP(
+	ctx context.Context,
+	server *http.Server,
+	listener *ownedProjectListener,
+) (err error) {
+	defer func() { err = errors.Join(err, listener.Close()) }()
+	if err := listener.management.PublishRunning(os.Getpid(), os.Getenv("HC_TERMINAL_ID")); err != nil {
+		return err
+	}
 	result := make(chan error, 1)
 	go func() { result <- server.Serve(listener) }()
+	var serveErr error
 	select {
 	case err := <-result:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+		if !errors.Is(err, http.ErrServerClosed) {
+			serveErr = err
 		}
-		return err
 	case <-ctx.Done():
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+	return errors.Join(serveErr, server.Shutdown(shutdownCtx))
 }
 
 // parseProjectArgs accepts no caller-selected server options; serve is an internal entrypoint.
@@ -320,29 +347,88 @@ func (runtime projectRuntime) discover() (*project.State, error) {
 	return project.Discover(root, cwd)
 }
 
-// projectClient uses the generated management contract, injecting its credential only into request headers.
-func projectClient(state *project.State) (*genproject.Client, error) {
-	token, err := state.ManagementCredential()
-	if err != nil {
-		return nil, err
-	}
-	doer := &managementDoer{token: token, client: &http.Client{Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-	transport := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	return genproject.NewClient(transport.Identity(), transport.Stop(), transport.AddAgent(), transport.RemoveAgent(), transport.BrowserLink(), transport.ExchangeBrowserLink()), nil
+// projectClient uses the literal project address with a private, proxy-free transport.
+// Each generated management request obtains the currently published credential.
+func projectClient(state *project.State) *genproject.Client {
+	doer := &managementDoer{state: state, client: projectHTTPClient()}
+	httpClient := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	return genproject.NewClient(httpClient.Identity(), httpClient.Stop(), httpClient.AddAgent(), httpClient.RemoveAgent(), httpClient.BrowserLink(), httpClient.ExchangeBrowserLink())
 }
 
-// managementDoer keeps the CLI credential out of URLs, arguments, labels, and output.
+// projectHTTPClient keeps management requests off proxies and refuses redirects,
+// including any proxy defaults inherited from the process environment.
+func projectHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DisableKeepAlives = true
+	transport.ForceAttemptHTTP2 = false
+	transport.Protocols = new(http.Protocols)
+	transport.Protocols.SetHTTP1(true)
+	return &http.Client{
+		Transport:     transport,
+		Timeout:       time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
+// managementDoer reads current authority per request and allows only one retry after
+// an explicit refusal and a changed credential. It never retries an unchanged credential.
 type managementDoer struct {
-	token  string
+	state  *project.State
 	client *http.Client
 }
 
 func (d *managementDoer) Do(r *http.Request) (*http.Response, error) {
-	r.Header.Set("Authorization", "Bearer "+d.token)
-	return d.client.Do(r)
+	running, err := waitForRunning(r.Context(), d.state)
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("Authorization", "Bearer "+running.ManagementCredential)
+	response, err := d.client.Do(r)
+	if err != nil || response.StatusCode != http.StatusUnauthorized {
+		return response, err
+	}
+	current, readErr := d.state.ReadRunning()
+	if readErr != nil || current.ManagementCredential == running.ManagementCredential {
+		return nil, errors.Join(errors.New("project management access was refused; run surla again"), readErr, response.Body.Close())
+	}
+	if err := response.Body.Close(); err != nil {
+		return nil, err
+	}
+	retry := r.Clone(r.Context())
+	if r.Body != nil && r.Body != http.NoBody {
+		if r.GetBody == nil {
+			return nil, errors.New("cannot retry management request body")
+		}
+		retry.Body, err = r.GetBody()
+		if err != nil {
+			return nil, err
+		}
+	}
+	retry.Header.Set("Authorization", "Bearer "+current.ManagementCredential)
+	return d.client.Do(retry)
 }
 
-// errWrongProject stops readiness polling before a mismatched service receives another credential.
+// waitForRunning waits without network traffic while startup has not published access.
+// Corrupt records fail immediately; absence ends at the caller's existing deadline.
+func waitForRunning(ctx context.Context, state *project.State) (project.Running, error) {
+	for {
+		running, err := state.ReadRunning()
+		if err == nil {
+			return running, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return project.Running{}, err
+		}
+		select {
+		case <-ctx.Done():
+			return project.Running{}, fmt.Errorf("project server has not published management access; run surla again: %w", ctx.Err())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// errWrongProject ends attachment before any further management operation is sent.
 var errWrongProject = errors.New("the saved port answered for another project")
 
 // confirmProject verifies the typed identity before trusting a saved port's answering process.
@@ -355,26 +441,6 @@ func confirmProject(ctx context.Context, state *project.State, client *genprojec
 		return errWrongProject
 	}
 	return nil
-}
-
-// waitForProject retries connection failures until readiness or deadline.
-// Any received HTTP response other than this project's identity ends polling.
-func waitForProject(ctx context.Context, state *project.State, client *genproject.Client) error {
-	for {
-		if err := confirmProject(ctx, state, client); err == nil {
-			return nil
-		} else {
-			var clientError *goahttp.ClientError
-			if !errors.As(err, &clientError) || clientError.Name != "request_error" || !isConnectionFailure(clientError.Err) {
-				return err
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 }
 
 // startProjectTerminal delegates process lifetime to a parentless Herdr terminal; Surla never detaches a process itself.
@@ -498,15 +564,4 @@ func removeProjectTerminal(ctx context.Context, terminal string) error {
 		return fmt.Errorf("remove failed Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-// isConnectionFailure identifies transport failures before a usable HTTP response.
-// Decoder errors and HTTP status responses are terminal ownership failures.
-func isConnectionFailure(err error) bool {
-	var addressError *url.Error
-	if errors.As(err, &addressError) {
-		err = addressError.Err
-	}
-	var networkError net.Error
-	return errors.As(err, &networkError) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }

@@ -470,11 +470,11 @@ func ParseEndpoint(
 
 // projectUsage displays the usage of the project command and its subcommands.
 func projectUsage() {
-	fmt.Fprintln(os.Stderr, `Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials never authorize application decisions. This service is not exposed as agent tools.`)
+	fmt.Fprintln(os.Stderr, `Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.`)
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] project COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
-	fmt.Fprintln(os.Stderr, `    identity: The CLI proves the answering server belongs to its project using the management credential.`)
-	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.`)
+	fmt.Fprintln(os.Stderr, `    identity: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
+	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.`)
 	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
 	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
 	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
@@ -490,7 +490,7 @@ func projectIdentityUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI proves the answering server belongs to its project using the management credential.`)
+	fmt.Fprintln(os.Stderr, `The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
 
 	// Flags list
 
@@ -506,7 +506,7 @@ func projectStopUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.`)
+	fmt.Fprintln(os.Stderr, `The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.`)
 
 	// Flags list
 
