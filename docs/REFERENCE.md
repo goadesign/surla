@@ -249,7 +249,8 @@ judgment makes the server discard that judgment's verdict and judge the newer
 report next. A report waits while the checker commits accepted tests, so it
 keeps its number. Builds found reported when the checker starts are judged
 then, and a build whose verdict could not be saved is judged again a minute
-later. Findings and reasons contain no absolute path. A saved build has report
+later, up to three times in a row; after that it stays `reported` until the
+next report or the next server start. Findings and reasons contain no absolute path. A saved build has report
 number 0 while its tests are assigned and at least 1 while they are reported.
 The report checker runs for as long as the project server does; stopping the
 server ends a judgment in progress without saving it, and the next server

@@ -43,6 +43,10 @@ type (
 		// retry is how long after a failed last step the checker wakes to
 		// judge again; retryAfterFailure outside tests.
 		retry time.Duration
+		// failures counts, per report, the last steps that failed in a row,
+		// which bounds the checker's own retries (maxRetriesAfterFailure).
+		// Only the checker's goroutine reads and writes it.
+		failures map[reportIdentity]int
 		// now gives each verdict its time.
 		now func() time.Time
 	}
@@ -84,6 +88,13 @@ const (
 	// lets a passing cause, such as a full disk freed by the user, clear
 	// without judging in a tight loop.
 	retryAfterFailure = time.Minute
+	// maxRetriesAfterFailure bounds those retries for one report: after the
+	// third failure in a row the checker stops waking itself for it, and the
+	// build waits, still reported, for the next report or the next server
+	// start, both of which judge every reported build. A judgment takes
+	// minutes, so three cover a passing cause without repeating a lasting
+	// one forever.
+	maxRetriesAfterFailure = 3
 
 	// stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit and stepFailure
 	// are the user's steps of a check that could not run, one per cause; each
@@ -127,7 +138,9 @@ func (c *ControlPlane) startReportChecker() {
 // newReportChecker returns the report checker of cp, judging within
 // checkLimit and judging again retryAfterFailure after a failed last step.
 func newReportChecker(cp *ControlPlane) *reportChecker {
-	return &reportChecker{cp: cp, limit: checkLimit, retry: retryAfterFailure, now: time.Now}
+	return &reportChecker{
+		cp: cp, limit: checkLimit, retry: retryAfterFailure, failures: map[reportIdentity]int{}, now: time.Now,
+	}
 }
 
 // run judges reported builds until ctx ends: first every build found reported
@@ -195,8 +208,9 @@ func (r *reportChecker) reported(ctx context.Context) []string {
 // accepted tests and saves the verdict, marking the test writer's assignment
 // unread, and the builder's too for an acceptance. When ctx ends first,
 // or a newer report or build replaced the one checked, nothing is recorded
-// or saved. When the last step fails, the checker judges again after
-// r.retry (wakeLater).
+// or saved. When the last step fails, the failure is an error on the
+// judgment's span and the checker judges again after r.retry, at most
+// maxRetriesAfterFailure times in a row (retryLater).
 func (r *reportChecker) judge(ctx context.Context, changeID string) {
 	// Phase 1: take the turn. A free turn and an ended ctx may both be ready.
 	select {
@@ -246,7 +260,7 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 		current, err := r.answersTo(id)
 		if err != nil {
 			recordJudgeFailure(span, err, "confirm build")
-			r.wakeLater()
+			r.retryLater(span, id)
 			return
 		}
 		if !current {
@@ -268,9 +282,10 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 	saved, current, err := r.saveVerdict(id, verdict)
 	if err != nil {
 		recordJudgeFailure(span, err, "save verdict")
-		r.wakeLater()
+		r.retryLater(span, id)
 		return
 	}
+	delete(r.failures, id)
 	if !current {
 		span.AddEvent(replacedEvent)
 		return
@@ -352,10 +367,18 @@ func (r *reportChecker) saveVerdict(id reportIdentity, verdict testWriterAssignm
 	return saved, true, nil
 }
 
-// wakeLater wakes the checker after r.retry, as a report would, so a build
-// whose judgment was lost is judged again. A wake already waiting stands for
-// it, and one sent after the checker stopped is never read.
-func (r *reportChecker) wakeLater() {
+// retryLater wakes the checker after r.retry, as a report would, so the build
+// whose judgment of id was lost is judged again, unless id's last step has
+// already failed more than maxRetriesAfterFailure times in a row: then it
+// records on span that the build waits for the next report or server start.
+// A wake already waiting stands for it, and one sent after the checker
+// stopped is never read.
+func (r *reportChecker) retryLater(span trace.Span, id reportIdentity) {
+	r.failures[id]++
+	if r.failures[id] > maxRetriesAfterFailure {
+		span.AddEvent("the last step failed too often in a row; the build waits for the next report or server start")
+		return
+	}
 	time.AfterFunc(r.retry, func() {
 		select {
 		case r.cp.reportWake <- struct{}{}:

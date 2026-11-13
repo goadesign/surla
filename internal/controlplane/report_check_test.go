@@ -98,6 +98,13 @@ func (s *standInCopy) Record(ctx context.Context, _ testwriter.Verdict, message 
 	return s.record(ctx, call)
 }
 
+// checked returns the number of Check calls so far.
+func (s *standInCopy) checked() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checks
+}
+
 // recorded returns Record's commit messages so far.
 func (s *standInCopy) recorded() []string {
 	s.mu.Lock()
@@ -267,6 +274,49 @@ func TestAVerdictThatCannotBeSavedIsJudgedAgain(t *testing.T) {
 	release <- struct{}{}
 	build := waitForTests(t, cp, gensurla.TestsKindAccepted)
 	assert.Equal(t, 1, build.TestWriter.Report, "no other report was needed")
+}
+
+// TestRetriesAfterAFailedSaveAreBounded makes every save of a verdict fail.
+// The checker judges the report and then again by itself, each failure an
+// error on the judgment's span, but only maxRetriesAfterFailure times: after
+// that it stays idle, the build still reported, however long the test waits.
+// Once saving works again, the next report is judged and its verdict saved.
+func TestRetriesAfterAFailedSaveAreBounded(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	// The first check waits until saving is broken, after the report saved.
+	broken := make(chan struct{})
+	tests := &standInCopy{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+		if call == 1 {
+			<-broken
+		}
+		return testwriter.Verdict{}, nil
+	}}
+	cp, revision := newReportFixture(t, Options{TracerProvider: provider}, tests)
+	cp.reports.retry = 50 * time.Millisecond
+	reportTests(t, cp, revision)
+	staging := filepath.Join(cp.cards.dir, buildStagingFile)
+	require.NoError(t, os.Mkdir(staging, 0o700))
+	close(broken)
+
+	judgments := 1 + maxRetriesAfterFailure
+	require.Eventually(t, func() bool { return tests.checked() == judgments }, 10*time.Second, 10*time.Millisecond)
+	time.Sleep(10 * cp.reports.retry)
+	assert.Equal(t, judgments, tests.checked(), "no judgment after the last retry")
+	assert.Equal(t, gensurla.TestsKindReported, mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg").TestWriter.Tests.Kind())
+	var failed int
+	for _, span := range exporter.GetSpans() {
+		if span.Name == "surla.controlplane.check_reported_tests" && span.Status.Code == codes.Error {
+			failed++
+		}
+	}
+	assert.Equal(t, judgments, failed, "each failed save is an error on its judgment's span")
+
+	require.NoError(t, os.Remove(staging))
+	second := reportTests(t, cp, revision)
+	build := waitForTests(t, cp, gensurla.TestsKindAccepted)
+	assert.Equal(t, second.Progress.Report, build.TestWriter.Report)
 }
 
 // TestABuildStartIsRefusedDuringACheck holds a check open: starting the
