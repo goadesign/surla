@@ -161,3 +161,73 @@ func TestNewProjectAvoidsPortsOtherProjectsSaved(t *testing.T) {
 	assert.Equal(t, other, second.Record.Port, "the port the first project saved is not taken again")
 	assert.Equal(t, 2, calls)
 }
+
+// TestBrokenStateNamesPathAndStep reports a state folder or record that discovery or the
+// start lock cannot use with its path and a step the user can take. Discovery walks up
+// through parent folders, so the path also says which project's state is broken.
+func TestBrokenStateNamesPathAndStep(t *testing.T) {
+	record := func(state *State) string { return filepath.Join(state.Dir, "project.json") }
+	for _, tc := range []struct {
+		name   string
+		damage func(*State)
+		want   func(*State) []string
+	}{
+		{
+			name:   "record others can read",
+			damage: func(state *State) { require.NoError(t, os.Chmod(record(state), 0o644)) },
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, "chmod 600 " + record(state)}
+			},
+		},
+		{
+			name:   "record that is not JSON",
+			damage: func(state *State) { require.NoError(t, os.WriteFile(record(state), []byte("{"), 0o600)) },
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup", "move the folder " + state.Dir}
+			},
+		},
+		{
+			name: "record with trailing data",
+			damage: func(state *State) {
+				raw, err := os.ReadFile(record(state))
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(record(state), append(raw, []byte("{}")...), 0o600))
+			},
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup"}
+			},
+		},
+		{
+			name: "invalid record",
+			damage: func(state *State) {
+				require.NoError(t, os.WriteFile(record(state), []byte(`{"id":"short","directory":"/","owner":"","port":0,"agents":{}}`), 0o600))
+			},
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup"}
+			},
+		},
+		{
+			name:   "folder others can open",
+			damage: func(state *State) { require.NoError(t, os.Chmod(state.Dir, 0o755)) },
+			want:   func(state *State) []string { return []string{"chmod 700 " + state.Dir} },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := physicalTempDir(t)
+			project := physicalTempDir(t)
+			state := initializedState(t, root, project)
+			tc.damage(state)
+			// Discovery from a folder inside the project reads the same record.
+			inside := filepath.Join(project, "inside")
+			require.NoError(t, os.Mkdir(inside, 0o755))
+			found, err := Discover(root, inside)
+			if err == nil {
+				_, err = found.StartLock(context.Background())
+			}
+			require.Error(t, err)
+			for _, want := range tc.want(state) {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+}
