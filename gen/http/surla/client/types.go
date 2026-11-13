@@ -693,6 +693,12 @@ type ListChangesResponseBody struct {
 	// Opaque value identifying this exact list; it changes whenever any listed
 	// value changes.
 	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
+	// Whether approve_merge can record approvals on this server. It is false when
+	// no promotion target is configured, or when the server could not resolve its
+	// promotion target; approve_merge then refuses every approval. To configure
+	// one, store the project's promotion settings with surla promotion set, then
+	// restart Surla.
+	ApprovalAvailable *bool `form:"approval_available,omitempty" json:"approval_available,omitempty" xml:"approval_available,omitempty"`
 }
 
 // WaitForChangesResponseBody is the type of the "surla" service
@@ -4792,7 +4798,8 @@ func NewGetStoryRefreshForbidden(body *GetStoryRefreshForbiddenResponseBody) *go
 // result from a HTTP "OK" response.
 func NewListChangesChangeListOK(body *ListChangesResponseBody) *surla.ChangeList {
 	v := &surla.ChangeList{
-		Version: *body.Version,
+		Version:           *body.Version,
+		ApprovalAvailable: *body.ApprovalAvailable,
 	}
 	v.Changes = make([]*surla.ChangeListItem, len(body.Changes))
 	for i, val := range body.Changes {
@@ -5641,6 +5648,9 @@ func ValidateListChangesResponseBody(body *ListChangesResponseBody) (err error) 
 	}
 	if body.Version == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	if body.ApprovalAvailable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval_available", "body"))
 	}
 	for _, e := range body.Changes {
 		if e != nil {

@@ -54,7 +54,7 @@ paths:
             tags:
                 - surla
             summary: list_changes surla
-            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
             operationId: surla#list_changes
             responses:
                 "200":
@@ -64,6 +64,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ChangeList'
                             example:
+                                approval_available: true
                                 changes:
                                     - change_id: Consequatur nemo.
                                       latest_verification:
@@ -10148,6 +10149,10 @@ components:
         ChangeList:
             type: object
             properties:
+                approval_available:
+                    type: boolean
+                    description: Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.
+                    example: true
                 changes:
                     type: array
                     items:
@@ -10176,6 +10181,7 @@ components:
                     example: Voluptas voluptates.
             description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
             example:
+                approval_available: true
                 changes:
                     - change_id: Consequatur nemo.
                       latest_verification:
@@ -10197,6 +10203,7 @@ components:
             required:
                 - changes
                 - version
+                - approval_available
         ChangeListItem:
             type: object
             properties:

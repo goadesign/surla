@@ -421,8 +421,10 @@ export function bootstrapViewsPage() {
   const listRequestErrors = new Map<string, string>();
   const cardLoadErrors = new Map<string, string>();
   const approveErrors = new Map<string, string>();
-  // approvalUnavailable is the server's reason this project cannot record
-  // approvals, learned from its answer to an approval request.
+  // approvalUnavailable is the server's reason it cannot record approvals,
+  // learned from its answer to an approval request. The change list says
+  // the same before any request; this answer covers a page that has not
+  // read the list, or a server whose answer changed since.
   let approvalUnavailable: string | null = null;
   // lastOpenAttempt is the change the user last asked to open, whose read
   // failure the change list shows.
@@ -1411,7 +1413,11 @@ export function bootstrapViewsPage() {
                     : null
                 }
                 busy={editorBusy}
-                unavailable={approvalUnavailable}
+                available={
+                  approvalUnavailable === null &&
+                  (changeList === null || changeList.approval_available)
+                }
+                unavailableReason={approvalUnavailable}
                 error={approveErrors.get(displayedRun.run_id) ?? null}
                 onApprove={() => handleApprove(displayedRun)}
               />
@@ -1872,7 +1878,7 @@ export function bootstrapViewsPage() {
       (message, failure) => {
         if (failure.status === 501) {
           approvalUnavailable = message;
-          statusEl.textContent = "Approval is unavailable for this project.";
+          statusEl.textContent = "Approval is unavailable on this server.";
           syncAllRegions();
           focusResult("#surla-cp5-unavailable");
           return;

@@ -38,7 +38,8 @@ var ChangeList = Type("ChangeList", func() {
 	Description("The project's saved Change Cards, most recently saved first (tie-broken by change_id).")
 	Attribute("changes", ArrayOf(ChangeListItem), "Saved Change Cards, most recently saved first.")
 	Attribute("version", String, "Opaque value identifying this exact list; it changes whenever any listed value changes.")
-	Required("changes", "version")
+	Attribute("approval_available", Boolean, "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.")
+	Required("changes", "version", "approval_available")
 })
 
 // ChangeListVersion names the change list current when a wait ends.
@@ -52,7 +53,7 @@ var ChangeListVersion = Type("ChangeListVersion", func() {
 // waiting read. The waiting read is HTTP-only: only the views page uses it.
 func changeListMethods() {
 	Method("list_changes", func() {
-		Description("List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.")
+		Description("List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.")
 		Result(ChangeList)
 		Tool("list_changes", "List this project's Change Cards, most recently saved first, with each card's summary, status, current request_revision, latest verification run state and last save time. Read one card with get_change(change_id).")
 		HTTP(func() {

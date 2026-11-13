@@ -198,9 +198,9 @@ type Service interface {
 	GetStoryRefresh(context.Context) (res *StoryRefreshResult, err error)
 	// List the owner's saved Change Cards for this project, most recently saved
 	// first, with each card's summary, status, current request_revision, the state
-	// of its most recently accepted verification run, and when it was last saved.
-	// The views page opens on this list; agents use it to find a change_id.
-	// Reading changes nothing.
+	// of its most recently accepted verification run, and when it was last saved,
+	// and say whether this server can record approvals. The views page opens on
+	// this list; agents use it to find a change_id. Reading changes nothing.
 	ListChanges(context.Context) (res *ChangeList, err error)
 	// Return the current change list's version as soon as it differs from since,
 	// the version of the list the caller last read, or after a bounded wait of a
@@ -541,6 +541,12 @@ type ChangeList struct {
 	// Opaque value identifying this exact list; it changes whenever any listed
 	// value changes.
 	Version string
+	// Whether approve_merge can record approvals on this server. It is false when
+	// no promotion target is configured, or when the server could not resolve its
+	// promotion target; approve_merge then refuses every approval. To configure
+	// one, store the project's promotion settings with surla promotion set, then
+	// restart Surla.
+	ApprovalAvailable bool
 }
 
 // One saved Change Card of the project as list_changes reports it.
@@ -2248,6 +2254,12 @@ type jsonChangeListTransport struct {
 	// Opaque value identifying this exact list; it changes whenever any listed
 	// value changes.
 	Version *string `json:"version"`
+	// Whether approve_merge can record approvals on this server. It is false when
+	// no promotion target is configured, or when the server could not resolve its
+	// promotion target; approve_merge then refuses every approval. To configure
+	// one, store the project's promotion settings with surla promotion set, then
+	// restart Surla.
+	ApprovalAvailable *bool `json:"approval_available"`
 }
 
 // validatejsonChangeListTransport checks decoded JSON before it becomes a service value.
@@ -2260,6 +2272,9 @@ func validatejsonChangeListTransport(value *jsonChangeListTransport) (err error)
 	}
 	if value.Version == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	if value.ApprovalAvailable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval_available", "body"))
 	}
 	for _, e := range value.Changes {
 		if e != nil {
@@ -6712,7 +6727,8 @@ func EncodeChangeList(in *ChangeList) ([]byte, error) {
 	var body *jsonChangeListTransport
 	{
 		body = &jsonChangeListTransport{
-			Version: &in.Version,
+			Version:           &in.Version,
+			ApprovalAvailable: &in.ApprovalAvailable,
 		}
 		body.Changes = make([]*jsonChangeListItemTransport, len(in.Changes))
 		for i, val := range in.Changes {
@@ -6751,7 +6767,8 @@ func ValidateChangeListValue(in *ChangeList) error {
 	var body *jsonChangeListTransport
 	{
 		body = &jsonChangeListTransport{
-			Version: &in.Version,
+			Version:           &in.Version,
+			ApprovalAvailable: &in.ApprovalAvailable,
 		}
 		body.Changes = make([]*jsonChangeListItemTransport, len(in.Changes))
 		for i, val := range in.Changes {
@@ -6794,7 +6811,8 @@ func DecodeChangeList(data []byte) (out *ChangeList, err error) {
 	}
 	{
 		out = &ChangeList{
-			Version: *body.Version,
+			Version:           *body.Version,
+			ApprovalAvailable: *body.ApprovalAvailable,
 		}
 		out.Changes = make([]*ChangeListItem, len(body.Changes))
 		for i, val := range body.Changes {
@@ -15611,6 +15629,13 @@ func validateChangeListJSONValue(path string, value any, description string) err
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "approval_available":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+			); err != nil {
+				return err
+			}
 		case "changes":
 			if err := validateChangeListJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -15627,6 +15652,7 @@ func validateChangeListJSONValue(path string, value any, description string) err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"approval_available",
 				"changes",
 				"version",
 			})

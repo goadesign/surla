@@ -15,9 +15,12 @@ export interface ApproveResultControlProps {
   card: ChangeCardResult | null;
   // busy reflects an outstanding Change Card request, including approval.
   busy: boolean;
-  // unavailable is the server's reason this project cannot record approvals,
-  // or null while approval is not known to be unavailable.
-  unavailable: string | null;
+  // available is false when the server cannot record approvals: its change
+  // list says so, or it refused an approval as not set up.
+  available: boolean;
+  // unavailableReason is the server's message from a refused approval, or
+  // null when only the change list said approval is unavailable.
+  unavailableReason: string | null;
   // error is the last refused approval of this run, or null.
   error: string | null;
   // onApprove asks the server to record approval of this run's report.
@@ -30,7 +33,8 @@ export function ApproveResultControl({
   run,
   card,
   busy,
-  unavailable,
+  available,
+  unavailableReason,
   error,
   onApprove,
 }: ApproveResultControlProps) {
@@ -61,10 +65,10 @@ export function ApproveResultControl({
         Approval records that this passed result may be promoted for the Change Card revision
         shown. It does not merge or deploy anything.
       </p>
-      {unavailable !== null ? (
+      {!available ? (
         <Alert id="surla-cp5-unavailable" variant="warning" role="alert" tabIndex={-1}>
-          <strong>Approval is unavailable for this project. </strong>
-          {unavailable}
+          <strong>Approval is unavailable on this server. </strong>
+          {unavailableReason}
           <p>
             Approval needs this project's promotion settings: the evaluator suite, environment
             and release files a promotion requires. Store them with{" "}

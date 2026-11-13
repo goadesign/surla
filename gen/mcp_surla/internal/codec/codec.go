@@ -2700,6 +2700,12 @@ type ListChangesResultTransport struct {
 	// Opaque value identifying this exact list; it changes whenever any listed
 	// value changes.
 	Version *string `json:"version"`
+	// Whether approve_merge can record approvals on this server. It is false when
+	// no promotion target is configured, or when the server could not resolve its
+	// promotion target; approve_merge then refuses every approval. To configure
+	// one, store the project's promotion settings with surla promotion set, then
+	// restart Surla.
+	ApprovalAvailable *bool `json:"approval_available"`
 }
 
 // ValidateListChangesResultTransport checks decoded JSON before it becomes a service value.
@@ -2712,6 +2718,9 @@ func ValidateListChangesResultTransport(value *ListChangesResultTransport) (err 
 	}
 	if value.Version == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	if value.ApprovalAvailable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval_available", "body"))
 	}
 	for _, e := range value.Changes {
 		if e != nil {
@@ -6852,7 +6861,8 @@ func EncodeListChangesResult(in *surla.ChangeList) ([]byte, error) {
 	var body *ListChangesResultTransport
 	{
 		body = &ListChangesResultTransport{
-			Version: &in.Version,
+			Version:           &in.Version,
+			ApprovalAvailable: &in.ApprovalAvailable,
 		}
 		body.Changes = make([]*ListChangesResultChangeListItemTransport, len(in.Changes))
 		for i, val := range in.Changes {

@@ -246,8 +246,9 @@ page.close();
 // TestViewsPageApprovesAPassedResult confirms a change, opens its passed
 // verification run, and approves it with a keyboard-operable control that
 // shows a busy state and moves focus to the recorded approval. It also
-// shows why approval is unavailable without promotion settings, and sends a
-// stale approval through the editor's revision recovery.
+// shows why approval is unavailable without promotion settings before any
+// click, still explains an approval the server refuses as not set up, and
+// sends a stale approval through the editor's revision recovery.
 func TestViewsPageApprovesAPassedResult(t *testing.T) {
 	inputs := PromotionInputs{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
@@ -331,13 +332,43 @@ again.close();
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-unavailable", "the change did not open");
 page.$("#surla-nav-cp4").click();
-await until(() => page.$("#surla-cp5-approve"), "no approval control");
-page.$("#surla-cp5-approve").click();
-await until(() => page.$("#surla-cp5-unavailable"), "approval was not shown as unavailable");
+await until(() => page.$("#surla-cp5-approve-region"), "a passed result showed no approval region");
+await until(() => page.$("#surla-cp5-unavailable"), "approval was not shown as unavailable before any click");
 const reason = page.text("#surla-cp5-unavailable");
-expect(reason.includes("no promotion target is bound") && reason.includes("surla promotion set") && reason.includes("surla stop"), "unavailable approval does not name the enabling step: " + reason);
-expect(page.doc.activeElement === page.$("#surla-cp5-unavailable"), "the unavailable result did not take focus");
+expect(reason.includes("Approval is unavailable on this server") && reason.includes("surla promotion set") && reason.includes("surla stop"), "unavailable approval does not name the enabling step: " + reason);
 expect(!page.$("#surla-cp5-approve"), "an unavailable approval still offered its control");
+expect(page.sent("POST", "/changes/approve").length === 0, "the page sent an approval it knew the server cannot record");
+page.close();
+`)
+	})
+
+	t.Run("a refused approval still shows why", func(t *testing.T) {
+		target := &pageTarget{inputs: inputs}
+		cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
+		proposed := mustPropose(t, cp, guide, "chg-refused", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
+		confirmed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
+			ChangeID: proposed.ChangeID, RequestRevision: proposed.RequestRevision,
+			Answers: map[string]string{}, Examples: proposed.Examples,
+		})
+		require.NoError(t, err)
+		svc := newPageVerifications(cp)
+		run := passedRun(confirmed, "dddddddddddddddddddddddddddddddd", commit, strings.Repeat("3", 64))
+		svc.set(run)
+		svc.list(confirmed.ChangeID, run.RunID)
+		ps := startPageServer(t, svc)
+		runPageScript(t, ps, nil, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-refused", "the change did not open");
+page.$("#surla-nav-cp4").click();
+await until(() => page.$("#surla-cp5-approve"), "an available approval offered no control");
+checkControl(page, page.$("#surla-cp5-approve"), "approve control");
+await control(origin, "reply", { key: "POST /changes/approve", status: 501, body: { name: "not_implemented", id: "x", message: "no promotion target is bound to this control plane", temporary: false, timeout: false, fault: false } });
+page.$("#surla-cp5-approve").click();
+await until(() => page.$("#surla-cp5-unavailable"), "a refused approval was not shown as unavailable");
+const reason = page.text("#surla-cp5-unavailable");
+expect(reason.includes("no promotion target is bound") && reason.includes("surla promotion set"), "the refusal does not carry the server's reason and the enabling step: " + reason);
+expect(page.doc.activeElement === page.$("#surla-cp5-unavailable"), "the unavailable result did not take focus");
+expect(!page.$("#surla-cp5-approve"), "a refused approval still offered its control");
 page.close();
 `)
 	})

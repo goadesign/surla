@@ -3318,6 +3318,11 @@ var listChangesResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "Opaque value identifying this exact list; it changes whenever any listed value changes.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval_available")},
+		JSONType:    "boolean",
+		Description: "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+	},
 }
 var listTracesPayloadFields = []tools.FieldMetadata{
 	{
@@ -9462,7 +9467,8 @@ func MarshalListChangesResult(v *ListChangesResult) ([]byte, error) {
 	_ = in
 	var out *toolhttp.ListChangesResultTransport
 	out = &toolhttp.ListChangesResultTransport{
-		Version: &in.Version,
+		Version:           &in.Version,
+		ApprovalAvailable: &in.ApprovalAvailable,
 	}
 	out.Changes = make([]*toolhttp.ChangeListItemTransport, len(in.Changes))
 	for i, val := range in.Changes {
@@ -9496,7 +9502,8 @@ func UnmarshalListChangesResult(data []byte) (*ListChangesResult, error) {
 	_ = in
 	var out *ListChangesResult
 	out = &ListChangesResult{
-		Version: *in.Version,
+		Version:           *in.Version,
+		ApprovalAvailable: *in.ApprovalAvailable,
 	}
 	out.Changes = make([]*ChangeListItem, len(in.Changes))
 	for i, val := range in.Changes {
@@ -15696,6 +15703,13 @@ func validateListChangesResultJSONValue(path string, value any, description stri
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "approval_available":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+			); err != nil {
+				return err
+			}
 		case "changes":
 			if err := validateListChangesResultRootChangesJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -15712,6 +15726,7 @@ func validateListChangesResultJSONValue(path string, value any, description stri
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"approval_available",
 				"changes",
 				"version",
 			})

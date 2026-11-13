@@ -359,6 +359,12 @@ type (
 		// Opaque value identifying this exact list; it changes whenever any listed
 		// value changes.
 		Version string
+		// Whether approve_merge can record approvals on this server. It is false when
+		// no promotion target is configured, or when the server could not resolve its
+		// promotion target; approve_merge then refuses every approval. To configure
+		// one, store the project's promotion settings with surla promotion set, then
+		// restart Surla.
+		ApprovalAvailable bool
 	}
 	// ListTracesPayload defines the JSON payload for the surla.list_traces tool.
 	ListTracesPayload = struct {

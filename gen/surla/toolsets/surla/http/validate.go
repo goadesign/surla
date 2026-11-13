@@ -561,6 +561,9 @@ func ValidateListChangesResultTransport(body *ListChangesResultTransport) (err e
 	if body.Version == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
 	}
+	if body.ApprovalAvailable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval_available", "body"))
+	}
 	for _, e := range body.Changes {
 		if e != nil {
 			if err2 := ValidateChangeListItemTransport(e); err2 != nil {

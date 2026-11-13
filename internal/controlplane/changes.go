@@ -39,17 +39,18 @@ const (
 
 // ListChanges returns the caller's saved Change Cards for this project, most
 // recently saved first (tie-broken by change_id), with the state of each
-// card's most recently accepted verification run and a version that changes
-// whenever any listed value changes. A card or run record that cannot be
-// read fails the call rather than being left out of the list.
+// card's most recently accepted verification run, whether this server can
+// record approvals, and a version that changes whenever any listed value
+// changes. A card or run record that cannot be read fails the call rather
+// than being left out of the list.
 func (c *ControlPlane) ListChanges(ctx context.Context) (*gensurla.ChangeList, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_changes")
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_changes")
 	defer span.End()
-	list, err := c.changeList(span, principal.ID)
+	list, err := c.changeList(ctx, span, principal.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (c *ControlPlane) WaitForChanges(
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	for {
-		list, err := c.changeList(span, principal.ID)
+		list, err := c.changeList(ctx, span, principal.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -101,13 +102,15 @@ func (c *ControlPlane) WaitForChanges(
 
 // changeList reads owner's saved cards and, when verification is configured,
 // the newest run of each of owner's changes in one pass over the runs
-// directory, then orders the cards by saved time and derives the list's
-// version from its encoded items. Card files are read under the control
-// plane's read lock; run records, which verification processes write
-// without that lock, are read after it is released. When a record cannot be
-// read, the cause is recorded on span and the returned error names only
-// which kind of record failed.
-func (c *ControlPlane) changeList(span trace.Span, owner string) (*gensurla.ChangeList, error) {
+// directory, then orders the cards by saved time, resolves whether approvals
+// can be recorded, and derives the list's version from both. Card files are
+// read under the control plane's read lock; run records, which verification
+// processes write without that lock, are read after it is released. When a
+// record cannot be read, the cause is recorded on span and the returned error
+// names only which kind of record failed. A promotion target that cannot be
+// resolved does not fail the list: it is recorded on span and approvals are
+// reported unavailable, as approve_merge refuses them.
+func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner string) (*gensurla.ChangeList, error) {
 	c.mu.RLock()
 	records, err := c.cards.all()
 	c.mu.RUnlock()
@@ -146,7 +149,16 @@ func (c *ControlPlane) changeList(span trace.Span, owner string) (*gensurla.Chan
 		}
 		items = append(items, item)
 	}
-	raw, err := json.Marshal(items)
+	target, err := c.resolvePromotion(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "resolve promotion target")
+	}
+	approvalAvailable := err == nil && target != nil
+	raw, err := json.Marshal(struct {
+		Changes           []*gensurla.ChangeListItem `json:"changes"`
+		ApprovalAvailable bool                       `json:"approval_available"`
+	}{items, approvalAvailable})
 	if err != nil {
 		err = fmt.Errorf("encode change list version: %w", err)
 		span.RecordError(err)
@@ -154,7 +166,11 @@ func (c *ControlPlane) changeList(span trace.Span, owner string) (*gensurla.Chan
 		return nil, err
 	}
 	sum := sha256.Sum256(raw)
-	return &gensurla.ChangeList{Changes: items, Version: hex.EncodeToString(sum[:])}, nil
+	return &gensurla.ChangeList{
+		Changes:           items,
+		Version:           hex.EncodeToString(sum[:]),
+		ApprovalAvailable: approvalAvailable,
+	}, nil
 }
 
 // latestVerification reduces a run to the state the change list shows; a

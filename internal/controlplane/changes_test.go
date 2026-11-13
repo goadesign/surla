@@ -5,16 +5,21 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -108,6 +113,52 @@ func TestListChangesRecordsWhyARunCouldNotBeRead(t *testing.T) {
 		}
 	}
 	assert.Contains(t, cause, "decode run request", "the span keeps why the record could not be read")
+}
+
+// TestListChangesSaysWhetherApprovalIsAvailable lists the same empty project
+// with no promotion target, a bound one, and a resolver that fails: only a
+// bound target makes approval available, the fact is part of the version,
+// and a failing resolver keeps the list working while its span records why.
+func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
+	bound := &pageTarget{inputs: PromotionInputs{SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40), Environment: "sim"}}
+	unreadable := errors.New("read /private/operator/promotion.json: permission denied")
+	cases := []struct {
+		name      string
+		resolve   func(context.Context, string) (PromotionTarget, error)
+		available bool
+	}{
+		{name: "no promotion target", available: false},
+		{name: "bound promotion target", resolve: bound.resolve, available: true},
+		{name: "resolver fails", resolve: func(context.Context, string) (PromotionTarget, error) { return nil, unreadable }, available: false},
+	}
+	versions := map[bool]string{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := tracetest.NewInMemoryExporter()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+			cp := newControlPlane(t, Options{TracerProvider: provider, ResolvePromotionTarget: tc.resolve})
+			alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "guide", Kind: CallerGuide})
+			list, err := cp.ListChanges(alice)
+			require.NoError(t, err, "the list works whatever the promotion target's state")
+			assert.Equal(t, tc.available, list.ApprovalAvailable)
+			if previous, ok := versions[tc.available]; ok {
+				assert.Equal(t, previous, list.Version, "the same list with the same availability has the same version")
+			}
+			versions[tc.available] = list.Version
+			spans := exporter.GetSpans().Snapshots()
+			require.Len(t, spans, 1)
+			if tc.resolve == nil || tc.available {
+				assert.NotEqual(t, codes.Error, spans[0].Status().Code)
+				assert.Empty(t, spans[0].Events())
+				return
+			}
+			assert.Equal(t, codes.Error, spans[0].Status().Code, "a failing resolver is recorded as an error")
+			require.Len(t, spans[0].Events(), 1)
+			assert.Contains(t, spans[0].Events()[0].Attributes, attribute.String("exception.message", unreadable.Error()))
+		})
+	}
+	assert.NotEqual(t, versions[true], versions[false], "availability is part of the list's version")
 }
 
 // TestSavedTimeIsOutsideTheRevision saves identical content twice and checks
@@ -211,10 +262,16 @@ func TestWaitForChangesIsTracedButNotSaved(t *testing.T) {
 }
 
 // TestChangeListOperationsFollowTheRoleTable checks the two operations over
-// HTTP: every agent role the table names may list changes, and only the
-// user's browser session may wait for them.
+// HTTP: every agent role the table names may list changes and sees whether
+// approval is available, with no promotion setting or path in the answer,
+// and only the user's browser session may wait for them.
 func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	inputs := PromotionInputs{
+		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
+		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
+	}
+	target := &pageTarget{inputs: inputs}
+	cp := newControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
 	cp.changesWait = 20 * time.Millisecond
 	auth := fixtureCredentials(map[string]Principal{
 		"user":    {ID: "alice@example.com", CallerID: "user-1", Kind: CallerUser},
@@ -224,14 +281,16 @@ func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
 	})
 	srv := httptest.NewServer(NewHTTPHandler(cp, auth))
 	t.Cleanup(srv.Close)
-	call := func(token, path string) int {
+	call := func(token, path string) (int, []byte) {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+path, nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())
-		return resp.StatusCode
+		return resp.StatusCode, body
 	}
 	cases := []struct {
 		token      string
@@ -272,8 +331,19 @@ func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.token, func(t *testing.T) {
-			assert.Equal(t, c.list, call(c.token, "/changes"))
-			assert.Equal(t, c.wait, call(c.token, "/change-updates?since=x"))
+			listed, body := call(c.token, "/changes")
+			assert.Equal(t, c.list, listed)
+			if listed == http.StatusOK {
+				var fields map[string]any
+				require.NoError(t, json.Unmarshal(body, &fields))
+				assert.Equal(t, true, fields["approval_available"], "every caller allowed to list sees whether approval is available")
+				assert.ElementsMatch(t, []string{"changes", "version", "approval_available"}, slices.Collect(maps.Keys(fields)))
+				for _, private := range []string{inputs.SuiteID, inputs.SuiteCommit, inputs.Environment, inputs.Artifacts["orders"], cp.cards.dir} {
+					assert.NotContains(t, string(body), private, "the list reveals no promotion setting or path")
+				}
+			}
+			waited, _ := call(c.token, "/change-updates?since=x")
+			assert.Equal(t, c.wait, waited)
 			tools := listTools(c.token)
 			assert.Equal(t, c.list == http.StatusOK, tools["list_changes"], "list_changes is a tool exactly for the callers allowed to list")
 			assert.False(t, tools["wait_for_changes"], "the waiting read is never offered as a tool")

@@ -693,6 +693,12 @@ type ListChangesResponseBody struct {
 	// Opaque value identifying this exact list; it changes whenever any listed
 	// value changes.
 	Version string `form:"version" json:"version" xml:"version"`
+	// Whether approve_merge can record approvals on this server. It is false when
+	// no promotion target is configured, or when the server could not resolve its
+	// promotion target; approve_merge then refuses every approval. To configure
+	// one, store the project's promotion settings with surla promotion set, then
+	// restart Surla.
+	ApprovalAvailable bool `form:"approval_available" json:"approval_available" xml:"approval_available"`
 }
 
 // WaitForChangesResponseBody is the type of the "surla" service
@@ -3586,7 +3592,8 @@ func NewGetStoryRefreshResponseBody(res *surla.StoryRefreshResult) *GetStoryRefr
 // the "list_changes" endpoint of the "surla" service.
 func NewListChangesResponseBody(res *surla.ChangeList) *ListChangesResponseBody {
 	body := &ListChangesResponseBody{
-		Version: res.Version,
+		Version:           res.Version,
+		ApprovalAvailable: res.ApprovalAvailable,
 	}
 	if res.Changes != nil {
 		body.Changes = make([]*ChangeListItemResponseBody, len(res.Changes))

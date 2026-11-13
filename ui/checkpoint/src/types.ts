@@ -92,6 +92,7 @@ export interface ChangeCardResult {
 }
 
 export interface ChangeList {
+  approval_available: boolean;
   changes: ChangeListItem[];
   version: string;
 }
@@ -794,9 +795,13 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     "type": "object",
     "required": [
       "changes",
-      "version"
+      "version",
+      "approval_available"
     ],
     "properties": {
+      "approval_available": {
+        "type": "boolean"
+      },
       "changes": {
         "type": "array",
         "items": {
