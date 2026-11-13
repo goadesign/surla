@@ -456,6 +456,78 @@ function fetchOutcome(url, init) {
   );
 }
 
+// phoneView measures the current view after disclosures are open. Keyboard
+// traversal uses real Tab events, including controls scrolled below the fold.
+async function phoneView(tab, selector) {
+  const keyboard = new Set();
+  let first = null;
+  for (let count = 0; count < 150; count++) {
+    await tab.dt.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 }, tab.sessionId);
+    await tab.dt.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 }, tab.sessionId);
+    const active = await evaluate(tab, "document.activeElement?.id || document.activeElement?.tagName || ''");
+    if (first === null) first = active;
+    else if (active === first) break;
+    keyboard.add(active);
+  }
+  const measured = await evaluate(tab, "(" + function measure(selector) {
+    const region = document.querySelector(selector);
+    const visible = (node) => node.getClientRects().length > 0;
+    const relevant = [document.getElementById("surla-team-attention"), region].filter(Boolean);
+    const nodes = relevant.flatMap((node) => [node, ...node.querySelectorAll("*")]).filter(visible);
+    return {
+      found: region !== null,
+      document_scroll_width: document.documentElement.scrollWidth,
+      viewport_width: document.documentElement.clientWidth,
+      viewport_height: window.innerHeight,
+      attention_roles: Array.from(document.querySelectorAll("#surla-team-attention > div"), (node) => node.id.replace("surla-team-attention-", "")),
+      role_states: Array.from(document.querySelectorAll("#surla-team-roles > li"), (node) => node.dataset.state),
+      controls: nodes.filter((node) => node.matches("button") && !node.disabled).map((node) => node.id),
+      overflowing: nodes.filter((node) => {
+        const box = node.getBoundingClientRect();
+        return box.left < -1 || box.right > document.documentElement.clientWidth + 1 || node.scrollWidth > node.clientWidth + 1;
+      }).map((node) => node.id || node.tagName + "." + node.className),
+      wrapped_long_text: Array.from(region?.querySelectorAll("p") || []).some((node) => {
+        if (node.textContent.length < 50) return false;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getClientRects().length > 1;
+      }),
+      long_text: region?.innerText || "",
+    };
+  }.toString() + ")(" + JSON.stringify(selector) + ")");
+  measured.keyboard_controls = Array.from(keyboard);
+  return measured;
+}
+
+// phoneScenario reuses the same real page, server and DevTools connection.
+async function phoneScenario(input, facts, views) {
+  await views.dt.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 800, deviceScaleFactor: 1, mobile: true }, views.sessionId);
+  await evaluate(views, "document.getElementById('surla-nav-team').click(), true");
+  await until(views, "document.querySelectorAll('#surla-team-roles > li[data-state=needs_you]').length === 3");
+  await evaluate(views, "document.querySelectorAll('#surla-team-stage details').forEach((node) => { node.open = true; }), true");
+  facts.phone = { team: await phoneView(views, "#surla-team-stage") };
+  await evaluate(views, "document.getElementById('surla-nav-changes').click(), true");
+  await until(views, "document.getElementById('surla-open-change-phone-build') !== null");
+  await evaluate(views, "document.getElementById('surla-open-change-phone-build').click(), true");
+  await until(views, "document.querySelector('#surla-build-test-writer[data-state=could_not_run]') !== null && !document.getElementById('surla-build-again').disabled");
+  await evaluate(views, "document.getElementById('surla-build-details').open = true");
+  facts.phone.build = await phoneView(views, "#surla-build-section");
+  await evaluate(views, "document.getElementById('surla-build-again').focus(), true");
+  await views.dt.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r", unmodifiedText: "\r" }, views.sessionId);
+  await views.dt.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, views.sessionId);
+  const question = await until(views, "document.getElementById('surla-build-question')?.contains(document.activeElement)");
+  facts.phone.confirmation_opened = !question.timed_out;
+  await views.dt.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, views.sessionId);
+  await views.dt.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, views.sessionId);
+  const cancelled = await until(views, "document.getElementById('surla-build-question') === null && document.activeElement?.id === 'surla-build-again'");
+  facts.phone.confirmation_cancelled = !cancelled.timed_out;
+  await evaluate(views, "document.getElementById('surla-nav-changes').click(), true");
+  await until(views, "document.getElementById('surla-open-change-phone-findings') !== null");
+  await evaluate(views, "document.getElementById('surla-open-change-phone-findings').click(), true");
+  const findings = await until(views, "document.querySelector('#surla-build-test-writer[data-state=needs_changes]') !== null");
+  facts.phone.findings_hidden = !findings.timed_out && await evaluate(views, "!document.getElementById('surla-build-section').textContent.includes('phone-private-finding-must-not-render') && document.getElementById('surla-build-findings').textContent.includes('1 finding')");
+}
+
 // main runs the scenario. Each section names the Go subtest that judges it.
 async function main(input, facts) {
   const dt = await DevTools.connect(input.devtools);
@@ -484,6 +556,11 @@ async function main(input, facts) {
       current_history_url: entries[currentIndex].url,
       target_url: targetInfo.url,
     };
+
+    if (input.phone) {
+      await phoneScenario(input, facts, views);
+      return;
+    }
 
     // (b) Every request the page sent so far, with the headers the browser put on the wire.
     facts.views.requests_settled =

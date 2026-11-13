@@ -20,6 +20,7 @@ package project
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -51,6 +52,8 @@ type (
 	browserInput struct {
 		// DevTools is the browser-wide DevTools WebSocket address.
 		DevTools string `json:"devtools"`
+		// Phone selects the focused Team and Build layout scenario.
+		Phone bool `json:"phone,omitempty"`
 		// Origin is the project server's origin.
 		Origin string `json:"origin"`
 		// SameSiteOrigin is the test's other listener on the project's host.
@@ -90,6 +93,8 @@ type (
 		Story storyFacts `json:"story"`
 		// Live is the Live target view at a phone's width.
 		Live liveFacts `json:"live"`
+		// Phone records Team and Build at 375 by 800 CSS pixels.
+		Phone phoneFacts `json:"phone"`
 		// Reload is the views page after a reload.
 		Reload reloadFacts `json:"reload"`
 	}
@@ -250,6 +255,34 @@ type (
 		// the width of the browser's viewport.
 		DocumentScrollWidth int `json:"document_scroll_width"`
 		ViewportWidth       int `json:"viewport_width"`
+	}
+
+	// phoneTeamOwner retains real project operations while keeping observations
+	// under this layout fixture's explicit snapshot lifetime.
+	phoneTeamOwner struct{ *Server }
+
+	// phoneFacts records real layout and keyboard observations, not worker execution.
+	phoneFacts struct {
+		Team                  phoneViewFacts `json:"team"`
+		Build                 phoneViewFacts `json:"build"`
+		FindingsHidden        bool           `json:"findings_hidden"`
+		ConfirmationOpened    bool           `json:"confirmation_opened"`
+		ConfirmationCancelled bool           `json:"confirmation_cancelled"`
+	}
+
+	// phoneViewFacts is one view with disclosures open and long text present.
+	phoneViewFacts struct {
+		Found               bool     `json:"found"`
+		DocumentScrollWidth int      `json:"document_scroll_width"`
+		ViewportWidth       int      `json:"viewport_width"`
+		ViewportHeight      int      `json:"viewport_height"`
+		AttentionRoles      []string `json:"attention_roles"`
+		RoleStates          []string `json:"role_states"`
+		Controls            []string `json:"controls"`
+		KeyboardControls    []string `json:"keyboard_controls"`
+		Overflowing         []string `json:"overflowing"`
+		LongText            string   `json:"long_text"`
+		WrappedLongText     bool     `json:"wrapped_long_text"`
 	}
 
 	// reloadFacts is the views page after a reload.
@@ -536,6 +569,136 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		assert.Contains(t, facts.Browser.UserAgent, "HeadlessChrome", "the browser did not run headless")
 		browser.stopAndCheck(t)
 	})
+}
+
+// Supervise holds the recorded observations until this test's control plane closes.
+func (o *phoneTeamOwner) Supervise(ctx context.Context, _ controlplane.AssignmentReader) error {
+	<-ctx.Done()
+	return nil
+}
+
+// TestTeamAndBuildAtPhoneWidth proves layout against the real server and generated
+// HTTP handlers. Terminal observations and saved verdicts are bounded fixtures;
+// this does not establish real worker execution, judgment or test acceptance.
+func TestTeamAndBuildAtPhoneWidth(t *testing.T) {
+	executable := findBrowser(t)
+	node, err := exec.LookPath("node")
+	require.NoError(t, err)
+	skipWithoutNodeWebSocket(t, node)
+	harness, err := filepath.Abs("../../ui/checkpoint/testing/browser_harness.cjs")
+	require.NoError(t, err)
+	vp := startViewsProject(t, controlplane.Options{})
+	server := vp.server.Load()
+	// This older views fixture leaves Team unbound. Recompose its control plane
+	// with the same owner as production, replacing only the observation driver.
+	require.NoError(t, vp.cp.Load().Close())
+	cp, err := controlplane.New(controlplane.Options{
+		CardsDir: vp.state.CardsDir(),
+		Team:     &controlplane.TeamBinding{Owner: vp.state.Record.Owner, Service: &phoneTeamOwner{Server: server}},
+	})
+	require.NoError(t, err)
+	application := http.NewServeMux()
+	application.Handle("GET /views", controlplane.ViewsPage())
+	application.Handle("/", controlplane.NewHTTPHandler(cp, server.Authenticate))
+	handler := server.Handler(application)
+	vp.cp.Store(cp)
+	vp.handler.Store(&handler)
+	// Register the longest legal handles and derive needs_you through the existing
+	// supervisor owner from three independent, recorded blocked terminal snapshots.
+	vp.state.Record.Team = strings.Repeat("t", 32)
+	vp.state.Record.Space = "phone-space"
+	guide := ""
+	for _, role := range []string{"guide", "builder", "test_writer"} {
+		handle := role + strings.Repeat("x", 32-len(role))
+		agent, err := registerTestAgent(server, handle, role, vp.state.Record.Directory)
+		require.NoError(t, err)
+		if role == "guide" {
+			raw, err := os.ReadFile(agent.CredentialFile)
+			require.NoError(t, err)
+			guide = string(raw)
+		}
+	}
+	now := time.Now()
+	o := &teamSupervisor{server: server, roles: map[string]*supervisedRole{}, started: now}
+	o.syncSelection(server.teamSelection())
+	for _, role := range o.selection.Roles {
+		o.event(t.Context(), TeamEvent{Kind: "snapshot", Role: role.Role, Sequence: 1, Terminals: []TeamTerminal{{
+			Address: role.Role, State: "live", Reported: true,
+			Status:     &TeamStatus{State: "blocked", Kind: "permission"},
+			Foreground: &TeamForeground{Argv: []string{"codex"}},
+			Labels:     map[string]string{"chorus.project": vp.state.Record.Directory, "herdr.space": "phone-space", "chorus.handle": role.Handle},
+		}}}, now)
+	}
+	o.publish(t.Context(), now, false)
+	longReason := strings.Repeat("compilerdiagnostic", 24) + ": the recorded compiler result needs the project owner's attention."
+	for _, id := range []string{"phone-build", "phone-findings"} {
+		card := proposeChange(t, vp.state.Origin(), guide, id, "")
+		user := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: vp.state.Record.Owner, CallerID: "phone-user", Kind: controlplane.CallerUser})
+		confirmed, err := vp.cp.Load().ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
+			ChangeID: id, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples,
+		})
+		require.NoError(t, err)
+		writer := map[string]any{
+			"state": "could_not_run", "read": true, "working_folder": vp.state.Record.Directory,
+			"findings": []string{}, "commit": "", "reason": longReason,
+			"step": strings.Repeat("Review the recorded project configuration before retrying. ", 7), "checked_at": now.UTC(),
+		}
+		if id == "phone-findings" {
+			writer = map[string]any{
+				"state": "needs_changes", "read": true, "working_folder": vp.state.Record.Directory,
+				"findings": []string{"phone-private-finding-must-not-render"}, "commit": "", "checked_at": now.UTC(),
+			}
+		}
+		// Seed the strict owner format only before the browser starts reading. The
+		// normal get_build HTTP handler decodes and validates this fixture.
+		raw, err := json.Marshal(map[string]any{
+			"change_id": id, "request_revision": confirmed.RequestRevision, "started_at": now.UTC(),
+			"roles": "builder_and_test_writer", "stories": []any{}, "design_source": "",
+			"builder": map[string]any{"read": true}, "test_writer": writer, "report_number": 3,
+		})
+		require.NoError(t, err)
+		sum := sha256.Sum256([]byte(id))
+		require.NoError(t, os.WriteFile(filepath.Join(vp.state.CardsDir(), fmt.Sprintf("%x.build.json", sum)), raw, 0o600))
+	}
+	link, err := vp.link()
+	require.NoError(t, err)
+	browser := startBrowser(t, executable, t.TempDir())
+	facts := driveBrowser(t, node, harness, browserInput{
+		DevTools: browser.devtools, Origin: vp.state.Origin(), Link: link,
+		ChangeIDs: []string{"phone-build", "phone-findings"}, Phone: true,
+	})
+	t.Logf("browser: %s; phone observations: %+v", facts.Browser.Product, facts.Phone)
+	for name, view := range map[string]phoneViewFacts{"Team": facts.Phone.Team, "Build": facts.Phone.Build} {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, view.Found)
+			assert.Equal(t, 375, view.ViewportWidth)
+			assert.Equal(t, 800, view.ViewportHeight)
+			assert.LessOrEqual(t, view.DocumentScrollWidth, view.ViewportWidth)
+			assert.Empty(t, view.Overflowing, "content extends outside the phone viewport")
+			assert.True(t, view.WrappedLongText, "long text did not wrap")
+			assert.ElementsMatch(t, []string{"guide", "builder", "test_writer"}, view.AttentionRoles)
+			for _, role := range []string{"guide", "builder", "test_writer"} {
+				assert.Contains(t, view.Controls, "surla-team-attention-show-pane-"+role)
+				assert.Contains(t, view.KeyboardControls, "surla-team-attention-show-pane-"+role)
+			}
+		})
+	}
+	assert.ElementsMatch(t, []string{"needs_you", "needs_you", "needs_you"}, facts.Phone.Team.RoleStates)
+	assert.Contains(t, facts.Phone.Team.LongText, strings.Repeat("x", 21))
+	for _, id := range []string{"surla-team-start", "surla-team-refresh", "surla-team-show-guide", "surla-team-show-builder", "surla-team-show-test_writer"} {
+		assert.Contains(t, facts.Phone.Team.Controls, id)
+		assert.Contains(t, facts.Phone.Team.KeyboardControls, id)
+	}
+	assert.Contains(t, facts.Phone.Build.LongText, longReason)
+	for _, id := range []string{"surla-build-view-team", "surla-build-again"} {
+		assert.Contains(t, facts.Phone.Build.Controls, id)
+		assert.Contains(t, facts.Phone.Build.KeyboardControls, id)
+	}
+	assert.True(t, facts.Phone.ConfirmationOpened, "Enter did not open the repeat-build question")
+	assert.True(t, facts.Phone.ConfirmationCancelled, "Escape did not cancel the repeat-build question")
+	assert.True(t, facts.Phone.FindingsHidden, "the older projection's finding text became visible")
+	assert.Contains(t, facts.Browser.UserAgent, "HeadlessChrome")
+	browser.stopAndCheck(t)
 }
 
 // skipWithoutNodeWebSocket skips the test when node is older than 22, the
