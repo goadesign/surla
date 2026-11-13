@@ -9,11 +9,12 @@ Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/golde
 ---
 
 Surla's project server owns one private state tree and stable operating-system
-account identity per physical folder. A start lock serializes launches; the
-existing card-store lock controls server liveness and is released after ordered
-cleanup. Before every listener close, its wrapper irreversibly revokes the
-server's in-memory management credential and withdraws the private running
-record, even on an accept-loop failure. Each server publishes a fresh credential
+account identity per physical folder. The CLI finds that tree and passes it to
+the server it launches; the server never derives it. A start lock serializes
+launches; the existing card-store lock controls server liveness and is released
+after ordered cleanup. Before every listener close, its wrapper irreversibly
+revokes the server's in-memory management credential and withdraws the private
+running record, even on an accept-loop failure. Each server publishes a fresh credential
 after binding; the CLI reads it per request, then opens a fresh proxy-free local
 connection without reusing any earlier connection.
 The record never establishes liveness. Trusted credentials add a caller and role
