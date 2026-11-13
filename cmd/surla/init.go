@@ -18,39 +18,33 @@ import (
 )
 
 // initNextSteps is what `surla init` prints after creating a project; the
-// verbs are the shell-quoted project directory and the service name.
+// verbs are the shell-quoted project directory and the service name. The
+// commands end at `surla`, which starts the project's server and opens its
+// views page; the operator tools come after them.
 const initNextSteps = `Created the %[2]s service and its starter evaluator suite (eval/).
 
-Next:
+Next, make the first commit and start Surla in the project:
   cd %[1]s
   git init
   git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
   git commit -m "Start %[2]s from surla init"
-  surla preview -dir .
-  VERIFY_DIR="$(mktemp -d)"
-  WORK_DIR="$VERIFY_DIR/work"
-  REPORT_DIR="$VERIFY_DIR/reports"
-  surla verify -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary %[2]s=./cmd/%[2]s \
-    -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/%[2]s-evals \
-    -request-revision starter -work-dir "$WORK_DIR" -report-dir "$REPORT_DIR" -builder-view
+  surla
 
-surla verify keeps $WORK_DIR, including its build logs in $WORK_DIR/evidence/,
-writes the full report to $REPORT_DIR (used by surla approve), and with
--builder-view hides holdout scenario names and checks in the completed report
-JSON and summary line (if a run fails before writing a report, stderr prints
-operator setup/execution failure diagnostics). Do not share $WORK_DIR,
-$REPORT_DIR, or setup/execution failure output with coding agents that build the
-service.
+surla starts the project's server and opens its views page in your browser,
+where you confirm changes and approve results.
 
-README.md in the project explains the change checkpoints, building and testing
+README.md in the project explains each change's steps, building and testing
 with check_project before committing, and verifying a candidate commit against
-the confirmed Change Card's request_revision. Connected agents can read the
+the confirmed Change Card's request_revision. Coding agents read the
 architecture and evaluator guide at surla://golden-path. Tool inputs and results:
 https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#mcp-tools
+
+Operator tools: surla verify and surla approve check a commit outside the
+server; README.md shows the surla verify command for the starter suite.
 `
 
-// init creates a starter project with scaffold.Init and prints the
-// commands that preview and verify it. The evaluator module requires the
+// init creates a starter project with scaffold.Init and prints the commands
+// that commit it and start Surla in it. The evaluator module requires the
 // Surla version this binary was built from unless -surla-version names
 // another exact version. SIGINT and SIGTERM cancel it, leaving -dir unchanged.
 func (runtime projectRuntime) init(args []string, stdout io.Writer) error {

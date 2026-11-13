@@ -438,7 +438,9 @@ func TestInitLeavesNoProjectWhenGenerationFails(t *testing.T) {
 }
 
 // TestInitReadmeFirstRunSnippetsMatchTheProject verifies the starter's declared
-// scenarios, private verification reports, and build-before-commit tool journey.
+// scenarios, a first run that ends by starting surla, the roles in the
+// build-before-commit tool journey, private verification reports, and the
+// ignore file.
 func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "bakery")
 	run := func(_ context.Context, moduleDir, _ string, args ...string) error {
@@ -464,15 +466,25 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Contains(t, readme, "-report-dir \"$REPORT_DIR\" -builder-view")
 	assert.Contains(t, readme, "while `-builder-view` hides holdout scenario names and checks\nin the completed report JSON and summary line (if a run fails before writing a\nreport, `stderr` prints operator setup/execution failure diagnostics).")
 	assert.Contains(t, readme, "planner.ToolFailureProvider")
-	// Each change is described, regenerated, built and tested uncommitted
-	// with check_project, committed, then verified, in that order; keeping a
-	// drafted prompt follows the same order.
+	// A project created with surla init is committed and then started with
+	// surla, which opens the views page; the operator's surla verify comes
+	// after that, not as a first step.
+	first := between(t, readme, "## Next steps", "For each change:")
+	assertInOrder(t, first, "git commit -m", "\nsurla\n```", "views page")
+	assert.NotContains(t, first, "surla verify", "surla verify is an operator tool listed after the change steps")
+	// Each change is proposed by the guide and confirmed by the user on the
+	// views page, then regenerated, built and tested uncommitted with
+	// check_project, committed, and verified by the builder, in that order;
+	// keeping a drafted prompt follows the same order. Only the user's
+	// browser session may call confirm_intent, so the README never tells a
+	// reader to call it.
 	steps := between(t, readme, "For each change:", "## Change checkpoints")
-	assertInOrder(t, steps, "`propose_change`", "`confirm_intent`", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "Commit,", "`verify_change`")
+	assertInOrder(t, steps, "The guide", "`propose_change`", "You confirm it on the views page", "The builder", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "The builder commits,", "`verify_change`", "operator tools", "surla verify")
+	assert.NotContains(t, readme, "`confirm_intent`")
 	draft := between(t, readme, "To try prompt wording on a running", "the confirmed Change Card")
-	assertInOrder(t, draft, "`check_project`", "commit,", "`verify_change`")
+	assertInOrder(t, draft, "builder calls `start_live_target`", "the builder writes", "`check_project`", "commits,", "`verify_change`")
 	cli := between(t, readme, "`surla verify` checks a commit.", "## Change checkpoints")
-	assertInOrder(t, cli, "`check_project`", "before you commit")
+	assertInOrder(t, cli, "The builder", "`check_project`", "before it commits")
 
 	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
 	require.NoError(t, err)
@@ -487,10 +499,11 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Contains(t, readme, "`story_refresh_op_id`")
 	assert.Contains(t, readme, "`request_revision`")
 
+	// Surla keeps project state outside the project, so the starter ignores
+	// only its own build and report output.
 	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	require.NoError(t, err)
-	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.surla/")
-	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.mcp.json")
+	assert.Equal(t, "/bin/\n/reports/\n", string(ignore))
 }
 
 // TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv verifies that

@@ -3,9 +3,7 @@
 This page records what Surla is meant to be and the product decisions that
 follow from it. It describes direction, not shipped behavior:
 [`README.md`](../README.md) and [the reference](REFERENCE.md) describe what
-Surla does today. Where this page and an older planning document disagree
-(for example [`PRESS_RELEASE.md`](../PRESS_RELEASE.md) or
-[`PROPOSAL.md`](../PROPOSAL.md)), this page states the current intent.
+Surla does today.
 
 [Decisions](#decisions) are settled. [Open questions](#open-questions) are
 not.

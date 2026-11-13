@@ -50,8 +50,8 @@ participant's folder and, apart from it, the tester's folder:
   surla/       # git clone of github.com/goadesign/surla at the commit under test
   work/        # empty; the participant builds its product here
 ~/surla-ux-reports/<id>/
-  docs/        # README.md, PROPOSAL.md, PRESS_RELEASE.md, docs/ (with img/),
-               # and examples/*/README.md from that commit, copied at their
+  docs/        # README.md, docs/ (with img/), and examples/*/README.md
+               # from that commit, copied at their
                # repository-relative paths so the READMEs do not overwrite
                # each other
   observations.md   # the tester's notes, which it writes
