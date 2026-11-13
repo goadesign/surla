@@ -229,6 +229,11 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 			step:    "the test writer reports again, so Surla checks and records its tests again",
 		},
 		{
+			name: "accepted tests' commit no longer in the repository", build: accepted, tests: strings.Repeat("f", 40), candidate: repo.candidate,
+			refusal: "no_test_layout", reason: "the accepted tests' commit " + strings.Repeat("f", 40) + " is not in the project's repository",
+			step: "the test writer reports again, so Surla records the tests anew, or the user builds again",
+		},
+		{
 			name: "project folder outside any git repository", workspace: plain, build: accepted, tests: repo.tests, candidate: repo.candidate,
 			refusal: "no_test_layout", reason: "the project folder " + plain + " is not inside a git repository, so it has no commits to verify",
 			step: "make the project folder a git repository and commit it", live: true,
@@ -302,6 +307,45 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 	}
 }
 
+// TestANewAcceptanceChangesOnlyTheTestsCommit verifies that verifying the
+// same candidate after Surla accepted the tests again, at another commit,
+// saves a plan equal to the one before except for the tests' commit (and the
+// run's own work folder).
+func TestANewAcceptanceChangesOnlyTheTestsCommit(t *testing.T) {
+	root := realTempDir(t)
+	repo := newLayoutRepo(t, filepath.Join(root, "repo"))
+	runsDir := filepath.Join(root, "runs")
+	cp := newBuildControlPlane(t, Options{
+		WorkspaceDir:    repo.workspace,
+		RunsDir:         runsDir,
+		SurlaVersion:    testSurlaVersion,
+		WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
+	})
+	card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
+	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	require.NoError(t, err)
+	// verifyAfterAccepting accepts the tests at commit, verifies the
+	// candidate and returns the saved plan.
+	verifyAfterAccepting := func(commit string) verify.Plan {
+		acceptTests(t, cp, "chg", commit)
+		run, err := cp.VerifyChange(asCaller("alice@example.com", CallerBuilder), &gensurla.VerifyChangePayload{
+			ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: repo.candidate,
+		})
+		require.NoError(t, err)
+		var req verifyrun.Request
+		readJSONFile(t, filepath.Join(runsDir, run.RunID, "request.json"), &req)
+		return req.Plan
+	}
+
+	first := verifyAfterAccepting(repo.tests)
+	second := verifyAfterAccepting(repo.candidate)
+	assert.Equal(t, repo.tests, first.SuiteCommit)
+	assert.Equal(t, repo.candidate, second.SuiteCommit)
+	assert.NotEqual(t, first.WorkDir, second.WorkDir, "each run has its own work folder")
+	second.SuiteCommit, second.WorkDir = first.SuiteCommit, first.WorkDir
+	assert.Equal(t, first, second, "nothing else changes")
+}
+
 // TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted verifies that
 // verify_change refuses a build whose tests are not accepted, in each state
 // the test writer's assignment can be in, naming the state and who acts next,
@@ -356,8 +400,9 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 
 // TestTestWriterReadsOnlyTheRunsOfAnAssignedChange verifies that the test
 // writer reads and lists the runs of a change it has an assignment for, and
-// is refused the runs of a change without a build and every run of a project
-// that verifies with the stored evaluator, which has no test writer.
+// is refused the runs of a change without a build, of a build started without
+// a test writer, and every run of a project that verifies with the stored
+// evaluator, which has no test writer.
 func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 	root := realTempDir(t)
 	repo := newLayoutRepo(t, filepath.Join(root, "repo"))
@@ -365,10 +410,12 @@ func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 		name    string
 		stored  bool
 		build   bool
+		builder bool
 		allowed bool
 	}{
 		{name: "assigned change", build: true, allowed: true},
 		{name: "change without a build"},
+		{name: "build started without a test writer", builder: true},
 		{name: "stored evaluator", stored: true, build: true},
 	}
 	for _, tc := range cases {
@@ -383,12 +430,17 @@ func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 			} else {
 				opts.WrittenTestRuns = &WrittenTestRuns{ReportDir: realTempDir(t), Command: exit, Timeout: time.Hour}
 			}
-			cp := newBuildControlPlane(t, opts)
-			user := asCaller("alice@example.com", CallerUser)
+			var cp *ControlPlane
+			var card *gensurla.ChangeCardResult
+			if tc.builder {
+				cp, card = builtWithoutTestWriter(t, opts)
+			} else {
+				cp = newBuildControlPlane(t, opts)
+				card = saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
+			}
 			testWriter := asCaller("alice@example.com", CallerTestWriter)
-			card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
 			if tc.build {
-				_, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+				_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 				require.NoError(t, err)
 			}
 			if !tc.stored && tc.build {

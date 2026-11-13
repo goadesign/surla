@@ -22,7 +22,6 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	genpromptsclient "github.com/goadesign/surla/internal/targetprompt/gen/http/prompts/client"
 	genprompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
-	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
@@ -224,7 +223,6 @@ func (c *ControlPlane) livePlan(ctx context.Context, candidateCommit string) (Ve
 	switch v := c.verifier.(type) {
 	case storedVerification:
 		cfg := *v.cfg
-		cfg.Plan.Tests = verify.TestsEvaluator
 		cfg.Plan.CandidateCommit = candidateCommit
 		return cfg, nil
 	case writtenTestVerification:

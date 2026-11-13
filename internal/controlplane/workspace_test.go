@@ -41,8 +41,8 @@ type (
 const (
 	// testSurlaVersion is a canonical Surla module pseudo-version used in workspace unit tests.
 	testSurlaVersion = "v0.0.0-20261110163737-d9beac313142"
-	// fakeInitialSuiteCommit is the synthetic initial Git commit hash returned by fakeInitRunner.
-	fakeInitialSuiteCommit = "1111111111111111111111111111111111111111"
+	// fakeInitialCommit is the synthetic initial Git commit hash returned by fakeInitRunner.
+	fakeInitialCommit = "1111111111111111111111111111111111111111"
 )
 
 // TestNewValidatesSurlaVersionAndWorkspaceSeparation verifies that New rejects non-canonical
@@ -638,7 +638,7 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		assert.Equal(t, "shop", res.ServiceName)
 		assert.Equal(t, "example.com/shop", res.ModulePath)
 		assert.Equal(t, "shop", filepath.Base(res.Dir))
-		assert.Equal(t, fakeInitialSuiteCommit, res.Commit)
+		assert.Equal(t, fakeInitialCommit, res.Commit)
 		assert.Equal(t, res.Dir, cp.activeWorkspaceDir)
 
 		var wf workspaceFile
@@ -968,10 +968,10 @@ func (g *fakeInitGenerator) Close() error {
 }
 
 // fakeInitRunner writes a synthetic command log, creates go.sum on "go mod tidy"
-// invocations, and writes fakeInitialSuiteCommit on "git rev-parse".
+// invocations, and writes fakeInitialCommit on "git rev-parse".
 func fakeInitRunner(_ context.Context, dir, logPath string, args ...string) error {
 	if slices.Contains(args, "rev-parse") {
-		return os.WriteFile(logPath, []byte(fakeInitialSuiteCommit+"\n"), 0o600)
+		return os.WriteFile(logPath, []byte(fakeInitialCommit+"\n"), 0o600)
 	}
 	if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {
 		return err

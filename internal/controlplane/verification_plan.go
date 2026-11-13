@@ -66,23 +66,25 @@ type (
 	layoutActor string
 
 	// refusalReason is why starterPlanAt refuses: refusedReplacedFolder,
-	// refusedNoRepository, refusedUnknownCommit or refusedNoLayout.
+	// refusedNoRepository, refusedUnknownCommit, refusedMissingTests or
+	// refusedNoLayout.
 	refusalReason int
 
 	// layoutRefusal is starterPlanAt's refusal: the project folder was
 	// replaced or is not in a git repository, the repository does not hold
-	// the candidate commit, or a commit lacks the test layout. Each caller
-	// maps it to its own declared error.
+	// the candidate commit or the accepted tests' commit, or a commit lacks
+	// the test layout. Each caller maps it to its own declared error.
 	layoutRefusal struct {
 		// reason is why starterPlanAt refused.
 		reason refusalReason
 		// folder is the project folder, for refusedReplacedFolder and
 		// refusedNoRepository.
 		folder string
-		// commit is the commit refused, for refusedUnknownCommit and
-		// refusedNoLayout.
+		// commit is the commit refused, for refusedUnknownCommit,
+		// refusedMissingTests and refusedNoLayout.
 		commit string
-		// actor is who changes that commit, for refusedNoLayout.
+		// actor is who changes that commit, for refusedMissingTests and
+		// refusedNoLayout.
 		actor layoutActor
 		// missing says what the commit lacks, for refusedNoLayout.
 		missing string
@@ -106,6 +108,9 @@ const (
 	// refusedUnknownCommit is a candidate commit the repository does not
 	// hold.
 	refusedUnknownCommit
+	// refusedMissingTests is an accepted tests' commit the repository no
+	// longer holds, such as after its branch was deleted or rewritten.
+	refusedMissingTests
 	// refusedNoLayout is a commit without the test layout `surla init`
 	// makes.
 	refusedNoLayout
@@ -115,8 +120,11 @@ const (
 func (r *layoutRefusal) Error() string {
 	switch r.reason {
 	case refusedReplacedFolder:
-		return fmt.Sprintf("the project folder %s was replaced or removed after Surla started:"+
+		return fmt.Sprintf("the project folder %s was replaced or removed after Surla started, so the user restarts it:"+
 			" stop and start Surla in the project folder, then try again", r.folder)
+	case refusedMissingTests:
+		return fmt.Sprintf("the accepted tests' commit %s is not in the project's repository:"+
+			" the test writer reports again, so Surla records the tests anew, or the user builds again", r.commit)
 	case refusedNoRepository:
 		return fmt.Sprintf("the project folder %s is not inside a git repository, so it has no commits to verify:"+
 			" make the project folder a git repository and commit it", r.folder)
@@ -158,7 +166,6 @@ func (c *ControlPlane) verificationPlan(
 	switch v := c.verifier.(type) {
 	case storedVerification:
 		cfg := *v.cfg
-		cfg.Plan.Tests = verify.TestsEvaluator
 		cfg.Plan.CandidateCommit, cfg.Plan.RequestRevision = candidateCommit, revision
 		return cfg, nil
 	case writtenTestVerification:
@@ -183,10 +190,10 @@ func (c *ControlPlane) verificationPlan(
 		plan, err := c.starterPlanAt(ctx, candidateCommit, build.TestWriter.Commit, testWriterActs)
 		var refusal *layoutRefusal
 		switch {
-		case errors.As(err, &refusal) && (refusal.reason == refusedNoLayout || refusal.reason == refusedNoRepository):
-			return VerificationConfig{}, refuseNoTestLayout(refusal)
-		case errors.As(err, &refusal):
+		case errors.As(err, &refusal) && (refusal.reason == refusedUnknownCommit || refusal.reason == refusedReplacedFolder):
 			return VerificationConfig{}, gensurla.MakeConflict(refusal)
+		case errors.As(err, &refusal):
+			return VerificationConfig{}, refuseNoTestLayout(refusal)
 		case err != nil:
 			return VerificationConfig{}, err
 		}
@@ -203,13 +210,14 @@ func (c *ControlPlane) verificationPlan(
 // layout `surla init` makes at two commits of the repository holding the
 // bound workspace, and returns the plan that builds candidateCommit's
 // programs and runs testsCommit's generated entry point, written by agents
-// (verify.TestsWritten). Verification passes the accepted tests' commit; a
-// live copy passes the candidate commit twice. A project folder that is no
-// longer the directory this control plane bound or is outside any git
-// repository, a candidateCommit the repository does not hold, or a commit
-// lacking the layout is refused with a *layoutRefusal saying what and who
-// acts: the builder for the folder and candidateCommit, testsActor for
-// testsCommit. New guarantees a bound workspace whenever this runs.
+// (verify.TestsWritten, the one place written tests are marked).
+// Verification passes the accepted tests' commit; a live copy passes the
+// candidate commit twice. A project folder that is no longer the directory
+// this control plane bound or is outside any git repository, a commit the
+// repository does not hold, or a commit lacking the layout is refused with a
+// *layoutRefusal saying what and who acts: the builder for the folder and
+// candidateCommit, testsActor for testsCommit. New guarantees a bound
+// workspace whenever this runs.
 func (c *ControlPlane) starterPlanAt(ctx context.Context, candidateCommit, testsCommit string, testsActor layoutActor) (verify.Plan, error) {
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)
@@ -234,6 +242,15 @@ func (c *ControlPlane) starterPlanAt(ctx context.Context, candidateCommit, tests
 	}
 	if !exists {
 		return verify.Plan{}, &layoutRefusal{reason: refusedUnknownCommit, commit: candidateCommit}
+	}
+	if testsCommit != candidateCommit {
+		exists, err := commitExists(ctx, repoRoot, testsCommit)
+		if err != nil {
+			return verify.Plan{}, err
+		}
+		if !exists {
+			return verify.Plan{}, &layoutRefusal{reason: refusedMissingTests, commit: testsCommit, actor: testsActor}
+		}
 	}
 	// Module folders and committed paths are slash-separated and relative to
 	// the repository root: "." and "eval" for a project at the root,
@@ -316,7 +333,9 @@ func (writtenTestVerification) isVerifier() {}
 // newVerifier builds New's verifier from opts, resolving its folders: the
 // stored evaluator when opts.Verification is set, the written-test runs (in
 // runsDir) when opts.WrittenTestRuns is, and no verification otherwise. New
-// has already refused both together.
+// has already refused both together. The stored evaluator's plan is marked
+// here, once, as the operator's (verify.TestsEvaluator), for every run and
+// live copy; starterPlanAt marks every plan of written tests.
 func newVerifier(opts Options, runsDir string) (verifier, error) {
 	switch {
 	case opts.Verification != nil:
@@ -324,6 +343,7 @@ func newVerifier(opts Options, runsDir string) (verifier, error) {
 		if err != nil {
 			return nil, err
 		}
+		cfg.Plan.Tests = verify.TestsEvaluator
 		return storedVerification{cfg: cfg}, nil
 	case opts.WrittenTestRuns != nil:
 		runs, err := normalizeVerificationConfig(&VerificationConfig{
@@ -389,8 +409,9 @@ func refuseTestsNotAccepted(saved testWriterAssignment) error {
 }
 
 // refuseNoTestLayout is verify_change's no_test_layout refusal of a commit
-// without the test layout `surla init` makes, or of a project folder outside
-// any git repository: it names what is missing and ends with the step.
+// without the test layout `surla init` makes, of an accepted tests' commit
+// the repository no longer holds, or of a project folder outside any git
+// repository: it names what is missing and ends with the step.
 func refuseNoTestLayout(refusal *layoutRefusal) error {
 	return gensurla.MakeNoTestLayout(refusal)
 }

@@ -3634,7 +3634,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'no_test_layout: Without stored verification settings: a commit lacks the test layout surla init makes, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.'
+                    description: 'no_test_layout: Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests'' commit is no longer in the project''s repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.'
                     content:
                         application/vnd.goa.error:
                             schema:

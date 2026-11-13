@@ -241,6 +241,12 @@ func TestLiveTargetAppliesDraftsThroughTheGeneratedContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, commit, res.CandidateCommit)
 	assert.True(t, strings.HasPrefix(res.URL, "http://127.0.0.1:"), res.URL)
+	liveDirs, err := verifyrun.LeftoverLiveDirs(root)
+	require.NoError(t, err)
+	require.Len(t, liveDirs, 1)
+	var live verifyrun.LiveRequest
+	readJSONFile(t, filepath.Join(liveDirs[0], "live.json"), &live)
+	assert.Equal(t, verify.TestsEvaluator, live.Plan.Tests, "the stored evaluator's live copy keeps the operator's environment")
 
 	out, err := draft(alice, cp, fakePromptID, "Answer in French.")
 	require.NoError(t, err)

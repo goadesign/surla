@@ -70,6 +70,8 @@ func TestVerifyChangeAcceptsOnlyTheOwnersCurrentConfirmedRevision(t *testing.T) 
 		assert.Equal(t, "alice@example.com", req.Owner)
 		assert.Equal(t, cfg.Plan.SuiteRepo, req.Plan.SuiteRepo, "the suite comes from the operator, never the caller")
 		assert.Equal(t, cfg.Plan.Binaries, req.Plan.Binaries)
+		assert.Equal(t, verify.TestsEvaluator, req.Plan.Tests, "the stored evaluator keeps the operator's environment")
+		assert.Equal(t, gensurla.NewTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}), started.TestSource)
 
 		_, err = cp.GetVerification(bob, &gensurla.GetVerificationPayload{RunID: started.RunID})
 		assert.ErrorContains(t, err, "is not the owner of run_id")

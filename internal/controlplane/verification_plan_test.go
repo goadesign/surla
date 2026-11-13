@@ -61,6 +61,24 @@ func TestStarterPlanReadsTheCommittedLayout(t *testing.T) {
 		})
 	}
 
+	t.Run("the candidate's programs come from its own commit", func(t *testing.T) {
+		repo := realTempDir(t)
+		gitForLayoutTest(t, repo, "init", "-q")
+		writeStarterAt(t, repo, "example.com/orders")
+		tests := commitAllForLayoutTest(t, repo)
+		require.NoError(t, os.RemoveAll(filepath.Join(repo, "cmd")))
+		require.NoError(t, os.RemoveAll(filepath.Join(repo, "eval")))
+		writeStarterAt(t, repo, "example.com/shop")
+		candidate := commitAllForLayoutTest(t, repo)
+
+		plan, err := planServer(t, repo).starterPlanAt(t.Context(), candidate, tests, testWriterActs)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, plan.Binaries, "the tests' commit declares orders")
+		assert.Equal(t, "./gen/cmd/orders-evals", plan.SuiteCommand, "the tests' own entry point")
+		assert.Equal(t, candidate, plan.CandidateCommit)
+		assert.Equal(t, tests, plan.SuiteCommit)
+	})
+
 	t.Run("committed layout wins over working files", func(t *testing.T) {
 		repo := realTempDir(t)
 		gitForLayoutTest(t, repo, "init", "-q")
@@ -155,7 +173,7 @@ func TestStarterPlanRefusesUnusableRepositories(t *testing.T) {
 				require.NoError(t, os.Mkdir(workspace, 0o755))
 			},
 			refusal: &layoutRefusal{reason: refusedReplacedFolder},
-			wantErr: "was replaced or removed after Surla started: stop and start Surla in the project folder, then try again",
+			wantErr: "was replaced or removed after Surla started, so the user restarts it: stop and start Surla in the project folder, then try again",
 		},
 		{
 			name: "not a git repository",

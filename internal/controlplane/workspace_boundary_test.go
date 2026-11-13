@@ -319,7 +319,7 @@ func TestInitProjectEmitsMCPProgress(t *testing.T) {
 		Commit string `json:"commit"`
 	}
 	require.NoError(t, json.Unmarshal(final.Result.StructuredContent, &res))
-	assert.Equal(t, fakeInitialSuiteCommit, res.Commit)
+	assert.Equal(t, fakeInitialCommit, res.Commit)
 	require.Len(t, events, 2)
 	assert.Equal(t, capturedProgressEvent{
 		progress: 0,
@@ -401,7 +401,7 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 					CandidateModule: ".",
 					Binaries:        map[string]string{"shop": "./cmd/shop"},
 					SuiteRepo:       ws,
-					SuiteCommit:     fakeInitialSuiteCommit,
+					SuiteCommit:     fakeInitialCommit,
 					SuiteModule:     "eval",
 					SuiteCommand:    "./cmd/shop-eval",
 					ReportDir:       reportsWithSpace,
@@ -585,7 +585,7 @@ func TestInitProjectAcceptsAnotherSpellingOfTheWorkspace(t *testing.T) {
 				CandidateModule: ".",
 				Binaries:        map[string]string{"shop": "./cmd/shop"},
 				SuiteRepo:       ws,
-				SuiteCommit:     fakeInitialSuiteCommit,
+				SuiteCommit:     fakeInitialCommit,
 				SuiteModule:     "eval",
 				SuiteCommand:    "./cmd/shop-eval",
 				ReportDir:       filepath.Join(root, "ops", "reports"),
