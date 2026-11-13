@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -118,6 +119,12 @@ const (
 	buildStopGrace = 10 * time.Second
 )
 
+// ErrLinkedFolder refuses a suite module reached through a symbolic link.
+// Prepare and Check read and write the module only through real folders from
+// the working copy's root, so a link the copy's author places on the way
+// cannot lead them outside the copy, for example into the project.
+var ErrLinkedFolder = errors.New("the suite module must be reached through real folders, not a symbolic link")
+
 // NewChecker returns a Checker that generates with evaluator and works in
 // workDir, a private folder its owner keeps outside every project and
 // removes after the Checker's last call. Nothing is created until a call
@@ -151,7 +158,10 @@ func Record(ctx context.Context, v Verdict, message string) (string, error) {
 // runs the design evaluator's story generator on the copy's suite module and
 // replaces the module's gen/ folder (and its AGENTS_QUICKSTART.md) with the
 // result. It returns the required scenarios, one per finished flow, named by
-// the generator. The project folder is not touched. A generation failure
+// the generator. The project folder is not touched: the module is opened one
+// real folder at a time from the project folder through the copy, and a
+// symbolic link on the way is refused with ErrLinkedFolder naming it, before
+// anything is read or written. A generation failure
 // wraps the evaluator's error, from which designeval.GenerationDiagnostic
 // derives the caller-safe text; on a platform without the sandbox it wraps
 // candidate.ErrIsolationUnavailable.
@@ -161,13 +171,18 @@ func (c *Checker) Prepare(
 	if err := errors.Join(wc.opened(), s.validate()); err != nil {
 		return nil, err
 	}
-	moduleDir := filepath.Join(wc.project, filepath.FromSlash(s.Module))
-	cleanDir, root, err := designeval.OpenModuleRoot(moduleDir)
+	projectDir := filepath.Dir(wc.dir)
+	rel, err := filepath.Rel(projectDir, wc.project)
 	if err != nil {
-		return nil, fmt.Errorf("open the suite module %s: %w", s.Module, err)
+		return nil, err
+	}
+	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
+	root, err := openModule(projectDir, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("open the suite module %s: %w", modulePath, err)
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	files, err := designeval.ReadModuleSnapshotFromRoot(cleanDir, root)
+	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(projectDir, modulePath), root)
 	if err != nil {
 		return nil, fmt.Errorf("read the suite module %s: %w", s.Module, err)
 	}
@@ -227,8 +242,9 @@ func (c *Checker) Check(
 	if err != nil {
 		return Verdict{}, err
 	}
-	moduleDir := filepath.Join(src, rel, filepath.FromSlash(s.Module))
-	required, findings, err := c.regenerate(ctx, moduleDir, src, stories)
+	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
+	moduleDir := filepath.Join(src, filepath.FromSlash(modulePath))
+	required, findings, err := c.regenerate(ctx, src, modulePath, stories)
 	if err != nil {
 		return Verdict{}, err
 	}
@@ -327,6 +343,26 @@ func forAuthor(message, src string) string {
 	return s[:k] + fmt.Sprintf(more, len(s)-k)
 }
 
+// logFinding returns one finding of kind whose message is head followed by
+// the end of the log file at path: as much as fits in maxFindingBytes after
+// head, read with candidate.ExcerptFile so a log of any size is never loaded
+// whole, starting on a character boundary and saying when earlier output was
+// left out. src is removed from quoted paths, as forAuthor does.
+func logFinding(kind FindingKind, head, path, src string) ([]Finding, error) {
+	const leftOut = "… (earlier output left out)\n"
+	out, cut, err := candidate.ExcerptFile(path, int64(maxFindingBytes-len(head)-len(leftOut)))
+	if err != nil {
+		return nil, err
+	}
+	if cut {
+		for len(out) > 0 && !utf8.RuneStart(out[0]) {
+			out = out[1:]
+		}
+		out = leftOut + out
+	}
+	return []Finding{{Kind: kind, Message: forAuthor(head+out, src)}}, nil
+}
+
 // isFailure reports whether err from generating, building or running the
 // author's code says nothing about the author's work: ctx ended or the
 // platform has no sandbox.
@@ -370,22 +406,76 @@ func resolveToolchain(ctx context.Context, dir string) (toolchain, error) {
 	return toolchain{goroot: goroot, modCache: lines[1]}, nil
 }
 
-// regenerate writes the generated folder of the snapshot's suite module at
-// moduleDir again from stories and returns the required scenarios. A module
-// that cannot be read or generated is a finding; src is removed from quoted
-// paths.
+// openModule opens the folder at the slash path rel below the real folder top,
+// one folder at a time, each through the folder above it. Each step is checked
+// with Lstat and then opened, and the opened folder must be the one checked,
+// so a symbolic link anywhere on rel, even one swapped in meanwhile, is
+// refused with ErrLinkedFolder naming it, and nothing outside top is opened.
+// The caller closes the result.
+func openModule(top, rel string) (_ *os.Root, err error) {
+	cur, err := os.OpenRoot(top)
+	if err != nil {
+		return nil, err
+	}
+	walked := ""
+	for _, name := range strings.Split(path.Clean(rel), "/") {
+		if name == "." {
+			continue
+		}
+		walked = path.Join(walked, name)
+		next, err := openFolder(cur, name, walked)
+		if err := errors.Join(err, cur.Close()); err != nil {
+			if next != nil {
+				err = errors.Join(err, next.Close())
+			}
+			return nil, err
+		}
+		cur = next
+	}
+	return cur, nil
+}
+
+// openFolder opens the folder name inside dir, which walked names for
+// messages, refusing a symbolic link or anything but a folder.
+func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
+	info, err := dir.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%w: %s is a symbolic link", ErrLinkedFolder, walked)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a folder", walked)
+	}
+	next, err := dir.OpenRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	held, err := next.Stat(".")
+	if err != nil || !os.SameFile(info, held) {
+		return nil, errors.Join(fmt.Errorf("%w: %s changed while it was opened", ErrLinkedFolder, walked), err, next.Close())
+	}
+	return next, nil
+}
+
+// regenerate writes the generated folder of the suite module at the slash
+// path modulePath in the snapshot src again from stories and returns the
+// required scenarios. A module that cannot be opened, including one reached
+// through a symbolic link, read or generated is a finding naming the path
+// relative to the copy.
 func (c *Checker) regenerate(
-	ctx context.Context, moduleDir, src string, stories []designeval.StorySummary,
+	ctx context.Context, src, modulePath string, stories []designeval.StorySummary,
 ) (_ []designeval.StoryScenario, _ []Finding, err error) {
 	finding := func(message string) []Finding {
 		return []Finding{{Kind: FindingGeneration, Message: forAuthor(message, src)}}
 	}
-	cleanDir, root, err := designeval.OpenModuleRoot(moduleDir)
+	root, err := openModule(src, modulePath)
 	if err != nil {
-		return nil, finding(fmt.Sprintf("The suite module could not be opened: %v", err)), nil
+		return nil, finding(fmt.Sprintf("The suite module %s could not be opened: %v", modulePath, err)), nil
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	files, err := designeval.ReadModuleSnapshotFromRoot(cleanDir, root)
+	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(src, filepath.FromSlash(modulePath)), root)
 	if _, ok := files["go.mod"]; err == nil && !ok {
 		err = errors.New("it has no go.mod")
 	}
@@ -453,11 +543,11 @@ func (c *Checker) listScenarios(
 		if *keep || isFailure(ctx, err) {
 			return nil, nil, fmt.Errorf("build the suite command: %w", err)
 		}
-		out, readErr := os.ReadFile(buildLog)
+		found, readErr := logFinding(FindingBuild, "The suite command does not compile:\n", buildLog, src)
 		if readErr != nil {
 			return nil, nil, errors.Join(fmt.Errorf("build the suite command: %w", err), readErr)
 		}
-		return nil, finding(FindingBuild, "The suite command does not compile:\n"+string(out)), nil
+		return nil, found, nil
 	}
 	art, err := candidate.Pin(filepath.Join(tmp, "store"), bin)
 	if err != nil {
@@ -476,12 +566,12 @@ func (c *Checker) listScenarios(
 		return nil, finding(FindingListing, fmt.Sprintf(
 			"The suite command's --describe printed more than %d bytes on standard output.", maxDeclarationBytes)), nil
 	case errors.As(err, &exitErr):
-		stderr, readErr := os.ReadFile(stderrLog)
+		head := fmt.Sprintf("The suite command's --describe exited with status %d. Its standard error:\n", exitErr.ExitCode())
+		found, readErr := logFinding(FindingListing, head, stderrLog, src)
 		if readErr != nil {
 			return nil, nil, errors.Join(fmt.Errorf("list the declared scenarios: %w", err), readErr)
 		}
-		return nil, finding(FindingListing, fmt.Sprintf("The suite command's --describe exited with status %d. "+
-			"Its standard error:\n%s", exitErr.ExitCode(), stderr)), nil
+		return nil, found, nil
 	default:
 		return nil, nil, fmt.Errorf("list the declared scenarios: %w", err)
 	}

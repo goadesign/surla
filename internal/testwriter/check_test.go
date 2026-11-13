@@ -94,9 +94,12 @@ func TestPrepareWritesOneRequiredMethodPerFinishedFlow(t *testing.T) {
 // TestCheckJudgesTheWorkingCopy plays the test writer through a prepared copy:
 // each step changes the copy's files and checks it. A missing hook method, an
 // edit of the generated folder that drops a requirement, a renamed or removed
-// scenario and a failing listing each return one finding naming what is
-// wrong; a complete copy that prints noise, including a JSON object, on
-// standard error and tries to write outside its sandbox is accepted, and the
+// scenario, a build that reads a file outside the snapshot (which only the
+// build sandbox refuses) and a failing listing each return one finding naming
+// what is wrong, and a listing that writes 256 MiB to its error stream is
+// quoted from a bounded excerpt of its end, allocating far less than that; a
+// complete copy that prints noise, including a JSON object, on standard error
+// and tries to write outside its sandbox is accepted, and the
 // write never happens. Recording makes one commit holding the files as
 // checked, with the generated folder written from the Story, and recording
 // the unchanged copy again returns that commit.
@@ -111,15 +114,23 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	prepared, err := os.ReadFile(filepath.Join(wc.Project(), "eval", generatedSuite))
 	require.NoError(t, err)
 	outside := filepath.Join(t.TempDir(), "written-outside-the-sandbox")
+	// header is readable by any build but the sandboxed one, which may read
+	// only the snapshot, the toolchain and the module cache.
+	header := filepath.Join(t.TempDir(), "outside.h")
+	require.NoError(t, os.WriteFile(header, []byte("#define OUTSIDE 1\n"), 0o600))
 
 	steps := []struct {
 		name string
 		// files are written into the copy's suite module before the check.
 		files map[string]string
+		// remove lists files of the suite module removed before the check.
+		remove []string
 		// wantKind is the one expected finding's kind; empty means accepted.
 		wantKind FindingKind
 		// wantMessage lists fragments of that finding's message.
 		wantMessage []string
+		// maxAlloc, when not zero, bounds the bytes the check allocates.
+		maxAlloc uint64
 	}{
 		{
 			name: "an unwritten hook method",
@@ -155,13 +166,25 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 			wantMessage: []string{`scenario "store_credit_within_limit"`},
 		},
 		{
-			name: "a listing that fails",
+			name: "a build that reads outside the snapshot",
 			files: map[string]string{
-				"cmd/shop-evals/main.go": "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\n" +
-					"func main() {\n\tfmt.Fprintln(os.Stderr, \"no declaration today\")\n\tos.Exit(3)\n}\n",
+				"cmd/shop-evals/main.go":   fixtureMain(outside, ""),
+				"cmd/shop-evals/outside.s": "#include \"" + header + "\"\n",
 			},
+			wantKind:    FindingBuild,
+			wantMessage: []string{"does not compile", "#include", "outside.h"},
+		},
+		{
+			name:        "a listing that fails after flooding its error stream",
+			files:       map[string]string{"cmd/shop-evals/main.go": floodingMain},
+			remove:      []string{"cmd/shop-evals/outside.s"},
 			wantKind:    FindingListing,
-			wantMessage: []string{"exited with status 3", "no declaration today"},
+			wantMessage: []string{"exited with status 3", "earlier output left out", "end of the error stream"},
+			// The error stream is read only as a bounded excerpt. The whole
+			// check allocated 2.5 MB under the race detector (measured with
+			// this 256 MiB stream); 32 MiB leaves room for that to vary and
+			// is an eighth of what reading the stream whole would allocate.
+			maxAlloc: 32 << 20,
 		},
 		{
 			name:  "a complete copy that prints noise on standard error",
@@ -171,8 +194,18 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	var accepted Verdict
 	for _, step := range steps {
 		writeFiles(t, filepath.Join(wc.Project(), "eval"), step.files)
+		for _, name := range step.remove {
+			require.NoError(t, os.Remove(filepath.Join(wc.Project(), "eval", filepath.FromSlash(name))))
+		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
 		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
+		runtime.ReadMemStats(&after)
 		require.NoError(t, err, step.name)
+		if step.maxAlloc > 0 {
+			t.Logf("%s: the check allocated %d bytes", step.name, after.TotalAlloc-before.TotalAlloc)
+			assert.Less(t, after.TotalAlloc-before.TotalAlloc, step.maxAlloc, "%s: bytes allocated", step.name)
+		}
 		t.Logf("%s: %+v", step.name, v.Findings)
 		if step.wantKind == "" {
 			require.True(t, v.Accepted(), "%s: %+v", step.name, v.Findings)
@@ -205,6 +238,65 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	assert.Equal(t, commit, same, "an unchanged copy returns the existing commit")
 	assert.Empty(t, ranHooks(t, markers))
 }
+
+// TestCheckIgnoresTheCopysOwnRepository rewrites the complete copy's .git in
+// the two ways its author could, to a repository whose configuration defines
+// the filter the copy's attributes name. Check still accepts the copy, the
+// filter never runs, and Record commits the generated suite written from the
+// Story.
+func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
+	skipWithoutSandbox(t)
+	repo, markers := newProject(t, fixtureProject(t))
+	wc, err := OpenWorkingCopy(t.Context(), repo)
+	require.NoError(t, err)
+	_, err = testChecker.Prepare(t.Context(), wc, fixtureSuite, refundStories)
+	require.NoError(t, err)
+	prepared, err := os.ReadFile(filepath.Join(wc.Project(), "eval", generatedSuite))
+	require.NoError(t, err)
+	outside := filepath.Join(t.TempDir(), "written-outside-the-sandbox")
+	writeFiles(t, wc.Dir(), map[string]string{
+		".gitattributes":                authorsAttributes,
+		"eval/acceptance/acceptance.go": fixtureHooks("RefundOverLimit", "StoreCreditWithinLimit"),
+		"eval/cmd/shop-evals/main.go":   fixtureMain(outside, ""),
+	})
+	marker := filepath.Join(t.TempDir(), "filter-ran")
+	for _, rewrite := range []func(t *testing.T, dir, marker string){replaceCopysGit, pointCopysGitInside} {
+		rewrite(t, wc.Dir(), marker)
+		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
+		require.NoError(t, err)
+		assert.True(t, v.Accepted(), "%+v", v.Findings)
+		assert.NoFileExists(t, marker, "no program named inside the copy runs")
+		commit, err := Record(t.Context(), v, "Add the accepted tests")
+		require.NoError(t, err)
+		assert.Equal(t, strings.TrimSpace(string(prepared)), runGit(t, repo, "show", commit+":eval/"+generatedSuite))
+	}
+	assert.NoFileExists(t, outside)
+	assert.Empty(t, ranHooks(t, markers))
+}
+
+// floodingMain is a suite command whose --describe writes 256 MiB to its
+// standard error, then a last line, and exits with status 3.
+const floodingMain = `// Command shop-evals floods its error stream.
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Fprintln(os.Stderr, "no declaration today")
+	line := bytes.Repeat([]byte("x"), 1<<20)
+	for range 256 {
+		if _, err := os.Stderr.Write(line); err != nil {
+			os.Exit(4)
+		}
+	}
+	fmt.Fprintln(os.Stderr, "\nend of the error stream")
+	os.Exit(3)
+}
+`
 
 // generatedSuite is the fixture's generated suite file, relative to its
 // module.
@@ -321,7 +413,7 @@ func main() {
 }
 
 // projectFiles returns every file of the project folder except git's and the
-// working copy's, with its content.
+// working copy's (whether a folder or a link in its place), with its content.
 func projectFiles(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	files := map[string]string{}
@@ -329,8 +421,11 @@ func projectFiles(t *testing.T, dir string) map[string]string {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == Folder) {
-			return filepath.SkipDir
+		if d.Name() == ".git" || d.Name() == Folder {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			return nil

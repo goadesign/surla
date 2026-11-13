@@ -1,5 +1,7 @@
 // This file runs git for the working copy: the commands that read and write
 // it, the private snapshot Check builds from, and the commit Record makes.
+// Every command on the copy goes through WorkingCopy.git, which names the
+// administrative folder the project's repository keeps for the copy.
 package testwriter
 
 import (
@@ -82,32 +84,31 @@ func git(ctx context.Context, dir string, env []string, args ...string) (string,
 // only read.
 func stageCopy(ctx context.Context, wc WorkingCopy, index, dst string) error {
 	env := []string{"GIT_INDEX_FILE=" + index}
-	if _, err := git(ctx, wc.dir, env, "read-tree", "HEAD"); err != nil {
+	if _, err := wc.git(ctx, wc.dir, env, "read-tree", "HEAD"); err != nil {
 		return fmt.Errorf("snapshot the working copy: %w", err)
 	}
-	if _, err := git(ctx, wc.dir, env, "add", "--all"); err != nil {
+	if _, err := wc.git(ctx, wc.dir, env, "add", "--all"); err != nil {
 		return fmt.Errorf("snapshot the working copy: %w", err)
 	}
-	if _, err := git(ctx, wc.dir, env, "checkout-index", "--all", "--prefix="+dst+string(filepath.Separator)); err != nil {
+	prefix := "--prefix=" + dst + string(filepath.Separator)
+	if _, err := wc.git(ctx, wc.dir, env, "checkout-index", "--all", prefix); err != nil {
 		return fmt.Errorf("write the working copy's snapshot: %w", err)
 	}
 	return nil
 }
 
-// writeTree records the files under src, a snapshot stageCopy wrote and the
-// check then changed, in the private index the same way, and writes that index
-// as a tree into the working copy's repository. It returns the tree's ID.
+// writeTree records every file under src, the snapshot stageCopy wrote and
+// the check then changed and compiled, in the private index, and writes that
+// index as a tree into the working copy's repository. It returns the tree's
+// ID. Ignore rules do not apply here: a file the author's ignore file names,
+// such as the regenerated gen/ folder, was compiled, so it is recorded too.
+// (Files those rules kept out of the copy's snapshot never reached src.)
 func writeTree(ctx context.Context, wc WorkingCopy, index, src string) (string, error) {
-	gitDir, err := git(ctx, wc.dir, nil, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return "", err
-	}
 	env := []string{"GIT_INDEX_FILE=" + index}
-	repo := []string{"--git-dir=" + gitDir, "--work-tree=" + src}
-	if _, err := git(ctx, src, env, append(repo, "add", "--all")...); err != nil {
+	if _, err := wc.git(ctx, src, env, "add", "--all", "--force"); err != nil {
 		return "", fmt.Errorf("record the checked files: %w", err)
 	}
-	tree, err := git(ctx, src, env, append(repo, "write-tree")...)
+	tree, err := wc.git(ctx, src, env, "write-tree")
 	if err != nil {
 		return "", fmt.Errorf("record the checked files: %w", err)
 	}
@@ -122,31 +123,31 @@ func writeTree(ctx context.Context, wc WorkingCopy, index, src string) (string, 
 // check, and then moves the branch, failing if it moved meanwhile.
 func commitTree(ctx context.Context, wc WorkingCopy, tree, message string) (string, error) {
 	ref := "refs/heads/" + Branch
-	head, err := git(ctx, wc.dir, nil, "rev-parse", "--verify", ref+"^{commit}")
+	head, err := wc.git(ctx, wc.dir, nil, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
 		return "", err
 	}
-	headTree, err := git(ctx, wc.dir, nil, "rev-parse", "--verify", head+"^{tree}")
+	headTree, err := wc.git(ctx, wc.dir, nil, "rev-parse", "--verify", head+"^{tree}")
 	if err != nil {
 		return "", err
 	}
 	if headTree == tree {
 		return head, nil
 	}
-	commit, err := git(ctx, wc.dir, nil, "commit-tree", tree, "-p", head, "-m", message)
+	commit, err := wc.git(ctx, wc.dir, nil, "commit-tree", tree, "-p", head, "-m", message)
 	if err != nil {
 		return "", fmt.Errorf("commit the accepted tests: %w", err)
 	}
-	checkedOut, err := git(ctx, wc.dir, nil, "symbolic-ref", "--quiet", "HEAD")
+	checkedOut, err := wc.git(ctx, wc.dir, nil, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil && exitCode(err) != 1 {
 		return "", err
 	}
 	if checkedOut == ref {
-		if _, err := git(ctx, wc.dir, nil, "read-tree", commit); err != nil {
+		if _, err := wc.git(ctx, wc.dir, nil, "read-tree", commit); err != nil {
 			return "", fmt.Errorf("update the working copy's index: %w", err)
 		}
 	}
-	if _, err := git(ctx, wc.dir, nil, "update-ref", ref, commit, head); err != nil {
+	if _, err := wc.git(ctx, wc.dir, nil, "update-ref", ref, commit, head); err != nil {
 		return "", fmt.Errorf("move %s to the accepted tests: %w", Branch, err)
 	}
 	return commit, nil
@@ -163,4 +164,13 @@ func gitEnv() []string {
 		}
 	}
 	return append(env, "GIT_TERMINAL_PROMPT=0")
+}
+
+// git runs one git command on the working copy's repository, with worktree
+// (the copy, or a snapshot of it) as the work tree: --git-dir names the
+// administrative folder found from the project's side, so git never reads the
+// copy's own .git, whose configuration the copy's author could write.
+func (w WorkingCopy) git(ctx context.Context, worktree string, env []string, args ...string) (string, error) {
+	repo := []string{"--git-dir=" + w.gitDir, "--work-tree=" + worktree}
+	return git(ctx, worktree, env, append(repo, args...)...)
 }

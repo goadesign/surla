@@ -9,8 +9,13 @@
 // Nothing here trusts the copy's author. Its files are compiled and run only
 // in the verify/candidate sandbox, which exists only on macOS: elsewhere
 // Prepare and Check fail with candidate.ErrIsolationUnavailable before any of
-// the author's code runs. Git runs on the copy with hooks and the file system
-// monitor disabled, so no script the author can write runs either.
+// the author's code runs. No file inside the working copy can make git run a
+// program: git is always pointed at the copy's repository through the folder
+// the project's repository keeps for it, never through the copy's own .git,
+// and it runs with hooks and the file system monitor disabled. A program the
+// project's or the user's own git configuration names, such as a filter
+// driver, still runs, as it would for the user. Files are read and written in
+// the copy only through real folders, never through a symbolic link.
 package testwriter
 
 import (
@@ -28,6 +33,16 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 )
 
+// listedCopy is one entry of the project repository's list of working copies
+// (git worktree list), the project's own folder included.
+type listedCopy struct {
+	// path is the working copy's folder as git recorded it.
+	path string
+	// branch is the full name of the branch checked out there, such as
+	// refs/heads/main, or empty when none is.
+	branch string
+}
+
 // WorkingCopy is the test writer's linked git working copy of one project.
 // Only OpenWorkingCopy creates one, so its folders are always a working copy
 // Surla created or verified.
@@ -38,6 +53,11 @@ type WorkingCopy struct {
 	// project is the project's folder inside dir: dir itself for a project at
 	// the repository's top level, dir/services/shop for one at services/shop.
 	project string
+	// gitDir is the administrative folder the project's repository keeps for
+	// this linked working copy (<common git folder>/worktrees/<name>), found
+	// from the project's side. Every git command on the copy names it, so the
+	// copy's own .git, which its author can rewrite, is never read.
+	gitDir string
 }
 
 const (
@@ -64,13 +84,20 @@ var (
 	// ErrFolderInUse refuses a project whose .surla-tests entry is not the
 	// working copy Surla created. Its message is the step to take.
 	ErrFolderInUse = errors.New("the project's " + Folder + " entry is not Surla's working copy: move it out of the project, then try again")
+	// ErrBranchInUse refuses to create the working copy while another folder,
+	// such as the project folder itself, has branch surla/tests checked out:
+	// git checks a branch out in one folder at a time. Its message is the
+	// step to take.
+	ErrBranchInUse = errors.New("branch " + Branch + ", which Surla reserves for the test writer's working copy, " +
+		"is checked out in another folder: switch that folder to another branch, then try again")
 )
 
 // OpenWorkingCopy returns the test writer's working copy of the project in
 // projectDir, creating it when missing: a linked git working copy (git
-// worktree) at <project>/.surla-tests on branch surla/tests. The branch starts
-// at the project's current commit and is kept when it already exists, so
-// commits Record made survive a deleted copy. Before creating anything it
+// worktree) at <project>/.surla-tests on branch surla/tests. The branch name is
+// reserved for Surla: the branch starts at the project's current commit, and
+// an existing branch of that name that no folder has checked out is reused,
+// so the commits Record made survive a deleted copy. Before creating anything it
 // adds ".surla-tests/" to the repository's own info/exclude file, never a
 // tracked file, so the project's git status stays clean; no tracked file of
 // the project is written.
@@ -78,9 +105,10 @@ var (
 // It is safe to repeat: an existing copy is verified and returned as it is.
 // Callers serialize calls for one project. A project in no git working tree
 // is refused with ErrNotRepository, one whose repository has no commit with
-// ErrNoCommit, and one whose .surla-tests entry is something else with
-// ErrFolderInUse; nothing is created in these cases. Other errors are git or
-// file system failures.
+// ErrNoCommit, one whose .surla-tests entry is something else with
+// ErrFolderInUse, and one where another folder, such as the project folder
+// itself, has branch surla/tests checked out with ErrBranchInUse; nothing is
+// created in these cases. Other errors are git or file system failures.
 func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error) {
 	project, err := abspath.Eval(projectDir)
 	if err != nil {
@@ -110,7 +138,7 @@ func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error
 	case err == nil && !info.IsDir():
 		return WorkingCopy{}, fmt.Errorf("%w (%s is not a folder)", ErrFolderInUse, dir)
 	case err == nil:
-		if err := verifyCopy(ctx, project, dir); err != nil {
+		if wc.gitDir, err = registeredCopy(ctx, project, dir); err != nil {
 			return WorkingCopy{}, err
 		}
 		if err := excludeFolder(ctx, project); err != nil {
@@ -120,10 +148,22 @@ func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error
 	case !errors.Is(err, fs.ErrNotExist):
 		return WorkingCopy{}, fmt.Errorf("inspect %s: %w", dir, err)
 	}
+	listed, err := listCopies(ctx, project)
+	if err != nil {
+		return WorkingCopy{}, err
+	}
+	for _, c := range listed {
+		if same, err := samePath(c.path, dir); c.branch == "refs/heads/"+Branch && (err != nil || !same) {
+			return WorkingCopy{}, fmt.Errorf("%w (%s has it checked out)", ErrBranchInUse, c.path)
+		}
+	}
 	if err := excludeFolder(ctx, project); err != nil {
 		return WorkingCopy{}, err
 	}
-	if err := addCopy(ctx, project, dir); err != nil {
+	if err := addCopy(ctx, project, dir, listed); err != nil {
+		return WorkingCopy{}, err
+	}
+	if wc.gitDir, err = registeredCopy(ctx, project, dir); err != nil {
 		return WorkingCopy{}, err
 	}
 	return wc, nil
@@ -173,62 +213,87 @@ func excludeFolder(ctx context.Context, project string) error {
 	return nil
 }
 
-// verifyCopy checks that the existing folder dir is the root of a linked
-// working copy of the project's repository with Branch checked out, and
-// returns ErrFolderInUse otherwise.
-func verifyCopy(ctx context.Context, project, dir string) error {
-	inUse := func(reason string) error {
-		return fmt.Errorf("%w (%s %s)", ErrFolderInUse, dir, reason)
-	}
-	top, err := git(ctx, dir, nil, "rev-parse", "--show-toplevel")
+// registeredCopy returns the administrative folder the project's repository
+// keeps for a linked working copy at dir with Branch checked out, and
+// ErrFolderInUse when it keeps none. It reads only the project's repository:
+// the folder under its common git folder's worktrees/ whose gitdir file names
+// dir/.git, and that folder's HEAD. The copy's own .git is never read.
+func registeredCopy(ctx context.Context, project, dir string) (string, error) {
+	common, err := git(ctx, project, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
-		if ctx.Err() != nil {
-			return err
-		}
-		return inUse(fmt.Sprintf("is not a git working copy: %v", err))
+		return "", err
 	}
-	if same, err := samePath(top, dir); err != nil || !same {
-		return inUse("is not the root of a git working copy")
+	admins := filepath.Join(common, "worktrees")
+	entries, err := os.ReadDir(admins)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("list the repository's linked working copies: %w", err)
 	}
-	copyCommon, err := git(ctx, dir, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err != nil {
-		return err
-	}
-	projectCommon, err := git(ctx, project, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err != nil {
-		return err
-	}
-	if same, err := samePath(copyCommon, projectCommon); err != nil || !same {
-		return inUse("belongs to another git repository")
-	}
-	head, err := git(ctx, dir, nil, "symbolic-ref", "--quiet", "HEAD")
-	if err != nil || head != "refs/heads/"+Branch {
-		return inUse("does not have branch " + Branch + " checked out")
-	}
-	return nil
-}
-
-// addCopy creates the linked working copy at dir, which does not exist. A
-// registration git kept for dir after its folder was deleted is removed first;
-// Branch is checked out when it exists and otherwise created at the project's
-// current commit.
-func addCopy(ctx context.Context, project, dir string) error {
-	listed, err := git(ctx, project, nil, "worktree", "list", "--porcelain", "-z")
-	if err != nil {
-		return err
-	}
-	for _, field := range strings.Split(listed, "\x00") {
-		path, ok := strings.CutPrefix(field, "worktree ")
-		if !ok {
+	var found []string
+	for _, e := range entries {
+		admin := filepath.Join(admins, e.Name())
+		raw, err := os.ReadFile(filepath.Join(admin, "gitdir"))
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		if same, err := samePath(path, dir); err == nil && same {
+		if err != nil {
+			return "", fmt.Errorf("read the repository's linked working copies: %w", err)
+		}
+		// git records the copy's .git path, relative to the administrative
+		// folder when worktree.useRelativePaths is set.
+		target := strings.TrimSpace(string(raw))
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(admin, target)
+		}
+		if same, err := samePath(filepath.Dir(target), dir); err == nil && same {
+			found = append(found, admin)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return "", fmt.Errorf("%w (%s is not a linked working copy of the project's repository)", ErrFolderInUse, dir)
+	case 1:
+	default:
+		return "", fmt.Errorf("the project's repository registers %s as %d linked working copies: %s",
+			dir, len(found), strings.Join(found, ", "))
+	}
+	head, err := git(ctx, project, nil, "--git-dir="+found[0], "symbolic-ref", "--quiet", "HEAD")
+	if err != nil || head != "refs/heads/"+Branch {
+		return "", fmt.Errorf("%w (%s does not have branch %s checked out)", ErrFolderInUse, dir, Branch)
+	}
+	return found[0], nil
+}
+
+// listCopies returns the project repository's list of working copies, read
+// from the project's side.
+func listCopies(ctx context.Context, project string) ([]listedCopy, error) {
+	out, err := git(ctx, project, nil, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var listed []listedCopy
+	for _, field := range strings.Split(out, "\x00") {
+		if path, ok := strings.CutPrefix(field, "worktree "); ok {
+			listed = append(listed, listedCopy{path: path})
+		} else if branch, ok := strings.CutPrefix(field, "branch "); ok && len(listed) > 0 {
+			listed[len(listed)-1].branch = branch
+		}
+	}
+	return listed, nil
+}
+
+// addCopy creates the linked working copy at dir, which does not exist, given
+// the repository's list of working copies. A registration git kept for dir
+// after its folder was deleted is removed first; Branch is checked out when
+// it exists and otherwise created at the project's current commit.
+func addCopy(ctx context.Context, project, dir string, listed []listedCopy) error {
+	for _, c := range listed {
+		if same, err := samePath(c.path, dir); err == nil && same {
 			if _, err := git(ctx, project, nil, "worktree", "remove", dir); err != nil {
 				return fmt.Errorf("remove the registration of the deleted working copy: %w", err)
 			}
 		}
 	}
-	_, err = git(ctx, project, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+Branch)
+	_, err := git(ctx, project, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+Branch)
 	switch {
 	case err == nil:
 		_, err = git(ctx, project, nil, "worktree", "add", "--quiet", dir, Branch)

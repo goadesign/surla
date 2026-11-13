@@ -230,6 +230,29 @@ func Output(ctx context.Context, a Artifact, spec Spec, maxBytes int) ([]byte, e
 	return out.buf.Bytes(), waitErr
 }
 
+// ExcerptFile returns at most maxBytes from the end of the log file at path,
+// such as a Spec.LogFile after Exec or Output, and whether earlier output was
+// left out. It reads only those bytes, however large the file is, so a
+// candidate that writes without limit to its log cannot make the caller hold
+// it in memory.
+func ExcerptFile(path string, maxBytes int64) (string, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, fmt.Errorf("open log file: %w", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", false, fmt.Errorf("stat log file: %w", err)
+	}
+	start := max(info.Size()-maxBytes, 0)
+	b := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+		return "", false, fmt.Errorf("read log file: %w", err)
+	}
+	return string(b), start > 0, nil
+}
+
 // start verifies the artifact and starts it in the sandbox described by spec.
 // stdout receives standard output when non-nil; otherwise standard output joins
 // standard error in spec.LogFile.
@@ -513,21 +536,7 @@ func (p *Process) Done() <-chan struct{} {
 // Excerpt returns at most maxBytes from the end of the process's output so
 // far, and whether earlier output was left out.
 func (p *Process) Excerpt(maxBytes int64) (string, bool, error) {
-	f, err := os.Open(p.logFile)
-	if err != nil {
-		return "", false, fmt.Errorf("open log file: %w", err)
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", false, fmt.Errorf("stat log file: %w", err)
-	}
-	start := max(info.Size()-maxBytes, 0)
-	b := make([]byte, info.Size()-start)
-	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
-		return "", false, fmt.Errorf("read log file: %w", err)
-	}
-	return string(b), start > 0, nil
+	return ExcerptFile(p.logFile, maxBytes)
 }
 
 // Write keeps p, or fails without keeping any of it when buf would then exceed

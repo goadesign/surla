@@ -99,6 +99,16 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			wantStep: "move it out of the project",
 		},
 		{
+			name: "the reserved branch checked out in the project folder",
+			project: func(t *testing.T) string {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				runGit(t, repo, "switch", "--quiet", "--create", Branch)
+				return repo
+			},
+			wantErr:  ErrBranchInUse,
+			wantStep: "switch that folder to another branch",
+		},
+		{
 			name: "a file of the same name",
 			project: func(t *testing.T) string {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
