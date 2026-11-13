@@ -289,7 +289,7 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 
 	other := startOtherOrigin(t, origin+"/views")
 	started := time.Now()
-	browser := startBrowser(t, executable)
+	browser := startBrowser(t, executable, t.TempDir())
 	listening := time.Now()
 	facts := driveBrowser(t, node, harness, browserInput{
 		DevTools:        browser.devtools,
