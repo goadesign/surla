@@ -687,11 +687,12 @@ type DraftOverridePayload struct {
 // DraftOverrideResult is the result type of the surla service draft_override
 // method.
 type DraftOverrideResult struct {
-	// True when updated in the target platform's prompt.Store for 0s reload.
+	// True when the live target saved the prompt text in its prompt store for 0s
+	// reload.
 	AppliedInStore bool
 	// True when the change modifies a compiled Go business rule.
 	RequiresRebuild bool
-	// New prompt version digest returned by the target platform.
+	// Version of the accepted prompt text, as the live target returned it.
 	PromptVersion *string
 	// Operator-facing status explanation.
 	Message string
@@ -2577,11 +2578,12 @@ func validatejsonDraftOverridePayloadTransport(value *jsonDraftOverridePayloadTr
 
 // jsonDraftOverrideResultTransport stores JSON fields until they have been validated.
 type jsonDraftOverrideResultTransport struct {
-	// True when updated in the target platform's prompt.Store for 0s reload.
+	// True when the live target saved the prompt text in its prompt store for 0s
+	// reload.
 	AppliedInStore *bool `json:"applied_in_store"`
 	// True when the change modifies a compiled Go business rule.
 	RequiresRebuild *bool `json:"requires_rebuild"`
-	// New prompt version digest returned by the target platform.
+	// Version of the accepted prompt text, as the live target returned it.
 	PromptVersion *string `json:"prompt_version,omitempty"`
 	// Operator-facing status explanation.
 	Message *string `json:"message"`
@@ -16506,7 +16508,7 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 		case "applied_in_store":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when updated in the target platform's prompt.Store for 0s reload.",
+				typed[key], "True when the live target saved the prompt text in its prompt store for 0s reload.",
 			); err != nil {
 				return err
 			}
@@ -16520,7 +16522,7 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 		case "prompt_version":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "New prompt version digest returned by the target platform.",
+				typed[key], "Version of the accepted prompt text, as the live target returned it.",
 			); err != nil {
 				return err
 			}

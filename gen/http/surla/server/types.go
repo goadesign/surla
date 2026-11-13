@@ -402,11 +402,12 @@ type PreviewArchitectureResponseBody struct {
 // DraftOverrideResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body.
 type DraftOverrideResponseBody struct {
-	// True when updated in the target platform's prompt.Store for 0s reload.
+	// True when the live target saved the prompt text in its prompt store for 0s
+	// reload.
 	AppliedInStore bool `form:"applied_in_store" json:"applied_in_store" xml:"applied_in_store"`
 	// True when the change modifies a compiled Go business rule.
 	RequiresRebuild bool `form:"requires_rebuild" json:"requires_rebuild" xml:"requires_rebuild"`
-	// New prompt version digest returned by the target platform.
+	// Version of the accepted prompt text, as the live target returned it.
 	PromptVersion *string `form:"prompt_version,omitempty" json:"prompt_version,omitempty" xml:"prompt_version,omitempty"`
 	// Operator-facing status explanation.
 	Message string `form:"message" json:"message" xml:"message"`

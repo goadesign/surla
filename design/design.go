@@ -379,9 +379,9 @@ var DraftOverridePayload = Type("DraftOverridePayload", func() {
 // DraftOverrideResult reports whether the CP3 edit was hot-reloaded in 0s or requires a full Go rebuild.
 var DraftOverrideResult = Type("DraftOverrideResult", func() {
 	Description("Result of a Checkpoint 3 Fast Draft Mode override request.")
-	Attribute("applied_in_store", Boolean, "True when updated in the target platform's prompt.Store for 0s reload.")
+	Attribute("applied_in_store", Boolean, "True when the live target saved the prompt text in its prompt store for 0s reload.")
 	Attribute("requires_rebuild", Boolean, "True when the change modifies a compiled Go business rule.")
-	Attribute("prompt_version", String, "New prompt version digest returned by the target platform.")
+	Attribute("prompt_version", String, "Version of the accepted prompt text, as the live target returned it.")
 	Attribute("message", String, "Operator-facing status explanation.")
 	Required("applied_in_store", "requires_rebuild", "message")
 })

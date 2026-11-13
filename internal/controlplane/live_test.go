@@ -624,15 +624,14 @@ func TestDraftWithNoLiveTargetNamesTheStepThatEnablesIt(t *testing.T) {
 
 			adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 			call, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "draft_override", Arguments: args})
-			mcpText := ""
-			if err != nil {
-				mcpText = err.Error()
-			} else {
-				b, merr := json.Marshal(call)
-				require.NoError(t, merr)
-				mcpText = string(b)
-			}
-			assert.Contains(t, mcpText, "start_live_target", "the MCP caller sees the enabling step")
+			require.NoError(t, err, "a declared error is a tool result, not a transport or protocol error")
+			complete, ok := call.Outcome.AsComplete()
+			require.True(t, ok)
+			require.NotNil(t, complete.IsError)
+			assert.True(t, *complete.IsError, "the tool result is marked as an error")
+			require.NotEmpty(t, complete.Content)
+			require.NotNil(t, complete.Content[0].Text)
+			assert.Contains(t, *complete.Content[0].Text, msgNoLiveTarget, "the MCP caller sees the declared message, which names the enabling step")
 
 			rule, err := cp.DraftOverride(alice, &gensurla.DraftOverridePayload{TargetKind: TargetKindCompiledRule, NewContent: "refund limit 60"})
 			require.NoError(t, err)

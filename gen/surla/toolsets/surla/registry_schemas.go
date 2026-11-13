@@ -4302,7 +4302,7 @@ func (declarations registryDeclarations) schema268() *genregistry.ToolSchema {
 		Description:            &registryText1,
 		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
 		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when updated in the target platform's prompt.Store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"New prompt version digest returned by the target platform.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when the live target saved the prompt text in its prompt store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"Version of the accepted prompt text, as the live target returned it.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Draft Override",
@@ -4396,7 +4396,7 @@ func (declarations registryDeclarations) metadata274() *genregistry.ToolTypeMeta
 	registryText1 := "DraftOverrideResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when updated in the target platform's prompt.Store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"New prompt version digest returned by the target platform.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when the live target saved the prompt text in its prompt store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"Version of the accepted prompt text, as the live target returned it.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field275(),
 			declarations.field276(),
@@ -4420,7 +4420,7 @@ func (registryDeclarations) field275() *genregistry.ToolFieldMetadata {
 // field276 constructs one generated field declaration.
 func (registryDeclarations) field276() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
-	registryText2 := "True when updated in the target platform's prompt.Store for 0s reload."
+	registryText2 := "True when the live target saved the prompt text in its prompt store for 0s reload."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("applied_in_store")},
@@ -4446,7 +4446,7 @@ func (registryDeclarations) field277() *genregistry.ToolFieldMetadata {
 // field278 constructs one generated field declaration.
 func (registryDeclarations) field278() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "New prompt version digest returned by the target platform."
+	registryText2 := "Version of the accepted prompt text, as the live target returned it."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("prompt_version")},

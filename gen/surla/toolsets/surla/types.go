@@ -202,11 +202,12 @@ type (
 	}
 	// DraftOverrideResult defines the JSON result for the surla.draft_override tool.
 	DraftOverrideResult = struct {
-		// True when updated in the target platform's prompt.Store for 0s reload.
+		// True when the live target saved the prompt text in its prompt store for 0s
+		// reload.
 		AppliedInStore bool
 		// True when the change modifies a compiled Go business rule.
 		RequiresRebuild bool
-		// New prompt version digest returned by the target platform.
+		// Version of the accepted prompt text, as the live target returned it.
 		PromptVersion *string
 		// Operator-facing status explanation.
 		Message string
