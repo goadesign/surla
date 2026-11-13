@@ -55,6 +55,18 @@ func fixtureTeamDependencies(state *project.State) project.TeamDependencies {
 	return project.TeamDependencies{Lifetime: context.Background(), Host: &fixtureTeamHost{}, RosterDirectory: filepath.Join(state.Dir, "fixture-rosters"), Shell: "/bin/zsh"}
 }
 
+// bindFixtureTeamEffects explicitly opts a journey into test-owned team effects.
+func bindFixtureTeamEffects(runtime *projectRuntime) {
+	runtime.startTeamPrograms = func(context.Context) error { return nil }
+	runtime.teamDependencies = func(ctx context.Context) (project.TeamDependencies, error) {
+		root, err := runtime.configRoot()
+		if err != nil {
+			return project.TeamDependencies{}, err
+		}
+		return project.TeamDependencies{Lifetime: ctx, Host: &fixtureTeamHost{}, RosterDirectory: filepath.Join(root, "fixture-rosters"), Shell: "/bin/zsh"}, nil
+	}
+}
+
 // TestTeamPreflightVersionAndPrograms verifies the server or command contract using only temporary state and stand-ins.
 func TestTeamPreflightVersionAndPrograms(t *testing.T) {
 	for _, missing := range []string{"herdr-core", "herdr-app", "chorus"} {
@@ -95,6 +107,24 @@ func TestTeamProgramStartup(t *testing.T) {
 			var calls []string
 			chorusReady, appReady := scenario == "ready", scenario == "ready"
 			commands := teamCommands{chorus: "chorus", app: "herdr-app"}
+			commands.start = func(name string, args ...string) (<-chan error, error) {
+				call := name + " " + strings.Join(args, " ")
+				calls = append(calls, strings.TrimSpace(call))
+				if name == commands.chorus {
+					if scenario == "chorus up fails" {
+						return nil, assert.AnError
+					}
+					chorusReady = true
+				} else {
+					if scenario == "window start fails" {
+						return nil, assert.AnError
+					}
+					appReady = true
+				}
+				done := make(chan error, 1)
+				done <- nil
+				return done, nil
+			}
 			commands.run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				call := name + " " + strings.Join(args, " ")
 				calls = append(calls, strings.TrimSpace(call))
@@ -203,7 +233,7 @@ func TestEnsureTeamDeclaredErrorsAreFixed(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, want string
 		status           int
-	}{{"ambiguous", `{"name":"ambiguous_space","count":3}`, "3 Herdr spaces match", 409}, {"busy", `{"name":"window_busy","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":false}`, "another Herdr dialog is open", 409}, {"unavailable", `{"name":"team_unavailable","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":true}`, "project team could not be prepared", 503}} {
+	}{{"ambiguous", `{"name":"ambiguous_space","count":3}`, "3 Herdr spaces match", 409}, {"busy", `{"name":"window_busy","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":false}`, "a dialog is open in Herdr", 409}, {"unavailable", `{"name":"team_unavailable","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":true}`, "project team could not be prepared", 503}} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			state, err := fixtureProjectState(t.TempDir())

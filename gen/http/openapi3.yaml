@@ -12788,7 +12788,7 @@ components:
                         - test_writer
                 running:
                     type: boolean
-                    description: The matching terminal has an agent in the foreground.
+                    description: The matching live terminal is not reported as an idle shell; missing foreground information counts as running.
                     example: true
             example:
                 handle: Quo a est cumque quae quod velit.

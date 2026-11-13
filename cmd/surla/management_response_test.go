@@ -77,6 +77,7 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 			t.Cleanup(api.Close)
 			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("b", 64)}))
 			runtime := testProjectRuntime()
+			bindFixtureTeamEffects(&runtime)
 			runtime.preflight = func() error { return nil }
 			opened := false
 			runtime.openViews = func(_ context.Context, address string) error {
@@ -119,6 +120,7 @@ func TestUnexpectedManagementResponseDoesNotEchoCredential(t *testing.T) {
 	t.Cleanup(api.Close)
 	require.NoError(t, state.SaveRunning(project.Running{Terminal: "owned-terminal", ManagementCredential: key}))
 	runtime := testProjectRuntime()
+	bindFixtureTeamEffects(&runtime)
 	runtime.preflight = func() error { return nil }
 	err = runWithRuntime(nil, io.Discard, runtime)
 	require.Error(t, err)
@@ -242,6 +244,7 @@ func TestServeWithdrawsRunningBeforeStoreRelease(t *testing.T) {
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	runtime := testProjectRuntime()
+	bindFixtureTeamEffects(&runtime)
 	closed := make(chan struct{})
 	runtime.listen = func(network, address string) (net.Listener, error) {
 		listener, err := net.Listen(network, address)

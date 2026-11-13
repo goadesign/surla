@@ -26,16 +26,12 @@ func testProjectRuntime() projectRuntime {
 // testProjectRuntimeAt binds a fixture root value without mutable package state.
 func testProjectRuntimeAt(directory string) projectRuntime {
 	return projectRuntime{
-		listen:            net.Listen,
-		startTeamPrograms: func(context.Context) error { return nil },
-		teamDependencies: func(ctx context.Context) (project.TeamDependencies, error) {
-			directory, err := project.Discover(directory, directory)
-			if err != nil {
-				return project.TeamDependencies{}, err
-			}
-			deps := fixtureTeamDependencies(directory)
-			deps.Lifetime = ctx
-			return deps, nil
+		listen: net.Listen,
+		startTeamPrograms: func(context.Context) error {
+			return errors.New("default tests cannot start real team services or windows")
+		},
+		teamDependencies: func(context.Context) (project.TeamDependencies, error) {
+			return project.TeamDependencies{}, errors.New("default tests cannot resolve or change real project teams")
 		},
 		configRoot: func() (string, error) {
 			if directory == "" {
@@ -164,7 +160,9 @@ func TestMain(m *testing.M) {
 				os.Exit(1)
 			}
 			runHelper = func(args []string) error {
-				return runWithRuntime(append([]string{"serve"}, args...), io.Discard, testProjectRuntime())
+				runtime := testProjectRuntime()
+				bindFixtureTeamEffects(&runtime)
+				return runWithRuntime(append([]string{"serve"}, args...), io.Discard, runtime)
 			}
 		case "verify-run":
 			runHelper = runVerifyRun

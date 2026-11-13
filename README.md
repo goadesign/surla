@@ -104,12 +104,25 @@ After you edit a module's `design/`, `surla gen -dir <module>` regenerates its `
 
 ### 2. Work through the change checkpoints
 
-Run `surla` in your project folder. It starts or attaches to one server in a
-parentless Herdr terminal and opens the views page through a short-lived link.
+Install [Herdr core](https://herdr.dev/core/), the [Herdr app](https://herdr.dev/)
+and [Chorus](https://github.com/goadesign/chorus) v0.11.0 or newer, then run
+`surla` in your project folder. Before creating project state, Surla checks the
+required programs and Chorus version and names the install or update step if
+anything is missing. It starts or attaches to one server in a parentless Herdr
+terminal, starts an absent Chorus service or Herdr window, and prepares this
+project's guide team. Choose an agent and model in the Chorus launcher in Herdr;
+the guide uses its own Surla connection to work through the Story and change
+with you. Surla then opens the views page through a short-lived link.
+
+Starting again reuses the team's stable handles and Herdr space. A running guide
+needs no launcher. An already open launcher stays open with its original
+project: use it only if it is for this project, otherwise close it and run
+`surla` again. Close any other dialog before retrying. Surla bounds readiness
+checks without terminating your Herdr window or Chorus service.
 `surla stop` shuts that project down in order. Subfolders and physical path
 aliases find the same project; moving the folder starts a new, empty project.
-The guide drafts changes, the builder builds and verifies them, and only your
-browser session confirms intent or approves results. See the [project server
+The guide drafts the Story and Change Card; only your browser session confirms
+intent or approves results. See the [project server
 reference](docs/REFERENCE.md#surla-serve) for state, credentials and settings.
 
 Surla saves the coding agent's analysis as a Change Card: the request, open

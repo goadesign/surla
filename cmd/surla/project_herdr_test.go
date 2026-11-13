@@ -33,8 +33,7 @@ func init() {
 		runtime := productionProjectRuntime()
 		runtime.configRoot = testProjectRuntime().configRoot
 		runtime.preflight = func() error { return preflightProjectStart(projectHerdrProgram) }
-		runtime.startTeamPrograms = testProjectRuntime().startTeamPrograms
-		runtime.teamDependencies = testProjectRuntime().teamDependencies
+		bindFixtureTeamEffects(&runtime)
 		return runtime
 	}
 }

@@ -23,7 +23,7 @@ var ProjectAgent = Type("ProjectAgent", func() {
 var ProjectTeamRole = Type("ProjectTeamRole", func() {
 	Attribute("role", String, "Trusted role.", func() { Enum("guide", "builder", "test_writer") })
 	Attribute("handle", String, "Stable Chorus handle and Surla actor identity.")
-	Attribute("running", Boolean, "The matching terminal has an agent in the foreground.")
+	Attribute("running", Boolean, "The matching live terminal is not reported as an idle shell; missing foreground information counts as running.")
 	Required("role", "handle", "running")
 })
 

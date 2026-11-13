@@ -138,7 +138,8 @@ type ProjectTeamRole struct {
 	Role string
 	// Stable Chorus handle and Surla actor identity.
 	Handle string
-	// The matching terminal has an agent in the foreground.
+	// The matching live terminal is not reported as an idle shell; missing
+	// foreground information counts as running.
 	Running bool
 }
 
@@ -264,7 +265,8 @@ type jsonProjectTeamRoleTransport struct {
 	Role *string `json:"role"`
 	// Stable Chorus handle and Surla actor identity.
 	Handle *string `json:"handle"`
-	// The matching terminal has an agent in the foreground.
+	// The matching live terminal is not reported as an idle shell; missing
+	// foreground information counts as running.
 	Running *bool `json:"running"`
 }
 
@@ -1152,7 +1154,7 @@ func validateProjectTeamJSONValue3(path string, value any, description string) e
 		case "running":
 			if err := validateProjectTeamJSONValue4(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The matching terminal has an agent in the foreground.",
+				typed[key], "The matching live terminal is not reported as an idle shell; missing foreground information counts as running.",
 			); err != nil {
 				return err
 			}

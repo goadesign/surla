@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/goadesign/surla/internal/project"
@@ -21,6 +22,8 @@ type (
 	teamCommands struct {
 		core, app, chorus string
 		run               func(context.Context, string, ...string) ([]byte, error)
+		// start detaches a GUI/service starter; readiness, never process ownership, bounds startup.
+		start func(string, ...string) (<-chan error, error)
 	}
 )
 
@@ -33,7 +36,7 @@ func runTeamCommand(ctx context.Context, program string, args ...string) ([]byte
 	defer cancel()
 	raw, err := exec.CommandContext(ctx, program, args...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s failed", filepath.Base(program), strings.Join(args, " "))
+		return nil, fmt.Errorf("%s command failed", filepath.Base(program))
 	}
 	return raw, nil
 }
@@ -73,53 +76,103 @@ func preflightTeam(commands teamCommands) error {
 
 // startTeamPrograms starts only absent programs after the project server has answered.
 func startTeamPrograms(ctx context.Context, commands teamCommands) error {
-	if _, err := commands.run(ctx, commands.chorus, "status"); err != nil {
-		if _, err := commands.run(ctx, commands.chorus, "up"); err != nil {
-			return errors.New("chorus up failed; run chorus up and retry surla")
-		}
-		if err := waitTeamProgram(ctx, commands, commands.chorus, "status"); err != nil {
-			return errors.New("chorus status did not become ready after chorus up; run chorus status and retry surla")
-		}
+	// Service and window readiness each own a full deadline; ensure_team gets its own later.
+	chorusCtx, stopChorus := context.WithTimeout(ctx, 35*time.Second)
+	err := startTeamProgram(chorusCtx, commands, commands.chorus, []string{"up"})
+	stopChorus()
+	if err != nil {
+		return err
 	}
-	if _, err := commands.Overlays(ctx); err != nil {
-		if _, err := commands.run(ctx, commands.app); err != nil {
-			return errors.New("herdr-app failed to open; run herdr-app and retry surla")
-		}
-		if err := waitTeamProgram(ctx, commands, commands.app, "status"); err != nil {
-			return errors.New("herdr-app status did not become ready; open Herdr and retry surla")
-		}
-	}
-	return nil
+	windowCtx, stopWindow := context.WithTimeout(ctx, 35*time.Second)
+	defer stopWindow()
+	return startTeamProgram(windowCtx, commands, commands.app, nil)
 }
 
-// waitTeamProgram bounds readiness independently of the command's own timeout.
-func waitTeamProgram(ctx context.Context, commands teamCommands, program string, args ...string) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+// startTeamProgram starts one absent dependency without ever signaling its process.
+func startTeamProgram(ctx context.Context, commands teamCommands, program string, args []string) error {
+	if teamProgramReady(ctx, commands, program) {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s status did not become ready; %s", filepath.Base(program), teamProgramNextStep(commands, program))
+	}
+	commandName := "chorus up"
+	if program == commands.app {
+		commandName = "herdr-app"
+	}
+	exited, err := commands.start(program, args...)
+	if err != nil {
+		return fmt.Errorf("%s could not start; %s", commandName, teamProgramNextStep(commands, program))
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	for {
-		var err error
-		if program == commands.app {
-			_, err = commands.Overlays(ctx)
-		} else {
-			_, err = commands.run(ctx, program, args...)
+		ready := teamProgramReady(pollCtx, commands, program)
+		// Observe an already-reported starter failure before declaring readiness.
+		select {
+		case err := <-exited:
+			if err != nil {
+				return fmt.Errorf("%s failed to start; %s", commandName, teamProgramNextStep(commands, program))
+			}
+			exited = nil
+		default:
 		}
-		if err == nil {
+		if ready {
 			return nil
 		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case err := <-exited:
+			if err != nil {
+				return fmt.Errorf("%s failed to start; %s", commandName, teamProgramNextStep(commands, program))
+			}
+			exited = nil // A successful short-lived launcher is allowed to leave its window/service running.
+		case <-pollCtx.Done():
+			return fmt.Errorf("%s status did not become ready; %s", filepath.Base(program), teamProgramNextStep(commands, program))
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }
 
-// projectTeamDependencies resolves the server login environment, never paths supplied by the CLI caller.
-func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, error) {
-	commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
-	if err != nil {
-		return project.TeamDependencies{}, err
+// teamProgramReady requires the same Chorus status evidence as its launcher.
+func teamProgramReady(ctx context.Context, commands teamCommands, program string) bool {
+	if program == commands.app {
+		_, err := commands.Overlays(ctx)
+		return err == nil
 	}
+	raw, err := commands.run(ctx, program, "status")
+	return err == nil && strings.Contains(string(raw), " is running")
+}
+
+// teamProgramNextStep gives fixed recovery wording without command output or selected paths.
+func teamProgramNextStep(commands teamCommands, program string) string {
+	if program == commands.app {
+		return "open Herdr, then run surla again"
+	}
+	return "run chorus up, then run surla again"
+}
+
+// startDetachedTeamProgram gives the window or service starter its own session and no pipes.
+// Context deadlines apply only to status polling: Surla never signals these user processes.
+func startDetachedTeamProgram(program string, args ...string) (<-chan error, error) {
+	command := exec.Command(program, args...)
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := command.Start(); err != nil {
+		return nil, errors.New("program could not start")
+	}
+	exited := make(chan error, 1)
+	go reapTeamProgram(command, exited)
+	return exited, nil
+}
+
+// reapTeamProgram reports an exit without blocking startup or inheriting output pipes.
+func reapTeamProgram(command *exec.Cmd, exited chan<- error) { exited <- command.Wait() }
+
+// projectTeamDependencies binds the server login environment, never paths supplied by the CLI caller.
+// Its HERDR_APP_HOME (default ~/.config/herdr-app) may differ from the running window’s environment.
+func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, error) {
+	// Resolve only Herdr, when a team operation actually makes a command. Server startup
+	// and unrelated management operations remain available without these programs on login PATH.
+	commands := teamCommands{core: "herdr-core", app: "herdr-app", run: runServerTeamCommand}
 	home := os.Getenv("HERDR_APP_HOME")
 	if home == "" {
 		userHome, err := os.UserHomeDir()
@@ -269,4 +322,13 @@ func (c teamCommands) OpenLauncher(ctx context.Context) error {
 	return c.do(ctx, "mod.open", struct {
 		Name string `json:"name"`
 	}{"chorus-launcher"}, &result)
+}
+
+// runServerTeamCommand resolves a required Herdr program at the external operation boundary.
+func runServerTeamCommand(ctx context.Context, program string, args ...string) ([]byte, error) {
+	resolved, err := exec.LookPath(program)
+	if err != nil {
+		return nil, errors.New("required Herdr program is unavailable on the server login PATH")
+	}
+	return runTeamCommand(ctx, resolved, args...)
 }

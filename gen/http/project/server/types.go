@@ -512,7 +512,8 @@ type ProjectTeamRoleResponseBody struct {
 	Role string `form:"role" json:"role" xml:"role"`
 	// Stable Chorus handle and Surla actor identity.
 	Handle string `form:"handle" json:"handle" xml:"handle"`
-	// The matching terminal has an agent in the foreground.
+	// The matching live terminal is not reported as an idle shell; missing
+	// foreground information counts as running.
 	Running bool `form:"running" json:"running" xml:"running"`
 }
 

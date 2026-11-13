@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -78,6 +79,7 @@ func productionProjectRuntime() projectRuntime {
 			if err != nil {
 				return err
 			}
+			commands.start = startDetachedTeamProgram
 			return startTeamPrograms(ctx, commands)
 		},
 		startTerminal: func(ctx context.Context, state *project.State) (string, error) {
@@ -143,16 +145,18 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		return err
 	}
 
-	teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
-	defer stopTeam()
-	if err := runtime.startTeamPrograms(teamCtx); err != nil {
+	if err := runtime.startTeamPrograms(context.Background()); err != nil {
 		return err
 	}
+	teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
+	defer stopTeam()
 	team, err := client.EnsureTeam(teamCtx)
 	if err != nil {
 		return err
 	}
-	if team.Dialog == "not_needed" {
+	if team.Dialog == "already_open" {
+		_, err = fmt.Fprintf(stdout, "Team %s.\nthe Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again\n", team.Team)
+	} else if team.Dialog == "not_needed" {
 		_, err = fmt.Fprintf(stdout, "Team %s is running.\n", team.Team)
 	} else {
 		_, err = fmt.Fprintf(stdout, "Team %s: choose an agent in the open Chorus dialog in Herdr.\n", team.Team)
@@ -466,6 +470,9 @@ func managementEndpoint(
 		}
 		var responseErr *goahttp.ClientError
 		if errors.As(err, &responseErr) && responseErr.Name == "invalid_response" {
+			if responseErr.Method == "ensure_team" && doer.lastStatus == http.StatusNotFound {
+				return nil, errors.New("this project’s server was started by another version; run surla stop, then surla")
+			}
 			return nil, goahttp.ErrInvalidResponse(responseErr.Service, responseErr.Method, doer.lastStatus, "")
 		}
 		var spaceConflict *genproject.TeamSpaceConflict
@@ -476,7 +483,7 @@ func managementEndpoint(
 		if errors.As(err, &serviceErr) {
 			switch serviceErr.Name {
 			case "window_busy":
-				return nil, fmt.Errorf("another Herdr dialog is open; close it and run surla again (HTTP %d)", doer.lastStatus)
+				return nil, fmt.Errorf("a dialog is open in Herdr; close it, then run surla again (HTTP %d)", doer.lastStatus)
 			case "team_unavailable":
 				return nil, fmt.Errorf("project team could not be prepared; check Herdr and run surla again (HTTP %d)", doer.lastStatus)
 			case "forbidden":
@@ -643,12 +650,19 @@ func startProjectTerminal(
 		return "", err
 	}
 	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve"}
+	command := exec.CommandContext(ctx, hc, argv...)
+	command.Stdin = nil
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	raw, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("start Herdr server terminal: %w: %s; ensure Herdr is installed and hc is available", err, strings.TrimSpace(stderr.String()))
+	}
 	var reply struct {
 		Address string `json:"address"`
 	}
-	commands := teamCommands{run: runTeamCommand}
-	if err := commands.json(ctx, hc, &reply, argv...); err != nil {
-		return "", errors.New("herdr-core run failed to start the project server; check Herdr and run surla again")
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return "", fmt.Errorf("decode Herdr server terminal response: %w", err)
 	}
 	if reply.Address == "" {
 		return "", errors.New("Herdr returned no server terminal address")
@@ -658,11 +672,18 @@ func startProjectTerminal(
 
 // projectHerdrProgram resolves the required external terminal executable without starting it.
 func projectHerdrProgram() (string, error) {
-	program, err := exec.LookPath("herdr-core")
+	hc, err := exec.LookPath("hc")
 	if err != nil {
-		return "", errors.New("herdr-core is required to start Surla; install it with: curl -fsSL https://releases.herdr.dev/core/install.sh | sh (https://herdr.dev/core/)")
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", homeErr
+		}
+		hc = filepath.Join(home, ".local", "bin", "hc")
+		if _, executableErr := exec.LookPath(hc); executableErr != nil {
+			return "", errors.New("Herdr hc is required to start Surla; install it with: curl -fsSL https://releases.herdr.dev/core/install.sh | sh (https://herdr.dev/core/)")
+		}
 	}
-	return program, nil
+	return hc, nil
 }
 
 // preflightProjectStart refuses unavailable launch effects before creating project state.
@@ -706,18 +727,22 @@ func waitProjectTerminal(ctx context.Context, terminal string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var result struct {
-		Ended bool `json:"ended"`
-	}
-	commands := teamCommands{run: func(ctx context.Context, program string, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, program, args...).Output()
-	}}
-	err = commands.json(ctx, hc, &result, "wait", "--json", "--timeout", "40", terminal)
+	command := exec.CommandContext(ctx, hc, "wait", "--json", "--timeout", "40", terminal)
+	command.Stdin = nil
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	raw, err := command.Output()
 	if ctx.Err() != nil {
 		return false, nil
 	}
 	if err != nil {
-		return false, errors.New("herdr-core wait failed while observing the project server")
+		return false, fmt.Errorf("observe Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(stderr.String()))
+	}
+	var result struct {
+		Ended bool `json:"ended"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, fmt.Errorf("decode Herdr terminal %s status: %w", terminal, err)
 	}
 	return result.Ended, nil
 }
@@ -728,10 +753,11 @@ func removeProjectTerminal(ctx context.Context, terminal string) error {
 	if err != nil {
 		return err
 	}
-	var result map[string]json.RawMessage
-	commands := teamCommands{run: runTeamCommand}
-	if err := commands.json(ctx, hc, &result, "rm", "--json", terminal); err != nil {
-		return errors.New("herdr-core rm failed to remove the ended project server terminal")
+	command := exec.CommandContext(ctx, hc, "rm", "--json", terminal)
+	command.Stdin = nil
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("remove failed Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

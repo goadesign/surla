@@ -302,11 +302,19 @@ older Chorus names `chorus update -yes`. Install
 The server runs in its own parentless
 Herdr terminal, so closing the initiating terminal leaves it running.
 
-After the server answers, Surla starts an absent Chorus service and Herdr window,
-with bounded readiness checks. The server owns the stable team name, per-role
+After the server answers, Surla starts an absent Chorus service and Herdr window
+in separate sessions without inherited output pipes. Each dependency has its
+own bounded readiness check; timing out stops polling and leaves the user's
+service or window running. Team preparation has a separate deadline. The server
+owns the stable team name, per-role
 handles, Herdr space, and complete atomic launcher roster. The roster lives at
 `<HERDR_APP_HOME>/data/chorus-launcher/rosters/<space>.json` (Herdr's default
 home is `~/.config/herdr-app`) and contains credential file paths, never tokens.
+The server uses its login environment to resolve Herdr when preparing the team;
+Chorus and Herdr need not be on that environment's PATH for the server to start
+or for other management operations. The roster home also comes from the
+server's login environment. It contains only roles whose working folders exist;
+existing role entries require valid credential files.
 Starting again reuses the guide and saved space. If a space was closed, the
 server adopts exactly one local space matching its team name and physical
 folder, creates one if none matches, and refuses duplicates with their count.
@@ -314,8 +322,15 @@ It removes only its own roster for a replaced space.
 
 When the guide is missing or its pane holds only an idle shell, Surla focuses
 this project's space and opens the Chorus launcher so the user can choose an
-agent and model. An already open launcher stays open. Another dialog must be
-closed before retrying. When the guide is running, no dialog opens. Surla
+agent and model. Surla reads open dialog names before changing the window. An
+already open
+launcher stays open and keeps its captured project; choose agents there only
+if it is for this project, otherwise close it and run Surla again. Another
+open dialog must be closed before retrying. If this project has no saved or
+matching space and any dialog is open, startup refuses without creating a
+space, adding an agent, or saving team state. When the guide is running, no new
+dialog opens. Missing foreground information conservatively counts a live pane
+as running. Surla
 prints the team and launcher state, then opens its views page. The guide works
 through the Story and change with the user; only the user confirms and approves
 on the page. Starting a team does not require Git.
@@ -327,8 +342,8 @@ agents cannot call it, and it is absent from MCP discovery. Its accepted work
 has a bounded server lifetime independent of client disconnects. Named errors
 include `ambiguous_space` with its numeric count, `window_busy`, and
 `team_unavailable`; the CLI supplies its own messages without printing peer
-error text. Real window and dialog behavior still requires validation with
-the released Chorus launcher.
+error text. If the answering project server lacks this operation, Surla tells
+you to run `surla stop`, then `surla`, to start the current server version.
 
 At startup, `ANTHROPIC_API_KEY` selects Anthropic with `claude-sonnet-4-6`; otherwise `OPENAI_API_KEY` selects OpenAI with `gpt-5.4-mini`.
 

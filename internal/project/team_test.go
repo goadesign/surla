@@ -112,6 +112,7 @@ func TestEnsureTeamLifecycle(t *testing.T) {
 	assert.Len(t, state.Record.Agents, 1)
 	host.terminals = []TeamTerminal{{State: "live", Labels: map[string]string{"chorus.handle": first.Roles[0].Handle, "chorus.project": state.Record.Directory, "herdr.space": first.Space, "herdr.tab": "tab"}, Foreground: &TeamForeground{Argv: []string{"codex"}}}}
 	host.calls = nil
+	host.overlays = nil
 	running, err := server.EnsureTeam(teamContext(state))
 	require.NoError(t, err)
 	assert.Equal(t, "not_needed", running.Dialog)
@@ -206,6 +207,7 @@ func TestTeamNamesAndThreeRoleRoster(t *testing.T) {
 	other := testState(t)
 	assert.NotEqual(t, state.Record.Team, teamName("— 123 ! a very long project folder name", other.Record.ID))
 	assert.LessOrEqual(t, len(state.Record.Team), 32)
+	assert.Regexp(t, `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`, state.Record.Team)
 }
 
 // TestRoleRunningSharedContract verifies the server or command contract using only temporary state and stand-ins.
@@ -214,7 +216,7 @@ func TestRoleRunningSharedContract(t *testing.T) {
 		name, state string
 		argv        []string
 		want        bool
-	}{{"no foreground", "live", nil, true}, {"empty", "live", []string{}, false}, {"finished", "finished", []string{"codex"}, false}, {"agent", "live", []string{"/usr/bin/claude"}, true}, {"shell", "live", []string{"/bin/zsh", "-l"}, false}, {"login", "live", []string{"-zsh", "-li"}, false}, {"custom", "live", []string{"/bin/custom"}, false}, {"wrapper", "live", []string{"zsh", "-lic", "exec codex"}, true}, {"command", "live", []string{"bash", "-c", "codex"}, true}, {"second flag", "live", []string{"sh", "-l", "-c"}, true}, {"long flag", "live", []string{"sh", "--command"}, false}, {"nonflag", "live", []string{"sh", "abc"}, false}, {"xonsh", "live", []string{"xonsh"}, false}, {"elvish", "live", []string{"elvish"}, false}} {
+	}{{"no foreground", "live", nil, true}, {"empty", "live", []string{}, true}, {"finished", "finished", []string{"codex"}, false}, {"agent", "live", []string{"/usr/bin/claude"}, true}, {"shell", "live", []string{"/bin/zsh", "-l"}, false}, {"login", "live", []string{"-zsh", "-li"}, false}, {"custom", "live", []string{"/bin/custom"}, false}, {"wrapper", "live", []string{"zsh", "-lic", "exec codex"}, true}, {"command", "live", []string{"bash", "-c", "codex"}, true}, {"second flag", "live", []string{"sh", "-l", "-c"}, true}, {"long flag", "live", []string{"sh", "--command"}, false}, {"nonflag", "live", []string{"sh", "abc"}, false}, {"xonsh", "live", []string{"xonsh"}, false}, {"elvish", "live", []string{"elvish"}, false}} {
 		t.Run(test.name, func(t *testing.T) {
 			terminal := TeamTerminal{State: test.state}
 			if test.argv != nil {
@@ -358,7 +360,7 @@ func TestTwoProjectTeams(t *testing.T) {
 
 // TestMissingForegroundPreservesLiveGuide mirrors older Herdr's absent/null foreground replies.
 func TestMissingForegroundPreservesLiveGuide(t *testing.T) {
-	for _, foreground := range []string{"", `,"foreground":null`} {
+	for _, foreground := range []string{"", `,"foreground":null`, `,"foreground":{}`, `,"foreground":{"argv":[]}`, `,"foreground":{"argv":[""]}`} {
 		t.Run(foreground, func(t *testing.T) {
 			state := testState(t)
 			deps := fixtureTeamDependencies(state)
