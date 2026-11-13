@@ -340,7 +340,7 @@ func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 	runtime.openViews = func(context.Context, string) error { return nil }
 	var output bytes.Buffer
 	require.NoError(t, runtime.start(&output))
-	assert.Contains(t, output.String(), "The Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again")
+	assert.Contains(t, output.String(), `Click "Reload team" in the open Chorus dialog, then choose the agents.`)
 	for actor := range state.Record.Agents {
 		secret, err := os.ReadFile(state.AgentFile(actor))
 		require.NoError(t, err)

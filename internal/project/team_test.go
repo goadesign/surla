@@ -401,3 +401,40 @@ func registerTestAgent(server *Server, handle, role, folder string) (*testAgent,
 	}
 	return &testAgent{ActorID: actual, CredentialFile: server.state.AgentFile(actual)}, nil
 }
+
+// TestTeamResultNextStep covers each real owner outcome and the user-facing conversion.
+func TestTeamResultNextStep(t *testing.T) {
+	for _, tc := range []struct{ dialog, step string }{
+		{"opened", "Choose an agent for each role in the open Chorus dialog in Herdr."},
+		{"already_open", `Click "Reload team" in the open Chorus dialog, then choose the agents.`},
+		{"not_needed", "Every listed role is running."},
+	} {
+		t.Run(tc.dialog, func(t *testing.T) {
+			state := testState(t)
+			deps := fixtureTeamDependencies(state)
+			host := deps.Host.(*teamFixture)
+			server, err := NewServer(state, func() {}, deps)
+			require.NoError(t, err)
+			first, err := server.EnsureTeam(teamContext(state))
+			require.NoError(t, err)
+			switch tc.dialog {
+			case "already_open":
+				host.overlays = []string{"chorus-launcher"}
+			case "not_needed":
+				host.terminals = []TeamTerminal{{State: "live", Labels: map[string]string{
+					"chorus.project": state.Record.Directory,
+					"herdr.space":    first.Space,
+					"herdr.tab":      "tab",
+					"chorus.handle":  first.Roles[0].Handle,
+				}}}
+			}
+			team, err := server.EnsureTeam(teamContext(state))
+			require.NoError(t, err)
+			assert.Equal(t, tc.dialog, team.Dialog)
+			assert.Equal(t, tc.step, team.Step)
+			userTeam, err := server.StartAgents(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, team.Step, userTeam.Step, "the user operation must carry the owner's step unchanged")
+		})
+	}
+}

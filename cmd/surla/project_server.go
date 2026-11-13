@@ -154,13 +154,7 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	if team.Dialog == "already_open" {
-		_, err = fmt.Fprintf(stdout, "Team %s.\nThe Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again\n", team.Team)
-	} else if team.Dialog == "not_needed" {
-		_, err = fmt.Fprintf(stdout, "Team %s is running.\n", team.Team)
-	} else {
-		_, err = fmt.Fprintf(stdout, "Team %s: choose an agent in the open Chorus dialog in Herdr.\n", team.Team)
-	}
+	_, err = fmt.Fprintf(stdout, "Team %s.\n%s\n", team.Team, team.Step)
 	if err != nil {
 		return err
 	}

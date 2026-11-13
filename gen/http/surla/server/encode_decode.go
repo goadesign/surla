@@ -4213,6 +4213,7 @@ func marshalSurlaProjectTeamToProjectTeamResponseBody(v *surla.ProjectTeam) *Pro
 		Team:   v.Team,
 		Space:  v.Space,
 		Dialog: v.Dialog,
+		Step:   v.Step,
 	}
 	if v.Roles != nil {
 		res.Roles = make([]*ProjectTeamRoleResponseBody, len(v.Roles))

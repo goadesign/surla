@@ -42,6 +42,8 @@ type EnsureTeamResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles" json:"roles" xml:"roles"`
 	// Launcher state after ensuring the team.
 	Dialog string `form:"dialog" json:"dialog" xml:"dialog"`
+	// What the user does next for the prepared team.
+	Step string `form:"step" json:"step" xml:"step"`
 }
 
 // BrowserLinkResponseBody is the type of the "project" service "browser_link"
@@ -316,6 +318,7 @@ func NewEnsureTeamResponseBody(res *project.ProjectTeam) *EnsureTeamResponseBody
 		Team:   res.Team,
 		Space:  res.Space,
 		Dialog: res.Dialog,
+		Step:   res.Step,
 	}
 	if res.Roles != nil {
 		body.Roles = make([]*ProjectTeamRoleResponseBody, len(res.Roles))

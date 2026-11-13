@@ -25,7 +25,8 @@ var ProjectTeam = Type("ProjectTeam", func() {
 	Attribute("space", String, "Local Herdr space identifier.")
 	Attribute("roles", ArrayOf(ProjectTeamRole))
 	Attribute("dialog", String, "Launcher state after ensuring the team.", func() { Enum("opened", "already_open", "not_needed") })
-	Required("team", "space", "roles", "dialog")
+	Attribute("step", String, "What the user does next for the prepared team.", func() { MinLength(1); MaxLength(512) })
+	Required("team", "space", "roles", "dialog", "step")
 })
 
 // TeamSpaceConflict carries a safe count independently of peer-authored error messages.

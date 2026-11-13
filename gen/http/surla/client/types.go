@@ -816,6 +816,8 @@ type StartTeamAgentsResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles,omitempty" json:"roles,omitempty" xml:"roles,omitempty"`
 	// Launcher state after ensuring the team.
 	Dialog *string `form:"dialog,omitempty" json:"dialog,omitempty" xml:"dialog,omitempty"`
+	// What the user does next for the prepared team.
+	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
 }
 
 // ListChangesResponseBody is the type of the "surla" service "list_changes"
@@ -3588,6 +3590,8 @@ type ProjectTeamResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles,omitempty" json:"roles,omitempty" xml:"roles,omitempty"`
 	// Launcher state after ensuring the team.
 	Dialog *string `form:"dialog,omitempty" json:"dialog,omitempty" xml:"dialog,omitempty"`
+	// What the user does next for the prepared team.
+	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
 }
 
 // BuildTeamWindowBusyResponseBody is used to define fields on response body
@@ -7549,6 +7553,7 @@ func NewStartTeamAgentsProjectTeamOK(body *StartTeamAgentsResponseBody) *surla.P
 		Team:   *body.Team,
 		Space:  *body.Space,
 		Dialog: *body.Dialog,
+		Step:   *body.Step,
 	}
 	v.Roles = make([]*surla.ProjectTeamRole, len(body.Roles))
 	for i, val := range body.Roles {
@@ -9205,6 +9210,9 @@ func ValidateStartTeamAgentsResponseBody(body *StartTeamAgentsResponseBody) (err
 	if body.Dialog == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dialog", "body"))
 	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
 	if body.Team != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.team", *body.Team, "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$"))
 	}
@@ -9218,6 +9226,14 @@ func ValidateStartTeamAgentsResponseBody(body *StartTeamAgentsResponseBody) (err
 	if body.Dialog != nil {
 		if !(*body.Dialog == "opened" || *body.Dialog == "already_open" || *body.Dialog == "not_needed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.dialog", *body.Dialog, []any{"opened", "already_open", "not_needed"}))
+		}
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
 		}
 	}
 	return
@@ -14167,6 +14183,9 @@ func ValidateProjectTeamResponseBody(body *ProjectTeamResponseBody) (err error) 
 	if body.Dialog == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dialog", "body"))
 	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
 	if body.Team != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.team", *body.Team, "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$"))
 	}
@@ -14180,6 +14199,14 @@ func ValidateProjectTeamResponseBody(body *ProjectTeamResponseBody) (err error) 
 	if body.Dialog != nil {
 		if !(*body.Dialog == "opened" || *body.Dialog == "already_open" || *body.Dialog == "not_needed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.dialog", *body.Dialog, []any{"opened", "already_open", "not_needed"}))
+		}
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
 		}
 	}
 	return
@@ -14200,6 +14227,9 @@ func validateProjectTeamResponseBody(body *ProjectTeamResponseBody, path string)
 	if body.Dialog == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dialog", path))
 	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", path))
+	}
 	if body.Team != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern(path+".team", *body.Team, "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$"))
 	}
@@ -14213,6 +14243,14 @@ func validateProjectTeamResponseBody(body *ProjectTeamResponseBody, path string)
 	if body.Dialog != nil {
 		if !(*body.Dialog == "opened" || *body.Dialog == "already_open" || *body.Dialog == "not_needed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".dialog", *body.Dialog, []any{"opened", "already_open", "not_needed"}))
+		}
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
 		}
 	}
 	return

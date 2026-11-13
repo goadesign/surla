@@ -147,9 +147,14 @@ func (s *Server) EnsureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 }
 
 // ensureTeam holds the operation lock across the complete space/roster/dialog transition.
-func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error) {
+func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam, err error) {
 	s.team.Lock()
 	defer s.team.Unlock()
+	defer func() {
+		if result != nil {
+			result.Step = teamNextStep(result.Dialog)
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, teamUnavailable(ctx, "lifetime")
 	}
@@ -274,7 +279,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	for _, role := range roster.Roles {
 		listed[role.Handle] = true
 	}
-	result := &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: make([]*genproject.ProjectTeamRole, 0, len(roles))}
+	result = &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: make([]*genproject.ProjectTeamRole, 0, len(roles))}
 	missing := false
 	for _, role := range roles {
 		running := runningHandles[role.Handle]
@@ -451,4 +456,19 @@ func teamUnavailable(ctx context.Context, step string) error {
 	span.RecordError(failure)
 	span.SetStatus(codes.Error, "team start failed")
 	return genproject.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and run surla again"))
+}
+
+// teamNextStep owns the user's next action after preparing a team. The launcher
+// reads its rows when it opens; an already open dialog rereads a rewritten roster
+// only when the user clicks its existing Reload team action.
+func teamNextStep(dialog string) string {
+	switch dialog {
+	case "opened":
+		return "Choose an agent for each role in the open Chorus dialog in Herdr."
+	case "already_open":
+		return "Click \"Reload team\" in the open Chorus dialog, then choose the agents."
+	case "not_needed":
+		return "Every listed role is running."
+	}
+	panic("unrecognized team dialog state")
 }

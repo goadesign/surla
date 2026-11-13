@@ -816,6 +816,8 @@ type StartTeamAgentsResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles" json:"roles" xml:"roles"`
 	// Launcher state after ensuring the team.
 	Dialog string `form:"dialog" json:"dialog" xml:"dialog"`
+	// What the user does next for the prepared team.
+	Step string `form:"step" json:"step" xml:"step"`
 }
 
 // ListChangesResponseBody is the type of the "surla" service "list_changes"
@@ -3588,6 +3590,8 @@ type ProjectTeamResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles" json:"roles" xml:"roles"`
 	// Launcher state after ensuring the team.
 	Dialog string `form:"dialog" json:"dialog" xml:"dialog"`
+	// What the user does next for the prepared team.
+	Step string `form:"step" json:"step" xml:"step"`
 }
 
 // BuildTeamWindowBusyResponseBody is used to define fields on response body
@@ -6182,6 +6186,7 @@ func NewStartTeamAgentsResponseBody(res *surla.ProjectTeam) *StartTeamAgentsResp
 		Team:   res.Team,
 		Space:  res.Space,
 		Dialog: res.Dialog,
+		Step:   res.Step,
 	}
 	if res.Roles != nil {
 		body.Roles = make([]*ProjectTeamRoleResponseBody, len(res.Roles))

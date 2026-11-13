@@ -5658,6 +5658,7 @@ func unmarshalProjectTeamResponseBodyToSurlaProjectTeam(v *ProjectTeamResponseBo
 		Team:   *v.Team,
 		Space:  *v.Space,
 		Dialog: *v.Dialog,
+		Step:   *v.Step,
 	}
 	res.Roles = make([]*surla.ProjectTeamRole, len(v.Roles))
 	for i, val := range v.Roles {

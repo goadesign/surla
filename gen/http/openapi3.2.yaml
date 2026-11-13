@@ -13288,6 +13288,7 @@ paths:
                                       role: builder
                                       running: true
                                 space: Ut et aut a tempora possimus.
+                                step: uk
                                 team: P
                 "403":
                     description: 'forbidden: The trusted credential cannot perform this operation.'
@@ -13514,6 +13515,7 @@ paths:
                                       role: builder
                                       running: true
                                 space: Ut aut.
+                                step: q8t
                                 team: c
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -20192,6 +20194,12 @@ components:
                     type: string
                     description: Local Herdr space identifier.
                     example: Ut et aut a tempora possimus.
+                step:
+                    type: string
+                    description: What the user does next for the prepared team.
+                    example: uk
+                    minLength: 1
+                    maxLength: 512
                 team:
                     type: string
                     description: Stable Chorus team name.
@@ -20210,12 +20218,14 @@ components:
                       role: builder
                       running: true
                 space: Ut et aut a tempora possimus.
+                step: uk
                 team: P
             required:
                 - team
                 - space
                 - roles
                 - dialog
+                - step
         ProjectTeamRole:
             type: object
             properties:
@@ -22265,6 +22275,12 @@ components:
                                 type: string
                                 enum:
                                     - ready
+                            step:
+                                type: string
+                                description: What the user does next for the prepared team.
+                                example: "9"
+                                minLength: 1
+                                maxLength: 512
                             team:
                                 type: string
                                 description: Stable Chorus team name.
@@ -22280,12 +22296,14 @@ components:
                                   role: builder
                                   running: true
                             space: A modi cumque omnis commodi ea a.
+                            step: "9"
                             team: "1"
                           required:
                             - team
                             - space
                             - roles
                             - dialog
+                            - step
                             - state
                         - type: object
                           properties:

@@ -1536,6 +1536,7 @@ paths:
                             - space
                             - roles
                             - dialog
+                            - step
                 "403":
                     description: 'forbidden: The trusted credential cannot perform this operation.'
                     schema:
@@ -1719,6 +1720,7 @@ paths:
                             - space
                             - roles
                             - dialog
+                            - step
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
@@ -7069,6 +7071,12 @@ definitions:
                 type: string
                 description: Local Herdr space identifier.
                 example: Ut et aut a tempora possimus.
+            step:
+                type: string
+                description: What the user does next for the prepared team.
+                example: uk
+                minLength: 1
+                maxLength: 512
             team:
                 type: string
                 description: Stable Chorus team name.
@@ -7087,12 +7095,14 @@ definitions:
                   role: builder
                   running: true
             space: Ut et aut a tempora possimus.
+            step: uk
             team: P
         required:
             - team
             - space
             - roles
             - dialog
+            - step
     ProjectTeamRole:
         title: ProjectTeamRole
         type: object
@@ -9117,6 +9127,12 @@ definitions:
                             type: string
                             enum:
                                 - ready
+                        step:
+                            type: string
+                            description: What the user does next for the prepared team.
+                            example: "9"
+                            minLength: 1
+                            maxLength: 512
                         team:
                             type: string
                             description: Stable Chorus team name.
@@ -9127,6 +9143,7 @@ definitions:
                         - space
                         - roles
                         - dialog
+                        - step
                         - state
                     - type: object
                       properties:

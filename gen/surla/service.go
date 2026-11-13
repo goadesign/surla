@@ -1075,6 +1075,8 @@ type ProjectTeam struct {
 	Roles []*ProjectTeamRole
 	// Launcher state after ensuring the team.
 	Dialog string
+	// What the user does next for the prepared team.
+	Step string
 }
 
 type ProjectTeamRole struct {
@@ -4021,6 +4023,8 @@ type jsonProjectTeamTransport struct {
 	Roles []*jsonProjectTeamRoleTransport `json:"roles"`
 	// Launcher state after ensuring the team.
 	Dialog *string `json:"dialog"`
+	// What the user does next for the prepared team.
+	Step *string `json:"step"`
 }
 
 // validatejsonProjectTeamTransport checks decoded JSON before it becomes a service value.
@@ -4040,6 +4044,9 @@ func validatejsonProjectTeamTransport(value *jsonProjectTeamTransport) (err erro
 	if value.Dialog == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dialog", "body"))
 	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
 	if value.Team != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.team", *value.Team, "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$"))
 	}
@@ -4053,6 +4060,14 @@ func validatejsonProjectTeamTransport(value *jsonProjectTeamTransport) (err erro
 	if value.Dialog != nil {
 		if !(*value.Dialog == "opened" || *value.Dialog == "already_open" || *value.Dialog == "not_needed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.dialog", *value.Dialog, []any{"opened", "already_open", "not_needed"}))
+		}
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(*value.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *value.Step, utf8.RuneCountInString(*value.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*value.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *value.Step, utf8.RuneCountInString(*value.Step), 512, false))
 		}
 	}
 	return err
@@ -6800,6 +6815,12 @@ func validateProjectTeamOriginal(value *ProjectTeam) (err error) {
 	}
 	if !(value.Dialog == "opened" || value.Dialog == "already_open" || value.Dialog == "not_needed") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.dialog", value.Dialog, []any{"opened", "already_open", "not_needed"}))
+	}
+	if utf8.RuneCountInString(value.Step) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", value.Step, utf8.RuneCountInString(value.Step), 1, true))
+	}
+	if utf8.RuneCountInString(value.Step) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", value.Step, utf8.RuneCountInString(value.Step), 512, false))
 	}
 	return err
 }
@@ -13909,6 +13930,7 @@ func EncodeProjectTeam(in *ProjectTeam) ([]byte, error) {
 			Team:   &in.Team,
 			Space:  &in.Space,
 			Dialog: &in.Dialog,
+			Step:   &in.Step,
 		}
 		body.Roles = make([]*jsonProjectTeamRoleTransport, len(in.Roles))
 		for i, val := range in.Roles {
@@ -13950,6 +13972,7 @@ func ValidateProjectTeamValue(in *ProjectTeam) error {
 			Team:   &in.Team,
 			Space:  &in.Space,
 			Dialog: &in.Dialog,
+			Step:   &in.Step,
 		}
 		body.Roles = make([]*jsonProjectTeamRoleTransport, len(in.Roles))
 		for i, val := range in.Roles {
@@ -13995,6 +14018,7 @@ func DecodeProjectTeam(data []byte) (out *ProjectTeam, err error) {
 			Team:   *body.Team,
 			Space:  *body.Space,
 			Dialog: *body.Dialog,
+			Step:   *body.Step,
 		}
 		out.Roles = make([]*ProjectTeamRole, len(body.Roles))
 		for i, val := range body.Roles {
@@ -19420,6 +19444,7 @@ func decodeProjectTeamTransportToProjectTeam(v *jsonProjectTeamTransport) *Proje
 		Team:   *v.Team,
 		Space:  *v.Space,
 		Dialog: *v.Dialog,
+		Step:   *v.Step,
 	}
 	res.Roles = make([]*ProjectTeamRole, len(v.Roles))
 	for i, val := range v.Roles {
@@ -20348,6 +20373,7 @@ func encodeProjectTeamToProjectTeamTransport(v *ProjectTeam) *jsonProjectTeamTra
 		Team:   &v.Team,
 		Space:  &v.Space,
 		Dialog: &v.Dialog,
+		Step:   &v.Step,
 	}
 	res.Roles = make([]*jsonProjectTeamRoleTransport, len(v.Roles))
 	for i, val := range v.Roles {
@@ -26524,6 +26550,13 @@ func validateProjectTeamJSONValue(path string, value any, description string) er
 			); err != nil {
 				return err
 			}
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What the user does next for the prepared team.",
+			); err != nil {
+				return err
+			}
 		case "team":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -26536,6 +26569,7 @@ func validateProjectTeamJSONValue(path string, value any, description string) er
 				"dialog",
 				"roles",
 				"space",
+				"step",
 				"team",
 			})
 		}
@@ -31232,6 +31266,9 @@ func checkProjectTeamProjectTeamValue(in *ProjectTeam, field string, active map[
 		}
 		if !utf8.ValidString(string(in.Dialog)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "dialog", false))
+		}
+		if !utf8.ValidString(string(in.Step)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "step", false))
 		}
 	}
 	return nil

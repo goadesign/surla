@@ -58,7 +58,7 @@ func (s *Server) StartAgents(ctx context.Context) (*gensurla.ProjectTeam, error)
 	for _, role := range result.Roles {
 		roles = append(roles, &gensurla.ProjectTeamRole{Role: role.Role, Handle: role.Handle, Running: role.Running})
 	}
-	return &gensurla.ProjectTeam{Team: result.Team, Space: result.Space, Dialog: result.Dialog, Roles: roles}, nil
+	return &gensurla.ProjectTeam{Team: result.Team, Space: result.Space, Dialog: result.Dialog, Step: result.Step, Roles: roles}, nil
 }
 
 // RegisterBuildRoles durably records the accepted build's exact worker roles and folders.
