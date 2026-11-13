@@ -159,33 +159,73 @@ Surla cannot judge whether an analysis is complete or correct; the requester doe
 
 ### Builds and assignments
 
-When the user decides to build a confirmed change, the project server saves a
-*build*: the change, the exact `request_revision` the user built, when, the
-Story as agreed at that revision, and one *assignment* each for the builder and
-the test writer. The server saves it as `<cards_dir>/<sha256(change_id)>.build.json`
-beside the change's card, writes it atomically under the card store's lock,
-and refuses to read a file with unknown fields, trailing data, a negative
-count of reports, or a test writer state that contradicts its findings,
-commit, reason, step or verdict time. A change has at most one build; building
-again replaces it, and both assignments start over unread.
+The user starts a build of the change's agreed revision. Surla saves that
+revision's Story and design, prepares the working copy when a test writer is
+needed, and registers the build's roles with their working folders. Each change
+has one current build; building again replaces it and resets its assignments to
+unread. A proposal waiting beside the agreed change is not built until the user
+adopts it.
 
-- **`start_build`** (`POST /changes/{change_id}/build`; HTTP only, user session only)
-  - **Input:** `change_id`, `request_revision` → **Output:** `StartedBuild` (`request_revision`, `started_at`, `in_force`, `builder`, `test_writer`)
-  - Saves the build when the change is `confirmed` and `request_revision` is its agreed revision, the one in force; while a proposal waits beside it, that is still the agreed revision, and the proposal is built only after the user adopts it. Returns `not_found` for an unknown change, `conflict` (HTTP `409`) when the change is not confirmed or the revision is not the agreed one (such as a waiting proposal's), and `unprocessable` (HTTP `422`) when a finished flow of the agreed Story would require a test with an empty name, or two would require tests with the same name; a refused start saves nothing. When `controlplane.Options.BuildTeam` is bound, it prepares the roles and returns the test writer's working folder before the build is saved; a failure refuses the start and saves nothing. The project server does not bind it yet, so `working_folder` is empty.
+Projects with stored verification settings use that evaluator and add only the
+builder. Other projects need the test layout made by `surla init`: Surla also
+adds the test writer, opens its separate `.surla-tests` Git working copy on
+`surla/tests`, and writes one required test entry per finished Story flow.
+Draft flows require none. The full test-writer assignment supplies the saved
+Story and design so the writer can align the public contract in its own `eval/`
+module and implement the required methods there.
+
+**Starting and recovering.** Before saving, Surla checks the owner, revision,
+test source and prerequisites. It opens the copy and checks the revision again;
+if that second check refuses the start, the reusable copy remains, but no new
+build or agent is saved. After saving, Surla immediately registers the roles,
+then writes the required tests. A generation failure caused by the copy becomes
+`needs_changes`, with the finding and the step to correct it and report again.
+An operational failure becomes `could_not_run`. The generation's verdict cannot
+overwrite a report or a newer build saved while generation was running.
+
+Accepted preparation continues if the page disconnects. Work on the copy has a
+five-minute limit. Another build or a test check holding the project's turn
+causes an immediate busy refusal, rather than a queued second build. After the
+turn is released, team startup has its own 45-second limit. A busy, ambiguous or
+unavailable window leaves the build and registered roles intact: follow the
+returned step and call `start_team_agents`, or run `surla`. An already-open
+Chorus launcher needs **Reload team** to show newly registered roles. A server
+stop after saving leaves the saved assignment or verdict; start a build again
+to finish preparation.
+
+- **`start_build`** (`POST /changes/{change_id}/build`; HTTP only, bound project's user session only)
+  - **Input:** `change_id`, `request_revision` → **Output:** `StartBuildResult` with `build`, `team` and `working_copy`.
+  - `build` is the saved `StartedBuild`: `request_revision`, `started_at`, `in_force`, `builder`, `test_writer` and `required_test_count`. The count is derived from finished flows in its saved Story; zero states that no test of this change's Story was required. A count of required entries does not judge what the written tests assert.
+  - `team.state` is `ready` (the existing team result, including its `step`), `window_busy` (step), `ambiguous_space` (count and step), or `unavailable` (step). A team warning is a successful saved build with unfinished team preparation.
+  - `working_copy.state` is `not_used` with a stored evaluator; `at_project_commit` with its commit when the copy is new, already current or advanced; `not_contained` with the retained commit and a merge-then-build step when the tests branch is not contained in the project's branch; or `dirty` with the retained commit when tracked or untracked work must be preserved. These immediate outcomes are not saved as dialog or copy history on `get_build`.
+  - Existing refusals are `not_found` (404), `forbidden` (403), revision `conflict` (409), and `unprocessable` (422) for finished flows whose required test names are empty or collide. No bound team returns `not_implemented` (501), with the step to start the project with `surla`. Shutdown or a limit reached before saving returns `unavailable` (503). The named prerequisite refusals below explain what is missing and end with the user's next step.
+
+| Prerequisite refusal | HTTP status | Recovery |
+| --- | --- | --- |
+| `not_repository` | 409 | Create or select a Git repository. |
+| `no_commit` | 409 | Make the repository's first commit. |
+| `copy_folder_in_use` | 409 | Free the named working-copy folder. |
+| `tests_branch_in_use` | 409 | Follow the library's step for the other working copy holding the tests branch. |
+| `no_test_layout` | 409 | Store verification settings for a layout Surla does not know. |
+| `git_identity_missing` | 409 | Configure the Git name and address used to record commits. |
+| `working_copy_busy` | 409 | Start the build again after the current build or test check ends. |
+| `sandbox_unavailable` | 501 | Use a system with Surla's candidate sandbox. |
+
 - **`get_build`** (`GET /changes/{change_id}/build`; user, guide, builder, test writer)
-  - **Input:** `change_id` → **Output:** `ChangeBuild` (`change_id`, `build`)
-  - `build.state` is `not_started` until the user starts a build, then `started` with the `StartedBuild` fields. `in_force` stays `true` while a revision the guide proposed waits beside the agreed one, and turns `false` once the user adopts a proposed revision or confirms another revision: nothing changes the assignments automatically, and the user builds again for the new revision. `builder` is `{"read":…}`: the builder's assignment exists from the moment the build starts and has no state of its own. `test_writer` is `{"tests":…,"read":…,"report":…}`, where `tests.state` is `not_used`, `assigned`, `reported`, `needs_changes` (with one or more `findings`), `accepted` (with the `commit` the tests were recorded at) or `could_not_run` (with the `reason`, at most 1024 characters, and the user's `step`, at most 512). Each of the three verdicts, `needs_changes`, `accepted` and `could_not_run`, carries `checked_at`, when Surla reached it. `not_used` means no test writer is used: the project verifies with the evaluator stored with `surla verification set`. It is never saved; every read of a build in such a project shows it, whatever the build recorded. `read` says whether that role read its assignment in full. `report` is the number of the test writer's latest counted report of the build, 0 when none was counted; reports are not counted yet, so it is 0.
+  - **Input:** `change_id` → **Output:** `ChangeBuild` (`change_id`, `build`).
+  - `build.state` is `not_started` when no usable build exists, otherwise `started` with the saved build fields above. A build started with only a builder is usable while the server uses its stored evaluator. If those settings are removed, it has no test-writer copy: the read returns `not_started`, no assignment from that build is listed or returned, and the user builds again. This does not delete the saved record.
+  - `in_force` stays true while a proposal waits beside the agreed revision, and becomes false when the user adopts or confirms another revision. An older usable build keeps its assignments until the user builds again; it is not rebuilt automatically.
+  - `builder` reports whether its assignment was read. `test_writer` reports `tests`, `read` and `report`. Test states are `not_used`, `assigned`, `reported`, `needs_changes` (findings), `accepted` (commit), or `could_not_run` (reason and step). Each verdict carries `checked_at`. `not_used` is derived from current stored verification settings, never saved as a verdict. `report` is the counted report number, zero until reports are counted.
 - **`list_builder_assignments`** (`GET /assignments/builder`) and **`get_builder_assignment`** (`GET /assignments/builder/{change_id}`; builder only)
-  - **Output:** `BuilderAssignmentList` (`assignments`, most recently started first) or one `BuilderAssignment` (`change_id`, `request_revision`, `in_force`, `read`, `written_tests`). `written_tests.state` says where the test writer's tests for the build stand: `not_used` (as above); otherwise `accepted`, with the `commit` and `checked_at` of the test writer's `accepted` state, when the build records accepted tests, and `not_yet_accepted` when it records none.
-  - The builder builds that revision in the project folder and passes `change_id` and `request_revision` to `verify_change`; verification, not the assignment, judges its work. Reading one assignment records that the builder read it; listing records nothing. `not_found` means the change has no build.
-  - In the builder's and the test writer's assignments alike, `in_force` is `get_build`'s `in_force` for the assignment's build: `false` tells the agent that the user has since adopted a proposed revision or confirmed another revision, so the assignment is for an earlier revision until the user builds again; a proposal that only waits beside the agreed revision leaves it `true` (`verify_change` refuses that revision).
+  - **Output:** `BuilderAssignmentList` (`assignments`, most recently started first) or one `BuilderAssignment` (`change_id`, `request_revision`, `in_force`, `read`, `written_tests`). `written_tests.state` is `not_used`, `not_yet_accepted`, or `accepted` with its commit and verdict time.
+  - The builder works in the control plane's active workspace, which may be the child project made by `init_project`. Reading an assignment marks it read; listing changes nothing. `not_found` means there is no usable build, and names the build-again step.
 - **`list_test_writer_assignments`** (`GET /assignments/test-writer`) and **`get_test_writer_assignment`** (`GET /assignments/test-writer/{change_id}`; test writer only)
-  - **Output:** `TestWriterAssignmentList` (`assignments` with `change_id`, `request_revision`, `in_force`, `progress`, most recently started first) or one `TestWriterAssignment`: `in_force`, `working_folder`, the `stories` as agreed at the built revision (a later revision of the change does not alter them), `required_tests`, and `progress` with any `findings`.
-  - `working_folder` is the test writer's own working copy of the project. The project server does not prepare working copies yet, so it is empty.
-  - `required_tests` holds one test per finished flow (`story`, `flow_key`, `scenario`, `hook`), named exactly as Surla's Story test generator names them: flow `refund-over-limit` requires scenario `refund_over_limit` and hook method `RefundOverLimit`. Unfinished flows require none. Reading one assignment records that the test writer read it; listing records nothing.
+  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `working_folder`, `design_source`, `stories` and `required_tests`.
+  - Only builds started with a test writer have its assignment. `working_folder` is the project's folder inside the linked working copy, not necessarily the repository checkout's root. The saved design and Story stay paired with the built revision after later changes.
+  - `required_tests` holds one entry per finished flow (`story`, `flow_key`, `scenario`, `hook`): flow `refund-over-limit` requires scenario `refund_over_limit` and method `RefundOverLimit`. Unfinished flows require none; the test program must still build when the list is empty. Reading an assignment marks it read; listing changes nothing. No successful full assignment returns an empty working folder.
 - **`report_tests_finished`** (`POST /assignments/test-writer/{change_id}/finished`; test writer only)
-  - **Input:** `change_id`, `request_revision` → **Output:** `TestWriterAssignmentItem`
-  - Records that the test writer finished its tests for the build's revision: `tests.state` becomes `reported` from any state, and earlier findings or a recorded commit are cleared. The server records the report and does not check the tests. Returns `conflict` (HTTP `409`) for any other revision and `not_found` when the change has no build; a refused report changes nothing.
+  - **Input:** `change_id`, `request_revision` → **Output:** `TestWriterAssignmentItem`.
+  - Records `reported` for that assignment's revision and clears earlier findings or a recorded commit. Returns `conflict` (409) for another revision and `not_found` when no usable test-writer assignment exists; a refused report changes nothing. The server currently records the report without running its acceptance check.
 
 ### Live target prompt contract
 
@@ -335,7 +375,9 @@ Chorus and Herdr need not be on that environment's PATH for the server to start
 or for other management operations. The roster home also comes from the
 server's login environment. It contains only roles whose working folders exist;
 existing role entries require valid credential files. Each trusted role has at most
-one agent; registering another actor for an occupied role returns `conflict`.
+one agent. Surla registers build roles itself, preserving an existing role's
+handle and credential while updating its saved working folder. A build using a
+stored evaluator removes a former test writer and revokes its credential.
 Missing working folders are omitted from the launcher and do not by themselves
 open it. A role's running flag still reports its actual owned terminal, independently
 of whether the role has a folder and is listed in the launcher.
@@ -348,13 +390,16 @@ When any role listed in the roster is missing or its pane holds only an idle
 shell, Surla focuses this project's space and opens the Chorus launcher so the
 user can choose an agent and model. A running guide with a listed builder
 whose pane is not running still opens the launcher. Surla reads open dialog
-names before changing the window. An already open launcher stays open and keeps its captured project; choose agents there only
-if it is for this project, otherwise close it and run Surla again. Another
+names before changing the window. An already open launcher stays open and keeps
+its captured project. If it is for this project, click **Reload team** before
+choosing agents; otherwise close it and run Surla again. Another
 open dialog must be closed before retrying. If this project has no saved or
-matching space and any dialog is open, startup refuses without creating a
-space, adding an agent, or saving team state. When every listed role is running,
-no new dialog opens. Surla prints the team and launcher state, then opens its
-views page. The guide works through the Story and change with the user; only the user confirms and approves
+matching space and any dialog is open, a direct team-start request refuses
+before creating a space or adding the guide. A build has already registered its
+roles before requesting this step; those roles remain available for retry.
+When every listed role is running,
+no new dialog opens. The project server returns the user's next step and Surla
+prints that text unchanged, then opens its views page. The guide works through the Story and change with the user; only the user confirms and approves
 on the page. Starting a team does not require Git.
 
 <a id="idle-shell"></a>
@@ -373,12 +418,15 @@ unreported foreground information also counts as running.
 
 The HTTP-only `POST /project/team` management operation (`ensure_team`) takes
 no input. It returns `team`, `space`, `roles` (role, handle, running), and
-`dialog` (`opened`, `already_open`, or `not_needed`). Browser sessions and
+`dialog` (`opened`, `already_open`, or `not_needed`), and a required `step` of
+1–512 characters. The project's owner supplies the sentence: choose agents for
+an opened dialog, click **Reload team** for an already-open one, or note that all
+listed roles are running. Browser sessions and
 agents cannot call it, and it is absent from MCP discovery. Its accepted work
 has a bounded server lifetime independent of client disconnects. Named errors
 include `ambiguous_space` with its numeric count, `window_busy`, and
-`team_unavailable`; the CLI supplies its own messages without printing peer
-error text. If the answering project server lacks this operation, Surla tells
+`team_unavailable`. For those errors, the CLI uses fixed recovery text without
+printing peer-authored error text. If the answering project server lacks this operation, Surla tells
 you to run `surla stop`, then `surla`, to start the current server version.
 
 <a id="team-supervision"></a>

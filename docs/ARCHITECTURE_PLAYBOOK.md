@@ -65,11 +65,46 @@ The project server (`internal/project.Server`) is the single in-memory owner of
 team observations and reminder latches as well as the saved team registry. The
 composition root constructs it before the control plane and supplies one
 `controlplane.Options.Team` binding containing the project owner and the narrow
-team service. The control plane owns authorization, the one supervision worker,
+team service. The control plane owns authorization, build preparation, the one supervision worker,
 and a private read-only callback for that owner's unread assignment generations.
 The callback never calls an assignment getter or marks work read. The existing
 change-list version incorporates the public team snapshot for its bound owner only. Shutdown cancels and
-drains supervision before closing diagnostics or Change Card storage.
+drains supervision and accepted build starts before closing the evaluator,
+diagnostics or Change Card storage.
+
+The control plane owns the test writer's working copy and its required-test
+generation. A start first authorizes the bound project owner, then takes the
+project's working-copy turn without waiting; a busy turn refuses the start.
+It never holds the card lock during Git, generation or a team call. After
+opening the copy and rechecking the agreed revision, it saves the build's
+Story, design and selected roles. It immediately calls the project's
+`RegisterBuildRoles` before generation, so a later failure cannot leave a saved
+build whose agents are missing from the registry. A generation verdict is saved
+only if the build's start time, report number and assigned state still match.
+
+The turn is released before calling the existing `StartAgents`. Work under the
+turn has one five-minute limit and survives client disconnection; the team then
+has its own 45-second limit. A team refusal becomes an actionable result beside
+the saved build. The project owner saves each agent's role and working folder,
+preserves existing handles and credentials, and derives first messages and the
+team's next-step text in one place. The CLI displays that text unchanged.
+Neither a working-folder callback nor another build-team interface is needed.
+
+Build reads, assignments and supervision share the control plane's usable-build
+decision. A build started with only a builder remains usable while stored
+verification settings supply its evaluator. If those settings are removed,
+the user must build again to prepare a test writer; reads expose no usable build
+or assignments for the earlier start. A build with a test writer retains its
+saved Story and design when the guide later proposes or the user adopts a revision.
+
+The control plane saves one build per change in
+`<cards_dir>/<sha256(change_id)>.build.json`, using a staged file, rename and
+directory sync under the card-store lock. Its strict reader rejects unknown
+fields, trailing data, invalid role selections, negative report counts and
+verdict fields inconsistent with their state. The saved role selection is
+`builder_only` or `builder_and_test_writer`; only the latter contains a writer
+folder. The project owner's separate record maps stable handles to role and
+folder, with credentials in private files. Neither store owns the other's data.
 
 Herdr streams and reads are filtered by registered handle, project root and saved
 space. Typed adapters retain only terminal state, block kind, foreground arguments
