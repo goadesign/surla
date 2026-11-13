@@ -376,14 +376,17 @@ Stop if that context is unavailable or contradicts the code.
 
 - Never edit generated files by hand: `gen/`, `internal/targetprompt/gen/`,
   `ui/checkpoint/src/types.ts`,
-  `internal/controlplane/checkpoint.html`, and
+  `internal/controlplane/checkpoint.html`,
+  `internal/controlplane/views_page_script_gen.go`, and
   `internal/goldenpath/decision_catalog.md`.
 - After changing `design/`, run the module-pinned generator:
   `CI=true go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design </dev/null`.
   After changing `design/targetprompt/`, run
   `CI=true go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design/targetprompt -o internal/targetprompt </dev/null`.
   After changing `design/` or `ui/checkpoint/src/`, rebuild with
-  `CI=true node ui/checkpoint/build.mjs </dev/null`; check that nothing is
+  `CI=true node ui/checkpoint/build.mjs </dev/null`, which also writes the
+  views page script's digest to
+  `internal/controlplane/views_page_script_gen.go`; check that nothing is
   stale with `CI=true node ui/checkpoint/build.mjs --check </dev/null`.
 - The examples under `examples/` are separate Go modules with their own
   `design/` and `gen/`; run that module's pinned generator from its directory
@@ -445,7 +448,7 @@ appropriate for CPU, memory, and restarts.
     `examples/orders` or `examples/orders-eval` changed
   - `go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold`
     for starter generation
-  - `npm --prefix ui/checkpoint run typecheck` for viewer TypeScript changes
+  - `npm --prefix ui/checkpoint run typecheck` for views page TypeScript changes
 - Set `CI=true` and close stdin on these invocations. Do not regenerate or
   run runtime/browser suites for text-only instructions or documentation;
   verify accuracy, references, links, and applicable doc checks instead.
