@@ -133,3 +133,31 @@ func writeStateCopy(t *testing.T, dir string, record []byte) {
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "project.json"), record, 0o600))
 }
+
+// TestNewProjectAvoidsPortsOtherProjectsSaved keeps a new project off every port another
+// project of this account saved, whether or not that project's server is running, so two
+// projects never share an address. A free port the kernel offers is only a snapshot.
+func TestNewProjectAvoidsPortsOtherProjectsSaved(t *testing.T) {
+	root := physicalTempDir(t)
+	first := initializedState(t, root, t.TempDir())
+	other := first.Record.Port + 1
+	if other > 65535 {
+		other = first.Record.Port - 1
+	}
+	second, err := Discover(root, t.TempDir())
+	require.NoError(t, err)
+	lock, err := second.StartLock(context.Background())
+	require.NoError(t, err)
+	offered := []int{first.Record.Port, other}
+	calls := 0
+	created, err := second.initialize("uid:test", func() (int, error) {
+		port := offered[min(calls, len(offered)-1)]
+		calls++
+		return port, nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, lock.Close())
+	assert.True(t, created)
+	assert.Equal(t, other, second.Record.Port, "the port the first project saved is not taken again")
+	assert.Equal(t, 2, calls)
+}

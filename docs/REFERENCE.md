@@ -613,7 +613,7 @@ control characters removed. For example:
 
 ```text
 surla: the project server stopped while starting, and its last lines were:
-  surla: project port is occupied: listen tcp 127.0.0.1:52011: bind: address already in use
+  surla: project port 52011 is occupied: listen tcp 127.0.0.1:52011: bind: address already in use; stop the program listening on it, then run surla
 ```
 
 If the terminal's output cannot be read or holds no printable text, the error

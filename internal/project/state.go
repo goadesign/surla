@@ -71,6 +71,11 @@ type (
 	}
 )
 
+// freePortAttempts bounds how many free ports Initialize asks the kernel for while each
+// offer is a port another project saved. The kernel offers ports across its ephemeral
+// range, so even many saved ports rarely take a second try; the bound only ends the loop.
+const freePortAttempts = 20
+
 // Discover finds the nearest existing physical project record, or prepares a new project folder.
 // It never considers the Git root. Call Initialize only after StartLock.
 func Discover(root, directory string) (*State, error) {
@@ -194,6 +199,11 @@ func (l *Lock) Close() error {
 
 // Initialize creates the owner and fixed port once under StartLock.
 func (s *State) Initialize(owner string) (bool, error) {
+	return s.initialize(owner, freeLoopbackPort)
+}
+
+// initialize is Initialize with the source of free ports, which tests replace.
+func (s *State) initialize(owner string, freePort func() (int, error)) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var record Record
@@ -212,19 +222,50 @@ func (s *State) Initialize(owner string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	others, err := s.otherProjects()
 	if err != nil {
 		return false, err
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	if err := ln.Close(); err != nil {
-		return false, err
+	saved := make(map[int]bool, len(others))
+	for _, other := range others {
+		saved[other.Record.Port] = true
+	}
+	port := 0
+	for attempt := 0; port == 0; attempt++ {
+		if attempt == freePortAttempts {
+			return false, fmt.Errorf("no free loopback port that another Surla project has not saved was found in %d tries; run surla again", freePortAttempts)
+		}
+		offered, err := freePort()
+		if err != nil {
+			return false, err
+		}
+		if !saved[offered] {
+			port = offered
+		}
 	}
 	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Agents: map[string]agentRecord{}}
 	if err := s.save(); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// ProjectsSharingPort returns the other projects of this account, under the same operator
+// folder, that saved this project's port. Only projects created before new projects
+// avoided saved ports can share one; the CLI names such a project when its server holds
+// the port. A record that cannot be read is skipped, as otherProjects explains.
+func (s *State) ProjectsSharingPort() ([]*State, error) {
+	others, err := s.otherProjects()
+	if err != nil {
+		return nil, err
+	}
+	sharing := make([]*State, 0, len(others))
+	for _, other := range others {
+		if other.Record.Port == s.Record.Port {
+			sharing = append(sharing, other)
+		}
+	}
+	return sharing, nil
 }
 
 // Address is the sole permitted HTTP authority, reused after every server restart.
@@ -294,6 +335,45 @@ func (s *State) RemoveSettings(kind string) error {
 		return nil
 	}
 	return err
+}
+
+// otherProjects reads the saved records of the other projects in this project's operator
+// folder, where Discover places every project of this account. A record that cannot be
+// read is skipped rather than failing this project: its own project cannot start until
+// it is repaired, and Discover reports it, with its path, in that project's folder.
+func (s *State) otherProjects() ([]*State, error) {
+	root := filepath.Dir(s.Dir)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	others := make([]*State, 0, len(entries))
+	for _, entry := range entries {
+		dir := filepath.Join(root, entry.Name())
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "project-") || dir == s.Dir {
+			continue
+		}
+		var record Record
+		if err := readJSON(filepath.Join(dir, "project.json"), &record); err != nil {
+			continue
+		}
+		others = append(others, &State{Dir: dir, Record: record})
+	}
+	return others, nil
+}
+
+// freeLoopbackPort briefly binds and releases a loopback port the kernel reports free.
+// The answer is a snapshot: another process can take the port before the server binds it.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		return 0, err
+	}
+	return port, nil
 }
 
 // projectDirectory derives one private state folder from the canonical folder identity.

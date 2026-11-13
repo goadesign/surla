@@ -246,7 +246,7 @@ func attachOrStartProject(
 		}
 		listener, err := net.Listen("tcp", state.Address())
 		if err != nil {
-			return nil, created, fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
+			return nil, created, takenPortError(state, err)
 		}
 		if err := listener.Close(); err != nil {
 			return nil, created, err
@@ -267,6 +267,37 @@ func attachOrStartProject(
 		return nil, created, err
 	}
 	return client, created, nil
+}
+
+// takenPortError names what holds a stopped project's saved port and the step that frees it.
+// The holder is another project's server when a project sharing the port, saved before new
+// projects avoided each other's ports, holds its card store; otherwise it is another program.
+// The saved port is kept: agents' connections and the launcher roster name it.
+func takenPortError(state *project.State, listenErr error) error {
+	port := state.Record.Port
+	if !errors.Is(listenErr, syscall.EADDRINUSE) {
+		return fmt.Errorf("project port %d could not be used; no server was started: %w", port, listenErr)
+	}
+	sharing, err := state.ProjectsSharingPort()
+	var checkErrs []error
+	if err != nil {
+		checkErrs = append(checkErrs, err)
+	}
+	for _, other := range sharing {
+		inUse, err := controlplane.CardStoreInUse(other.CardsDir())
+		if err != nil {
+			checkErrs = append(checkErrs, err)
+			continue
+		}
+		if inUse {
+			return fmt.Errorf("project port %d is held by the Surla server of the project in %s, which saved the same port, so only one of the two can run at a time; no server was started; run surla stop in that folder, then run surla here", port, other.Record.Directory)
+		}
+	}
+	taken := fmt.Errorf("another program is listening on %s, the address saved for this project; no server was started; stop that program, then run surla (lsof -nP -iTCP:%d -sTCP:LISTEN names it)", state.Address(), port)
+	if len(checkErrs) > 0 {
+		return errors.Join(taken, fmt.Errorf("other Surla projects could not be checked for this port: %w", errors.Join(checkErrs...)))
+	}
+	return taken
 }
 
 // endedStartError explains a start whose owned terminal ended before the server answered.
@@ -489,7 +520,7 @@ func (runtime projectRuntime) serve(stateDir string) (err error) {
 
 	listener, err := runtime.listen("tcp", state.Address())
 	if err != nil {
-		return fmt.Errorf("project port is occupied: %w", err)
+		return fmt.Errorf("project port %d is occupied: %w; stop the program listening on it, then run surla", state.Record.Port, err)
 	}
 	application := http.NewServeMux()
 	application.Handle("GET /views", controlplane.ViewsPage())
