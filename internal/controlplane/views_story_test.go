@@ -61,9 +61,15 @@ expect(flowQuestion && JSON.stringify(Array.from(flowQuestion.querySelectorAll("
 expect(page.$$("#surla-story-change input, #surla-story-change textarea, #surla-story-change select, #surla-story-change button").length === 0, "the change's Story offers editing controls");
 
 const row = flows[2].querySelector(".surla-story-steps");
-expect(row.tabIndex === 0 && row.getAttribute("aria-label") === "Steps of Partial refund", "a scrolling row of steps is not reachable by keyboard with a name");
+expect(row.getAttribute("aria-label") === "Steps of Partial refund", "a row of steps has no name");
+expect(!row.hasAttribute("tabindex"), "a row of steps that fits is a tab stop");
+Object.defineProperty(row, "scrollWidth", { configurable: true, get: () => 900 });
+Object.defineProperty(row, "clientWidth", { configurable: true, get: () => 300 });
+page.win.dispatchEvent(new page.win.Event("resize"));
+await until(() => row.tabIndex === 0, "a row of steps that overflows is not a tab stop");
 row.focus();
-expect(page.doc.activeElement === row, "a row of steps does not take keyboard focus");
+expect(page.doc.activeElement === row, "a row of steps that overflows does not take keyboard focus");
+expect(!flows[0].querySelector(".surla-story-steps").hasAttribute("tabindex"), "a row that still fits became a tab stop");
 expect(page.win.getComputedStyle(row).overflowX === "auto", "a long flow's steps do not scroll inside the stage");
 expect(page.win.getComputedStyle(row.querySelector(".surla-story-step")).overflowWrap === "anywhere", "a step's long text does not wrap");
 expect(["0", "0px"].includes(page.win.getComputedStyle(page.$("#surla-story-stage")).minWidth), "the stage can grow wider than its column");
@@ -100,6 +106,9 @@ await until(() => page.$("#surla-change-list-empty"), "the empty project did not
 checkControl(page, page.$("#surla-nav-story"), "Story tab without a change");
 page.$("#surla-nav-story").click();
 await until(() => page.$("#surla-story-draft").dataset.state === "none", "the Story stage did not show the none state");
+const announced = () => page.text("#surla-story-draft-announcement");
+const liveRegions = () => page.$$("#surla-story-draft [role=status]").length;
+expect(announced() === "" && liveRegions() === 1, "the none state was announced or the draft has several live regions");
 expect(!page.$("#surla-story-change"), "a Story of a change is shown with no change open");
 expect(page.text("#surla-story-draft-none").includes("Ask the guide to refresh the Story"), "the none state does not name the step to take");
 const context = page.text("#surla-workspace-context");
@@ -108,17 +117,20 @@ expect(context.includes("Story") && context.includes("current draft none"), "the
 await control(origin, "act", { key: "running" });
 await until(() => page.$("#surla-story-draft").dataset.state === "running", "a running evaluation did not appear without a reload");
 expect(/[0-9a-f]{64}/.test(page.text("#surla-story-draft-running")), "the running state does not name its snapshot");
+expect(announced() === "The Story evaluation is running." && liveRegions() === 1, "the running state was not announced once: " + announced());
 
 await control(origin, "act", { key: "succeeded" });
 await until(() => page.$("#surla-story-draft").dataset.state === "succeeded", "a succeeded evaluation did not appear without a reload");
 const flows = page.$$("#surla-story-draft .surla-story-flow");
 expect(flows.length === 3 && !page.$("#surla-story-draft-details") && !page.$("#surla-story-comparison"), "with no change the draft is not drawn directly");
 expect(page.text("#surla-story-draft-succeeded").includes("The draft has 3 flows, 2 of them drafts that will not be tested."), "the draft's counts are missing");
+expect(announced() === "The Story evaluation succeeded." && liveRegions() === 1, "the succeeded state was not announced once: " + announced());
 
 await control(origin, "act", { key: "failed" });
 await until(() => page.$("#surla-story-draft").dataset.state === "failed", "a failed evaluation did not appear without a reload");
 expect(page.text("#surla-story-draft-diagnostic") === input.diagnostic, "the failure does not show the server's diagnostic: " + page.text("#surla-story-draft-diagnostic"));
 expect(page.$("#surla-story-draft-diagnostic").children.length === 0, "the diagnostic was not shown as plain text");
+expect(announced() === "The Story evaluation failed." && liveRegions() === 1, "the failed state was not announced once: " + announced());
 
 expect(page.sent("GET", "/workspace/story/refresh").length === 4, "the page did not read the evaluation exactly once per change: " + page.sent("GET", "/workspace/story/refresh").length);
 page.close();
@@ -157,6 +169,106 @@ expect(JSON.stringify(named("removed")) === JSON.stringify(["Partial refund"]), 
 expect(JSON.stringify(named("changed")) === JSON.stringify(["Instant refund under the limit"]), "changed flows: " + JSON.stringify(named("changed")));
 expect(page.text("#surla-story-rule") === "The draft is not part of this change until the guide revises the change with it and you confirm the new revision.", "the rule is not stated: " + page.text("#surla-story-rule"));
 expect(page.$$("#surla-story-change .surla-story-flow").length === 3, "the change's own Story was replaced by the draft");
+page.close();
+`)
+}
+
+// TestViewsPageStoryStageNamesEachKindOfDifference keeps one change open and
+// replaces the current draft with variants of the change's Story, each
+// differing in one way, and checks that the stage names exactly that
+// difference: a renamed role (and the flows that use it), an edited
+// question, a step of another kind, steps in another order, flows in
+// another order, and a new Story description.
+func TestViewsPageStoryStageNamesEachKindOfDifference(t *testing.T) {
+	cp, ps := storyPageServer(t)
+	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
+	op := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, pageStories(), "")
+	proposeWithStory(t, cp, guide, "chg-kinds", op)
+	variants := map[string]func([]designeval.StorySummary){
+		"role": func(s []designeval.StorySummary) { s[0].Actors[1].Title = "Refund Supervisor" },
+		"question": func(s []designeval.StorySummary) {
+			s[0].Flows[1].Steps[0].Questions[0].Prompt = "Is exactly $50.00 instant?"
+		},
+		"kind":        func(s []designeval.StorySummary) { s[0].Flows[0].Steps[1].Kind = "step" },
+		"step-order":  func(s []designeval.StorySummary) { st := s[0].Flows[0].Steps; st[0], st[1] = st[1], st[0] },
+		"flow-order":  func(s []designeval.StorySummary) { s[0].Flows[0], s[0].Flows[1] = s[0].Flows[1], s[0].Flows[0] },
+		"description": func(s []designeval.StorySummary) { s[0].Description = "Refunds and who approves them." },
+	}
+	for name, change := range variants {
+		ps.act(name, func() {
+			draft := pageStories()
+			change(draft)
+			seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, draft, "")
+		})
+	}
+	runPageScript(t, ps, nil, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-kinds", "the change did not open");
+page.$("#surla-nav-story").click();
+await until(() => page.$("#surla-story-comparison") && page.$("#surla-story-comparison").dataset.same === "true", "the change's own draft is not called current");
+const named = () => {
+  const out = {};
+  for (const item of page.$$("#surla-story-comparison [data-difference]")) {
+    out[item.dataset.difference] = Array.from(item.querySelectorAll("strong")).map((s) => s.textContent);
+  }
+  return JSON.stringify(out);
+};
+const cases = [
+  ["role", { changed: ["Refund over the limit", "Partial refund"], details: ["Order Refunds"] }],
+  ["question", { changed: ["Refund over the limit"] }],
+  ["kind", { changed: ["Instant refund under the limit"] }],
+  ["step-order", { "step-order": ["Instant refund under the limit"] }],
+  ["flow-order", { "flow-order": ["Order Refunds"] }],
+  ["description", { details: ["Order Refunds"] }],
+];
+for (const [name, want] of cases) {
+  await control(origin, "act", { key: name });
+  await until(() => named() === JSON.stringify(want), name + ": the stage named " + named() + ", want " + JSON.stringify(want));
+  expect(page.$("#surla-story-comparison").dataset.same === "false" && page.$("#surla-story-rule"), name + ": the difference does not state the rule");
+}
+page.close();
+`)
+}
+
+// TestViewsPageStoryStageNamesStoriesInAnotherOrder opens a change saved
+// with two Stories whose draft swaps them: the stage says the Stories are in
+// another order and names no flow.
+func TestViewsPageStoryStageNamesStoriesInAnotherOrder(t *testing.T) {
+	cp, ps := storyPageServer(t)
+	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
+	second := designeval.StorySummary{Name: "Store Credit", Actors: []designeval.StoryActor{{Key: "customer", Title: "Customer"}}}
+	op := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, append(pageStories(), second), "")
+	proposeWithStory(t, cp, guide, "chg-stories", op)
+	seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, append([]designeval.StorySummary{second}, pageStories()...), "")
+	runPageScript(t, ps, nil, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-stories", "the change did not open");
+page.$("#surla-nav-story").click();
+await until(() => page.$("#surla-story-comparison"), "the comparison did not appear");
+const kinds = page.$$("#surla-story-comparison [data-difference]").map((item) => item.dataset.difference);
+expect(page.$("#surla-story-comparison").dataset.same === "false" && JSON.stringify(kinds) === JSON.stringify(["story-order"]), "Stories in another order were not named alone: " + JSON.stringify(kinds));
+page.close();
+`)
+}
+
+// TestViewsPageStoryStageRetriesAFailedRead fails the stage's first read of
+// the current draft: the stage shows the server's message with a keyboard-
+// operable retry, and retrying shows the draft and clears the error.
+func TestViewsPageStoryStageRetriesAFailedRead(t *testing.T) {
+	_, ps := storyPageServer(t)
+	runPageScript(t, ps, nil, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-change-list-empty"), "the empty project did not show");
+await control(origin, "reply", { key: "GET /workspace/story/refresh", status: 500, body: { name: "fault", id: "x", message: "The Story evaluation could not be read", temporary: false, timeout: false, fault: true } });
+page.$("#surla-nav-story").click();
+await until(() => page.$("#surla-story-draft-error"), "a failed read of the draft was not shown");
+expect(page.text("#surla-story-draft-error").includes("The Story evaluation could not be read"), "the error does not carry the server's message");
+expect(page.$("#surla-story-draft").dataset.state === "unread", "a failed first read shows a draft state");
+checkControl(page, page.$("#surla-story-draft-retry"), "retry of the draft read");
+page.$("#surla-story-draft-retry").click();
+await until(() => page.$("#surla-story-draft").dataset.state === "none", "retrying did not read the draft");
+expect(!page.$("#surla-story-draft-error"), "the error stayed after a successful retry");
+expect(page.sent("GET", "/workspace/story/refresh").length === 2, "the page did not read the draft exactly twice");
 page.close();
 `)
 }

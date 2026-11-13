@@ -645,7 +645,19 @@ summary { cursor: pointer; font-weight: 500; user-select: none; }
 
 /* Story stage: flows are rows; a flow's steps are cards in a row that
    scrolls inside the stage, so long flows never widen the page. */
-h5 { font-size: 0.84rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.surla-story-stage h5 { font-size: 0.84rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+/* Read by assistive technology, not shown. */
+.surla-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .surla-story-stage { min-width: 0; }
 .surla-story-stage section + section { margin-top: 1rem; }
 .surla-story-section { min-width: 0; }

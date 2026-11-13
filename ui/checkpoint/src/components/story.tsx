@@ -1,8 +1,8 @@
-// Package components draws a Story read-only: the Story saved with the open
-// change's revision and the project owner's current Story evaluation. Each
-// flow is a row of step cards by actor role, marked as tested end to end or
-// as an untested draft with the reason its own data gives. It also compares
-// a draft with the change's Story by content.
+// story.tsx draws the views page's Story stage, read-only: the Story saved
+// with the open change's revision and the project owner's current Story
+// evaluation. Each flow is a row of step cards by actor role, marked as
+// tested end to end or as an untested draft with the reason its own data
+// gives. It also compares a draft with the change's Story by content.
 
 import React from "react";
 import {
@@ -25,8 +25,9 @@ export interface StoryCounts {
   drafts: number;
 }
 
-// StoryDifference names, by flow title, how a draft's Stories differ from a
-// change's Stories. A flow is identified by its Story's name and its key.
+// StoryDifference names how a draft's Stories differ from a change's
+// Stories. A Story is identified by its name and a flow by its Story's name
+// and its key; flows are named by title.
 export interface StoryDifference {
   // same is true when both have the same content.
   same: boolean;
@@ -34,11 +35,18 @@ export interface StoryDifference {
   added: string[];
   // removed names flows only the change has.
   removed: string[];
-  // changed names flows both have whose content differs.
+  // changed names flows both have whose content differs other than by the
+  // order of their steps.
   changed: string[];
-  // details names Stories whose description, actors or flow order differ
-  // while no flow of theirs was added, removed or changed.
+  // stepOrder names flows both have whose steps are the same in another order.
+  stepOrder: string[];
+  // flowOrder names Stories whose flows present in both appear in another order.
+  flowOrder: string[];
+  // details names Stories whose description or roles differ, or that have no
+  // flows and exist on one side only.
   details: string[];
+  // storyOrder is true when the Stories present in both appear in another order.
+  storyOrder: boolean;
 }
 
 // StoryStageProps supplies the open change, if any, and the owner's current
@@ -55,6 +63,15 @@ export interface StoryStageProps {
   // onRetry reads the evaluation again after a failure.
   onRetry: () => void;
 }
+
+// STATE_ANNOUNCEMENTS is what assistive technology announces, once, when the
+// current draft's evaluation reaches each state.
+const STATE_ANNOUNCEMENTS: Record<StoryRefreshResult["state"], string> = {
+  none: "",
+  running: "The Story evaluation is running.",
+  succeeded: "The Story evaluation succeeded.",
+  failed: "The Story evaluation failed.",
+};
 
 // STEP_KIND_LABELS names a step's position in its flow.
 const STEP_KIND_LABELS: Record<StoryStepItem["kind"], string> = {
@@ -105,8 +122,11 @@ export function StoryStageView({ card, evaluation, loading, error, onRetry }: St
       >
         <h3 id="surla-story-draft-title">Current Story draft</h3>
         <p>
-          The guide's latest Story evaluation of the project's design files. The user, the guide
-          and the builder all read this same evaluation; the server keeps it in memory only.
+          The guide's latest Story evaluation of the project's design files. You, the guide and
+          the builder all read this same evaluation; the server keeps it in memory only.
+        </p>
+        <p id="surla-story-draft-announcement" className="surla-visually-hidden" role="status">
+          {evaluation !== null ? STATE_ANNOUNCEMENTS[evaluation.state] : ""}
         </p>
         {error !== null ? (
           <Alert id="surla-story-draft-error" variant="destructive" role="alert">
@@ -213,43 +233,64 @@ export function draftReasons(flow: StoryFlowItem): string[] {
 }
 
 // compareStories compares a draft's Stories with a change's Stories by
-// content. A change saved without Stories has none.
+// content and names every difference. A change saved without Stories has
+// none.
 export function compareStories(
   change: StorySummaryItem[],
   draft: StorySummaryItem[]
 ): StoryDifference {
   const before = flowsByIdentity(change);
   const after = flowsByIdentity(draft);
-  const added: string[] = [];
-  const removed: string[] = [];
-  const changed: string[] = [];
-  const touched = new Set<string>();
+  const difference: StoryDifference = {
+    same: canonicalJSON(change) === canonicalJSON(draft),
+    added: [],
+    removed: [],
+    changed: [],
+    stepOrder: [],
+    flowOrder: [],
+    details: [],
+    storyOrder: false,
+  };
   for (const [identity, flow] of after) {
     const prior = before.get(identity);
     if (prior === undefined) {
-      added.push(flow.label);
-      touched.add(flow.story);
+      difference.added.push(flow.label);
     } else if (prior.content !== flow.content) {
-      changed.push(flow.label);
-      touched.add(flow.story);
+      (prior.unordered === flow.unordered ? difference.stepOrder : difference.changed).push(flow.label);
     }
   }
   for (const [identity, flow] of before) {
     if (!after.has(identity)) {
-      removed.push(flow.label);
-      touched.add(flow.story);
+      difference.removed.push(flow.label);
     }
   }
-  const beforeStories = new Map(change.map((story) => [story.name, storyOutline(story)]));
-  const afterStories = new Map(draft.map((story) => [story.name, storyOutline(story)]));
-  const details: string[] = [];
+  const beforeStories = new Map(change.map((story) => [story.name, story]));
+  const afterStories = new Map(draft.map((story) => [story.name, story]));
   for (const name of new Set([...beforeStories.keys(), ...afterStories.keys()])) {
-    if (!touched.has(name) && beforeStories.get(name) !== afterStories.get(name)) {
-      details.push(name);
+    const prior = beforeStories.get(name);
+    const next = afterStories.get(name);
+    if (prior === undefined || next === undefined) {
+      if ((prior ?? next)?.flows.length === 0) {
+        difference.details.push(name);
+      }
+      continue;
+    }
+    if (storyOutline(prior) !== storyOutline(next)) {
+      difference.details.push(name);
+    }
+    const priorKeys = prior.flows.map((flow) => flow.key);
+    const nextKeys = next.flows.map((flow) => flow.key);
+    if (!sameOrder(priorKeys.filter((key) => nextKeys.includes(key)), nextKeys.filter((key) => priorKeys.includes(key)))) {
+      difference.flowOrder.push(name);
     }
   }
-  const same = canonicalJSON(change) === canonicalJSON(draft);
-  return { same, added, removed, changed, details };
+  const beforeNames = change.map((story) => story.name);
+  const afterNames = draft.map((story) => story.name);
+  difference.storyOrder = !sameOrder(
+    beforeNames.filter((name) => afterStories.has(name)),
+    afterNames.filter((name) => beforeStories.has(name))
+  );
+  return difference;
 }
 
 // DraftBody shows the evaluation's state and, once it succeeded, its Stories
@@ -265,7 +306,7 @@ function DraftBody({ card, evaluation }: { card: ChangeCardResult | null; evalua
       );
     case "running":
       return (
-        <p id="surla-story-draft-running" role="status">
+        <p id="surla-story-draft-running">
           The guide's Story evaluation is running for snapshot{" "}
           <code>{evaluation.snapshot_digest ?? "unknown"}</code>. The result appears here when it
           finishes.
@@ -324,10 +365,13 @@ function SucceededDraft({ card, evaluation }: { card: ChangeCardResult | null; e
             <strong>The current draft differs from this change's Story.</strong>
           </p>
           <ul>
-            <DifferenceItem kind="added" label="Flows added in the draft" flows={difference.added} />
-            <DifferenceItem kind="removed" label="Flows removed in the draft" flows={difference.removed} />
-            <DifferenceItem kind="changed" label="Flows changed in the draft" flows={difference.changed} />
-            <DifferenceItem kind="details" label="Other Story details changed" flows={difference.details} />
+            <DifferenceItem kind="added" label="Flows added in the draft" names={difference.added} />
+            <DifferenceItem kind="removed" label="Flows removed in the draft" names={difference.removed} />
+            <DifferenceItem kind="changed" label="Flows changed in the draft" names={difference.changed} />
+            <DifferenceItem kind="step-order" label="Flows whose steps are in another order" names={difference.stepOrder} />
+            <DifferenceItem kind="flow-order" label="Stories whose flows are in another order" names={difference.flowOrder} />
+            <DifferenceItem kind="details" label="Stories whose description or roles changed" names={difference.details} />
+            {difference.storyOrder ? <li data-difference="story-order">The Stories are in another order.</li> : null}
           </ul>
           <p id="surla-story-rule">
             The draft is not part of this change until the guide revises the change with it and you
@@ -344,14 +388,14 @@ function SucceededDraft({ card, evaluation }: { card: ChangeCardResult | null; e
 }
 
 // DifferenceItem lists the names of one kind of difference, or nothing.
-function DifferenceItem({ kind, label, flows }: { kind: string; label: string; flows: string[] }) {
-  if (flows.length === 0) {
+function DifferenceItem({ kind, label, names }: { kind: string; label: string; names: string[] }) {
+  if (names.length === 0) {
     return null;
   }
   return (
     <li data-difference={kind}>
       {label + ": "}
-      {flows.map((name, index) => (
+      {names.map((name, index) => (
         <React.Fragment key={name + String(index)}>
           {index > 0 ? ", " : null}
           <strong>{name}</strong>
@@ -386,23 +430,50 @@ function FlowRow({ flow, actors }: { flow: StoryFlowItem; actors: Map<string, st
           ))}
         </ul>
       ) : null}
-      {flow.steps.length === 0 ? (
-        <p>This flow has no steps yet.</p>
-      ) : (
-        <ol className="surla-story-steps" aria-label={"Steps of " + flow.title} tabIndex={0}>
-          {flow.steps.map((step) => (
-            <li key={step.key} className="surla-story-step" data-step-key={step.key} data-kind={step.kind}>
-              <span className="surla-story-actor">{actors.get(step.actor_key) ?? step.actor_key}</span>
-              <p className="surla-story-summary">{step.summary}</p>
-              <span className="surla-story-kind">{STEP_KIND_LABELS[step.kind]}</span>
-              {step.description ? <p className="surla-story-muted">{step.description}</p> : null}
-              <QuestionList questions={step.questions} label={"Open questions on " + step.summary} />
-            </li>
-          ))}
-        </ol>
-      )}
+      {flow.steps.length === 0 ? <p>This flow has no steps yet.</p> : <StepRow flow={flow} actors={actors} />}
       <QuestionList questions={flow.questions} label={"Open questions on " + flow.title} />
     </li>
+  );
+}
+
+// StepRow draws a flow's steps in order as cards in one row that scrolls
+// inside the stage. While its cards overflow it, the row is a keyboard stop
+// so it can be scrolled without a pointer; otherwise it is not.
+function StepRow({ flow, actors }: { flow: StoryFlowItem; actors: Map<string, string> }) {
+  const ref = React.useRef<HTMLOListElement>(null);
+  const [scrolls, setScrolls] = React.useState(false);
+  React.useLayoutEffect(() => {
+    const row = ref.current;
+    if (row === null) {
+      return;
+    }
+    const measure = () => setScrolls(row.scrollWidth > row.clientWidth);
+    measure();
+    window.addEventListener("resize", measure);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(row);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [flow]);
+  return (
+    <ol
+      ref={ref}
+      className="surla-story-steps"
+      aria-label={"Steps of " + flow.title}
+      tabIndex={scrolls ? 0 : undefined}
+    >
+      {flow.steps.map((step) => (
+        <li key={step.key} className="surla-story-step" data-step-key={step.key} data-kind={step.kind}>
+          <span className="surla-story-actor">{actors.get(step.actor_key) ?? step.actor_key}</span>
+          <p className="surla-story-summary">{step.summary}</p>
+          <span className="surla-story-kind">{STEP_KIND_LABELS[step.kind]}</span>
+          {step.description ? <p className="surla-story-muted">{step.description}</p> : null}
+          <QuestionList questions={step.questions} label={"Open questions on " + step.summary} />
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -433,43 +504,46 @@ function QuestionList({ questions, label }: { questions: StoryQuestionItem[]; la
 }
 
 // FlowIdentity is one flow keyed by its Story's name and its key, with the
-// name people read and its content in a comparable form.
+// name people read and its content in comparable forms.
 interface FlowIdentity {
-  // story is the name of the flow's Story.
-  story: string;
   // label names the flow for people.
   label: string;
-  // content is the flow's content with each step's actor title resolved.
+  // content is the flow's content with each step's role resolved.
   content: string;
+  // unordered is content with the steps ordered by key, so two flows whose
+  // steps differ only in order have the same unordered content.
+  unordered: string;
 }
 
 // flowsByIdentity indexes every flow of stories by Story name and flow key.
-// A flow's content includes its steps' actor titles, so renaming a role
-// changes the flows that use it.
+// Each step's content includes its actor's role, so renaming a role changes
+// the flows that use it.
 function flowsByIdentity(stories: StorySummaryItem[]): Map<string, FlowIdentity> {
   const flows = new Map<string, FlowIdentity>();
   for (const story of stories) {
     const actors = new Map(story.actors.map((actor) => [actor.key, actor.title]));
     for (const flow of story.flows) {
-      const roles = flow.steps.map((step) => actors.get(step.actor_key) ?? null);
+      const steps = flow.steps.map((step) => ({ step, role: actors.get(step.actor_key) ?? null }));
+      const byKey = [...steps].sort((a, b) => (a.step.key < b.step.key ? -1 : a.step.key > b.step.key ? 1 : 0));
       flows.set(JSON.stringify([story.name, flow.key]), {
-        story: story.name,
         label: stories.length > 1 ? story.name + ": " + flow.title : flow.title,
-        content: canonicalJSON({ flow, roles }),
+        content: canonicalJSON({ ...flow, steps }),
+        unordered: canonicalJSON({ ...flow, steps: byKey }),
       });
     }
   }
   return flows;
 }
 
-// storyOutline is a Story's content outside its flows' own content: its
-// description, its actors and the order of its flows.
+// storyOutline is a Story's content outside its flows: its description and
+// its roles.
 function storyOutline(story: StorySummaryItem): string {
-  return canonicalJSON({
-    description: story.description ?? null,
-    actors: story.actors,
-    order: story.flows.map((flow) => flow.key),
-  });
+  return canonicalJSON({ description: story.description ?? null, actors: story.actors });
+}
+
+// sameOrder reports whether two lists hold the same values in the same order.
+function sameOrder(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 // canonicalJSON encodes value with object keys sorted and absent optional

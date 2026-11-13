@@ -514,6 +514,10 @@ func TestListFiltersByOwnerAndChangeBeforeReadingStateAndSortsDeterministically(
 	require.ErrorContains(t, err, "does not match directory")
 }
 
+// TestLatestByChangeReadsEachChangesNewestRunOnly checks that LatestByChange
+// returns each of an owner's changes' newest run, with List's tie-break, reads
+// the state of those runs only, leaves out other owners' runs, and fails on a
+// damaged request rather than leaving it out.
 func TestLatestByChangeReadsEachChangesNewestRunOnly(t *testing.T) {
 	latest, err := LatestByChange(filepath.Join(t.TempDir(), "not-created-yet"), "alice")
 	require.NoError(t, err)
