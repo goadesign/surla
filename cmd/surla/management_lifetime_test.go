@@ -506,7 +506,7 @@ func TestManagementCredentialStaysOutOfMetadata(t *testing.T) {
 	require.GreaterOrEqual(t, len(launched), 3)
 	assert.Equal(t, []string{"serve", "-state", state.Dir}, launched[len(launched)-3:])
 	var output bytes.Buffer
-	writeServeStatus(&output, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: state.Record.Port}, controlplane.Options{CardsDir: state.CardsDir()}, "")
+	writeServeStatus(&output, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: state.Record.Port}, controlplane.Options{CardsDir: state.CardsDir()})
 	for _, value := range [][]byte{roster, settings, argv, output.Bytes()} {
 		assert.False(t, bytes.Contains(value, []byte(running.ManagementCredential)), "management credential must remain private")
 	}

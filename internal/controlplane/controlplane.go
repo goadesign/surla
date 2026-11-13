@@ -166,23 +166,25 @@ type (
 		// ResolvePromotionTarget dynamically resolves a PromotionTarget from
 		// the currently bound workspace directory when PromotionTarget is nil.
 		ResolvePromotionTarget func(ctx context.Context, workspaceDir string) (PromotionTarget, error)
-		// Verification is the operator's static CP4 configuration. When nil,
-		// RunsDir and ResolveVerification supply dynamic workspace-derived CP4
-		// configuration.
+		// Verification is the operator's stored evaluator: the CP4
+		// configuration stored with `surla verification set`. Every change
+		// verifies with it and needs no build; New refuses it together with
+		// WrittenTestRuns, because a project verifies with one source.
 		Verification *VerificationConfig
 		// RunsDir is the protected verification runs directory used by
 		// get_verification, list_verifications, and init_project when
-		// Verification is nil.
+		// Verification is nil. WrittenTestRuns requires it.
 		RunsDir string
-		// ResolveVerification dynamically resolves a VerificationConfig from
-		// the currently bound workspace directory and its trusted starter suite
-		// commit (set by init_project or restored from workspace.json, or empty
-		// when the workspace was not initialized via init_project) for
-		// verify_change and start_live_target.
-		ResolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error)
-		// Live lets start_live_target build and run CP3 live targets with
-		// Verification's plan, in <CardsDir>/live. Without it, or without
-		// Verification/ResolveVerification, start_live_target fails.
+		// WrittenTestRuns lets verify_change run, in RunsDir, the tests
+		// accepted for each change's build, in a project without a stored
+		// evaluator, and lets start_live_target run a candidate commit's own
+		// test module, both read from the repository holding WorkspaceDir,
+		// which it requires. Without it and without Verification, neither
+		// runs.
+		WrittenTestRuns *WrittenTestRuns
+		// Live lets start_live_target build and run CP3 live targets in
+		// <CardsDir>/live. Without it, or without Verification or
+		// WrittenTestRuns, start_live_target fails.
 		Live *LiveConfig
 		// Team is the project owner composed before this control plane; nil leaves team operations unavailable.
 		Team *TeamBinding
@@ -292,20 +294,19 @@ type (
 		// resolvePromotionTarget dynamically resolves a PromotionTarget from
 		// the currently bound workspace when promotionTarget is nil.
 		resolvePromotionTarget func(ctx context.Context, workspaceDir string) (PromotionTarget, error)
-		// verification is the operator's static CP4 configuration, or nil.
-		verification *VerificationConfig
-		// runsDir is the protected verification runs directory when
-		// verification is nil.
+		// verifier is how this control plane verifies changes, fixed by New:
+		// no verification, the stored evaluator, or each change's accepted
+		// tests. Every reader switches on it.
+		verifier verifier
+		// runsDir is the protected verification runs directory: RunsDir, or
+		// the stored evaluator's when RunsDir is empty.
 		runsDir string
-		// resolveVerification dynamically resolves a VerificationConfig from
-		// the currently bound workspace and its trusted starter suite commit.
-		resolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error)
 		// evaluator evaluates designs for preview_architecture and diff. It
 		// creates its build workspace on the first evaluation, and Close
 		// removes it.
 		evaluator *designeval.Evaluator
 		// workspaceMu serializes InitProject and guards activeWorkspaceDir,
-		// boundWorkspaceDev, boundWorkspaceIno, and boundSuiteCommit.
+		// boundWorkspaceDev and boundWorkspaceIno.
 		workspaceMu sync.RWMutex
 		// initialWorkspaceRoot is the cleaned physical path of
 		// Options.WorkspaceDir at startup, or empty when unbound.
@@ -324,9 +325,6 @@ type (
 		// of activeWorkspaceDir.
 		boundWorkspaceDev uint64
 		boundWorkspaceIno uint64
-		// boundSuiteCommit is the trusted initial starter commit recorded by
-		// init_project or restored from workspace.json.
-		boundSuiteCommit string
 		// initStageDir is Options.InitStageDir.
 		initStageDir string
 		// checker is Options.Checker.
@@ -473,7 +471,19 @@ func New(opts Options) (*ControlPlane, error) {
 	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
-	runsDir, initStageDir, verCfg, protectedDirs, err := normalizeAndValidateStartupPaths(opts, wsRoot)
+	if opts.Verification != nil && opts.WrittenTestRuns != nil {
+		err := errors.New("set either Verification or WrittenTestRuns, not both: a project verifies with its stored evaluator or with each change's accepted tests")
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	if opts.WrittenTestRuns != nil && opts.RunsDir == "" {
+		err := errors.New("WrittenTestRuns requires RunsDir, where its runs are kept")
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	if opts.WrittenTestRuns != nil && opts.WorkspaceDir == "" {
+		err := errors.New("WrittenTestRuns requires WorkspaceDir, whose repository holds the commits it verifies")
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	runsDir, initStageDir, verif, protectedDirs, err := normalizeAndValidateStartupPaths(opts, wsRoot)
 	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
@@ -507,9 +517,8 @@ func New(opts Options) (*ControlPlane, error) {
 		liveModelEnvFor:        opts.LiveModelEnv,
 		promotionTarget:        opts.PromotionTarget,
 		resolvePromotionTarget: opts.ResolvePromotionTarget,
-		verification:           verCfg,
+		verifier:               verif,
 		runsDir:                runsDir,
-		resolveVerification:    opts.ResolveVerification,
 		evaluator:              eval,
 		initialWorkspaceRoot:   wsRoot,
 		protectedDirs:          protectedDirs,
@@ -534,7 +543,7 @@ func New(opts Options) (*ControlPlane, error) {
 	if err := cp.restoreWorkspace(); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
-	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, protectedDirs...); err != nil {
+	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verifierRuns(verif), protectedDirs...); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
 	if opts.Checker != nil {

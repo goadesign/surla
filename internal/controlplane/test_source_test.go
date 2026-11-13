@@ -26,33 +26,31 @@ func TestProjectTestSourceHasThreeAnswers(t *testing.T) {
 	padded := func(size int) string {
 		return goMod + "//" + strings.Repeat("x", size-len(goMod)-3) + "\n"
 	}
-	// resolve stands in for the resolver the project server binds when the
-	// project has no stored verification settings.
-	resolve := func(context.Context, string, string) (*VerificationConfig, error) { return nil, nil }
+	// written stands for the project server's binding when the project has no
+	// stored verification settings: runs of each change's accepted tests.
 	cases := []struct {
 		name      string
 		files     map[string]string
 		prepare   func(t *testing.T, ws string)
 		stored    bool
-		resolver  bool
-		startup   bool
+		written   bool
 		unbound   bool
 		want      testSource
 		wantError string
 	}{
 		{name: "stored settings", stored: true, unbound: true, want: testSourceStoredEvaluator},
 		{name: "stored settings in a starter project", files: starter, stored: true, want: testSourceStoredEvaluator},
-		{name: "starter project, no stored settings", files: starter, resolver: true, startup: true, want: testSourceStarterLayout},
+		{name: "starter project, no stored settings", files: starter, written: true, want: testSourceStarterLayout},
 		{name: "starter project, nothing configured", files: starter, want: testSourceStarterLayout},
-		{name: "no workspace", resolver: true, unbound: true, want: testSourceNone},
-		{name: "no go.mod", files: map[string]string{"eval/go.mod": testGoMod}, resolver: true, want: testSourceNone},
-		{name: "no test module", files: map[string]string{"go.mod": goMod}, resolver: true, want: testSourceNone},
+		{name: "no workspace", unbound: true, want: testSourceNone},
+		{name: "no go.mod", files: map[string]string{"eval/go.mod": testGoMod}, want: testSourceNone},
+		{name: "no test module", files: map[string]string{"go.mod": goMod}, want: testSourceNone},
 		{name: "test module of another service", files: map[string]string{
 			"go.mod": goMod, "eval/go.mod": "module example.com/orders/eval\n\ngo 1.26\n",
-		}, resolver: true, want: testSourceNone},
+		}, want: testSourceNone},
 		{name: "module path without a service name", files: map[string]string{
 			"go.mod": "module example.com/Shop\n\ngo 1.26\n", "eval/go.mod": "module example.com/Shop/eval\n\ngo 1.26\n",
-		}, resolver: true, want: testSourceNone},
+		}, want: testSourceNone},
 		{name: "go.mod at its size bound", files: map[string]string{"go.mod": padded(maxLayoutFileBytes), "eval/go.mod": testGoMod}, want: testSourceStarterLayout},
 		{name: "go.mod over its size bound", files: map[string]string{"go.mod": padded(maxLayoutFileBytes + 1), "eval/go.mod": testGoMod}, want: testSourceNone},
 		{name: "link at go.mod", files: map[string]string{"real.mod": goMod, "eval/go.mod": testGoMod}, prepare: func(t *testing.T, ws string) {
@@ -89,11 +87,12 @@ func TestProjectTestSourceHasThreeAnswers(t *testing.T) {
 				opts.WorkspaceDir = t.TempDir()
 				writeWorkspaceFiles(t, opts.WorkspaceDir, tc.files)
 			}
-			if tc.stored || tc.startup {
+			if tc.stored {
 				opts.Verification = &VerificationConfig{RunsDir: t.TempDir()}
 			}
-			if tc.resolver {
-				opts.ResolveVerification = resolve
+			if tc.written {
+				opts.RunsDir = t.TempDir()
+				opts.WrittenTestRuns = &WrittenTestRuns{ReportDir: t.TempDir(), Timeout: time.Minute}
 			}
 			cp := newControlPlane(t, opts)
 			if tc.prepare != nil {

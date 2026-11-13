@@ -47,6 +47,7 @@ func TestRunRejectsInvalidPlansBeforeWriting(t *testing.T) {
 			SuiteCommit:     full,
 			SuiteModule:     "examples/orders-eval",
 			SuiteCommand:    "./cmd/orders_acceptance-evals",
+			Tests:           TestsEvaluator,
 		}
 	}
 	cases := []struct {
@@ -150,6 +151,7 @@ func TestRunRefusesACommittedModuleLinkOutsideTheCheckout(t *testing.T) {
 		SuiteCommit:     head,
 		SuiteCommand:    "./cmd/suite",
 		WorkDir:         t.TempDir(),
+		Tests:           TestsEvaluator,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `candidate module "module": resolves to`)

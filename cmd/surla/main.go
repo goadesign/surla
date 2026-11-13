@@ -94,24 +94,14 @@ Other commands:
 // `surla -h`, `surla -help` and `surla --help`, also after `help`.
 var helpWords = []string{"help", "-h", "-help", "--help"}
 
-// liveModelProviderEnv, liveModelNameEnv and liveModelGatewayEnv name the
-// model choice serve passes to live targets' evaluator suites (see
-// liveTargetEnv and docs/REFERENCE.md).
+// defaultAnthropicModel and defaultOpenAIModel are the models the server
+// starts live copies with when the operator's environment holds that
+// provider's key. The variables that pass the choice and the keys to a live
+// copy are named in internal/verify (see liveTargetEnv).
 const (
-	liveModelProviderEnv  = "SURLA_LIVE_MODEL_PROVIDER"
-	liveModelNameEnv      = "SURLA_LIVE_MODEL_NAME"
-	liveModelGatewayEnv   = "SURLA_LIVE_MODEL_GATEWAY"
 	defaultAnthropicModel = "claude-sonnet-4-6"
 	defaultOpenAIModel    = "gpt-5.4-mini"
 )
-
-// apiKeyEnv maps each supported direct model provider to the environment
-// variable that holds its API key. Keys are read only from the environment so
-// they never appear in process listings or shell history.
-var apiKeyEnv = map[string]string{
-	"anthropic": "ANTHROPIC_API_KEY",
-	"openai":    "OPENAI_API_KEY",
-}
 
 func main() {
 	if err := runWithRuntime(os.Args[1:], os.Stdout, productionProjectRuntime()); err != nil {
@@ -186,41 +176,37 @@ func dispatch(sub string, args []string, stdout io.Writer, runtime projectRuntim
 }
 
 // writeServeStatus reports the bound numeric loopback address and checkpoint capabilities.
-// project is nonempty only when verification uses a starter suite pinned at startup.
-func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options, project string) {
+func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options) {
 	host := addr.String()
 	fmt.Fprintf(w, "surla: serving on http://%s\n", host)
-	writeCheckpointStatus(w, opts, project)
+	writeCheckpointStatus(w, opts)
 }
 
 // writeCheckpointStatus writes the Change Cards directory and the on/off
-// status of checkpoints CP1–CP5 to w for the project server.
-func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project string) {
+// status of checkpoints CP1–CP5 to w for the project server, naming how CP4
+// verifies: the stored evaluator, or the tests accepted for each change.
+func writeCheckpointStatus(w io.Writer, opts controlplane.Options) {
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on")
 	fmt.Fprintln(w, "surla: CP2 (preview_architecture): on")
-	if (opts.Verification != nil || opts.ResolveVerification != nil) && opts.Live != nil {
+	if (opts.Verification != nil || opts.WrittenTestRuns != nil) && opts.Live != nil {
 		root := controlplane.LiveRoot(opts.CardsDir)
 		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
 	} else {
 		fmt.Fprintln(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off"+
-			" (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
+			" (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
 	}
 	switch {
 	case opts.Verification != nil:
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s, reports in %s, evaluator suite commit %s)\n",
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in %s, reports in %s, evaluator suite commit %s)\n",
 			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
-	case opts.ResolveVerification != nil:
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): workspace %s (runs in %s; activates after init_project or when started in a committed starter repository)\n",
-			opts.WorkspaceDir, opts.RunsDir)
+	case opts.WrittenTestRuns != nil:
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build (runs in %s, reports in %s)\n",
+			opts.RunsDir, opts.WrittenTestRuns.ReportDir)
 	default:
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
-			" (initialize a committed starter or use surla verification set, or run surla verify on the CLI)")
-	}
-	if project != "" && opts.Verification != nil {
-		fmt.Fprintf(w, "surla: project %s: the evaluator suite commit is the project's HEAD at startup;"+
-			" commit and restart Surla to use a later suite\n", project)
+			" (use surla verification set, or run surla verify on the CLI)")
 	}
 	if opts.PromotionTarget == nil {
 		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)")
@@ -526,6 +512,9 @@ func parseVerifyFlags(args []string) (verify.Plan, time.Duration, bool, error) {
 		return verify.Plan{}, 0, false, fmt.Errorf("verify requires %s", strings.Join(missing, ", "))
 	}
 	p.Binaries = binaries
+	// The operator names the suite on the command line, so it keeps the
+	// operator's environment as a stored evaluator does.
+	p.Tests = verify.TestsEvaluator
 	return p, *timeout, *builderView, nil
 }
 
@@ -561,15 +550,14 @@ func projectServeOptions(
 		return controlplane.Options{}, err
 	}
 	live := &controlplane.LiveConfig{
-		Env:   liveTargetEnv(environ, startupModel),
-		Model: startupModel,
+		Env:          liveTargetEnv(environ, startupModel),
+		Model:        startupModel,
+		Command:      self,
+		StartTimeout: defaultProjectVerifyTimeout,
 	}
 	if ws.verification != nil {
 		live.Command = ws.verification.Command
 		live.StartTimeout = ws.verification.Timeout
-	} else if ws.resolveVerification != nil {
-		live.Command = self
-		live.StartTimeout = defaultProjectVerifyTimeout
 	}
 	goProxyEnv, err := operatorGoProxyEnv(ws.evalWorkDir)
 	if err != nil {
@@ -585,7 +573,7 @@ func projectServeOptions(
 		LiveModelEnv:           newLiveModelEnv(getenv, environ),
 		Verification:           ws.verification,
 		RunsDir:                ws.runsDir,
-		ResolveVerification:    ws.resolveVerification,
+		WrittenTestRuns:        ws.writtenTestRuns,
 		PromotionTarget:        ws.promotionTarget,
 		ResolvePromotionTarget: ws.resolvePromotionTarget,
 		Live:                   live,
@@ -627,10 +615,12 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 // default model of the first direct provider whose API key the operator's
 // environment holds, or none.
 func resolveStartupModel(getenv func(string) string) gensurla.Connection {
+	anthropicKey, _ := verify.LiveModelKeyEnv("anthropic")
+	openAIKey, _ := verify.LiveModelKeyEnv("openai")
 	switch {
-	case strings.TrimSpace(getenv("ANTHROPIC_API_KEY")) != "":
+	case strings.TrimSpace(getenv(anthropicKey)) != "":
 		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: "anthropic", ModelName: defaultAnthropicModel})
-	case strings.TrimSpace(getenv("OPENAI_API_KEY")) != "":
+	case strings.TrimSpace(getenv(openAIKey)) != "":
 		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: "openai", ModelName: defaultOpenAIModel})
 	default:
 		return gensurla.NewConnectionNone(&gensurla.ModelNone{})
@@ -644,7 +634,7 @@ func resolveStartupModel(getenv func(string) string) gensurla.Connection {
 func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.LiveModelEnv {
 	return func(choice gensurla.Connection) ([]string, error) {
 		if direct, ok := choice.AsDirect(); ok {
-			if env, ok := apiKeyEnv[direct.Provider]; ok && strings.TrimSpace(getenv(env)) == "" {
+			if env, ok := verify.LiveModelKeyEnv(direct.Provider); ok && strings.TrimSpace(getenv(env)) == "" {
 				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
 					"provider %s requires %s in the project server's environment; set %s and stop and start Surla, or call configure_model with gateway_addr to attach a running model gateway",
 					direct.Provider,
@@ -663,22 +653,22 @@ func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.
 func liveTargetEnv(environ []string, choice gensurla.Connection) []string {
 	derived := map[string]string{}
 	if gateway, ok := choice.AsGateway(); ok {
-		derived[liveModelGatewayEnv] = gateway.GatewayAddr
+		derived[verify.LiveModelGatewayEnv] = gateway.GatewayAddr
 	}
 	if direct, ok := choice.AsDirect(); ok {
-		derived[liveModelProviderEnv] = direct.Provider
-		derived[liveModelNameEnv] = direct.ModelName
+		derived[verify.LiveModelProviderEnv] = direct.Provider
+		derived[verify.LiveModelNameEnv] = direct.ModelName
 	}
 	out := make([]string, 0, len(environ)+len(derived))
 	for _, kv := range environ {
 		name, _, _ := strings.Cut(kv, "=")
 		switch name {
-		case liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv:
+		case verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv:
 			continue
 		}
 		out = append(out, kv)
 	}
-	for _, name := range []string{liveModelProviderEnv, liveModelNameEnv, liveModelGatewayEnv} {
+	for _, name := range []string{verify.LiveModelProviderEnv, verify.LiveModelNameEnv, verify.LiveModelGatewayEnv} {
 		if v, ok := derived[name]; ok {
 			out = append(out, name+"="+v)
 		}

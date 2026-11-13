@@ -488,11 +488,7 @@ func (runtime projectRuntime) serve(stateDir string) (err error) {
 	application.Handle("GET /views", controlplane.ViewsPage())
 	application.Handle("/", controlplane.NewHTTPHandler(cp, management.Authenticate))
 	server := &http.Server{Handler: management.Handler(application), ReadHeaderTimeout: 10 * time.Second}
-	starterProject := state.Record.Directory
-	if opts.ResolveVerification == nil {
-		starterProject = ""
-	}
-	writeServeStatus(os.Stderr, listener.Addr().(*net.TCPAddr), opts, starterProject)
+	writeServeStatus(os.Stderr, listener.Addr().(*net.TCPAddr), opts)
 	return serveProjectHTTP(ctx, server, &ownedProjectListener{Listener: listener, management: management})
 }
 

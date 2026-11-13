@@ -448,6 +448,7 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 			SuiteCommand:    "./cmd/shop-evals",
 			RequestRevision: reqRevision,
 			ReportDir:       reportsDir,
+			Tests:           verify.TestsEvaluator,
 		},
 	}, []string{supervisorScript})
 	require.NoError(t, err)

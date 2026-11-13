@@ -70,7 +70,15 @@ type (
 		WorkDir string
 		// ReportDir receives the report, named by its digest.
 		ReportDir string
+		// Tests says who wrote the test program, which decides the
+		// environment it starts with (see ProgramEnv): TestsEvaluator for
+		// the operator's evaluator, TestsWritten for a test module agents on
+		// this machine wrote.
+		Tests TestsSource
 	}
+
+	// TestsSource says who wrote a plan's test program.
+	TestsSource string
 
 	// Stage names the step of Run that stopped a verification.
 	Stage string
@@ -102,6 +110,9 @@ type (
 		ArtifactFlags []string
 		// EvidenceDir holds every preparation command's output.
 		EvidenceDir string
+		// TmpDir is the empty folder inside WorkDir that a test program
+		// agents wrote gets as TMPDIR in a verification run.
+		TmpDir string
 		// runner runs Run's later suite commands with the same evidence
 		// directory.
 		runner *runner
@@ -209,24 +220,7 @@ func Run(ctx context.Context, p Plan) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	r, binding, suiteBin, artifactFlags := prep.runner, prep.Binding, prep.SuiteBin, prep.ArtifactFlags
-	declared, err := r.describe(ctx, suiteBin)
-	if err != nil {
-		return Report{}, stageError(StageDescribe, "The evaluator suite did not describe its scenarios.", err)
-	}
-	binding.SuiteID, binding.Environment = declared.ID, declared.Environment
-	evidence, exit, err := r.runSuite(ctx, suiteBin, artifactFlags)
-	if err != nil {
-		return Report{}, stageError(StageSuite, "The evaluator suite ended without a report.", err)
-	}
-	report, err := Assemble(binding, declared, evidence, exit)
-	if err != nil {
-		return Report{}, stageError(StageReport, "The evaluator suite's report does not match its declaration or the binaries it was given.", err)
-	}
-	if err := writeReport(p.ReportDir, report); err != nil {
-		return Report{}, stageError(StageReport, "Saving the verification report failed.", err)
-	}
-	return report, nil
+	return runPrepared(ctx, p, prep, os.Environ())
 }
 
 // Prepare runs the trusted preparation Run starts with: it checks the plan,
@@ -254,6 +248,9 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 	if err := validatePackagePath(p.SuiteCommand); err != nil {
 		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite command: %w", err))
 	}
+	if err := p.Tests.Check(); err != nil {
+		return Prepared{}, stageError(StageCheckout, summaryPlan, err)
+	}
 	if p.WorkDir == "" {
 		return Prepared{}, stageError(StageCheckout, summaryPlan, errors.New("work directory is required"))
 	}
@@ -272,7 +269,8 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 	evidenceDir := filepath.Join(p.WorkDir, "evidence")
 	candidateBinDir := filepath.Join(p.WorkDir, "candidate-bin")
 	suiteBinDir := filepath.Join(p.WorkDir, "suite-bin")
-	for _, dir := range []string{evidenceDir, candidateBinDir, suiteBinDir} {
+	tmpDir := filepath.Join(p.WorkDir, "tmp")
+	for _, dir := range []string{evidenceDir, candidateBinDir, suiteBinDir, tmpDir} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("create %s: %w", dir, err))
 		}
@@ -358,6 +356,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 		SuiteBin:      suiteBin,
 		ArtifactFlags: artifactFlags,
 		EvidenceDir:   evidenceDir,
+		TmpDir:        tmpDir,
 		runner:        r,
 	}, nil
 }
@@ -370,6 +369,31 @@ func (e *StageError) Error() string {
 // Unwrap returns the full error.
 func (e *StageError) Unwrap() error {
 	return e.Err
+}
+
+// runPrepared is Run after Prepare: it describes and runs the suite prep
+// built for p, both with the environment ProgramEnv gives p's test program
+// from environ, then assembles the report and saves it in p.ReportDir.
+func runPrepared(ctx context.Context, p Plan, prep Prepared, environ []string) (Report, error) {
+	r, binding, suiteBin, artifactFlags := prep.runner, prep.Binding, prep.SuiteBin, prep.ArtifactFlags
+	env := ProgramEnv(p, environ, prep.TmpDir)
+	declared, err := r.describe(ctx, env, suiteBin)
+	if err != nil {
+		return Report{}, stageError(StageDescribe, "The evaluator suite did not describe its scenarios.", err)
+	}
+	binding.SuiteID, binding.Environment = declared.ID, declared.Environment
+	evidence, exit, err := r.runSuite(ctx, env, suiteBin, artifactFlags)
+	if err != nil {
+		return Report{}, stageError(StageSuite, "The evaluator suite ended without a report.", err)
+	}
+	report, err := Assemble(binding, declared, evidence, exit)
+	if err != nil {
+		return Report{}, stageError(StageReport, "The evaluator suite's report does not match its declaration or the binaries it was given.", err)
+	}
+	if err := writeReport(p.ReportDir, report); err != nil {
+		return Report{}, stageError(StageReport, "Saving the verification report failed.", err)
+	}
+	return report, nil
 }
 
 // resolveInside resolves rel, a path relative to the directory root, following
@@ -441,10 +465,10 @@ func (r *runner) checkout(ctx context.Context, label, repo, commit, dir string) 
 	return nil
 }
 
-// describe runs the suite's --describe and converts it into the declared
-// scenario list.
-func (r *runner) describe(ctx context.Context, suiteBin string) (Suite, error) {
-	if err := r.run(ctx, "describe", "", nil, suiteBin, "--describe"); err != nil {
+// describe runs the suite's --describe with env and converts it into the
+// declared scenario list.
+func (r *runner) describe(ctx context.Context, env []string, suiteBin string) (Suite, error) {
+	if err := r.run(ctx, "describe", "", env, suiteBin, "--describe"); err != nil {
 		return Suite{}, fmt.Errorf("describe suite: %w", err)
 	}
 	var d suite.Declaration
@@ -458,14 +482,15 @@ func (r *runner) describe(ctx context.Context, suiteBin string) (Suite, error) {
 	return s, nil
 }
 
-// runSuite runs the suite and returns its eval.Report and exit status. The
-// suite and the candidates it starts run in the caller's process group, which
-// stops and reaps them (surla verify-run supervise owns that group).
+// runSuite runs the suite with env and returns its eval.Report and exit
+// status. The suite and the candidates it starts run in the caller's process
+// group, which stops and reaps them (surla verify-run supervise owns that
+// group).
 // Cancellation sends SIGTERM to the suite so it can stop its candidates and
 // report what it has; it is killed after suiteStopGrace. A report is decoded
 // whatever the outcome; a canceled or abnormal end gets exit status -1 and
 // never passes. Only a missing or undecodable report is an error.
-func (r *runner) runSuite(ctx context.Context, suiteBin string, artifactFlags []string) (eval.Report, int, error) {
+func (r *runner) runSuite(ctx context.Context, env []string, suiteBin string, artifactFlags []string) (eval.Report, int, error) {
 	stdout, stderr, err := r.outputs("suite")
 	if err != nil {
 		return eval.Report{}, 0, err
@@ -473,6 +498,7 @@ func (r *runner) runSuite(ctx context.Context, suiteBin string, artifactFlags []
 	defer stdout.Close()
 	defer stderr.Close()
 	cmd := exec.CommandContext(ctx, suiteBin, artifactFlags...)
+	cmd.Env = env
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	// Cancellation asks the suite to stop its candidates and report; it gets
 	// suiteStopGrace before it is killed. The suite and whatever it starts

@@ -70,6 +70,8 @@ func TestVerifyChangeAcceptsOnlyTheOwnersCurrentConfirmedRevision(t *testing.T) 
 		assert.Equal(t, "alice@example.com", req.Owner)
 		assert.Equal(t, cfg.Plan.SuiteRepo, req.Plan.SuiteRepo, "the suite comes from the operator, never the caller")
 		assert.Equal(t, cfg.Plan.Binaries, req.Plan.Binaries)
+		assert.Equal(t, verify.TestsEvaluator, req.Plan.Tests, "the stored evaluator keeps the operator's environment")
+		assert.Equal(t, gensurla.NewTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}), started.TestSource)
 
 		_, err = cp.GetVerification(bob, &gensurla.GetVerificationPayload{RunID: started.RunID})
 		assert.ErrorContains(t, err, "is not the owner of run_id")
@@ -90,7 +92,7 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 		dir := filepath.Join(cfg.RunsDir, runID)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		plan := cfg.Plan
-		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 		req, err := json.Marshal(verifyrun.Request{RunID: runID, Owner: "alice@example.com", ChangeID: "chg",
 			AcceptedAt: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), Plan: plan})
 		require.NoError(t, err)
@@ -176,7 +178,7 @@ func TestGetVerificationSafeErrors(t *testing.T) {
 		dir := filepath.Join(cfg.RunsDir, runID)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		plan := cfg.Plan
-		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 		raw, err := json.Marshal(verifyrun.Request{
 			RunID:    runID,
 			Owner:    "bob@example.com",
@@ -218,7 +220,7 @@ func TestGetVerificationSafeErrors(t *testing.T) {
 		dir := filepath.Join(cfg.RunsDir, runID)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		plan := cfg.Plan
-		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 		raw, err := json.Marshal(verifyrun.Request{
 			RunID:      runID,
 			Owner:      "alice@example.com",
@@ -293,7 +295,7 @@ func TestListVerifications(t *testing.T) {
 			dir := filepath.Join(cfg.RunsDir, runID)
 			require.NoError(t, os.MkdirAll(dir, 0o700))
 			plan := cfg.Plan
-			plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+			plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 			raw, err := json.Marshal(verifyrun.Request{
 				RunID:      runID,
 				Owner:      "alice@example.com",

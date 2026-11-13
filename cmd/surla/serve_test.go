@@ -68,7 +68,7 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 		[]string{"PATH=/bin", "ANTHROPIC_API_KEY=k"})
 	require.NoError(t, err)
 	defer closeServeOptions(t, opts)
-	assert.Nil(t, opts.ResolveVerification, "stored verification settings must not set starter ResolveVerification")
+	assert.Nil(t, opts.WrittenTestRuns, "stored verification settings leave no runs of written tests")
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
@@ -161,7 +161,7 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
 	assert.Nil(t, opts.Verification)
-	assert.NotNil(t, opts.ResolveVerification)
+	assert.NotNil(t, opts.WrittenTestRuns)
 	require.NotNil(t, opts.Live)
 	assert.Len(t, opts.Live.Command, 1)
 	assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
@@ -239,17 +239,17 @@ func TestResolveStartupModelAndServeOptionsAutoDetection(t *testing.T) {
 			assert.Equal(t, tc.wantCfg, resolveStartupModel(getenv))
 			opts, err := serveOptions(getenv, baseEnviron)
 			require.NoError(t, err)
-			assert.Nil(t, opts.Verification, "no verification config was supplied and empty workspace has no committed starter")
-			assert.NotNil(t, opts.ResolveVerification)
+			assert.Nil(t, opts.Verification, "no verification settings are stored")
+			assert.NotNil(t, opts.WrittenTestRuns, "the project verifies with each change's accepted tests")
 			require.NotNil(t, opts.Live)
 			assert.Len(t, opts.Live.Command, 1)
 			assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
 			assert.Equal(t, tc.wantLiveEnv, opts.Live.Env)
 			assert.Equal(t, tc.wantCfg, opts.Live.Model)
 			var statusBuf bytes.Buffer
-			writeServeStatus(&statusBuf, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8090}, opts, "")
+			writeServeStatus(&statusBuf, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8090}, opts)
 			assert.Contains(t, statusBuf.String(), "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit")
-			assert.Contains(t, statusBuf.String(), "surla: CP4 (verify_change, get_verification, list_verifications): workspace ")
+			assert.Contains(t, statusBuf.String(), "surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build")
 			cp, err := controlplane.New(opts)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, cp.Close()) })
@@ -260,7 +260,8 @@ func TestResolveStartupModelAndServeOptionsAutoDetection(t *testing.T) {
 			require.Error(t, err)
 			var se *goa.ServiceError
 			require.ErrorAs(t, err, &se)
-			assert.Equal(t, "live_target_unavailable", se.GoaErrorName())
+			assert.Equal(t, "live_target_failed", se.GoaErrorName())
+			assert.Contains(t, se.Message, "is not inside a git repository, so it has no commits to verify: make the project folder a git repository and commit it")
 		})
 	}
 }
@@ -369,11 +370,10 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 	fixedSuite := verify.Plan{SuiteCommit: strings.Repeat("b", 40), ReportDir: "/var/lib/surla/reports"}
 	cases := []struct {
-		name       string
-		addr       *net.TCPAddr
-		opts       controlplane.Options
-		projectDir string
-		want       string
+		name string
+		addr *net.TCPAddr
+		opts controlplane.Options
+		want string
 	}{
 		{
 			name: "loopback with only CP1 and CP2 preview on",
@@ -383,8 +383,8 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (initialize a committed starter or use surla verification set, or run surla verify on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (use surla verification set, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 		},
@@ -400,8 +400,8 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 surla: saving Change Cards in /var/lib/surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): on
 `,
 		},
@@ -411,11 +411,10 @@ surla: CP5 (approve_merge): on
 	leftover := filepath.Join(liveRoot, "live-123")
 	require.NoError(t, os.MkdirAll(leftover, 0o700))
 	cases = append(cases, struct {
-		name       string
-		addr       *net.TCPAddr
-		opts       controlplane.Options
-		projectDir string
-		want       string
+		name string
+		addr *net.TCPAddr
+		opts controlplane.Options
+		want string
 	}{
 		name: "live targets with a directory an earlier serve left",
 		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
@@ -430,46 +429,40 @@ surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get
 surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept
-surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
+surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 	})
 	suite := strings.Repeat("c", 40)
 	cases = append(cases, struct {
-		name       string
-		addr       *net.TCPAddr
-		opts       controlplane.Options
-		projectDir string
-		want       string
+		name string
+		addr *net.TCPAddr
+		opts controlplane.Options
+		want string
 	}{
-		name: "starter project pins its HEAD as the evaluator suite",
+		name: "project without stored settings runs each change's accepted tests",
 		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
 		opts: controlplane.Options{
-			CardsDir: cardsDir,
-			Verification: &controlplane.VerificationConfig{
-				RunsDir: "/work/shop/.surla/runs",
-				Plan:    verify.Plan{SuiteCommit: suite, ReportDir: "/work/shop/reports"},
-			},
-			Live: &controlplane.LiveConfig{},
+			CardsDir:        cardsDir,
+			RunsDir:         "/work/ops/runs",
+			WrittenTestRuns: &controlplane.WrittenTestRuns{ReportDir: "/work/ops/reports"},
+			Live:            &controlplane.LiveConfig{},
 		},
-		projectDir: ".",
 		want: `surla: serving on http://127.0.0.1:8090
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept
-surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /work/shop/.surla/runs, reports in /work/shop/reports, evaluator suite commit ` + suite + `)
-surla: project .: the evaluator suite commit is the project's HEAD at startup; commit and restart Surla to use a later suite
+surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build (runs in /work/ops/runs, reports in /work/ops/reports)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 	})
 	cases = append(cases, struct {
-		name       string
-		addr       *net.TCPAddr
-		opts       controlplane.Options
-		projectDir string
-		want       string
+		name string
+		addr *net.TCPAddr
+		opts controlplane.Options
+		want string
 	}{
 		name: "explicit configuration keeps its fixed suite commit",
 		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
@@ -484,15 +477,15 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 surla: saving Change Cards in /srv/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
 	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			writeServeStatus(&out, tc.addr, tc.opts, tc.projectDir)
+			writeServeStatus(&out, tc.addr, tc.opts)
 			assert.Equal(t, tc.want, out.String())
 		})
 	}

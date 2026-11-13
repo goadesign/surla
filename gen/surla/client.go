@@ -272,7 +272,10 @@ func (c *Client) GetLiveTarget(ctx context.Context) (res *LiveTargetStatus, err 
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.
 // VerifyChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, or the project folder was replaced after the server started; the message ends with the step.
+//   - "no_build" (type *goa.ServiceError): Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.
+//   - "tests_not_accepted" (type *goa.ServiceError): Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.
+//   - "no_test_layout" (type *goa.ServiceError): Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests' commit is no longer in the project's repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.
 //   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot run Checkpoint 4 verifications.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error

@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/verify"
@@ -40,44 +41,39 @@ type VerificationConfig struct {
 	Timeout time.Duration
 }
 
+// writtenTestsNotice is the fixed sentence every result of a run with written
+// tests carries.
+const writtenTestsNotice = "These tests were written by a separate agent on this machine and are not isolated from the builder."
+
 // errVerificationUnavailable is returned by the CP4 verification methods of a
 // control plane without a VerificationConfig.
 var errVerificationUnavailable = errors.New("verification is not configured on this control plane")
 
 // VerifyChange starts Checkpoint 4 verification of a candidate commit for the
 // caller's confirmed Change Card revision and returns at once with the run in
-// the running state. The run is accepted into its own directory under the
-// configured RunsDir and carried out by processes that outlive this call and
-// this server (see verifyrun). The caller must own the card, the card must be
-// confirmed, and request_revision must be its current revision.
+// the running state. The caller must own the card, the card must be
+// confirmed, and request_revision must be its current revision; then
+// verificationPlan chooses what runs and refuses what cannot (no build, tests
+// not accepted, no test layout). The run is accepted into its own directory
+// under the runs folder and carried out by processes that outlive this call
+// and this server (see verifyrun).
 func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChangePayload) (*gensurla.VerificationStatusResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	verCfg, err := c.resolveVerificationConfig(ctx)
+	if _, none := c.verifier.(noVerification); none {
+		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
+	}
+	if err := c.verifiableCard(principal, p.ChangeID, p.RequestRevision); err != nil {
+		return nil, err
+	}
+	verCfg, err := c.verificationPlan(ctx, principal, p.ChangeID, p.RequestRevision, p.CandidateCommit)
 	if err != nil {
 		return nil, err
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	record, exists, err := c.cards.load(p.ChangeID)
-	switch {
-	case err != nil:
-		return nil, err
-	case !exists:
-		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
-	case record.owner != principal.ID:
-		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
-	case record.card.Status != StatusConfirmed:
-		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before verification (status %q)", p.ChangeID, record.card.Status))
-	case record.card.RequestRevision != p.RequestRevision:
-		return nil, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision))
-	}
 	runID := verifyrun.NewRunID()
 	plan := verCfg.Plan
-	plan.CandidateCommit = p.CandidateCommit
-	plan.RequestRevision = p.RequestRevision
 	// The work directory lives inside the run's own directory, which only
 	// the evaluator can read; it is kept as the run's evidence.
 	plan.WorkDir = filepath.Join(verCfg.RunsDir, runID, "work")
@@ -95,17 +91,39 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 	return statusResult(req, verifyrun.State{Kind: verifyrun.StateRunning}), nil
 }
 
+// verifiableCard checks, under the read lock, that principal owns the card
+// changeID, that it is confirmed and that revision is its current revision.
+func (c *ControlPlane) verifiableCard(principal Principal, changeID, revision string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	record, exists, err := c.cards.load(changeID)
+	switch {
+	case err != nil:
+		return err
+	case !exists:
+		return gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", changeID))
+	case record.owner != principal.ID:
+		return gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, changeID))
+	case record.card.Status != StatusConfirmed:
+		return gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before verification (status %q)", changeID, record.card.Status))
+	case record.card.RequestRevision != revision:
+		return gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", changeID, revision, record.card.RequestRevision))
+	}
+	return nil
+}
+
 // GetVerification returns the state of a verification run to the principal
 // that started it. The run is read from its directory, not from the Change
 // Card, so it keeps the revision it was started for and stays readable after
 // the card changes or this server restarts. A completed run returns only the
-// builder view of its report.
+// builder view of its report. A test writer reads only the runs of a change it
+// holds an assignment for (testWriterHolds); any other is forbidden.
 func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerificationPayload) (*gensurla.VerificationStatusResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	runsDir := c.effectiveRunsDir()
+	runsDir := c.runsDir
 	if runsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
@@ -128,6 +146,18 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 		span.SetStatus(codes.Error, "read verification run")
 		return nil, fmt.Errorf("read verification %q: saved verification record could not be read", p.RunID)
 	}
+	if principal.Kind == CallerTestWriter {
+		c.mu.RLock()
+		holds, err := c.testWriterHolds(principal, req.ChangeID)
+		c.mu.RUnlock()
+		if err != nil {
+			return nil, err
+		}
+		if !holds {
+			return nil, gensurla.MakeForbidden(fmt.Errorf(
+				"the test writer reads only the runs of a change it has an assignment for, and change %q has none", req.ChangeID))
+		}
+	}
 	return statusResult(req, state), nil
 }
 
@@ -135,13 +165,15 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 // caller for the named Change Card, ordered newest first by accepted_at
 // (tie-broken by run_id). The caller must own the card; listing works whether
 // the card is currently confirmed or in needs_confirmation after a later
-// revision. Each completed run returns only the builder view of its report.
+// revision. Each completed run returns only the builder view of its report. A
+// test writer lists only the runs of a change it holds an assignment for
+// (testWriterHolds); any other is forbidden.
 func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVerificationsPayload) (*gensurla.VerificationListResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	runsDir := c.effectiveRunsDir()
+	runsDir := c.runsDir
 	if runsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
@@ -152,6 +184,17 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	c.mu.RLock()
 	record, exists, err := c.cards.load(p.ChangeID)
 	if err == nil && exists && record.owner == principal.ID {
+		if principal.Kind == CallerTestWriter {
+			holds, holdErr := c.testWriterHolds(principal, p.ChangeID)
+			if holdErr != nil || !holds {
+				c.mu.RUnlock()
+				if holdErr != nil {
+					return nil, holdErr
+				}
+				return nil, gensurla.MakeForbidden(fmt.Errorf(
+					"the test writer reads only the runs of a change it has an assignment for, and change %q has none", p.ChangeID))
+			}
+		}
 		runs, listErr := verifyrun.List(runsDir, principal.ID, p.ChangeID)
 		c.mu.RUnlock()
 		if listErr != nil {
@@ -181,31 +224,32 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	}
 }
 
-// effectiveRunsDir returns the verification runs directory configured via
-// Options.RunsDir or directly on Verification.
-func (c *ControlPlane) effectiveRunsDir() string {
-	if c.runsDir != "" {
-		return c.runsDir
+// runTestSource renders where a run's tests came from, from its stored plan,
+// which verifyrun read strictly: the operator's evaluator, or the tests a
+// separate agent on this machine wrote, at the plan's suite commit, with the
+// fixed notice.
+func runTestSource(plan verify.Plan) gensurla.TestSource {
+	if plan.Tests == verify.TestsEvaluator {
+		return gensurla.NewTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{})
 	}
-	if c.verification != nil && c.verification.RunsDir != "" {
-		return c.verification.RunsDir
-	}
-	return ""
+	return gensurla.NewTestSourceWrittenTests(&gensurla.AgentWrittenTests{Commit: plan.SuiteCommit, Notice: writtenTestsNotice})
 }
 
-// resolveVerificationConfig resolves a VerificationConfig dynamically from the
-// currently bound workspace directory and suite commit when ResolveVerification
-// is set, or returns the static VerificationConfig, validating that RunsDir and
-// ReportDir lie outside both initialWorkspaceRoot and activeWorkspaceDir.
-func (c *ControlPlane) resolveVerificationConfig(ctx context.Context) (*VerificationConfig, error) {
-	cfg, err := c.resolveActiveVerification(ctx)
-	if err != nil {
-		return nil, gensurla.MakeNotImplemented(err)
+// testWriterHolds reports whether the test writer principal holds an
+// assignment for changeID: the project verifies without a stored evaluator,
+// which leaves no test writer, and ownedBuild finds a build of the change,
+// which without stored settings is one started with a test writer. Callers
+// hold c.mu.
+func (c *ControlPlane) testWriterHolds(principal Principal, changeID string) (bool, error) {
+	if c.storedEvaluator() {
+		return false, nil
 	}
-	if cfg == nil {
-		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
+	_, err := c.ownedBuild(principal, changeID)
+	var missing *goa.ServiceError
+	if errors.As(err, &missing) && missing.Name == "not_found" {
+		return false, nil
 	}
-	return cfg, nil
+	return err == nil, err
 }
 
 // statusResult returns the wire form of a run: its request and its state,
@@ -219,6 +263,7 @@ func statusResult(req verifyrun.Request, state verifyrun.State) *gensurla.Verifi
 		CandidateCommit: req.Plan.CandidateCommit,
 		SuiteCommit:     req.Plan.SuiteCommit,
 		AcceptedAt:      acceptedAt,
+		TestSource:      runTestSource(req.Plan),
 	}
 	switch state.Kind {
 	case verifyrun.StateRunning:

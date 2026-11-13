@@ -668,14 +668,33 @@ var VerificationStatusResult = Type("VerificationStatusResult", func() {
 	Attribute("change_id", String, "Change Card the run verifies.")
 	Attribute("request_revision", String, "Change Card revision the run verifies.")
 	Attribute("candidate_commit", String, "Candidate commit the run builds and verifies.")
-	Attribute("suite_commit", String, "Evaluator suite commit the operator configured for the run.")
+	Attribute("suite_commit", String, "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.")
 	Attribute("accepted_at", String, "When the run was accepted.", func() { Format(FormatDateTime) })
+	OneOf("test_source", "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.", func() {
+		Meta("oneof:json:flatten")
+		Meta("oneof:type:field", "source")
+		Attribute("evaluator", OperatorEvaluatorTests)
+		Attribute("written_tests", AgentWrittenTests)
+	})
 	OneOf("state", "Exactly one of running, completed or not_completed.", func() {
 		Attribute("running", VerificationRunning)
 		Attribute("completed", VerificationCompleted)
 		Attribute("not_completed", VerificationNotCompleted)
 	})
-	Required("run_id", "change_id", "request_revision", "candidate_commit", "suite_commit", "accepted_at", "state")
+	Required("run_id", "change_id", "request_revision", "candidate_commit", "suite_commit", "accepted_at", "test_source", "state")
+})
+
+// OperatorEvaluatorTests is a run whose tests are the operator's evaluator.
+var OperatorEvaluatorTests = Type("OperatorEvaluatorTests", func() {
+	Description("The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.")
+})
+
+// AgentWrittenTests is a run whose tests a test writer on this machine wrote.
+var AgentWrittenTests = Type("AgentWrittenTests", func() {
+	Description("The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.")
+	Attribute("commit", String, "Commit Surla recorded the accepted tests at; the same as suite_commit.")
+	Attribute("notice", String, "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.")
+	Required("commit", "notice")
 })
 
 // ListVerificationsPayload names the Change Card whose verification runs are listed.
@@ -833,12 +852,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("start_live_target", func() {
-		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
+		Description("Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.")
 		Payload(StartLiveTargetPayload)
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. Without stored verification settings, the commit's own test module starts it, so the commit needs the test layout surla init makes. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.")
 		HTTP(func() {
 			POST("/live-target")
 			Response(StatusOK)
@@ -870,24 +889,30 @@ var _ = Service("surla", func() {
 	})
 
 	Method("verify_change", func() {
-		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
+		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. With verification settings stored with surla verification set, the run uses the operator's evaluator and needs no build. Otherwise the user's build of that revision must exist and Surla must have accepted its tests: the run builds the candidate's programs from the candidate commit and runs the generated entry point of the tests at the accepted commit. The server builds the commit in Surla's sandbox and runs the tests in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned, with where its tests came from.")
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, or the project folder was replaced after the server started; the message ends with the step.")
+		Error("no_build", ErrorResult, "Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.")
+		Error("tests_not_accepted", ErrorResult, "Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.")
+		Error("no_test_layout", ErrorResult, "Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests' commit is no longer in the project's repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests: your build assignment says when they are.")
 		HTTP(func() {
 			POST("/changes/{change_id}/verifications")
 			Response(StatusOK)
 			Response("not_found", StatusNotFound)
 			Response("conflict", StatusConflict)
+			Response("no_build", StatusConflict)
+			Response("tests_not_accepted", StatusConflict)
+			Response("no_test_layout", StatusConflict)
 			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
 	Method("get_verification", func() {
-		Description("Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.")
+		Description("Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped, and where its tests came from. A run keeps the Change Card revision it was started for. The test writer reads only the runs of a change it has an assignment for.")
 		Payload(GetVerificationPayload)
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No verification run exists with this run_id.")
@@ -902,7 +927,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("list_verifications", func() {
-		Description("Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.")
+		Description("Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state, the Change Card revision it was started for and where its tests came from. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision. The test writer lists only the runs of a change it has an assignment for.")
 		Payload(ListVerificationsPayload)
 		Result(VerificationListResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")

@@ -6007,12 +6007,69 @@ var getVerificationResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the operator configured for the run.",
+		Description: "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("accepted_at")},
 		JSONType:    "string",
 		Description: "When the run was accepted.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("state")},
@@ -6970,12 +7027,69 @@ var listVerificationsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the operator configured for the run.",
+		Description: "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("accepted_at")},
 		JSONType:    "string",
 		Description: "When the run was accepted.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("state")},
@@ -9855,12 +9969,69 @@ var verifyChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the operator configured for the run.",
+		Description: "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("accepted_at")},
 		JSONType:    "string",
 		Description: "When the run was accepted.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("state")},
@@ -15026,6 +15197,28 @@ func MarshalGetVerificationResult(v *GetVerificationResult) ([]byte, error) {
 		SuiteCommit:     &in.SuiteCommit,
 		AcceptedAt:      &in.AcceptedAt,
 	}
+	var testSourceValue toolhttp.TestSource
+	switch string(in.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := in.TestSource.AsEvaluator()
+		var obj *toolhttp.OperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*toolhttp.OperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := in.TestSource.AsWrittenTests()
+		var obj *toolhttp.AgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*toolhttp.AgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	out.TestSource = &testSourceValue
 	var stateValue toolhttp.State
 	switch string(in.State.Kind()) {
 	case "running":
@@ -15087,6 +15280,26 @@ func UnmarshalGetVerificationResult(data []byte) (*GetVerificationResult, error)
 		CandidateCommit: *in.CandidateCommit,
 		SuiteCommit:     *in.SuiteCommit,
 		AcceptedAt:      *in.AcceptedAt,
+	}
+	switch string(in.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := in.TestSource.AsEvaluator()
+		var obj *OperatorEvaluatorTests
+		if actual != nil {
+			obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+		}
+		u := out.TestSource
+		u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+		out.TestSource = u
+	case "written_tests":
+		actual, _ := in.TestSource.AsWrittenTests()
+		var obj *AgentWrittenTests
+		if actual != nil {
+			obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+		}
+		u := out.TestSource
+		u.SetWrittenTests((*AgentWrittenTests)(obj))
+		out.TestSource = u
 	}
 	switch string(in.State.Kind()) {
 	case "running":
@@ -16802,6 +17015,28 @@ func MarshalVerifyChangeResult(v *VerifyChangeResult) ([]byte, error) {
 		SuiteCommit:     &in.SuiteCommit,
 		AcceptedAt:      &in.AcceptedAt,
 	}
+	var testSourceValue toolhttp.TestSource
+	switch string(in.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := in.TestSource.AsEvaluator()
+		var obj *toolhttp.OperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*toolhttp.OperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := in.TestSource.AsWrittenTests()
+		var obj *toolhttp.AgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*toolhttp.AgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	out.TestSource = &testSourceValue
 	var stateValue toolhttp.State
 	switch string(in.State.Kind()) {
 	case "running":
@@ -16863,6 +17098,26 @@ func UnmarshalVerifyChangeResult(data []byte) (*VerifyChangeResult, error) {
 		CandidateCommit: *in.CandidateCommit,
 		SuiteCommit:     *in.SuiteCommit,
 		AcceptedAt:      *in.AcceptedAt,
+	}
+	switch string(in.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := in.TestSource.AsEvaluator()
+		var obj *OperatorEvaluatorTests
+		if actual != nil {
+			obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+		}
+		u := out.TestSource
+		u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+		out.TestSource = u
+	case "written_tests":
+		actual, _ := in.TestSource.AsWrittenTests()
+		var obj *AgentWrittenTests
+		if actual != nil {
+			obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+		}
+		u := out.TestSource
+		u.SetWrittenTests((*AgentWrittenTests)(obj))
+		out.TestSource = u
 	}
 	switch string(in.State.Kind()) {
 	case "running":
@@ -20600,7 +20855,14 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 		case "suite_commit":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Evaluator suite commit the operator configured for the run.",
+				typed[key], "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.",
+			); err != nil {
+				return err
+			}
+		case "test_source":
+			if err := validateVerifyChangeResultRootTestSourceJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
 			); err != nil {
 				return err
 			}
@@ -20613,6 +20875,7 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 				"run_id",
 				"state",
 				"suite_commit",
+				"test_source",
 			})
 		}
 	}
@@ -21088,6 +21351,84 @@ func validateVerifyChangeResultVerificationNotCompletedTransportJSONValue(path s
 				"kind",
 				"stage",
 				"summary",
+			})
+		}
+	}
+	return nil
+}
+
+// validateVerifyChangeResultRootTestSourceJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateVerifyChangeResultRootTestSourceJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	rawDiscriminator, discriminatorPresent := typed["source"]
+	discriminator, ok := rawDiscriminator.(string)
+	if !ok {
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "source", false), rawDiscriminator, discriminatorPresent, []string{"evaluator", "written_tests"})
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "source" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "evaluator":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "written_tests":
+		return validateVerifyChangeResultAgentWrittenTestsTransportJSONValue(path, branch, "")
+	default:
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "source", false), discriminator, true, []string{"evaluator", "written_tests"})
+	}
+}
+
+// validateVerifyChangeResultAgentWrittenTestsTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateVerifyChangeResultAgentWrittenTestsTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+			); err != nil {
+				return err
+			}
+		case "notice":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+				"notice",
 			})
 		}
 	}
@@ -24446,6 +24787,19 @@ func encodeRequiredTestToRequiredTestTransport(v *RequiredTest) *toolhttp.Requir
 
 	return res
 }
+func decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(v *toolhttp.OperatorEvaluatorTestsTransport) *OperatorEvaluatorTests {
+	res := &OperatorEvaluatorTests{}
+
+	return res
+}
+func decodeAgentWrittenTestsTransportToAgentWrittenTests(v *toolhttp.AgentWrittenTestsTransport) *AgentWrittenTests {
+	res := &AgentWrittenTests{
+		Commit: *v.Commit,
+		Notice: *v.Notice,
+	}
+
+	return res
+}
 func decodeVerificationRunningTransportToVerificationRunning(v *toolhttp.VerificationRunningTransport) *VerificationRunning {
 	res := &VerificationRunning{
 		StartedAt: *v.StartedAt,
@@ -24524,6 +24878,19 @@ func decodeVerificationNotCompletedTransportToVerificationNotCompleted(v *toolht
 		Kind:    *v.Kind,
 		Stage:   *v.Stage,
 		Summary: *v.Summary,
+	}
+
+	return res
+}
+func encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(v *OperatorEvaluatorTests) *toolhttp.OperatorEvaluatorTestsTransport {
+	res := &toolhttp.OperatorEvaluatorTestsTransport{}
+
+	return res
+}
+func encodeAgentWrittenTestsToAgentWrittenTestsTransport(v *AgentWrittenTests) *toolhttp.AgentWrittenTestsTransport {
+	res := &toolhttp.AgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
 	}
 
 	return res
@@ -24809,6 +25176,26 @@ func decodeVerificationStatusResultTransportToVerificationStatusResult(v *toolht
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
 	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *OperatorEvaluatorTests
+		if actual != nil {
+			obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *AgentWrittenTests
+		if actual != nil {
+			obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*AgentWrittenTests)(obj))
+		res.TestSource = u
+	}
 	switch string(v.State.Kind()) {
 	case "running":
 		actual, _ := v.State.AsRunning()
@@ -24850,6 +25237,28 @@ func encodeVerificationStatusResultToVerificationStatusResultTransport(v *Verifi
 		SuiteCommit:     &v.SuiteCommit,
 		AcceptedAt:      &v.AcceptedAt,
 	}
+	var testSourceValue toolhttp.TestSource
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *toolhttp.OperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*toolhttp.OperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *toolhttp.AgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*toolhttp.AgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 	var stateValue toolhttp.State
 	switch string(v.State.Kind()) {
 	case "running":

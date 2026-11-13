@@ -562,10 +562,14 @@ type VerifyChangeResponseBody struct {
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
 }
@@ -581,10 +585,14 @@ type GetVerificationResponseBody struct {
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
 }
@@ -1631,6 +1639,61 @@ type VerifyChangeNotFoundResponseBody struct {
 // VerifyChangeConflictResponseBody is the type of the "surla" service
 // "verify_change" endpoint HTTP response body for the "conflict" error.
 type VerifyChangeConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeNoBuildResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "no_build" error.
+type VerifyChangeNoBuildResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeTestsNotAcceptedResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "tests_not_accepted"
+// error.
+type VerifyChangeTestsNotAcceptedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeNoTestLayoutResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "no_test_layout" error.
+type VerifyChangeNoTestLayoutResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3479,6 +3542,21 @@ type LiveTargetNotConfirmedStoppedResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
+// OperatorEvaluatorTestsResponseBody is used to define fields on response body
+// types.
+type OperatorEvaluatorTestsResponseBody struct {
+}
+
+// AgentWrittenTestsResponseBody is used to define fields on response body
+// types.
+type AgentWrittenTestsResponseBody struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit string `form:"commit" json:"commit" xml:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice string `form:"notice" json:"notice" xml:"notice"`
+}
+
 // VerificationRunningResponseBody is used to define fields on response body
 // types.
 type VerificationRunningResponseBody struct {
@@ -3576,10 +3654,14 @@ type VerificationStatusResultResponseBody struct {
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
 }
@@ -5158,6 +5240,188 @@ func (u *TeamResponseBody) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// TestSourceResponseBody holds exactly one of its branch values.
+type TestSourceResponseBody struct {
+	kind         TestSourceResponseBodyKind
+	evaluator    *OperatorEvaluatorTestsResponseBody
+	writtenTests *AgentWrittenTestsResponseBody
+}
+
+// TestSourceResponseBodyKind records which TestSourceResponseBody branch is selected.
+type TestSourceResponseBodyKind string
+
+const (
+	// TestSourceResponseBodyKindEvaluator identifies the evaluator branch.
+	TestSourceResponseBodyKindEvaluator TestSourceResponseBodyKind = "evaluator"
+	// TestSourceResponseBodyKindWrittenTests identifies the written_tests branch.
+	TestSourceResponseBodyKindWrittenTests TestSourceResponseBodyKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u TestSourceResponseBody) Kind() TestSourceResponseBodyKind {
+	return u.kind
+}
+
+// NewTestSourceResponseBodyEvaluator constructs TestSourceResponseBody with the evaluator branch set.
+func NewTestSourceResponseBodyEvaluator(v *OperatorEvaluatorTestsResponseBody) TestSourceResponseBody {
+	return TestSourceResponseBody{
+		kind:      TestSourceResponseBodyKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// AsEvaluator returns the value when the evaluator branch is selected.
+func (u TestSourceResponseBody) AsEvaluator() (_ *OperatorEvaluatorTestsResponseBody, ok bool) {
+	if u.kind != TestSourceResponseBodyKindEvaluator {
+		return
+	}
+	return u.evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch and stores v.
+func (u *TestSourceResponseBody) SetEvaluator(v *OperatorEvaluatorTestsResponseBody) {
+	*u = TestSourceResponseBody{
+		kind:      TestSourceResponseBodyKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// NewTestSourceResponseBodyWrittenTests constructs TestSourceResponseBody with the written_tests branch set.
+func NewTestSourceResponseBodyWrittenTests(v *AgentWrittenTestsResponseBody) TestSourceResponseBody {
+	return TestSourceResponseBody{
+		kind:         TestSourceResponseBodyKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// AsWrittenTests returns the value when the written_tests branch is selected.
+func (u TestSourceResponseBody) AsWrittenTests() (_ *AgentWrittenTestsResponseBody, ok bool) {
+	if u.kind != TestSourceResponseBodyKindWrittenTests {
+		return
+	}
+	return u.writtenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch and stores v.
+func (u *TestSourceResponseBody) SetWrittenTests(v *AgentWrittenTestsResponseBody) {
+	*u = TestSourceResponseBody{
+		kind:         TestSourceResponseBodyKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u TestSourceResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u TestSourceResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("source", "", []any{
+			string(TestSourceResponseBodyKindEvaluator),
+			string(TestSourceResponseBodyKindWrittenTests),
+		})
+	case TestSourceResponseBodyKindEvaluator:
+		if u.evaluator == nil {
+			return nil, goa.MissingFieldError("value", "TestSourceResponseBody")
+		}
+		return u.evaluator, nil
+	case TestSourceResponseBodyKindWrittenTests:
+		if u.writtenTests == nil {
+			return nil, goa.MissingFieldError("value", "TestSourceResponseBody")
+		}
+		return u.writtenTests, nil
+	default:
+		return nil, goa.InvalidEnumValueError("source", u.kind, []any{
+			string(TestSourceResponseBodyKindEvaluator),
+			string(TestSourceResponseBodyKindWrittenTests),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u TestSourceResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("TestSourceResponseBody branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *TestSourceResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["source"]
+	if !exists {
+		return goa.MissingFieldError("source", "TestSourceResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("source", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "source")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(TestSourceResponseBodyKindEvaluator):
+		var v *OperatorEvaluatorTestsResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetEvaluator(v)
+	case string(TestSourceResponseBodyKindWrittenTests):
+		var v *AgentWrittenTestsResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetWrittenTests(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("source", "TestSourceResponseBody")
+		}
+		return goa.InvalidEnumValueError("source", raw.Type, []any{
+			string(TestSourceResponseBodyKindEvaluator),
+			string(TestSourceResponseBodyKindWrittenTests),
+		})
+	}
+	return nil
+}
+
 // TestsResponseBody holds exactly one of its branch values.
 type TestsResponseBody struct {
 	kind         TestsResponseBodyKind
@@ -6513,6 +6777,28 @@ func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyCha
 		SuiteCommit:     res.SuiteCommit,
 		AcceptedAt:      res.AcceptedAt,
 	}
+	if res.TestSource.Kind() != "" {
+		switch string(res.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := res.TestSource.AsEvaluator()
+			var obj *OperatorEvaluatorTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(actual)
+			}
+			u := body.TestSource
+			u.SetEvaluator((*OperatorEvaluatorTestsResponseBody)(obj))
+			body.TestSource = u
+		case "written_tests":
+			actual, _ := res.TestSource.AsWrittenTests()
+			var obj *AgentWrittenTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(actual)
+			}
+			u := body.TestSource
+			u.SetWrittenTests((*AgentWrittenTestsResponseBody)(obj))
+			body.TestSource = u
+		}
+	}
 	if res.State.Kind() != "" {
 		switch string(res.State.Kind()) {
 		case "running":
@@ -6557,6 +6843,28 @@ func NewGetVerificationResponseBody(res *surla.VerificationStatusResult) *GetVer
 		CandidateCommit: res.CandidateCommit,
 		SuiteCommit:     res.SuiteCommit,
 		AcceptedAt:      res.AcceptedAt,
+	}
+	if res.TestSource.Kind() != "" {
+		switch string(res.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := res.TestSource.AsEvaluator()
+			var obj *OperatorEvaluatorTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(actual)
+			}
+			u := body.TestSource
+			u.SetEvaluator((*OperatorEvaluatorTestsResponseBody)(obj))
+			body.TestSource = u
+		case "written_tests":
+			actual, _ := res.TestSource.AsWrittenTests()
+			var obj *AgentWrittenTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(actual)
+			}
+			u := body.TestSource
+			u.SetWrittenTests((*AgentWrittenTestsResponseBody)(obj))
+			body.TestSource = u
+		}
 	}
 	if res.State.Kind() != "" {
 		switch string(res.State.Kind()) {
@@ -7792,6 +8100,48 @@ func NewVerifyChangeNotFoundResponseBody(res *goa.ServiceError) *VerifyChangeNot
 // result of the "verify_change" endpoint of the "surla" service.
 func NewVerifyChangeConflictResponseBody(res *goa.ServiceError) *VerifyChangeConflictResponseBody {
 	body := &VerifyChangeConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeNoBuildResponseBody builds the HTTP response body from the
+// result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeNoBuildResponseBody(res *goa.ServiceError) *VerifyChangeNoBuildResponseBody {
+	body := &VerifyChangeNoBuildResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeTestsNotAcceptedResponseBody builds the HTTP response body
+// from the result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeTestsNotAcceptedResponseBody(res *goa.ServiceError) *VerifyChangeTestsNotAcceptedResponseBody {
+	body := &VerifyChangeTestsNotAcceptedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeNoTestLayoutResponseBody builds the HTTP response body from
+// the result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeNoTestLayoutResponseBody(res *goa.ServiceError) *VerifyChangeNoTestLayoutResponseBody {
+	body := &VerifyChangeNoTestLayoutResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

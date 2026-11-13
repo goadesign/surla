@@ -25,6 +25,7 @@ import (
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
@@ -47,7 +48,7 @@ const ordersSystemPrompt = "orders.refund.system"
 // and it tests only what HEAD commits.
 func TestOrdersLiveCopyAppliesADraftThroughTheProjectServer(t *testing.T) {
 	isolateLocalWork(t)
-	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv} {
+	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv} {
 		t.Setenv(name, "")
 	}
 	repo, err := filepath.Abs(filepath.Join("..", ".."))

@@ -38,6 +38,7 @@ func TestRunVerifiesTheOrdersReference(t *testing.T) {
 		RequestRevision: "rev-test",
 		WorkDir:         filepath.Join(work, "work"),
 		ReportDir:       filepath.Join(work, "reports"),
+		Tests:           TestsEvaluator,
 	})
 	require.NoError(t, err)
 	for _, s := range report.Scenarios {

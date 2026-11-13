@@ -126,7 +126,7 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		return nil, errors.New("list changes: saved change cards could not be read")
 	}
 	var latest map[string]verifyrun.Run
-	if runsDir := c.effectiveRunsDir(); runsDir != "" {
+	if runsDir := c.runsDir; runsDir != "" {
 		latest, err = verifyrun.LatestByChange(runsDir, owner)
 		if err != nil {
 			span.RecordError(err)

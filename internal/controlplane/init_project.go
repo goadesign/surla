@@ -157,7 +157,7 @@ func (c *ControlPlane) InitProject(
 		}
 		return nil, failInitFault(span, "check workspace uninitialized failed", err)
 	}
-	if hasRuns, err := hasVerificationRuns(c.effectiveRunsDir()); err != nil {
+	if hasRuns, err := hasVerificationRuns(c.runsDir); err != nil {
 		return nil, failInitFault(span, "check verification runs failed", err)
 	} else if hasRuns {
 		recordInitRefused(span, "already_initialized")
@@ -181,7 +181,7 @@ func (c *ControlPlane) InitProject(
 	if err := validateCardsWorkspaceSeparation(c.cards.dir, c.protectedDirs...); err != nil {
 		return nil, failInitFault(span, "validate cards workspace separation failed", err)
 	}
-	if err := validateRunsDirWorkspaceSeparation(c.effectiveRunsDir(), c.protectedDirs...); err != nil {
+	if err := validateRunsDirWorkspaceSeparation(c.runsDir, c.protectedDirs...); err != nil {
 		return nil, failInitFault(span, "validate runs workspace separation failed", err)
 	}
 
@@ -202,7 +202,7 @@ func (c *ControlPlane) InitProject(
 	if run == nil {
 		run = scaffold.RunCommand
 	}
-	builtService, stagePath, suiteCommit, err := scaffold.Prepare(
+	builtService, stagePath, initialCommit, err := scaffold.Prepare(
 		initCtx,
 		scaffold.Options{
 			Dir:          targetPath,
@@ -216,12 +216,12 @@ func (c *ControlPlane) InitProject(
 	if err != nil {
 		return nil, failInitFault(span, "prepare starter project failed", err)
 	}
-	if !commitIDPattern.MatchString(suiteCommit) {
+	if !commitIDPattern.MatchString(initialCommit) {
 		return nil, failInitFault(
 			span,
 			"verify starter commit failed",
 			errors.Join(
-				fmt.Errorf("scaffold.Prepare returned invalid commit ID %q", suiteCommit),
+				fmt.Errorf("scaffold.Prepare returned invalid commit ID %q", initialCommit),
 				os.RemoveAll(stagePath),
 			),
 		)
@@ -313,12 +313,11 @@ func (c *ControlPlane) InitProject(
 	}
 
 	wal := workspaceFile{
-		Dir:         targetBase,
-		SuiteCommit: suiteCommit,
-		StageDir:    stageParentDir,
-		Staging:     stageName,
-		Dev:         stageDev,
-		Ino:         stageIno,
+		Dir:      targetBase,
+		StageDir: stageParentDir,
+		Staging:  stageName,
+		Dev:      stageDev,
+		Ino:      stageIno,
 	}
 	if err := c.writeWorkspaceRecord(wal); err != nil {
 		stageClosed = true
@@ -410,7 +409,6 @@ func (c *ControlPlane) InitProject(
 	c.activeWorkspaceDir = targetPath
 	c.boundWorkspaceDev = stageDev
 	c.boundWorkspaceIno = stageIno
-	c.boundSuiteCommit = suiteCommit
 	if syncErr != nil {
 		return nil, failInitFault(
 			span,
@@ -423,10 +421,9 @@ func (c *ControlPlane) InitProject(
 		)
 	}
 	if err := c.writeWorkspaceRecord(workspaceFile{
-		Dir:         targetBase,
-		SuiteCommit: suiteCommit,
-		Dev:         stageDev,
-		Ino:         stageIno,
+		Dir: targetBase,
+		Dev: stageDev,
+		Ino: stageIno,
 	}); err != nil {
 		recordWorkspaceCleanupFailure("surla.controlplane.finalize_init_project", err)
 	}
@@ -435,14 +432,14 @@ func (c *ControlPlane) InitProject(
 		"project_initialized",
 		trace.WithAttributes(
 			attribute.String("surla.init.service_name", builtService),
-			attribute.String("surla.init.suite_commit", suiteCommit),
+			attribute.String("surla.init.commit", initialCommit),
 		),
 	)
 	return &gensurla.InitProjectResult{
 		Dir:         targetPath,
 		ModulePath:  modulePath,
 		ServiceName: builtService,
-		Commit:      suiteCommit,
+		Commit:      initialCommit,
 	}, nil
 }
 

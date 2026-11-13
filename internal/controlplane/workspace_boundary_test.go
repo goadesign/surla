@@ -229,10 +229,9 @@ func TestSyncDirTreeFDFollowedByRemoveOwnedStagingDirAndFailedWALCleanup(t *test
 	assert.ErrorIs(t, walStatErr, os.ErrNotExist)
 }
 
-// TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification verifies
-// that InitProject sends progress notifications at each phase boundary, returns
-// the initial starter commit, and passes that commit to ResolveVerification.
-func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testing.T) {
+// TestInitProjectEmitsMCPProgress verifies that InitProject sends progress
+// notifications at each phase boundary and returns the initial starter commit.
+func TestInitProjectEmitsMCPProgress(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	wsDir := filepath.Join(root, "ws")
@@ -244,7 +243,6 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 	require.NoError(t, os.MkdirAll(runsDir, 0o700))
 	require.NoError(t, os.MkdirAll(reportsDir, 0o700))
 
-	var resolvedWorkspaceDir, resolvedSuiteCommit string
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		WorkspaceDir: wsDir,
@@ -255,23 +253,7 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 		NewGenerator: func() scaffold.Generator {
 			return &fakeInitGenerator{pkg: "shop"}
 		},
-		ResolveVerification: func(_ context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error) {
-			resolvedWorkspaceDir = workspaceDir
-			resolvedSuiteCommit = suiteCommit
-			return &VerificationConfig{
-				RunsDir: runsDir,
-				Plan: verify.Plan{
-					CandidateRepo:   workspaceDir,
-					CandidateModule: ".",
-					Binaries:        map[string]string{"shop": "./cmd/shop"},
-					SuiteRepo:       workspaceDir,
-					SuiteCommit:     suiteCommit,
-					SuiteModule:     "eval",
-					SuiteCommand:    "./cmd/shop-eval",
-					ReportDir:       reportsDir,
-				},
-			}, nil
-		},
+		WrittenTestRuns: &WrittenTestRuns{ReportDir: reportsDir, Timeout: time.Minute},
 	})
 	require.NoError(t, err)
 	defer cp.Close()
@@ -337,7 +319,7 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 		Commit string `json:"commit"`
 	}
 	require.NoError(t, json.Unmarshal(final.Result.StructuredContent, &res))
-	assert.Equal(t, fakeInitialSuiteCommit, res.Commit)
+	assert.Equal(t, fakeInitialCommit, res.Commit)
 	require.Len(t, events, 2)
 	assert.Equal(t, capturedProgressEvent{
 		progress: 0,
@@ -349,14 +331,6 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 		total:    2,
 		message:  "Publishing the initialized starter workspace",
 	}, events[1])
-
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	verCfg, err := cp.resolveActiveVerification(ctx)
-	require.NoError(t, err)
-	require.NotNil(t, verCfg)
-	assert.Equal(t, res.Dir, resolvedWorkspaceDir)
-	assert.Equal(t, fakeInitialSuiteCommit, resolvedSuiteCommit)
-	assert.Equal(t, fakeInitialSuiteCommit, verCfg.Plan.SuiteCommit)
 }
 
 // TestNewAndInitProjectPreserveSignificantPathWhitespace verifies that
@@ -427,7 +401,7 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 					CandidateModule: ".",
 					Binaries:        map[string]string{"shop": "./cmd/shop"},
 					SuiteRepo:       ws,
-					SuiteCommit:     fakeInitialSuiteCommit,
+					SuiteCommit:     fakeInitialCommit,
 					SuiteModule:     "eval",
 					SuiteCommand:    "./cmd/shop-eval",
 					ReportDir:       reportsWithSpace,
@@ -438,7 +412,7 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 		defer cp.Close()
 
 		assert.DirExists(t, cardsWithSpace)
-		assert.Equal(t, runsWithSpace, cp.effectiveRunsDir())
+		assert.Equal(t, runsWithSpace, cp.runsDir)
 
 		alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 		paddedDir := " shop "
@@ -456,14 +430,14 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 	})
 }
 
-// TestNewAndResolveActiveVerificationProtectMonorepoAndPreserveValidLayouts
-// verifies that New and resolveActiveVerification reject CardsDir, RunsDir,
-// InitStageDir, and Verification.Plan.ReportDir when they lie inside an
-// enclosing Git monorepo root R (outside the bound subdirectory R/services/shop),
+// TestNewProtectsMonorepoAndPreservesValidLayouts verifies that New rejects
+// CardsDir, RunsDir, InitStageDir, Verification.Plan.ReportDir and
+// WrittenTestRuns.ReportDir when they lie inside an enclosing Git monorepo
+// root R (outside the bound subdirectory R/services/shop),
 // while preserving valid parent-directory operator stores (InitStageDir=/ops
 // with WorkspaceDir=/ops/project), separate verification source repositories B,
 // and no-WorkspaceDir embeddings.
-func TestNewAndResolveActiveVerificationProtectMonorepoAndPreserveValidLayouts(t *testing.T) {
+func TestNewProtectsMonorepoAndPreservesValidLayouts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	monorepo := filepath.Join(root, "monorepo")
@@ -511,25 +485,14 @@ func TestNewAndResolveActiveVerificationProtectMonorepoAndPreserveValidLayouts(t
 	})
 	require.ErrorContains(t, err, "must be outside the workspace")
 
-	// 2. resolveActiveVerification rejects dynamically resolved ReportDir inside enclosing monorepo R.
-	cp, err := New(Options{
-		WorkspaceDir: wsDir,
-		CardsDir:     filepath.Join(root, "cards-ok-4"),
-		RunsDir:      filepath.Join(root, "runs-ok-4"),
-		SurlaVersion: testSurlaVersion,
-		ResolveVerification: func(_ context.Context, _, _ string) (*VerificationConfig, error) {
-			return &VerificationConfig{
-				RunsDir: filepath.Join(root, "runs-ok-4"),
-				Plan: verify.Plan{
-					CandidateRepo: monorepo,
-					ReportDir:     filepath.Join(monorepo, "reports"),
-				},
-			}, nil
-		},
+	// 2. The report folder of runs of each change's accepted tests inside enclosing monorepo R is rejected.
+	_, err = New(Options{
+		WorkspaceDir:    wsDir,
+		CardsDir:        filepath.Join(root, "cards-ok-4"),
+		RunsDir:         filepath.Join(root, "runs-ok-4"),
+		SurlaVersion:    testSurlaVersion,
+		WrittenTestRuns: &WrittenTestRuns{ReportDir: filepath.Join(monorepo, "reports"), Timeout: time.Minute},
 	})
-	require.NoError(t, err)
-	defer cp.Close()
-	_, err = cp.resolveActiveVerification(context.Background())
 	require.ErrorContains(t, err, "must be outside the workspace")
 
 	// 3. Valid parent-directory InitStageDir=/ops with WorkspaceDir=/ops/project (outside any Git working tree) is accepted.
@@ -622,7 +585,7 @@ func TestInitProjectAcceptsAnotherSpellingOfTheWorkspace(t *testing.T) {
 				CandidateModule: ".",
 				Binaries:        map[string]string{"shop": "./cmd/shop"},
 				SuiteRepo:       ws,
-				SuiteCommit:     fakeInitialSuiteCommit,
+				SuiteCommit:     fakeInitialCommit,
 				SuiteModule:     "eval",
 				SuiteCommand:    "./cmd/shop-eval",
 				ReportDir:       filepath.Join(root, "ops", "reports"),

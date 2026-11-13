@@ -4399,6 +4399,29 @@ func ValidateGetVerificationPayloadTransport(value *GetVerificationPayloadTransp
 	return err
 }
 
+// GetVerificationResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type GetVerificationResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateGetVerificationResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateGetVerificationResultAgentWrittenTestsTransport(value *GetVerificationResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // GetVerificationResultBuilderVerificationReportTransport stores JSON fields until they have been validated.
 type GetVerificationResultBuilderVerificationReportTransport struct {
 	// SHA-256 digest of the full report the evaluator saved; approve_merge and
@@ -4450,6 +4473,19 @@ func ValidateGetVerificationResultBuilderVerificationReportTransport(value *GetV
 	return err
 }
 
+// GetVerificationResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type GetVerificationResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateGetVerificationResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateGetVerificationResultOperatorEvaluatorTestsTransport(value *GetVerificationResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
 // GetVerificationResultTransport stores JSON fields until they have been validated.
 type GetVerificationResultTransport struct {
 	// Verification run identifier; get_verification takes it.
@@ -4460,10 +4496,14 @@ type GetVerificationResultTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *GetVerificationResulttestSourceTransport `json:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State *GetVerificationResultstateTransport `json:"state"`
 }
@@ -4491,11 +4531,31 @@ func ValidateGetVerificationResultTransport(value *GetVerificationResultTranspor
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateGetVerificationResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if value.State != nil {
 
@@ -5536,6 +5596,29 @@ func ValidateListVerificationsPayloadTransport(value *ListVerificationsPayloadTr
 	return err
 }
 
+// ListVerificationsResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type ListVerificationsResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateListVerificationsResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateListVerificationsResultAgentWrittenTestsTransport(value *ListVerificationsResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // ListVerificationsResultBuilderVerificationReportTransport stores JSON fields until they have been validated.
 type ListVerificationsResultBuilderVerificationReportTransport struct {
 	// SHA-256 digest of the full report the evaluator saved; approve_merge and
@@ -5584,6 +5667,19 @@ func ValidateListVerificationsResultBuilderVerificationReportTransport(value *Li
 			}
 		}
 	}
+	return err
+}
+
+// ListVerificationsResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type ListVerificationsResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateListVerificationsResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateListVerificationsResultOperatorEvaluatorTestsTransport(value *ListVerificationsResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -5815,10 +5911,14 @@ type ListVerificationsResultVerificationStatusResultTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *ListVerificationsResulttestSourceTransport `json:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State *ListVerificationsResultstateTransport `json:"state"`
 }
@@ -5846,11 +5946,31 @@ func ValidateListVerificationsResultVerificationStatusResultTransport(value *Lis
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateListVerificationsResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if value.State != nil {
 
@@ -8562,6 +8682,29 @@ func ValidateVerifyChangePayloadTransport(value *VerifyChangePayloadTransport) (
 	return err
 }
 
+// VerifyChangeResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type VerifyChangeResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateVerifyChangeResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateVerifyChangeResultAgentWrittenTestsTransport(value *VerifyChangeResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // VerifyChangeResultBuilderVerificationReportTransport stores JSON fields until they have been validated.
 type VerifyChangeResultBuilderVerificationReportTransport struct {
 	// SHA-256 digest of the full report the evaluator saved; approve_merge and
@@ -8613,6 +8756,19 @@ func ValidateVerifyChangeResultBuilderVerificationReportTransport(value *VerifyC
 	return err
 }
 
+// VerifyChangeResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type VerifyChangeResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateVerifyChangeResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateVerifyChangeResultOperatorEvaluatorTestsTransport(value *VerifyChangeResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
 // VerifyChangeResultTransport stores JSON fields until they have been validated.
 type VerifyChangeResultTransport struct {
 	// Verification run identifier; get_verification takes it.
@@ -8623,10 +8779,14 @@ type VerifyChangeResultTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *VerifyChangeResulttestSourceTransport `json:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State *VerifyChangeResultstateTransport `json:"state"`
 }
@@ -8654,11 +8814,31 @@ func ValidateVerifyChangeResultTransport(value *VerifyChangeResultTransport) (er
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateVerifyChangeResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if value.State != nil {
 
@@ -9887,6 +10067,120 @@ func (u GetVerificationResultstateTransport) MarshalJSON() ([]byte, error) {
 	}{Type: string(u.kind), Value: value})
 }
 
+// GetVerificationResulttestSourceTransport stores exactly one selected Goa OneOf branch.
+type GetVerificationResulttestSourceTransport struct {
+	kind         GetVerificationResulttestSourceTransportKind
+	Evaluator    *GetVerificationResultOperatorEvaluatorTestsTransport
+	WrittenTests *GetVerificationResultAgentWrittenTestsTransport
+}
+
+// GetVerificationResulttestSourceTransportKind identifies the selected branch of GetVerificationResulttestSourceTransport.
+type GetVerificationResulttestSourceTransportKind string
+
+const (
+	GetVerificationResulttestSourceTransportKindEvaluator    GetVerificationResulttestSourceTransportKind = "evaluator"
+	GetVerificationResulttestSourceTransportKindWrittenTests GetVerificationResulttestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u GetVerificationResulttestSourceTransport) Kind() GetVerificationResulttestSourceTransportKind {
+	return u.kind
+}
+
+// NewGetVerificationResulttestSourceTransportEvaluator creates GetVerificationResulttestSourceTransport with its evaluator branch selected.
+func NewGetVerificationResulttestSourceTransportEvaluator(value *GetVerificationResultOperatorEvaluatorTestsTransport) GetVerificationResulttestSourceTransport {
+	return GetVerificationResulttestSourceTransport{kind: GetVerificationResulttestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u GetVerificationResulttestSourceTransport) AsEvaluator() (_ *GetVerificationResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != GetVerificationResulttestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *GetVerificationResulttestSourceTransport) SetEvaluator(value *GetVerificationResultOperatorEvaluatorTestsTransport) {
+	u.kind = GetVerificationResulttestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewGetVerificationResulttestSourceTransportWrittenTests creates GetVerificationResulttestSourceTransport with its written_tests branch selected.
+func NewGetVerificationResulttestSourceTransportWrittenTests(value *GetVerificationResultAgentWrittenTestsTransport) GetVerificationResulttestSourceTransport {
+	return GetVerificationResulttestSourceTransport{kind: GetVerificationResulttestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u GetVerificationResulttestSourceTransport) AsWrittenTests() (_ *GetVerificationResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != GetVerificationResulttestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *GetVerificationResulttestSourceTransport) SetWrittenTests(value *GetVerificationResultAgentWrittenTestsTransport) {
+	u.kind = GetVerificationResulttestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u GetVerificationResulttestSourceTransport) Validate() error {
+	switch u.kind {
+	case GetVerificationResulttestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "GetVerificationResulttestSourceTransport")
+		}
+		return nil
+	case GetVerificationResulttestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "GetVerificationResulttestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "GetVerificationResulttestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(GetVerificationResulttestSourceTransportKindEvaluator), string(GetVerificationResulttestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u GetVerificationResulttestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case GetVerificationResulttestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case GetVerificationResulttestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected GetVerificationResulttestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("GetVerificationResulttestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
 // ListBuilderAssignmentsResultwrittenTestsTransport stores exactly one selected Goa OneOf branch.
 type ListBuilderAssignmentsResultwrittenTestsTransport struct {
 	kind           ListBuilderAssignmentsResultwrittenTestsTransportKind
@@ -10381,6 +10675,120 @@ func (u ListVerificationsResultstateTransport) MarshalJSON() ([]byte, error) {
 	}{Type: string(u.kind), Value: value})
 }
 
+// ListVerificationsResulttestSourceTransport stores exactly one selected Goa OneOf branch.
+type ListVerificationsResulttestSourceTransport struct {
+	kind         ListVerificationsResulttestSourceTransportKind
+	Evaluator    *ListVerificationsResultOperatorEvaluatorTestsTransport
+	WrittenTests *ListVerificationsResultAgentWrittenTestsTransport
+}
+
+// ListVerificationsResulttestSourceTransportKind identifies the selected branch of ListVerificationsResulttestSourceTransport.
+type ListVerificationsResulttestSourceTransportKind string
+
+const (
+	ListVerificationsResulttestSourceTransportKindEvaluator    ListVerificationsResulttestSourceTransportKind = "evaluator"
+	ListVerificationsResulttestSourceTransportKindWrittenTests ListVerificationsResulttestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ListVerificationsResulttestSourceTransport) Kind() ListVerificationsResulttestSourceTransportKind {
+	return u.kind
+}
+
+// NewListVerificationsResulttestSourceTransportEvaluator creates ListVerificationsResulttestSourceTransport with its evaluator branch selected.
+func NewListVerificationsResulttestSourceTransportEvaluator(value *ListVerificationsResultOperatorEvaluatorTestsTransport) ListVerificationsResulttestSourceTransport {
+	return ListVerificationsResulttestSourceTransport{kind: ListVerificationsResulttestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u ListVerificationsResulttestSourceTransport) AsEvaluator() (_ *ListVerificationsResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != ListVerificationsResulttestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *ListVerificationsResulttestSourceTransport) SetEvaluator(value *ListVerificationsResultOperatorEvaluatorTestsTransport) {
+	u.kind = ListVerificationsResulttestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewListVerificationsResulttestSourceTransportWrittenTests creates ListVerificationsResulttestSourceTransport with its written_tests branch selected.
+func NewListVerificationsResulttestSourceTransportWrittenTests(value *ListVerificationsResultAgentWrittenTestsTransport) ListVerificationsResulttestSourceTransport {
+	return ListVerificationsResulttestSourceTransport{kind: ListVerificationsResulttestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u ListVerificationsResulttestSourceTransport) AsWrittenTests() (_ *ListVerificationsResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != ListVerificationsResulttestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *ListVerificationsResulttestSourceTransport) SetWrittenTests(value *ListVerificationsResultAgentWrittenTestsTransport) {
+	u.kind = ListVerificationsResulttestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u ListVerificationsResulttestSourceTransport) Validate() error {
+	switch u.kind {
+	case ListVerificationsResulttestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "ListVerificationsResulttestSourceTransport")
+		}
+		return nil
+	case ListVerificationsResulttestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "ListVerificationsResulttestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "ListVerificationsResulttestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(ListVerificationsResulttestSourceTransportKindEvaluator), string(ListVerificationsResulttestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u ListVerificationsResulttestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case ListVerificationsResulttestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case ListVerificationsResulttestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected ListVerificationsResulttestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ListVerificationsResulttestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
 // ReportTestsFinishedResulttestsTransport stores exactly one selected Goa OneOf branch.
 type ReportTestsFinishedResulttestsTransport struct {
 	kind         ReportTestsFinishedResulttestsTransportKind
@@ -10731,6 +11139,120 @@ func (u VerifyChangeResultstateTransport) MarshalJSON() ([]byte, error) {
 		Type  string `json:"type"`
 		Value any    `json:"value"`
 	}{Type: string(u.kind), Value: value})
+}
+
+// VerifyChangeResulttestSourceTransport stores exactly one selected Goa OneOf branch.
+type VerifyChangeResulttestSourceTransport struct {
+	kind         VerifyChangeResulttestSourceTransportKind
+	Evaluator    *VerifyChangeResultOperatorEvaluatorTestsTransport
+	WrittenTests *VerifyChangeResultAgentWrittenTestsTransport
+}
+
+// VerifyChangeResulttestSourceTransportKind identifies the selected branch of VerifyChangeResulttestSourceTransport.
+type VerifyChangeResulttestSourceTransportKind string
+
+const (
+	VerifyChangeResulttestSourceTransportKindEvaluator    VerifyChangeResulttestSourceTransportKind = "evaluator"
+	VerifyChangeResulttestSourceTransportKindWrittenTests VerifyChangeResulttestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u VerifyChangeResulttestSourceTransport) Kind() VerifyChangeResulttestSourceTransportKind {
+	return u.kind
+}
+
+// NewVerifyChangeResulttestSourceTransportEvaluator creates VerifyChangeResulttestSourceTransport with its evaluator branch selected.
+func NewVerifyChangeResulttestSourceTransportEvaluator(value *VerifyChangeResultOperatorEvaluatorTestsTransport) VerifyChangeResulttestSourceTransport {
+	return VerifyChangeResulttestSourceTransport{kind: VerifyChangeResulttestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u VerifyChangeResulttestSourceTransport) AsEvaluator() (_ *VerifyChangeResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != VerifyChangeResulttestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *VerifyChangeResulttestSourceTransport) SetEvaluator(value *VerifyChangeResultOperatorEvaluatorTestsTransport) {
+	u.kind = VerifyChangeResulttestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewVerifyChangeResulttestSourceTransportWrittenTests creates VerifyChangeResulttestSourceTransport with its written_tests branch selected.
+func NewVerifyChangeResulttestSourceTransportWrittenTests(value *VerifyChangeResultAgentWrittenTestsTransport) VerifyChangeResulttestSourceTransport {
+	return VerifyChangeResulttestSourceTransport{kind: VerifyChangeResulttestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u VerifyChangeResulttestSourceTransport) AsWrittenTests() (_ *VerifyChangeResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != VerifyChangeResulttestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *VerifyChangeResulttestSourceTransport) SetWrittenTests(value *VerifyChangeResultAgentWrittenTestsTransport) {
+	u.kind = VerifyChangeResulttestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u VerifyChangeResulttestSourceTransport) Validate() error {
+	switch u.kind {
+	case VerifyChangeResulttestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "VerifyChangeResulttestSourceTransport")
+		}
+		return nil
+	case VerifyChangeResulttestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "VerifyChangeResulttestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "VerifyChangeResulttestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(VerifyChangeResulttestSourceTransportKindEvaluator), string(VerifyChangeResulttestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u VerifyChangeResulttestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case VerifyChangeResulttestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case VerifyChangeResulttestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected VerifyChangeResulttestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("VerifyChangeResulttestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
 }
 
 // DecodeApproveMergePayload checks JSON field names from the Goa design and returns a service value.
@@ -11711,6 +12233,28 @@ func EncodeGetVerificationResult(in *surla.VerificationStatusResult) ([]byte, er
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
 		}
+		var testSourceValue GetVerificationResulttestSourceTransport
+		switch string(in.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := in.TestSource.AsEvaluator()
+			var obj *GetVerificationResultOperatorEvaluatorTestsTransport
+			if actual != nil {
+				obj = encodeOperatorEvaluatorTestsToGetVerificationResultOperatorEvaluatorTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetEvaluator((*GetVerificationResultOperatorEvaluatorTestsTransport)(obj))
+			testSourceValue = u
+		case "written_tests":
+			actual, _ := in.TestSource.AsWrittenTests()
+			var obj *GetVerificationResultAgentWrittenTestsTransport
+			if actual != nil {
+				obj = encodeAgentWrittenTestsToGetVerificationResultAgentWrittenTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetWrittenTests((*GetVerificationResultAgentWrittenTestsTransport)(obj))
+			testSourceValue = u
+		}
+		body.TestSource = &testSourceValue
 		var stateValue GetVerificationResultstateTransport
 		switch string(in.State.Kind()) {
 		case "running":
@@ -12527,6 +13071,28 @@ func EncodeVerifyChangeResult(in *surla.VerificationStatusResult) ([]byte, error
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
 		}
+		var testSourceValue VerifyChangeResulttestSourceTransport
+		switch string(in.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := in.TestSource.AsEvaluator()
+			var obj *VerifyChangeResultOperatorEvaluatorTestsTransport
+			if actual != nil {
+				obj = encodeOperatorEvaluatorTestsToVerifyChangeResultOperatorEvaluatorTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetEvaluator((*VerifyChangeResultOperatorEvaluatorTestsTransport)(obj))
+			testSourceValue = u
+		case "written_tests":
+			actual, _ := in.TestSource.AsWrittenTests()
+			var obj *VerifyChangeResultAgentWrittenTestsTransport
+			if actual != nil {
+				obj = encodeAgentWrittenTestsToVerifyChangeResultAgentWrittenTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetWrittenTests((*VerifyChangeResultAgentWrittenTestsTransport)(obj))
+			testSourceValue = u
+		}
+		body.TestSource = &testSourceValue
 		var stateValue VerifyChangeResultstateTransport
 		switch string(in.State.Kind()) {
 		case "running":
@@ -12724,6 +13290,33 @@ func encodeAgentPolicyItemToPreviewArchitectureResultAgentPolicyItemTransport(v 
 		KeepRecentTurns:     &v.KeepRecentTurns,
 		CacheAfterSystem:    &v.CacheAfterSystem,
 		CacheAfterTools:     &v.CacheAfterTools,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToGetVerificationResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *GetVerificationResultAgentWrittenTestsTransport {
+	res := &GetVerificationResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToListVerificationsResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *ListVerificationsResultAgentWrittenTestsTransport {
+	res := &ListVerificationsResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToVerifyChangeResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *VerifyChangeResultAgentWrittenTestsTransport {
+	res := &VerifyChangeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
 	}
 
 	return res
@@ -13458,6 +14051,24 @@ func encodeLiveTargetStartingToGetLiveTargetResultLiveTargetStartingTransport(v 
 		CandidateCommit: &v.CandidateCommit,
 		Since:           &v.Since,
 	}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToGetVerificationResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *GetVerificationResultOperatorEvaluatorTestsTransport {
+	res := &GetVerificationResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToListVerificationsResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *ListVerificationsResultOperatorEvaluatorTestsTransport {
+	res := &ListVerificationsResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToVerifyChangeResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *VerifyChangeResultOperatorEvaluatorTestsTransport {
+	res := &VerifyChangeResultOperatorEvaluatorTestsTransport{}
 
 	return res
 }
@@ -16402,6 +17013,28 @@ func encodeVerificationStatusResultToListVerificationsResultVerificationStatusRe
 		SuiteCommit:     &v.SuiteCommit,
 		AcceptedAt:      &v.AcceptedAt,
 	}
+	var testSourceValue ListVerificationsResulttestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ListVerificationsResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToListVerificationsResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ListVerificationsResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ListVerificationsResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToListVerificationsResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ListVerificationsResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 	var stateValue ListVerificationsResultstateTransport
 	switch string(v.State.Kind()) {
 	case "running":

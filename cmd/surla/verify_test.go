@@ -51,6 +51,7 @@ func TestParseVerifyFlagsBuildsTheExplicitPlan(t *testing.T) {
 		RequestRevision: "rev-1",
 		WorkDir:         "/private/work",
 		ReportDir:       "/private/reports",
+		Tests:           verify.TestsEvaluator,
 	}
 
 	cases := []struct {

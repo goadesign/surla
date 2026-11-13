@@ -1446,6 +1446,9 @@ func EncodeVerifyChangeRequest(encoder func(*http.Request) goahttp.Encoder) func
 // DecodeVerifyChangeResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "no_build" (type *goa.ServiceError): http.StatusConflict
+//   - "tests_not_accepted" (type *goa.ServiceError): http.StatusConflict
+//   - "no_test_layout" (type *goa.ServiceError): http.StatusConflict
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
@@ -1500,19 +1503,71 @@ func DecodeVerifyChangeResponse(decoder func(*http.Response) goahttp.Decoder, re
 			}
 			return nil, NewVerifyChangeNotFound(&body)
 		case http.StatusConflict:
-			var (
-				body VerifyChangeConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "conflict":
+				var (
+					body VerifyChangeConflictResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeConflictResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeConflict(&body)
+			case "no_build":
+				var (
+					body VerifyChangeNoBuildResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeNoBuildResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeNoBuild(&body)
+			case "tests_not_accepted":
+				var (
+					body VerifyChangeTestsNotAcceptedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeTestsNotAcceptedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeTestsNotAccepted(&body)
+			case "no_test_layout":
+				var (
+					body VerifyChangeNoTestLayoutResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeNoTestLayoutResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeNoTestLayout(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "verify_change", resp.StatusCode, string(body))
 			}
-			err = ValidateVerifyChangeConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "verify_change", err)
-			}
-			return nil, NewVerifyChangeConflict(&body)
 		case http.StatusNotImplemented:
 			var (
 				body VerifyChangeNotImplementedResponseBody
@@ -5575,6 +5630,27 @@ func unmarshalLiveTargetNotConfirmedStoppedResponseBodyToSurlaLiveTargetNotConfi
 	return res
 }
 
+// unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests
+// builds a value of type *surla.OperatorEvaluatorTests from a value of type
+// *OperatorEvaluatorTestsResponseBody.
+func unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(v *OperatorEvaluatorTestsResponseBody) *surla.OperatorEvaluatorTests {
+	res := &surla.OperatorEvaluatorTests{}
+
+	return res
+}
+
+// unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests builds a
+// value of type *surla.AgentWrittenTests from a value of type
+// *AgentWrittenTestsResponseBody.
+func unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(v *AgentWrittenTestsResponseBody) *surla.AgentWrittenTests {
+	res := &surla.AgentWrittenTests{
+		Commit: *v.Commit,
+		Notice: *v.Notice,
+	}
+
+	return res
+}
+
 // unmarshalVerificationRunningResponseBodyToSurlaVerificationRunning builds a
 // value of type *surla.VerificationRunning from a value of type
 // *VerificationRunningResponseBody.
@@ -5696,6 +5772,26 @@ func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResul
 		CandidateCommit: *v.CandidateCommit,
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
+	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *surla.OperatorEvaluatorTests
+		if actual != nil {
+			obj = unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*surla.OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *surla.AgentWrittenTests
+		if actual != nil {
+			obj = unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*surla.AgentWrittenTests)(obj))
+		res.TestSource = u
 	}
 	switch string(v.State.Kind()) {
 	case "running":

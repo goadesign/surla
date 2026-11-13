@@ -27,13 +27,14 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 	assert.ElementsMatch(t, published, slices.Collect(maps.Keys(operationRoles)), "only published operations have a policy")
 	roles := []CallerKind{CallerUser, CallerGuide, CallerBuilder, CallerTestWriter, CallerManagement, ""}
 	common := []CallerKind{CallerUser, CallerGuide, CallerBuilder}
+	runReads := []CallerKind{CallerUser, CallerGuide, CallerBuilder, CallerTestWriter}
 	expected := map[string][]CallerKind{
 		"golden_path":    {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
 		"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
 		"propose_change": {CallerGuide}, "revise_change": {CallerGuide}, "refresh_story": {CallerGuide}, "init_project": {CallerGuide},
 		"generate_code": {CallerBuilder}, "check_project": {CallerBuilder}, "update_dependencies": {CallerBuilder}, "start_live_target": {CallerBuilder}, "draft_override": {CallerBuilder}, "verify_change": {CallerBuilder},
 		"stop_live_target": {CallerUser, CallerBuilder}, "get_live_target": {CallerUser, CallerBuilder}, "get_model_connection": {CallerUser},
-		"get_change": common, "preview_architecture": common, "diff": common, "get_verification": common, "list_verifications": common, "list_traces": common, "read_check_output": common, "get_story_refresh": common,
+		"get_change": common, "preview_architecture": common, "diff": common, "get_verification": runReads, "list_verifications": runReads, "list_traces": common, "read_check_output": common, "get_story_refresh": common,
 		"list_changes": common, "wait_for_changes": {CallerUser}, "decline_revision": {CallerUser},
 		"get_team": {CallerUser}, "show_team_pane": {CallerUser}, "start_team_agents": {CallerUser},
 		"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter}, "get_test_findings": {CallerUser},

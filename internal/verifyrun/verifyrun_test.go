@@ -67,6 +67,11 @@ func helper(role, dir string) int {
 	return 0
 }
 
+// evaluatorPlan is the plan of a run or live target whose fields these tests
+// do not read: the operator's evaluator, the one test source that keeps the
+// caller's environment.
+var evaluatorPlan = verify.Plan{Tests: verify.TestsEvaluator}
+
 // fakeRun stands in for verify.Run according to fakeModeEnv.
 func fakeRun(ctx context.Context, plan verify.Plan) (verify.Report, error) {
 	switch os.Getenv(fakeModeEnv) {
@@ -163,7 +168,7 @@ func start(t *testing.T, mode string) (string, string, int) {
 		Plan: verify.Plan{
 			CandidateCommit: strings.Repeat("a", 40), RequestRevision: "rev-1",
 			SuiteCommit: strings.Repeat("b", 40), ReportDir: reports,
-			WorkDir: filepath.Join(root, runID, "work"),
+			WorkDir: filepath.Join(root, runID, "work"), Tests: verify.TestsEvaluator,
 		},
 	}, []string{os.Args[0]})
 	require.NoError(t, err)
@@ -351,7 +356,7 @@ func TestReadAndStartRejectInvalidRuns(t *testing.T) {
 		Owner:      "alice",
 		AcceptedAt: time.Now().UTC(),
 		Timeout:    time.Minute,
-		Plan:       verify.Plan{WorkDir: "w"},
+		Plan:       verify.Plan{WorkDir: "w", Tests: verify.TestsEvaluator},
 	}, []string{os.Args[0]})
 	assert.ErrorContains(t, err, "create run directory", "a run directory is never reused")
 	_, err = Start(root, Request{RunID: NewRunID(), Timeout: -time.Second}, []string{os.Args[0]})
@@ -384,6 +389,7 @@ func TestReadRequestValidationPreservesCLIAndRejectsCorruptRecords(t *testing.T)
 		Owner:      "cli",
 		ChangeID:   "",
 		AcceptedAt: time.Date(2026, 10, 31, 12, 0, 0, 100_000_000, time.UTC),
+		Plan:       evaluatorPlan,
 	})
 	require.NoError(t, err)
 	writeRawRun(t, cliRunID, string(cliReq), `{"kind":"no_report","failure":"execution_failed","stage":"build","summary":"Failed"}`)
@@ -430,6 +436,22 @@ func TestReadRequestValidationPreservesCLIAndRejectsCorruptRecords(t *testing.T)
 				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg"}`
 			},
 			wantErr:   "accepted_at is required",
+			wantOwner: "bob",
+		},
+		{
+			name: "no test source preserves decoded owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z"}`
+			},
+			wantErr:   `decode run request: unknown test source ""`,
+			wantOwner: "bob",
+		},
+		{
+			name: "unknown test source preserves decoded owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z","plan":{"Tests":"agents"}}`
+			},
+			wantErr:   `decode run request: unknown test source "agents"`,
 			wantOwner: "bob",
 		},
 		{
@@ -564,6 +586,7 @@ func writeListedRun(t *testing.T, root, runID, owner, changeID string, acceptedA
 		Owner:      owner,
 		ChangeID:   changeID,
 		AcceptedAt: acceptedAt,
+		Plan:       evaluatorPlan,
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, requestFile), rawReq, 0o600))
