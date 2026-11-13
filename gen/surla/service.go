@@ -243,9 +243,10 @@ type Service interface {
 	// counts as unread.
 	GetTestWriterAssignment(context.Context, *GetTestWriterAssignmentPayload) (res *TestWriterAssignment, err error)
 	// The test writer reports that its tests for a change at the build's revision
-	// are finished, which asks Surla to look at them. Surla records the report;
-	// the assignment's state becomes reported. A report for another revision is
-	// refused and changes nothing.
+	// are finished. Surla only records the report: the assignment's state becomes
+	// reported from any state, earlier findings or a recorded commit are cleared,
+	// and the tests are not checked. A report for another revision is refused and
+	// changes nothing.
 	ReportTestsFinished(context.Context, *ReportTestsFinishedPayload) (res *TestWriterAssignmentItem, err error)
 }
 
@@ -375,6 +376,11 @@ type BuilderAssignment struct {
 	ChangeID string
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision string
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce bool
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool
 }
@@ -1143,13 +1149,16 @@ type TestWriterAssignment struct {
 	ChangeID string
 	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision string
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *TestWriterProgress
-	// Folder to write the tests in: your own working copy of the project, which
-	// the server prepares when the user starts the build. It is empty until the
-	// server prepares working copies; an empty folder means none was prepared for
-	// this build.
+	// Folder to write the tests in: your own working copy of the project. The
+	// project server does not prepare working copies yet, so it is empty.
 	WorkingFolder string
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
@@ -1166,6 +1175,11 @@ type TestWriterAssignmentItem struct {
 	ChangeID string
 	// Change Card revision the tests are for.
 	RequestRevision string
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool
 	// Where this assignment stands.
 	Progress *TestWriterProgress
 }
@@ -1209,7 +1223,7 @@ type TestsNeedChanges struct {
 }
 
 // The test writer reported its tests finished at this build's revision; Surla
-// has not judged them yet.
+// has not checked them.
 type TestsReported struct {
 }
 
@@ -1913,6 +1927,11 @@ type jsonBuilderAssignmentTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision *string `json:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce *bool `json:"in_force"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `json:"read"`
 }
@@ -1927,6 +1946,9 @@ func validatejsonBuilderAssignmentTransport(value *jsonBuilderAssignmentTranspor
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
@@ -3799,6 +3821,11 @@ type jsonTestWriterAssignmentItemTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Change Card revision the tests are for.
 	RequestRevision *string `json:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce *bool `json:"in_force"`
 	// Where this assignment stands.
 	Progress *jsonTestWriterProgressTransport `json:"progress"`
 }
@@ -3813,6 +3840,9 @@ func validatejsonTestWriterAssignmentItemTransport(value *jsonTestWriterAssignme
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
@@ -3856,13 +3886,16 @@ type jsonTestWriterAssignmentTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision *string `json:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce *bool `json:"in_force"`
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *jsonTestWriterProgressTransport `json:"progress"`
-	// Folder to write the tests in: your own working copy of the project, which
-	// the server prepares when the user starts the build. It is empty until the
-	// server prepares working copies; an empty folder means none was prepared for
-	// this build.
+	// Folder to write the tests in: your own working copy of the project. The
+	// project server does not prepare working copies yet, so it is empty.
 	WorkingFolder *string `json:"working_folder"`
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
@@ -3882,6 +3915,9 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
@@ -6891,6 +6927,7 @@ func EncodeBuilderAssignment(in *BuilderAssignment) ([]byte, error) {
 		body = &jsonBuilderAssignmentTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
+			InForce:         &in.InForce,
 			Read:            &in.Read,
 		}
 	}
@@ -6921,6 +6958,7 @@ func ValidateBuilderAssignmentValue(in *BuilderAssignment) error {
 		body = &jsonBuilderAssignmentTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
+			InForce:         &in.InForce,
 			Read:            &in.Read,
 		}
 	}
@@ -6958,6 +6996,7 @@ func DecodeBuilderAssignment(data []byte) (out *BuilderAssignment, err error) {
 		out = &BuilderAssignment{
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
+			InForce:         *body.InForce,
 			Read:            *body.Read,
 		}
 	}
@@ -12054,6 +12093,7 @@ func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
 		body = &jsonTestWriterAssignmentTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
+			InForce:         &in.InForce,
 			WorkingFolder:   &in.WorkingFolder,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
@@ -12104,6 +12144,7 @@ func ValidateTestWriterAssignmentValue(in *TestWriterAssignment) error {
 		body = &jsonTestWriterAssignmentTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
+			InForce:         &in.InForce,
 			WorkingFolder:   &in.WorkingFolder,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
@@ -12158,6 +12199,7 @@ func DecodeTestWriterAssignment(data []byte) (out *TestWriterAssignment, err err
 		out = &TestWriterAssignment{
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
+			InForce:         *body.InForce,
 			WorkingFolder:   *body.WorkingFolder,
 		}
 		out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(body.Progress)
@@ -12194,6 +12236,7 @@ func EncodeTestWriterAssignmentItem(in *TestWriterAssignmentItem) ([]byte, error
 		body = &jsonTestWriterAssignmentItemTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
+			InForce:         &in.InForce,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
 	}
@@ -12227,6 +12270,7 @@ func ValidateTestWriterAssignmentItemValue(in *TestWriterAssignmentItem) error {
 		body = &jsonTestWriterAssignmentItemTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
+			InForce:         &in.InForce,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
 	}
@@ -12264,6 +12308,7 @@ func DecodeTestWriterAssignmentItem(data []byte) (out *TestWriterAssignmentItem,
 		out = &TestWriterAssignmentItem{
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
+			InForce:         *body.InForce,
 		}
 		out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(body.Progress)
 	}
@@ -14628,6 +14673,7 @@ func decodeBuilderAssignmentTransportToBuilderAssignment(v *jsonBuilderAssignmen
 	res := &BuilderAssignment{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
 		Read:            *v.Read,
 	}
 
@@ -14950,6 +14996,7 @@ func decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(v *jsonTe
 	res := &TestWriterAssignmentItem{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
 	}
 	res.Progress = decodeTestWriterProgressTransportToTestWriterProgress(v.Progress)
 
@@ -15309,6 +15356,7 @@ func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *
 	res := &jsonBuilderAssignmentTransport{
 		ChangeID:        &v.ChangeID,
 		RequestRevision: &v.RequestRevision,
+		InForce:         &v.InForce,
 		Read:            &v.Read,
 	}
 
@@ -15651,6 +15699,7 @@ func encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(v *TestWr
 	res := &jsonTestWriterAssignmentItemTransport{
 		ChangeID:        &v.ChangeID,
 		RequestRevision: &v.RequestRevision,
+		InForce:         &v.InForce,
 	}
 	res.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(v.Progress)
 
@@ -17041,6 +17090,13 @@ func validateBuilderAssignmentJSONValue(path string, value any, description stri
 			); err != nil {
 				return err
 			}
+		case "in_force":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+			); err != nil {
+				return err
+			}
 		case "read":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
@@ -17058,6 +17114,7 @@ func validateBuilderAssignmentJSONValue(path string, value any, description stri
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"in_force",
 				"read",
 				"request_revision",
 			})
@@ -21178,6 +21235,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
+		case "in_force":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
 		case "progress":
 			if err := validateChangeBuildJSONValue4(
 				generatedJSONChildPath(path, key, false),
@@ -21209,13 +21273,14 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 		case "working_folder":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Folder to write the tests in: your own working copy of the project, which the server prepares when the user starts the build. It is empty until the server prepares working copies; an empty folder means none was prepared for this build.",
+				typed[key], "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"in_force",
 				"progress",
 				"request_revision",
 				"required_tests",
@@ -21308,6 +21373,13 @@ func validateTestWriterAssignmentItemJSONValue(path string, value any, descripti
 			); err != nil {
 				return err
 			}
+		case "in_force":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
 		case "progress":
 			if err := validateChangeBuildJSONValue4(
 				generatedJSONChildPath(path, key, false),
@@ -21325,6 +21397,7 @@ func validateTestWriterAssignmentItemJSONValue(path string, value any, descripti
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"in_force",
 				"progress",
 				"request_revision",
 			})

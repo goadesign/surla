@@ -768,6 +768,11 @@ type GetBuilderAssignmentResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool `form:"read" json:"read" xml:"read"`
 }
@@ -787,13 +792,16 @@ type GetTestWriterAssignmentResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
-	// Folder to write the tests in: your own working copy of the project, which
-	// the server prepares when the user starts the build. It is empty until the
-	// server prepares working copies; an empty folder means none was prepared for
-	// this build.
+	// Folder to write the tests in: your own working copy of the project. The
+	// project server does not prepare working copies yet, so it is empty.
 	WorkingFolder string `form:"working_folder" json:"working_folder" xml:"working_folder"`
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
@@ -810,6 +818,11 @@ type ReportTestsFinishedResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Change Card revision the tests are for.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
 	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
 }
@@ -2969,6 +2982,11 @@ type BuilderAssignmentResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool `form:"read" json:"read" xml:"read"`
 }
@@ -2980,6 +2998,11 @@ type TestWriterAssignmentItemResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Change Card revision the tests are for.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
 	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
 }
@@ -4633,6 +4656,7 @@ func NewGetBuilderAssignmentResponseBody(res *surla.BuilderAssignment) *GetBuild
 	body := &GetBuilderAssignmentResponseBody{
 		ChangeID:        res.ChangeID,
 		RequestRevision: res.RequestRevision,
+		InForce:         res.InForce,
 		Read:            res.Read,
 	}
 	return body
@@ -4665,6 +4689,7 @@ func NewGetTestWriterAssignmentResponseBody(res *surla.TestWriterAssignment) *Ge
 	body := &GetTestWriterAssignmentResponseBody{
 		ChangeID:        res.ChangeID,
 		RequestRevision: res.RequestRevision,
+		InForce:         res.InForce,
 		WorkingFolder:   res.WorkingFolder,
 	}
 	if res.Progress != nil {
@@ -4703,6 +4728,7 @@ func NewReportTestsFinishedResponseBody(res *surla.TestWriterAssignmentItem) *Re
 	body := &ReportTestsFinishedResponseBody{
 		ChangeID:        res.ChangeID,
 		RequestRevision: res.RequestRevision,
+		InForce:         res.InForce,
 	}
 	if res.Progress != nil {
 		body.Progress = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(res.Progress)

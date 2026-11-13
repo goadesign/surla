@@ -4889,6 +4889,7 @@ func unmarshalBuilderAssignmentResponseBodyToSurlaBuilderAssignment(v *BuilderAs
 	res := &surla.BuilderAssignment{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
 		Read:            *v.Read,
 	}
 
@@ -4902,6 +4903,7 @@ func unmarshalTestWriterAssignmentItemResponseBodyToSurlaTestWriterAssignmentIte
 	res := &surla.TestWriterAssignmentItem{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
 	}
 	res.Progress = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(v.Progress)
 

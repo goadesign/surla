@@ -36,13 +36,20 @@ type recordingTeam struct {
 	folder string
 	// err, when set, is returned by Prepare instead of folder.
 	err error
+	// during, when set, runs inside Prepare, as another caller's change to
+	// the card could while the roles are being prepared.
+	during func()
 	// prepared lists the builds Prepare received, in call order.
 	prepared []Build
 }
 
-// Prepare records build and returns the configured folder or error.
+// Prepare records build, runs during, and returns the configured folder or
+// error.
 func (r *recordingTeam) Prepare(_ context.Context, build Build) (string, error) {
 	r.prepared = append(r.prepared, build)
+	if r.during != nil {
+		r.during()
+	}
 	if r.err != nil {
 		return "", r.err
 	}
@@ -138,7 +145,7 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	assert.False(t, listed.Assignments[0].Read, "listing records no read")
 	full, err := cp.GetBuilderAssignment(builder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
-	assert.Equal(t, &gensurla.BuilderAssignment{ChangeID: "chg", RequestRevision: first.RequestRevision, Read: true}, full)
+	assert.Equal(t, &gensurla.BuilderAssignment{ChangeID: "chg", RequestRevision: first.RequestRevision, InForce: true, Read: true}, full)
 	build := mustStartedBuild(t, cp, user, "chg")
 	assert.True(t, build.Builder.Read, "reading in full records the builder's read")
 	assert.False(t, build.TestWriter.Read, "the builder's read is not the test writer's")
@@ -182,6 +189,105 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	again, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: second.RequestRevision})
 	require.NoError(t, err)
 	assert.False(t, again.Builder.Read, "building the same revision again also starts over")
+}
+
+// TestAssignmentsSayWhetherTheirBuildIsInForce reads each role's assignment,
+// listed and in full, and the test writer's report result, while the build is
+// for the revision in force and after the user confirms another revision, and
+// checks that each reports the same in_force as the build read.
+func TestAssignmentsSayWhetherTheirBuildIsInForce(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	user := asCaller("alice@example.com", CallerUser)
+	builder := asCaller("alice@example.com", CallerBuilder)
+	tests := asCaller("alice@example.com", CallerTestWriter)
+	first := confirmedChange(t, cp, "chg")
+	_, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
+	require.NoError(t, err)
+	reads := []struct {
+		name string
+		read func() (bool, error)
+	}{
+		{name: "builder list", read: func() (bool, error) {
+			list, err := cp.ListBuilderAssignments(builder)
+			if err != nil || len(list.Assignments) != 1 {
+				return false, errors.Join(err, errors.New("want one builder assignment"))
+			}
+			return list.Assignments[0].InForce, nil
+		}},
+		{name: "builder full read", read: func() (bool, error) {
+			full, err := cp.GetBuilderAssignment(builder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
+			if err != nil {
+				return false, err
+			}
+			return full.InForce, nil
+		}},
+		{name: "test writer list", read: func() (bool, error) {
+			list, err := cp.ListTestWriterAssignments(tests)
+			if err != nil || len(list.Assignments) != 1 {
+				return false, errors.Join(err, errors.New("want one test writer assignment"))
+			}
+			return list.Assignments[0].InForce, nil
+		}},
+		{name: "test writer full read", read: func() (bool, error) {
+			full, err := cp.GetTestWriterAssignment(tests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
+			if err != nil {
+				return false, err
+			}
+			return full.InForce, nil
+		}},
+		{name: "test writer report", read: func() (bool, error) {
+			item, err := cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
+			if err != nil {
+				return false, err
+			}
+			return item.InForce, nil
+		}},
+	}
+	check := func(want bool) {
+		t.Helper()
+		assert.Equal(t, want, mustStartedBuild(t, cp, user, "chg").InForce, "the build read")
+		for _, r := range reads {
+			got, err := r.read()
+			if assert.NoError(t, err, r.name) {
+				assert.Equal(t, want, got, r.name)
+			}
+		}
+	}
+	check(true)
+	_, err = cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
+		ChangeID: "chg", RequestRevision: first.RequestRevision, Answers: map[string]string{},
+		Examples: append(first.Examples, &gensurla.ExampleItem{
+			ID: "check_02", Scenario: "Refund over the limit", InputSummary: "Order total $50.01",
+			ExpectedOutcome: "Waits for a manager", VerificationKind: "deterministic",
+		}),
+	})
+	require.NoError(t, err)
+	check(false)
+}
+
+// TestStartBuildChecksTheChangeAgainAfterPreparing changes the card while
+// Prepare runs, as another caller could, and checks that start_build then
+// refuses with conflict and saves no build, although Prepare ran.
+func TestStartBuildChecksTheChangeAgainAfterPreparing(t *testing.T) {
+	cases := []struct {
+		name   string
+		status string
+	}{
+		{name: "revised while preparing", status: StatusNeedsConfirmation},
+		{name: "confirmed again while preparing", status: StatusConfirmed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			team := &recordingTeam{folder: filepath.Join(t.TempDir(), ".surla-tests")}
+			cp := newControlPlane(t, Options{BuildTeam: team})
+			card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit"))
+			team.during = func() { saveStoryCard(t, cp, "chg", tc.status, refundStory("Refund over the new limit")) }
+			_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+			assertRefused(t, err, "conflict")
+			assert.Len(t, team.prepared, 1, "the change was buildable when the start began")
+			assertNoBuildSaved(t, cp, "chg")
+		})
+	}
 }
 
 // TestTestAssignmentKeepsTheStoryAgreedAtTheBuiltRevision builds a change
@@ -440,6 +546,14 @@ func TestBuildOperationsFollowTheRoleTable(t *testing.T) {
 	srv := httptest.NewServer(NewHTTPHandler(cp, fixtureCredentials(credentials)))
 	t.Cleanup(srv.Close)
 	revision := `{"request_revision":"` + card.RequestRevision + `"}`
+
+	notStarted := `{"change_id":"chg","build":{"state":"not_started"}}`
+	readStatus, readBody := httpCall(t, srv.URL, "user", http.MethodGet, "/changes/chg/build", "")
+	require.Equal(t, http.StatusOK, readStatus, "a never-built change is a value, not an error: "+readBody)
+	assert.JSONEq(t, notStarted, readBody)
+	failure, result := mcpToolCall(t, srv.URL, "guide", "get_build", `{"change_id":"chg"}`)
+	require.Empty(t, failure, "a never-built change is a value, not a tool error")
+	assert.JSONEq(t, notStarted, string(result))
 
 	for _, token := range []string{"guide", "builder", "tests"} {
 		status, _ := httpCall(t, srv.URL, token, http.MethodPost, "/changes/chg/build", revision)

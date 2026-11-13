@@ -34,13 +34,20 @@ type (
 	// user started. The composition root binds it with Options.BuildTeam;
 	// start_build calls it once per start, before the build is saved. With
 	// none bound, a build is saved and the test writer's assignment names no
-	// working folder.
+	// working folder. BuildTeam does not check reported tests:
+	// report_tests_finished only records a report as reported, and the check
+	// that accepts the tests or returns findings is added to this interface
+	// when reports are judged.
 	BuildTeam interface {
 		// Prepare readies the roles for build and returns the absolute path of
-		// the test writer's working copy. The user may build the same change
-		// again, at the same or a later revision, so Prepare must be safe to
-		// repeat. An error refuses the build: start_build saves nothing and
-		// returns the error to the user.
+		// the test writer's working copy. An error refuses the build:
+		// start_build saves nothing and returns the error to the user. Prepare
+		// runs without the card lock, and start_build checks the change again
+		// before saving; when the change was revised or confirmed again
+		// meanwhile, the start is refused, no build is saved, and what Prepare
+		// made stays. Together with the user building the same change again,
+		// at the same or a later revision, this is why Prepare must be safe to
+		// repeat.
 		Prepare(ctx context.Context, build Build) (workingFolder string, err error)
 	}
 
@@ -54,6 +61,15 @@ type (
 		// Stories is the Story as agreed at RequestRevision, in declaration
 		// order; nil when the change has none.
 		Stories []designeval.StorySummary
+	}
+
+	// heldBuild is a saved build together with whether it is for its change's
+	// revision in force, as every read of a build or an assignment reports.
+	heldBuild struct {
+		// file is the saved build.
+		file buildFile
+		// inForce is buildInForce for file and its change's card.
+		inForce bool
 	}
 
 	// buildFile is the saved form of one change's build, in its own file beside
@@ -214,7 +230,7 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	if !found {
 		return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildNotStarted(&gensurla.BuildNotStarted{})}, nil
 	}
-	inForce := saved.RequestRevision == revisionInForce(record.card)
+	inForce := buildInForce(saved, record.card)
 	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(saved, inForce))}, nil
 }
 
@@ -230,8 +246,8 @@ func (c *ControlPlane) ListBuilderAssignments(ctx context.Context) (*gensurla.Bu
 		return nil, err
 	}
 	items := make([]*gensurla.BuilderAssignment, len(builds))
-	for i, saved := range builds {
-		items[i] = builderAssignmentResult(saved)
+	for i, held := range builds {
+		items[i] = builderAssignmentResult(held)
 	}
 	return &gensurla.BuilderAssignmentList{Assignments: items}, nil
 }
@@ -244,7 +260,7 @@ func (c *ControlPlane) GetBuilderAssignment(
 	ctx context.Context,
 	p *gensurla.GetBuilderAssignmentPayload,
 ) (*gensurla.BuilderAssignment, error) {
-	saved, err := c.readAssignment(ctx, "surla.controlplane.get_builder_assignment", p.ChangeID, func(saved *buildFile) bool {
+	held, err := c.readAssignment(ctx, "surla.controlplane.get_builder_assignment", p.ChangeID, func(saved *buildFile) bool {
 		changed := !saved.Builder.Read
 		saved.Builder.Read = true
 		return changed
@@ -252,7 +268,7 @@ func (c *ControlPlane) GetBuilderAssignment(
 	if err != nil {
 		return nil, err
 	}
-	return builderAssignmentResult(saved), nil
+	return builderAssignmentResult(held), nil
 }
 
 // ListTestWriterAssignments returns the test writer's assignment of every
@@ -268,8 +284,8 @@ func (c *ControlPlane) ListTestWriterAssignments(ctx context.Context) (*gensurla
 		return nil, err
 	}
 	items := make([]*gensurla.TestWriterAssignmentItem, len(builds))
-	for i, saved := range builds {
-		items[i] = testWriterAssignmentItem(saved)
+	for i, held := range builds {
+		items[i] = testWriterAssignmentItem(held)
 	}
 	return &gensurla.TestWriterAssignmentList{Assignments: items}, nil
 }
@@ -284,7 +300,7 @@ func (c *ControlPlane) GetTestWriterAssignment(
 	ctx context.Context,
 	p *gensurla.GetTestWriterAssignmentPayload,
 ) (*gensurla.TestWriterAssignment, error) {
-	saved, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) bool {
+	held, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) bool {
 		changed := !saved.TestWriter.Read
 		saved.TestWriter.Read = true
 		return changed
@@ -294,21 +310,22 @@ func (c *ControlPlane) GetTestWriterAssignment(
 	}
 	// start_build refused a Story whose flows cannot be named, so an error
 	// here means the saved Story changed outside this package.
-	scenarios, _, err := designeval.StoryScenarios(saved.Stories)
+	scenarios, _, err := designeval.StoryScenarios(held.file.Stories)
 	if err != nil {
-		return nil, fmt.Errorf("name the required tests of change %q: %w", saved.ChangeID, err)
+		return nil, fmt.Errorf("name the required tests of change %q: %w", held.file.ChangeID, err)
 	}
 	required := make([]*gensurla.RequiredTest, len(scenarios))
 	for i, s := range scenarios {
 		required[i] = &gensurla.RequiredTest{Story: s.Story, FlowKey: s.Key, Scenario: s.Scenario, Hook: s.Hook}
 	}
-	item := testWriterAssignmentItem(saved)
+	item := testWriterAssignmentItem(held)
 	return &gensurla.TestWriterAssignment{
 		ChangeID:        item.ChangeID,
 		RequestRevision: item.RequestRevision,
+		InForce:         item.InForce,
 		Progress:        item.Progress,
-		WorkingFolder:   saved.TestWriter.WorkingFolder,
-		Stories:         storySummaryItems(saved.Stories),
+		WorkingFolder:   held.file.TestWriter.WorkingFolder,
+		Stories:         storySummaryItems(held.file.Stories),
 		RequiredTests:   required,
 	}, nil
 }
@@ -334,10 +351,11 @@ func (c *ControlPlane) ReportTestsFinished(
 	defer span.End()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	saved, err := c.ownedBuild(principal, p.ChangeID)
+	held, err := c.ownedBuild(principal, p.ChangeID)
 	if err != nil {
 		return nil, recordBuildError(span, err, "load build")
 	}
+	saved := &held.file
 	if saved.RequestRevision != p.RequestRevision {
 		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"the test assignment for %q is for request_revision %q, not %q",
@@ -348,22 +366,31 @@ func (c *ControlPlane) ReportTestsFinished(
 		saved.TestWriter.State = testsReported
 		saved.TestWriter.Findings = nil
 		saved.TestWriter.Commit = ""
-		if err := c.cards.saveBuild(saved); err != nil {
+		if err := c.cards.saveBuild(*saved); err != nil {
 			return nil, recordBuildError(span, err, "save build")
 		}
 	}
 	span.SetAttributes(attribute.String("surla.tests_state", saved.TestWriter.State))
-	return testWriterAssignmentItem(saved), nil
+	return testWriterAssignmentItem(held), nil
 }
 
-// revisionInForce returns the revision of card the user agreed and that every
-// operation naming an exact revision works on, or "" when the card awaits the
-// user's confirmation and no revision is in force.
+// revisionInForce returns the revision of card the user agreed, which
+// start_build requires and against which every read of a build or an
+// assignment reports in_force, or "" when the card awaits the user's
+// confirmation and no revision is in force. preview_architecture,
+// verify_change and approve_merge check the card's status and revision
+// themselves.
 func revisionInForce(card *gensurla.ChangeCardResult) string {
 	if card.Status != StatusConfirmed {
 		return ""
 	}
 	return card.RequestRevision
+}
+
+// buildInForce reports whether saved is a build of card's revision in force;
+// get_build and every assignment read report it as in_force.
+func buildInForce(saved buildFile, card *gensurla.ChangeCardResult) bool {
+	return saved.RequestRevision == revisionInForce(card)
 }
 
 // startedBuild converts a saved build into its transport form; inForce says
@@ -378,23 +405,25 @@ func startedBuild(saved buildFile, inForce bool) *gensurla.StartedBuild {
 	}
 }
 
-// builderAssignmentResult converts a saved build into the builder's
+// builderAssignmentResult converts a held build into the builder's
 // assignment.
-func builderAssignmentResult(saved buildFile) *gensurla.BuilderAssignment {
+func builderAssignmentResult(held heldBuild) *gensurla.BuilderAssignment {
 	return &gensurla.BuilderAssignment{
-		ChangeID:        saved.ChangeID,
-		RequestRevision: saved.RequestRevision,
-		Read:            saved.Builder.Read,
+		ChangeID:        held.file.ChangeID,
+		RequestRevision: held.file.RequestRevision,
+		InForce:         held.inForce,
+		Read:            held.file.Builder.Read,
 	}
 }
 
-// testWriterAssignmentItem converts a saved build into the test writer's
+// testWriterAssignmentItem converts a held build into the test writer's
 // assignment summary.
-func testWriterAssignmentItem(saved buildFile) *gensurla.TestWriterAssignmentItem {
+func testWriterAssignmentItem(held heldBuild) *gensurla.TestWriterAssignmentItem {
 	return &gensurla.TestWriterAssignmentItem{
-		ChangeID:        saved.ChangeID,
-		RequestRevision: saved.RequestRevision,
-		Progress:        testWriterProgress(saved.TestWriter),
+		ChangeID:        held.file.ChangeID,
+		RequestRevision: held.file.RequestRevision,
+		InForce:         held.inForce,
+		Progress:        testWriterProgress(held.file.TestWriter),
 	}
 }
 
@@ -509,31 +538,32 @@ func (c *ControlPlane) ownedCard(principal Principal, changeID string) (storedCh
 
 // ownedBuild loads the build of the caller's change changeID, failing with
 // not_found when the change or its build does not exist. Callers hold c.mu.
-func (c *ControlPlane) ownedBuild(principal Principal, changeID string) (buildFile, error) {
-	if _, err := c.ownedCard(principal, changeID); err != nil {
-		return buildFile{}, err
+func (c *ControlPlane) ownedBuild(principal Principal, changeID string) (heldBuild, error) {
+	record, err := c.ownedCard(principal, changeID)
+	if err != nil {
+		return heldBuild{}, err
 	}
 	saved, found, err := c.cards.loadBuild(changeID)
 	if err != nil {
-		return buildFile{}, err
+		return heldBuild{}, err
 	}
 	if !found {
-		return buildFile{}, gensurla.MakeNotFound(fmt.Errorf("change_id %q has no build; the user starts one on the views page", changeID))
+		return heldBuild{}, gensurla.MakeNotFound(fmt.Errorf("change_id %q has no build; the user starts one on the views page", changeID))
 	}
-	return saved, nil
+	return heldBuild{file: saved, inForce: buildInForce(saved, record.card)}, nil
 }
 
 // ownedBuilds returns the build of every change principal owns, most recently
 // started first (tie-broken by change_id). One unreadable card or build fails
 // the call rather than being left out.
-func (c *ControlPlane) ownedBuilds(principal Principal) ([]buildFile, error) {
+func (c *ControlPlane) ownedBuilds(principal Principal) ([]heldBuild, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	records, err := c.cards.all()
 	if err != nil {
 		return nil, err
 	}
-	var builds []buildFile
+	var builds []heldBuild
 	for _, record := range records {
 		if record.owner != principal.ID {
 			continue
@@ -543,14 +573,14 @@ func (c *ControlPlane) ownedBuilds(principal Principal) ([]buildFile, error) {
 			return nil, err
 		}
 		if found {
-			builds = append(builds, saved)
+			builds = append(builds, heldBuild{file: saved, inForce: buildInForce(saved, record.card)})
 		}
 	}
-	slices.SortFunc(builds, func(a, b buildFile) int {
-		if byTime := b.StartedAt.Compare(a.StartedAt); byTime != 0 {
+	slices.SortFunc(builds, func(a, b heldBuild) int {
+		if byTime := b.file.StartedAt.Compare(a.file.StartedAt); byTime != 0 {
 			return byTime
 		}
-		return strings.Compare(a.ChangeID, b.ChangeID)
+		return strings.Compare(a.file.ChangeID, b.file.ChangeID)
 	})
 	return builds, nil
 }
@@ -562,27 +592,27 @@ func (c *ControlPlane) readAssignment(
 	ctx context.Context,
 	spanName, changeID string,
 	markRead func(*buildFile) bool,
-) (buildFile, error) {
+) (heldBuild, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
-		return buildFile{}, errors.New("authenticated principal is required")
+		return heldBuild{}, errors.New("authenticated principal is required")
 	}
 	_, span := c.tracer("surla/controlplane").Start(ctx, spanName, trace.WithAttributes(attribute.String("surla.change_id", changeID)))
 	defer span.End()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	saved, err := c.ownedBuild(principal, changeID)
+	held, err := c.ownedBuild(principal, changeID)
 	if err != nil {
-		return buildFile{}, recordBuildError(span, err, "load build")
+		return heldBuild{}, recordBuildError(span, err, "load build")
 	}
-	span.SetAttributes(attribute.String("surla.request_revision", saved.RequestRevision))
-	if markRead(&saved) {
-		if err := c.cards.saveBuild(saved); err != nil {
-			return buildFile{}, recordBuildError(span, err, "save build")
+	span.SetAttributes(attribute.String("surla.request_revision", held.file.RequestRevision))
+	if markRead(&held.file) {
+		if err := c.cards.saveBuild(held.file); err != nil {
+			return heldBuild{}, recordBuildError(span, err, "save build")
 		}
 		span.AddEvent("assignment read for the first time")
 	}
-	return saved, nil
+	return held, nil
 }
 
 // loadBuild returns the saved build of changeID, or false when the user never

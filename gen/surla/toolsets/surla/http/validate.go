@@ -413,6 +413,9 @@ func ValidateGetBuilderAssignmentResultTransport(body *GetBuilderAssignmentResul
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
@@ -540,6 +543,9 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
@@ -1028,6 +1034,9 @@ func ValidateReportTestsFinishedResultTransport(body *ReportTestsFinishedResultT
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
 	}
@@ -1334,6 +1343,9 @@ func ValidateBuilderAssignmentTransport(body *BuilderAssignmentTransport) (err e
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
@@ -1882,6 +1894,9 @@ func ValidateTestWriterAssignmentItemTransport(body *TestWriterAssignmentItemTra
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))

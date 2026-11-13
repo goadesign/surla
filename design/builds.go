@@ -15,7 +15,7 @@ var TestsAssigned = Type("TestsAssigned", func() {
 
 // TestsReported is the test writer's state after it reported its tests finished.
 var TestsReported = Type("TestsReported", func() {
-	Description("The test writer reported its tests finished at this build's revision; Surla has not judged them yet.")
+	Description("The test writer reported its tests finished at this build's revision; Surla has not checked them.")
 })
 
 // TestsNeedChanges is the test writer's state after Surla found problems.
@@ -92,8 +92,9 @@ var BuilderAssignment = Type("BuilderAssignment", func() {
 	Description("The builder's assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.")
 	Attribute("change_id", String, "Change Card to build; get_change takes it.")
 	Attribute("request_revision", String, "Change Card revision to build; verify_change takes it.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.")
 	Attribute("read", Boolean, "True once you read this assignment in full with get_builder_assignment.")
-	Required("change_id", "request_revision", "read")
+	Required("change_id", "request_revision", "in_force", "read")
 })
 
 // BuilderAssignmentList lists the builder's assignments.
@@ -118,8 +119,9 @@ var TestWriterAssignmentItem = Type("TestWriterAssignmentItem", func() {
 	Description("One of the test writer's assignments as list_test_writer_assignments reports it.")
 	Attribute("change_id", String, "Change Card the tests are for; get_test_writer_assignment takes it.")
 	Attribute("request_revision", String, "Change Card revision the tests are for.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.")
 	Attribute("progress", TestWriterProgress, "Where this assignment stands.")
-	Required("change_id", "request_revision", "progress")
+	Required("change_id", "request_revision", "in_force", "progress")
 })
 
 // TestWriterAssignmentList lists the test writer's assignments.
@@ -134,11 +136,12 @@ var TestWriterAssignment = Type("TestWriterAssignment", func() {
 	Description("The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.")
 	Attribute("change_id", String, "Change Card the tests are for.")
 	Attribute("request_revision", String, "Change Card revision the tests are for; report_tests_finished takes it.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.")
 	Attribute("progress", TestWriterProgress, "Where this assignment stands, including Surla's findings when it needs changes.")
-	Attribute("working_folder", String, "Folder to write the tests in: your own working copy of the project, which the server prepares when the user starts the build. It is empty until the server prepares working copies; an empty folder means none was prepared for this build.")
+	Attribute("working_folder", String, "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.")
 	Attribute("required_tests", ArrayOf(RequiredTest), "One test per finished flow of stories, in declaration order; unfinished flows require none.")
-	Required("change_id", "request_revision", "progress", "working_folder", "stories", "required_tests")
+	Required("change_id", "request_revision", "in_force", "progress", "working_folder", "stories", "required_tests")
 })
 
 // buildMethods exposes starting and reading builds and the role-limited
@@ -154,7 +157,7 @@ func buildMethods() {
 		Result(StartedBuild)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or request_revision is not its revision in force; nothing changed.")
-		Error("unprocessable", ErrorResult, "The agreed Story has two finished flows whose required tests would have the same name; revise the Story. Nothing changed.")
+		Error("unprocessable", ErrorResult, "The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.")
 		HTTP(func() {
 			POST("/changes/{change_id}/build")
 			Response(StatusOK)
@@ -233,7 +236,7 @@ func buildMethods() {
 	})
 
 	Method("report_tests_finished", func() {
-		Description("The test writer reports that its tests for a change at the build's revision are finished, which asks Surla to look at them. Surla records the report; the assignment's state becomes reported. A report for another revision is refused and changes nothing.")
+		Description("The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier from your test assignment.", func() { MinLength(1) })
 			Attribute("request_revision", String, "request_revision of your test assignment.", func() { MinLength(1) })
@@ -242,7 +245,7 @@ func buildMethods() {
 		Result(TestWriterAssignmentItem)
 		Error("not_found", ErrorResult, "You have no test assignment for this change_id.")
 		Error("conflict", ErrorResult, "request_revision is not the revision of your test assignment; read it again with get_test_writer_assignment. Nothing changed.")
-		Tool("report_tests_finished", "Report that your tests for the assignment's change_id and request_revision are finished. Surla records the report and returns the assignment's new state.")
+		Tool("report_tests_finished", "Report that your tests for the assignment's change_id and request_revision are finished. Surla records the report as reported, without checking the tests, and returns the assignment's new state.")
 		HTTP(func() {
 			POST("/assignments/test-writer/{change_id}/finished")
 			Response(StatusOK)

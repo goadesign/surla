@@ -768,6 +768,11 @@ type GetBuilderAssignmentResponseBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
 }
@@ -787,13 +792,16 @@ type GetTestWriterAssignmentResponseBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`
-	// Folder to write the tests in: your own working copy of the project, which
-	// the server prepares when the user starts the build. It is empty until the
-	// server prepares working copies; an empty folder means none was prepared for
-	// this build.
+	// Folder to write the tests in: your own working copy of the project. The
+	// project server does not prepare working copies yet, so it is empty.
 	WorkingFolder *string `form:"working_folder,omitempty" json:"working_folder,omitempty" xml:"working_folder,omitempty"`
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
@@ -810,6 +818,11 @@ type ReportTestsFinishedResponseBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Change Card revision the tests are for.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`
 }
@@ -2969,6 +2982,11 @@ type BuilderAssignmentResponseBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
 }
@@ -2980,6 +2998,11 @@ type TestWriterAssignmentItemResponseBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Change Card revision the tests are for.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`
 }
@@ -5998,6 +6021,7 @@ func NewGetBuilderAssignmentBuilderAssignmentOK(body *GetBuilderAssignmentRespon
 	v := &surla.BuilderAssignment{
 		ChangeID:        *body.ChangeID,
 		RequestRevision: *body.RequestRevision,
+		InForce:         *body.InForce,
 		Read:            *body.Read,
 	}
 
@@ -6072,6 +6096,7 @@ func NewGetTestWriterAssignmentTestWriterAssignmentOK(body *GetTestWriterAssignm
 	v := &surla.TestWriterAssignment{
 		ChangeID:        *body.ChangeID,
 		RequestRevision: *body.RequestRevision,
+		InForce:         *body.InForce,
 		WorkingFolder:   *body.WorkingFolder,
 	}
 	v.Progress = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(body.Progress)
@@ -6131,6 +6156,7 @@ func NewReportTestsFinishedTestWriterAssignmentItemOK(body *ReportTestsFinishedR
 	v := &surla.TestWriterAssignmentItem{
 		ChangeID:        *body.ChangeID,
 		RequestRevision: *body.RequestRevision,
+		InForce:         *body.InForce,
 	}
 	v.Progress = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(body.Progress)
 
@@ -7088,6 +7114,9 @@ func ValidateGetBuilderAssignmentResponseBody(body *GetBuilderAssignmentResponse
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
@@ -7118,6 +7147,9 @@ func ValidateGetTestWriterAssignmentResponseBody(body *GetTestWriterAssignmentRe
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
@@ -7161,6 +7193,9 @@ func ValidateReportTestsFinishedResponseBody(body *ReportTestsFinishedResponseBo
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
@@ -10924,6 +10959,9 @@ func ValidateBuilderAssignmentResponseBody(body *BuilderAssignmentResponseBody) 
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
@@ -10939,6 +10977,9 @@ func validateBuilderAssignmentResponseBody(body *BuilderAssignmentResponseBody, 
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", path))
 	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", path))
+	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", path))
 	}
@@ -10953,6 +10994,9 @@ func ValidateTestWriterAssignmentItemResponseBody(body *TestWriterAssignmentItem
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
@@ -10973,6 +11017,9 @@ func validateTestWriterAssignmentItemResponseBody(body *TestWriterAssignmentItem
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", path))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", path))
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", path))

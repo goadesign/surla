@@ -696,7 +696,7 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    get-builder-assignment: Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
 	fmt.Fprintln(os.Stderr, `    list-test-writer-assignments: List the test writer's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
 	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
-	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished, which asks Surla to look at them. Surla records the report; the assignment's state becomes reported. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -1258,7 +1258,7 @@ func surlaReportTestsFinishedUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The test writer reports that its tests for a change at the build's revision are finished, which asks Surla to look at them. Surla records the report; the assignment's state becomes reported. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)

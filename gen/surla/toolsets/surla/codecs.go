@@ -2596,7 +2596,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not judged them yet.",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -2719,6 +2719,11 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
 		JSONType:    "string",
 		Description: "Change Card revision to build; verify_change takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("read")},
@@ -3405,6 +3410,11 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		Description: "Change Card revision the tests are for; report_tests_finished takes it.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
 		JSONType:    "object",
 		Description: "Where this assignment stands, including Surla's findings when it needs changes.",
@@ -3438,7 +3448,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not judged them yet.",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -3509,7 +3519,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("working_folder")},
 		JSONType:    "string",
-		Description: "Folder to write the tests in: your own working copy of the project, which the server prepares when the user starts the build. It is empty until the server prepares working copies; an empty folder means none was prepared for this build.",
+		Description: "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("stories")},
@@ -4175,6 +4185,11 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 		Description: "Change Card revision to build; verify_change takes it.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("read")},
 		JSONType:    "boolean",
 		Description: "True once you read this assignment in full with get_builder_assignment.",
@@ -4282,6 +4297,11 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		Description: "Change Card revision the tests are for.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress")},
 		JSONType:    "object",
 		Description: "Where this assignment stands.",
@@ -4315,7 +4335,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not judged them yet.",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5959,6 +5979,11 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		Description: "Change Card revision the tests are for.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
 		JSONType:    "object",
 		Description: "Where this assignment stands.",
@@ -5992,7 +6017,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not judged them yet.",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -10812,6 +10837,7 @@ func MarshalGetBuilderAssignmentResult(v *GetBuilderAssignmentResult) ([]byte, e
 	out = &toolhttp.GetBuilderAssignmentResultTransport{
 		ChangeID:        &in.ChangeID,
 		RequestRevision: &in.RequestRevision,
+		InForce:         &in.InForce,
 		Read:            &in.Read,
 	}
 	return json.Marshal(out)
@@ -10840,6 +10866,7 @@ func UnmarshalGetBuilderAssignmentResult(data []byte) (*GetBuilderAssignmentResu
 	out = &GetBuilderAssignmentResult{
 		ChangeID:        *in.ChangeID,
 		RequestRevision: *in.RequestRevision,
+		InForce:         *in.InForce,
 		Read:            *in.Read,
 	}
 	return out, nil
@@ -11180,6 +11207,7 @@ func MarshalGetTestWriterAssignmentResult(v *GetTestWriterAssignmentResult) ([]b
 	out = &toolhttp.GetTestWriterAssignmentResultTransport{
 		ChangeID:        &in.ChangeID,
 		RequestRevision: &in.RequestRevision,
+		InForce:         &in.InForce,
 		WorkingFolder:   &in.WorkingFolder,
 	}
 	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
@@ -11225,6 +11253,7 @@ func UnmarshalGetTestWriterAssignmentResult(data []byte) (*GetTestWriterAssignme
 	out = &GetTestWriterAssignmentResult{
 		ChangeID:        *in.ChangeID,
 		RequestRevision: *in.RequestRevision,
+		InForce:         *in.InForce,
 		WorkingFolder:   *in.WorkingFolder,
 	}
 	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
@@ -12536,6 +12565,7 @@ func MarshalReportTestsFinishedResult(v *ReportTestsFinishedResult) ([]byte, err
 	out = &toolhttp.ReportTestsFinishedResultTransport{
 		ChangeID:        &in.ChangeID,
 		RequestRevision: &in.RequestRevision,
+		InForce:         &in.InForce,
 	}
 	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
 	return json.Marshal(out)
@@ -12564,6 +12594,7 @@ func UnmarshalReportTestsFinishedResult(data []byte) (*ReportTestsFinishedResult
 	out = &ReportTestsFinishedResult{
 		ChangeID:        *in.ChangeID,
 		RequestRevision: *in.RequestRevision,
+		InForce:         *in.InForce,
 	}
 	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
 	return out, nil
@@ -18705,6 +18736,13 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 			); err != nil {
 				return err
 			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+			); err != nil {
+				return err
+			}
 		case "read":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -18722,6 +18760,7 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"in_force",
 				"read",
 				"request_revision",
 			})
@@ -18853,6 +18892,13 @@ func validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSO
 			); err != nil {
 				return err
 			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
 		case "progress":
 			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -18870,6 +18916,7 @@ func validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSO
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"in_force",
 				"progress",
 				"request_revision",
 			})
@@ -18941,6 +18988,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			); err != nil {
 				return err
 			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
 		case "progress":
 			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -18972,13 +19026,14 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 		case "working_folder":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Folder to write the tests in: your own working copy of the project, which the server prepares when the user starts the build. It is empty until the server prepares working copies; an empty folder means none was prepared for this build.",
+				typed[key], "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"in_force",
 				"progress",
 				"request_revision",
 				"required_tests",
@@ -19949,6 +20004,7 @@ func decodeBuilderAssignmentTransportToBuilderAssignment(v *toolhttp.BuilderAssi
 	res := &BuilderAssignment{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
 		Read:            *v.Read,
 	}
 
@@ -19958,6 +20014,7 @@ func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *
 	res := &toolhttp.BuilderAssignmentTransport{
 		ChangeID:        &v.ChangeID,
 		RequestRevision: &v.RequestRevision,
+		InForce:         &v.InForce,
 		Read:            &v.Read,
 	}
 
@@ -20011,6 +20068,7 @@ func decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(v *toolht
 	res := &TestWriterAssignmentItem{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
 	}
 	res.Progress = decodeTestWriterProgressTransportToTestWriterProgress(v.Progress)
 
@@ -20020,6 +20078,7 @@ func encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(v *TestWr
 	res := &toolhttp.TestWriterAssignmentItemTransport{
 		ChangeID:        &v.ChangeID,
 		RequestRevision: &v.RequestRevision,
+		InForce:         &v.InForce,
 	}
 	res.Progress = encodeTestWriterProgressToTestWriterProgressTransport(v.Progress)
 

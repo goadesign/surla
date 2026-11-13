@@ -475,7 +475,7 @@ func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (
 // StartBuild may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
 //   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or request_revision is not its revision in force; nothing changed.
-//   - "unprocessable" (type *goa.ServiceError): The agreed Story has two finished flows whose required tests would have the same name; revise the Story. Nothing changed.
+//   - "unprocessable" (type *goa.ServiceError): The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) StartBuild(ctx context.Context, p *StartBuildPayload) (res *StartedBuild, err error) {

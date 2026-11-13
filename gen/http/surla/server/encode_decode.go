@@ -3630,6 +3630,7 @@ func marshalSurlaBuilderAssignmentToBuilderAssignmentResponseBody(v *surla.Build
 	res := &BuilderAssignmentResponseBody{
 		ChangeID:        v.ChangeID,
 		RequestRevision: v.RequestRevision,
+		InForce:         v.InForce,
 		Read:            v.Read,
 	}
 
@@ -3643,6 +3644,7 @@ func marshalSurlaTestWriterAssignmentItemToTestWriterAssignmentItemResponseBody(
 	res := &TestWriterAssignmentItemResponseBody{
 		ChangeID:        v.ChangeID,
 		RequestRevision: v.RequestRevision,
+		InForce:         v.InForce,
 	}
 	if v.Progress != nil {
 		res.Progress = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v.Progress)

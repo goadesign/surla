@@ -253,6 +253,11 @@ type (
 		ChangeID string
 		// Change Card revision to build; verify_change takes it.
 		RequestRevision string
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: verify_change refuses
+		// this revision, and the assignment stays as it is until the user builds again.
+		InForce bool
 		// True once you read this assignment in full with get_builder_assignment.
 		Read bool
 	}
@@ -344,13 +349,16 @@ type (
 		ChangeID string
 		// Change Card revision the tests are for; report_tests_finished takes it.
 		RequestRevision string
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: the assignment stays for
+		// this earlier revision until the user builds again.
+		InForce bool
 		// Where this assignment stands, including Surla's findings when it needs
 		// changes.
 		Progress *TestWriterProgress
-		// Folder to write the tests in: your own working copy of the project, which
-		// the server prepares when the user starts the build. It is empty until the
-		// server prepares working copies; an empty folder means none was prepared for
-		// this build.
+		// Folder to write the tests in: your own working copy of the project. The
+		// project server does not prepare working copies yet, so it is empty.
 		WorkingFolder string
 		// The Story as agreed at request_revision, in declaration order. It does not
 		// change when the change is revised later.
@@ -620,6 +628,11 @@ type (
 		ChangeID string
 		// Change Card revision the tests are for.
 		RequestRevision string
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: the assignment stays for
+		// this earlier revision until the user builds again.
+		InForce bool
 		// Where this assignment stands.
 		Progress *TestWriterProgress
 	}
@@ -814,6 +827,11 @@ type (
 		ChangeID string
 		// Change Card revision to build; verify_change takes it.
 		RequestRevision string
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: verify_change refuses
+		// this revision, and the assignment stays as it is until the user builds again.
+		InForce bool
 		// True once you read this assignment in full with get_builder_assignment.
 		Read bool
 	}
@@ -1092,6 +1110,11 @@ type (
 		ChangeID string
 		// Change Card revision the tests are for.
 		RequestRevision string
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: the assignment stays for
+		// this earlier revision until the user builds again.
+		InForce bool
 		// Where this assignment stands.
 		Progress *TestWriterProgress
 	}

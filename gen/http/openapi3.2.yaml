@@ -25,9 +25,11 @@ paths:
                             example:
                                 assignments:
                                     - change_id: Et quos quod.
+                                      in_force: true
                                       read: false
                                       request_revision: Incidunt enim in.
                                     - change_id: Et quos quod.
+                                      in_force: true
                                       read: false
                                       request_revision: Incidunt enim in.
                 "403":
@@ -70,6 +72,7 @@ paths:
                                 $ref: '#/components/schemas/BuilderAssignment'
                             example:
                                 change_id: Aut impedit id.
+                                in_force: true
                                 read: false
                                 request_revision: Excepturi corporis laborum quod unde adipisci.
                 "403":
@@ -115,18 +118,21 @@ paths:
                             example:
                                 assignments:
                                     - change_id: Veniam ex reiciendis.
+                                      in_force: true
                                       progress:
                                         read: true
                                         tests:
                                             state: reported
                                       request_revision: Quidem nulla minima at voluptatum delectus.
                                     - change_id: Veniam ex reiciendis.
+                                      in_force: true
                                       progress:
                                         read: true
                                         tests:
                                             state: reported
                                       request_revision: Quidem nulla minima at voluptatum delectus.
                                     - change_id: Veniam ex reiciendis.
+                                      in_force: true
                                       progress:
                                         read: true
                                         tests:
@@ -172,6 +178,7 @@ paths:
                                 $ref: '#/components/schemas/TestWriterAssignment'
                             example:
                                 change_id: Odio qui dolore.
+                                in_force: false
                                 progress:
                                     read: true
                                     tests:
@@ -1315,7 +1322,7 @@ paths:
             tags:
                 - surla
             summary: report_tests_finished surla
-            description: The test writer reports that its tests for a change at the build's revision are finished, which asks Surla to look at them. Surla records the report; the assignment's state becomes reported. A report for another revision is refused and changes nothing.
+            description: 'The test writer reports that its tests for a change at the build''s revision are finished. Surla only records the report: the assignment''s state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.'
             operationId: surla#report_tests_finished
             parameters:
                 - name: change_id
@@ -1346,6 +1353,7 @@ paths:
                                 $ref: '#/components/schemas/TestWriterAssignmentItem'
                             example:
                                 change_id: Nihil enim.
+                                in_force: false
                                 progress:
                                     read: true
                                     tests:
@@ -2311,7 +2319,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "422":
-                    description: 'unprocessable: The agreed Story has two finished flows whose required tests would have the same name; revise the Story. Nothing changed.'
+                    description: 'unprocessable: The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -9898,6 +9906,10 @@ components:
                     type: string
                     description: Change Card to build; get_change takes it.
                     example: Et quos quod.
+                in_force:
+                    type: boolean
+                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.'
+                    example: true
                 read:
                     type: boolean
                     description: True once you read this assignment in full with get_builder_assignment.
@@ -9909,11 +9921,13 @@ components:
             description: 'The builder''s assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.'
             example:
                 change_id: Et quos quod.
+                in_force: true
                 read: false
                 request_revision: Incidunt enim in.
             required:
                 - change_id
                 - request_revision
+                - in_force
                 - read
         BuilderAssignmentList:
             type: object
@@ -9925,18 +9939,22 @@ components:
                     description: Assignments, most recently started first; empty when the user has built no change.
                     example:
                         - change_id: Et quos quod.
+                          in_force: true
                           read: false
                           request_revision: Incidunt enim in.
                         - change_id: Et quos quod.
+                          in_force: true
                           read: false
                           request_revision: Incidunt enim in.
             description: The builder's assignments, one per change the user built, most recently started first.
             example:
                 assignments:
                     - change_id: Et quos quod.
+                      in_force: true
                       read: false
                       request_revision: Incidunt enim in.
                     - change_id: Et quos quod.
+                      in_force: true
                       read: false
                       request_revision: Incidunt enim in.
             required:
@@ -15027,6 +15045,10 @@ components:
                     type: string
                     description: Change Card the tests are for.
                     example: Odio qui dolore.
+                in_force:
+                    type: boolean
+                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.'
+                    example: false
                 progress:
                     $ref: '#/components/schemas/TestWriterProgress'
                 request_revision:
@@ -16151,11 +16173,12 @@ components:
                           name: Et minima.
                 working_folder:
                     type: string
-                    description: 'Folder to write the tests in: your own working copy of the project, which the server prepares when the user starts the build. It is empty until the server prepares working copies; an empty folder means none was prepared for this build.'
+                    description: 'Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.'
                     example: Ut voluptatum vel totam.
             description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.'
             example:
                 change_id: Odio qui dolore.
+                in_force: false
                 progress:
                     read: true
                     tests:
@@ -17271,6 +17294,7 @@ components:
             required:
                 - change_id
                 - request_revision
+                - in_force
                 - progress
                 - working_folder
                 - stories
@@ -17282,6 +17306,10 @@ components:
                     type: string
                     description: Change Card the tests are for; get_test_writer_assignment takes it.
                     example: Veniam ex reiciendis.
+                in_force:
+                    type: boolean
+                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.'
+                    example: true
                 progress:
                     $ref: '#/components/schemas/TestWriterProgress'
                 request_revision:
@@ -17291,6 +17319,7 @@ components:
             description: One of the test writer's assignments as list_test_writer_assignments reports it.
             example:
                 change_id: Veniam ex reiciendis.
+                in_force: true
                 progress:
                     read: true
                     tests:
@@ -17299,6 +17328,7 @@ components:
             required:
                 - change_id
                 - request_revision
+                - in_force
                 - progress
         TestWriterAssignmentList:
             type: object
@@ -17310,18 +17340,21 @@ components:
                     description: Assignments, most recently started first; empty when the user has built no change.
                     example:
                         - change_id: Veniam ex reiciendis.
+                          in_force: true
                           progress:
                             read: true
                             tests:
                                 state: reported
                           request_revision: Quidem nulla minima at voluptatum delectus.
                         - change_id: Veniam ex reiciendis.
+                          in_force: true
                           progress:
                             read: true
                             tests:
                                 state: reported
                           request_revision: Quidem nulla minima at voluptatum delectus.
                         - change_id: Veniam ex reiciendis.
+                          in_force: true
                           progress:
                             read: true
                             tests:
@@ -17331,18 +17364,21 @@ components:
             example:
                 assignments:
                     - change_id: Veniam ex reiciendis.
+                      in_force: true
                       progress:
                         read: true
                         tests:
                             state: reported
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
+                      in_force: true
                       progress:
                         read: true
                         tests:
                             state: reported
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
+                      in_force: true
                       progress:
                         read: true
                         tests:
