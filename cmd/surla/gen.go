@@ -32,8 +32,9 @@ const quickstartGuide = "AGENTS_QUICKSTART.md"
 // gen/ other than the root agent guide, writes and syncs every file, and
 // checks for cancellation. Any failure until then leaves gen/ untouched and
 // returns an error. The exchange
-// swaps the staged gen/ with the current one (or moves it in when there is
-// none) with renameatx_np on the two held directory handles. That is the
+// swaps the staged gen/ with the current one (or moves it in without
+// overwriting when there is none) with renameat.Exchange or renameat.NoReplace
+// on the two held directory handles. That is the
 // success point: afterwards the command returns nil, and writing the agent
 // guide, removing the old tree and reporting the changes only print
 // warnings. go.mod and go.sum are never written.

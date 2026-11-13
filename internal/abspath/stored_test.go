@@ -109,6 +109,32 @@ func TestFDPathTwoHardLinks(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// TestFDPathRemovedAndRecreatedDirectory opens a directory, removes it, and
+// creates a new directory at the same name, verifying on both macOS (where
+// F_GETPATH continues to return the old path for an open directory descriptor)
+// and Linux that FDPath returns ErrUnlinked rather than naming the replacement
+// directory.
+func TestFDPathRemovedAndRecreatedDirectory(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	dir := filepath.Join(base, "dir")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, unix.Close(fd)) })
+
+	require.NoError(t, os.Remove(dir))
+	got, err := FDPath(fd)
+	require.ErrorIs(t, err, ErrUnlinked)
+	assert.Empty(t, got)
+
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.Mkdir(dir+" (deleted)", 0o700))
+	got, err = FDPath(fd)
+	require.ErrorIs(t, err, ErrUnlinked)
+	assert.Empty(t, got)
+}
+
 // TestFDPathWithoutProc verifies that FDPath and Stored do not report a live
 // directory as ErrUnlinked when /proc is not mounted on Linux.
 func TestFDPathWithoutProc(t *testing.T) {
