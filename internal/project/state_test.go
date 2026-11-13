@@ -264,30 +264,39 @@ func TestBrokenStateNamesPathAndStep(t *testing.T) {
 	}
 }
 
-// TestInitializeNamesClosedStateFolder reports a state folder that this account cannot
-// search when a new project is created in it, with the folder's repair: the folder
-// holds no record yet, so a step about the record would name a file that does not exist.
+// TestInitializeNamesClosedStateFolder reports a folder that this account cannot use
+// when a new project is created, with that folder's repair: the state folder holds no
+// record yet, so a step about the record would name a file that does not exist, and the
+// operator folder must be listed to keep the new project off ports other projects saved.
 func TestInitializeNamesClosedStateFolder(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		mode os.FileMode
+		name   string
+		folder func(*State) string
+		mode   os.FileMode
 	}{
-		{name: "folder this account cannot open", mode: 0o000},
-		{name: "folder this account cannot search", mode: 0o600},
+		{name: "folder this account cannot open", folder: stateFolder, mode: 0o000},
+		{name: "folder this account cannot search", folder: stateFolder, mode: 0o600},
+		{name: "operator folder this account cannot list", folder: operatorFolder, mode: 0o300},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state, err := Discover(physicalTempDir(t), physicalTempDir(t))
 			require.NoError(t, err)
 			require.NoError(t, os.Mkdir(state.Dir, 0o700))
-			closeFolder(t, state.Dir, tc.mode)
+			closeFolder(t, tc.folder(state), tc.mode)
 			_, err = state.Initialize("uid:test")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "chmod 700 "+state.Dir)
+			assert.Contains(t, err.Error(), "chmod 700 "+tc.folder(state))
 			assert.NotContains(t, err.Error(), "chmod 600")
 			assert.NotContains(t, err.Error(), "record of the Surla project")
 		})
 	}
 }
+
+// stateFolder is the private state folder of state's project.
+func stateFolder(state *State) string { return state.Dir }
+
+// operatorFolder is the folder that holds the state folders of every project.
+func operatorFolder(state *State) string { return filepath.Dir(state.Dir) }
 
 // closeFolder gives dir mode for the rest of the test and restores 0700 when the test
 // ends, so the test's temporary folders can still be removed. The superuser can open

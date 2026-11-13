@@ -349,12 +349,13 @@ func (s *State) RemoveSettings(kind string) error {
 // otherProjects reads the saved records of the other projects in this project's operator
 // folder, where Discover places every project of this account. A record that cannot be
 // read is skipped rather than failing this project: its own project cannot start until
-// it is repaired, and Discover reports it, with its path, in that project's folder.
+// it is repaired, and Discover reports it, with its path, in that project's folder. An
+// operator folder this account cannot list is reported with that folder's repair.
 func (s *State) otherProjects() ([]*State, error) {
 	root := filepath.Dir(s.Dir)
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, err
+		return nil, stateFolderError(root, err)
 	}
 	others := make([]*State, 0, len(entries))
 	for _, entry := range entries {
@@ -423,9 +424,11 @@ func stateFileError(dir, project string, err error) error {
 	return fmt.Errorf("the record of the Surla project in %s is damaged: %s: %w; restore it from a backup and run surla again, or move the folder %s out of %s and run surla in %s to start that project folder again as a new, empty Surla project", project, path, err, dir, filepath.Dir(dir), project)
 }
 
-// stateFolderError names a private state folder this account cannot use and its repair.
+// stateFolderError names a private Surla state folder this account cannot use and its
+// repair: either one project's state folder or the operator folder that holds them all,
+// which must both be folders of this account that only this account can open.
 func stateFolderError(dir string, err error) error {
-	return fmt.Errorf("project state folder %s cannot be used: %w; make it a folder of this account that only this account can open (chmod 700 %s, and chown -R it to this account if another account owns it), then run surla again", dir, err, dir)
+	return fmt.Errorf("the Surla state folder %s cannot be used: %w; make it a folder of this account that only this account can open (chmod 700 %s, and chown -R it to this account if another account owns it), then run surla again", dir, err, dir)
 }
 
 // projectDirectory derives one private state folder from the canonical folder identity.
