@@ -325,19 +325,30 @@ It removes only its own roster for a replaced space.
 
 When any role listed in the roster is missing or its pane holds only an idle
 shell, Surla focuses this project's space and opens the Chorus launcher so the
-user can choose an agent and model. A running guide with a missing listed
-builder still opens the launcher. Surla reads open dialog names before
-changing the window. An already open
-launcher stays open and keeps its captured project; choose agents there only
+user can choose an agent and model. A running guide with a listed builder
+whose pane is not running still opens the launcher. Surla reads open dialog
+names before changing the window. An already open launcher stays open and keeps its captured project; choose agents there only
 if it is for this project, otherwise close it and run Surla again. Another
 open dialog must be closed before retrying. If this project has no saved or
 matching space and any dialog is open, startup refuses without creating a
 space, adding an agent, or saving team state. When every listed role is running,
-no new dialog opens. Missing foreground information conservatively counts a live pane
-as running. Surla
-prints the team and launcher state, then opens its views page. The guide works
-through the Story and change with the user; only the user confirms and approves
+no new dialog opens. Surla prints the team and launcher state, then opens its
+views page. The guide works through the Story and change with the user; only the user confirms and approves
 on the page. Starting a team does not require Git.
+
+<a id="idle-shell"></a>
+
+**Idle shell detection.** Surla treats a foreground program as an *idle shell*
+when both conditions hold:
+
+- Its executable basename, with leading dashes removed, is `sh`, `bash`, `zsh`,
+  `fish`, `dash`, `ksh`, `csh`, `tcsh`, `nu`, `pwsh`, `xonsh`, or `elvish`, or is
+  the basename of the user's own `$SHELL`, with leading dashes removed.
+- Neither of the first two arguments after the program is `-c` or a
+  single-dash flag group containing `c`, such as `-lic`.
+
+A shell wrapper with such a command flag counts as running. A live pane with
+unreported foreground information also counts as running.
 
 The HTTP-only `POST /project/team` management operation (`ensure_team`) takes
 no input. It returns `team`, `space`, `roles` (role, handle, running), and

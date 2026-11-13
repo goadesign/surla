@@ -115,13 +115,14 @@ the guide uses its own Surla connection to work through the Story and change
 with you. Surla then opens the views page through a short-lived link.
 
 Starting again reuses the team's stable handles and Herdr space. No launcher
-opens when every role listed in the roster is running. If any listed role is
-missing or its pane holds only an idle shell, Surla opens the launcher; for
-example, a running guide with a missing builder still needs it. Roles without a working folder are omitted
-from the roster and do not by themselves open the launcher. An already open
-launcher stays open with its original
-project: use it only if it is for this project, otherwise close it and run
-`surla` again. Close any other dialog before retrying. Surla bounds readiness
+opens when every role listed in the roster is running. Surla opens the launcher
+when any listed role has no running pane, including one that holds only an
+[idle shell](docs/REFERENCE.md#idle-shell). For example, a running guide with a
+builder listed in this project's roster whose pane is not running still needs
+the launcher. Roles without a working folder are omitted from the roster and
+do not by themselves open the launcher. An already open launcher stays open
+with its original project: use it only if it is for this project, otherwise
+close it and run `surla` again. Close any other dialog before retrying. Surla bounds readiness
 checks without terminating your Herdr window or Chorus service.
 `surla stop` shuts that project down in order. Subfolders and physical path
 aliases find the same project; moving the folder starts a new, empty project.
