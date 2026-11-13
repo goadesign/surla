@@ -565,9 +565,9 @@ var _ = Service("orders", func() {
 	srv := httptest.NewServer(NewHTTPHandler(cp, auth))
 	defer srv.Close()
 
-	unauthResp, err := http.Get(srv.URL + "/ui/checkpoint")
+	unauthResp, err := http.Get(srv.URL + "/golden-path")
 	if err != nil {
-		t.Fatalf("GET /ui/checkpoint failed: %v", err)
+		t.Fatalf("GET /golden-path failed: %v", err)
 	}
 	if closeErr := unauthResp.Body.Close(); closeErr != nil {
 		t.Fatalf("close unauthResp: %v", closeErr)
@@ -576,14 +576,14 @@ var _ = Service("orders", func() {
 		t.Fatalf("expected 401 Unauthorized without bearer token, got %d", unauthResp.StatusCode)
 	}
 
-	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/ui/checkpoint", nil)
+	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/golden-path", nil)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
 	authReq.Header.Set("Authorization", "Bearer secret-token-alice")
 	authResp, err := http.DefaultClient.Do(authReq)
 	if err != nil {
-		t.Fatalf("authenticated GET /ui/checkpoint failed: %v", err)
+		t.Fatalf("authenticated GET /golden-path failed: %v", err)
 	}
 	if closeErr := authResp.Body.Close(); closeErr != nil {
 		t.Fatalf("close authResp: %v", closeErr)
