@@ -7,8 +7,6 @@
 
 package server
 
-import "fmt"
-
 // IdentityProjectPath returns the URL path to the project service identity HTTP endpoint.
 func IdentityProjectPath() string {
 	return "/project/identity"
@@ -22,16 +20,6 @@ func EnsureTeamProjectPath() string {
 // StopProjectPath returns the URL path to the project service stop HTTP endpoint.
 func StopProjectPath() string {
 	return "/project/stop"
-}
-
-// AddAgentProjectPath returns the URL path to the project service add_agent HTTP endpoint.
-func AddAgentProjectPath() string {
-	return "/project/agents"
-}
-
-// RemoveAgentProjectPath returns the URL path to the project service remove_agent HTTP endpoint.
-func RemoveAgentProjectPath(actorID string) string {
-	return fmt.Sprintf("/project/agents/%v", actorID)
 }
 
 // BrowserLinkProjectPath returns the URL path to the project service browser_link HTTP endpoint.

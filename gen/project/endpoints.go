@@ -18,8 +18,6 @@ type Endpoints struct {
 	Identity            goa.Endpoint
 	EnsureTeam          goa.Endpoint
 	Stop                goa.Endpoint
-	AddAgent            goa.Endpoint
-	RemoveAgent         goa.Endpoint
 	BrowserLink         goa.Endpoint
 	ExchangeBrowserLink goa.Endpoint
 }
@@ -30,8 +28,6 @@ func NewEndpoints(s Service) *Endpoints {
 		Identity:            NewIdentityEndpoint(s),
 		EnsureTeam:          NewEnsureTeamEndpoint(s),
 		Stop:                NewStopEndpoint(s),
-		AddAgent:            NewAddAgentEndpoint(s),
-		RemoveAgent:         NewRemoveAgentEndpoint(s),
 		BrowserLink:         NewBrowserLinkEndpoint(s),
 		ExchangeBrowserLink: NewExchangeBrowserLinkEndpoint(s),
 	}
@@ -42,8 +38,6 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Identity = m(e.Identity)
 	e.EnsureTeam = m(e.EnsureTeam)
 	e.Stop = m(e.Stop)
-	e.AddAgent = m(e.AddAgent)
-	e.RemoveAgent = m(e.RemoveAgent)
 	e.BrowserLink = m(e.BrowserLink)
 	e.ExchangeBrowserLink = m(e.ExchangeBrowserLink)
 }
@@ -69,24 +63,6 @@ func NewEnsureTeamEndpoint(s Service) goa.Endpoint {
 func NewStopEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		return nil, s.Stop(ctx)
-	}
-}
-
-// NewAddAgentEndpoint returns an endpoint function that calls the method
-// "add_agent" of service "project".
-func NewAddAgentEndpoint(s Service) goa.Endpoint {
-	return func(ctx context.Context, req any) (any, error) {
-		p := req.(*AddAgentPayload)
-		return s.AddAgent(ctx, p)
-	}
-}
-
-// NewRemoveAgentEndpoint returns an endpoint function that calls the method
-// "remove_agent" of service "project".
-func NewRemoveAgentEndpoint(s Service) goa.Endpoint {
-	return func(ctx context.Context, req any) (any, error) {
-		p := req.(*RemoveAgentPayload)
-		return nil, s.RemoveAgent(ctx, p)
 	}
 }
 

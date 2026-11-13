@@ -44,8 +44,8 @@ type (
 // NewServer creates fresh management authority for one server lifetime.
 // The caller publishes it only after binding the listener and revokes it before closing that listener.
 func NewServer(state *State, stop func(), team TeamDependencies) (*Server, error) {
-	if team.Lifetime == nil || team.Host == nil || team.TestWriterFolder == nil || !filepath.IsAbs(team.RosterDirectory) {
-		return nil, errors.New("project server requires team lifetime, host, test-writer folder reader and absolute roster directory")
+	if team.Lifetime == nil || team.Host == nil || !filepath.IsAbs(team.RosterDirectory) {
+		return nil, errors.New("project server requires team lifetime, host and absolute roster directory")
 	}
 	credential, err := randomCredential()
 	if err != nil {
@@ -118,7 +118,7 @@ func (s *Server) Authenticate(r *http.Request) (controlplane.Principal, error) {
 			return controlplane.Principal{}, err
 		}
 		if credentialEqual(token, credential) {
-			return controlplane.Principal{ID: owner, CallerID: id, Kind: controlplane.CallerKind(role)}, nil
+			return controlplane.Principal{ID: owner, CallerID: id, Kind: controlplane.CallerKind(role.Role)}, nil
 		}
 	}
 	return controlplane.Principal{}, errors.New("session or credential is no longer valid; open the project's views with surla")
@@ -181,64 +181,6 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	s.stop()
 	return nil
-}
-
-// AddAgent publishes one credential per trusted role as one admitted management operation.
-func (s *Server) AddAgent(ctx context.Context, p *genproject.AddAgentPayload) (*genproject.ProjectAgent, error) {
-	if err := managementOnly(ctx, "add_agent"); err != nil {
-		return nil, err
-	}
-	return s.addAgent(p)
-}
-
-// addAgent admits one validated actor after its owning workflow has authorized entry.
-func (s *Server) addAgent(p *genproject.AddAgentPayload) (*genproject.ProjectAgent, error) {
-	s.state.mu.Lock()
-	defer s.state.mu.Unlock()
-	if _, exists := s.state.Record.Agents[p.ActorID]; exists {
-		return nil, genproject.MakeConflict(errors.New("agent already exists"))
-	}
-	for _, role := range s.state.Record.Agents {
-		if role == p.Role {
-			return nil, genproject.MakeConflict(errors.New("an agent already owns this role"))
-		}
-	}
-	token, err := randomCredential()
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(filepath.Join(s.state.Dir, "agents"), 0o700); err != nil {
-		return nil, err
-	}
-	if err := privateDirectory(filepath.Join(s.state.Dir, "agents")); err != nil {
-		return nil, err
-	}
-	if err := writePrivate(s.state.AgentFile(p.ActorID), []byte(token)); err != nil {
-		return nil, err
-	}
-	s.state.Record.Agents[p.ActorID] = p.Role
-	if err := s.state.save(); err != nil {
-		delete(s.state.Record.Agents, p.ActorID)
-		return nil, errors.Join(err, os.Remove(s.state.AgentFile(p.ActorID)))
-	}
-	return &genproject.ProjectAgent{ActorID: p.ActorID, Role: p.Role, CredentialFile: s.state.AgentFile(p.ActorID)}, nil
-}
-
-// RemoveAgent revokes the credential before persisting removal of its roster identity.
-func (s *Server) RemoveAgent(ctx context.Context, p *genproject.RemoveAgentPayload) error {
-	if err := managementOnly(ctx, "remove_agent"); err != nil {
-		return err
-	}
-	s.state.mu.Lock()
-	defer s.state.mu.Unlock()
-	if _, exists := s.state.Record.Agents[p.ActorID]; !exists {
-		return genproject.MakeUnprocessable(errors.New("unknown agent"))
-	}
-	if err := os.Remove(s.state.AgentFile(p.ActorID)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	delete(s.state.Record.Agents, p.ActorID)
-	return s.state.save()
 }
 
 // BrowserLink creates a short-lived value usable for one browser exchange only.
@@ -314,4 +256,53 @@ func writeAccessError(w http.ResponseWriter, r *http.Request, status int, name, 
 	if err := goahttp.ResponseEncoder(r.Context(), w).Encode(response); err != nil {
 		otel.Handle(err)
 	}
+}
+
+// registerAgent saves one role's current folder, preserving its stable handle and credential.
+// The team operation lock serializes admissions; state.mu owns record and credential writes.
+func (s *Server) registerAgent(handle string, agent agentRecord) (string, error) {
+	if err := validateAgent(handle, agent); err != nil {
+		return "", err
+	}
+	s.state.mu.Lock()
+	defer s.state.mu.Unlock()
+	for existing, registered := range s.state.Record.Agents {
+		if registered.Role != agent.Role {
+			continue
+		}
+		if _, err := readCredential(s.state.AgentFile(existing)); err != nil {
+			return "", err
+		}
+		if registered.Folder == agent.Folder {
+			return existing, nil
+		}
+		s.state.Record.Agents[existing] = agent
+		if err := s.state.save(); err != nil {
+			s.state.Record.Agents[existing] = registered
+			return "", err
+		}
+		return existing, nil
+	}
+	if _, exists := s.state.Record.Agents[handle]; exists {
+		return "", errors.New("agent handle already owns another role")
+	}
+	token, err := randomCredential()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(s.state.Dir, "agents"), 0o700); err != nil {
+		return "", err
+	}
+	if err := privateDirectory(filepath.Join(s.state.Dir, "agents")); err != nil {
+		return "", err
+	}
+	if err := writePrivate(s.state.AgentFile(handle), []byte(token)); err != nil {
+		return "", err
+	}
+	s.state.Record.Agents[handle] = agent
+	if err := s.state.save(); err != nil {
+		delete(s.state.Record.Agents, handle)
+		return "", errors.Join(err, os.Remove(s.state.AgentFile(handle)))
+	}
+	return handle, nil
 }

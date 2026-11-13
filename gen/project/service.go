@@ -39,13 +39,6 @@ type Service interface {
 	// server revokes management access and withdraws its running record; an
 	// authorized stop response can finish.
 	Stop(context.Context) (err error)
-	// The CLI creates one persistent credential for a trusted role and returns
-	// only its private file path. A project admits at most one agent per role. The
-	// credential and role survive server restart.
-	AddAgent(context.Context, *AddAgentPayload) (res *ProjectAgent, err error)
-	// The CLI revokes an agent and removes its private credential file before
-	// returning.
-	RemoveAgent(context.Context, *RemoveAgentPayload) (err error)
 	// The CLI mints a short-lived single-use browser link. The URL is the only
 	// credential allowed in a browser-launch command line.
 	BrowserLink(context.Context) (res *BrowserLinkResult, err error)
@@ -69,15 +62,7 @@ const ServiceName = "project"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [7]string{"identity", "ensure_team", "stop", "add_agent", "remove_agent", "browser_link", "exchange_browser_link"}
-
-// AddAgentPayload is the payload type of the project service add_agent method.
-type AddAgentPayload struct {
-	// Agent identifier.
-	ActorID string
-	// Agent purpose.
-	Role string
-}
+var MethodNames = [5]string{"identity", "ensure_team", "stop", "browser_link", "exchange_browser_link"}
 
 // BrowserLinkResult is the result type of the project service browser_link
 // method.
@@ -100,17 +85,6 @@ type ExchangeBrowserLinkPayload struct {
 type ExchangeBrowserLinkResult struct {
 	// User session kept only in the page's memory.
 	Session string
-}
-
-// ProjectAgent is the result type of the project service add_agent method.
-type ProjectAgent struct {
-	// Agent identity, separate from resource ownership.
-	ActorID string
-	// Trusted agent purpose.
-	Role string
-	// Private credential file for the launcher; never put its contents in
-	// arguments or labels.
-	CredentialFile string
 }
 
 // ProjectIdentity is the result type of the project service identity method.
@@ -142,13 +116,6 @@ type ProjectTeamRole struct {
 	// The matching live terminal is not reported as an idle shell; missing
 	// foreground information counts as running.
 	Running bool
-}
-
-// RemoveAgentPayload is the payload type of the project service remove_agent
-// method.
-type RemoveAgentPayload struct {
-	// Agent identifier.
-	ActorID string
 }
 
 type TeamSpaceConflict struct {
@@ -185,11 +152,6 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "unprocessable", false, false, false)
 }
 
-// MakeConflict builds a goa.ServiceError from an error.
-func MakeConflict(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "conflict", false, false, false)
-}
-
 // MakeWindowBusy builds a goa.ServiceError from an error.
 func MakeWindowBusy(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "window_busy", false, false, false)
@@ -198,39 +160,6 @@ func MakeWindowBusy(err error) *goa.ServiceError {
 // MakeTeamUnavailable builds a goa.ServiceError from an error.
 func MakeTeamUnavailable(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "team_unavailable", false, false, false)
-}
-
-// jsonProjectAgentTransport stores JSON fields until they have been validated.
-type jsonProjectAgentTransport struct {
-	// Agent identity, separate from resource ownership.
-	ActorID *string `json:"actor_id"`
-	// Trusted agent purpose.
-	Role *string `json:"role"`
-	// Private credential file for the launcher; never put its contents in
-	// arguments or labels.
-	CredentialFile *string `json:"credential_file"`
-}
-
-// validatejsonProjectAgentTransport checks decoded JSON before it becomes a service value.
-func validatejsonProjectAgentTransport(value *jsonProjectAgentTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.ActorID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actor_id", "body"))
-	}
-	if value.Role == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
-	}
-	if value.CredentialFile == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("credential_file", "body"))
-	}
-	if value.Role != nil {
-		if !(*value.Role == "guide" || *value.Role == "builder" || *value.Role == "test_writer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *value.Role, []any{"guide", "builder", "test_writer"}))
-		}
-	}
-	return err
 }
 
 // jsonProjectIdentityTransport stores JSON fields until they have been validated.
@@ -386,14 +315,6 @@ func ValidateteamSpaceConflictIntTransport(value teamSpaceConflictIntTransport) 
 	return err
 }
 
-// validateProjectAgentOriginal checks the original typed value before JSON conversion.
-func validateProjectAgentOriginal(value *ProjectAgent) (err error) {
-	if !(value.Role == "guide" || value.Role == "builder" || value.Role == "test_writer") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.role", value.Role, []any{"guide", "builder", "test_writer"}))
-	}
-	return err
-}
-
 // validateProjectTeamOriginal checks the original typed value before JSON conversion.
 func validateProjectTeamOriginal(value *ProjectTeam) (err error) {
 	if value.Roles == nil {
@@ -427,95 +348,6 @@ func validateTeamSpaceConflictOriginal(value *TeamSpaceConflict) (err error) {
 		err = goa.MergeErrors(err, goa.InvalidRangeError("value.count", value.Count, 2, true))
 	}
 	return err
-}
-
-// EncodeProjectAgent turns a service value into JSON using the field names in the Goa design.
-func EncodeProjectAgent(in *ProjectAgent) ([]byte, error) {
-	if err := checkProjectAgentValue(in); err != nil {
-		return nil, fmt.Errorf("encode ProjectAgent JSON: %w", err)
-	}
-	if err := validateProjectAgentOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate ProjectAgent value: %w", err)
-	}
-	var body *jsonProjectAgentTransport
-	{
-		body = &jsonProjectAgentTransport{
-			ActorID:        &in.ActorID,
-			Role:           &in.Role,
-			CredentialFile: &in.CredentialFile,
-		}
-	}
-	if err := validatejsonProjectAgentTransport(body); err != nil {
-		return nil, fmt.Errorf("validate ProjectAgent JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode ProjectAgent JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateProjectAgentValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateProjectAgentValue(in *ProjectAgent) error {
-	if err := checkProjectAgentValue(in); err != nil {
-		return fmt.Errorf("validate ProjectAgent value: %w", err)
-	}
-	if err := validateProjectAgentOriginal(in); err != nil {
-		return fmt.Errorf("validate ProjectAgent value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "ProjectAgent")
-	}
-
-	var body *jsonProjectAgentTransport
-	{
-		body = &jsonProjectAgentTransport{
-			ActorID:        &in.ActorID,
-			Role:           &in.Role,
-			CredentialFile: &in.CredentialFile,
-		}
-	}
-	if err := validatejsonProjectAgentTransport(body); err != nil {
-		return fmt.Errorf("validate ProjectAgent value: %w", err)
-	}
-	return nil
-}
-
-// DecodeProjectAgent checks JSON field names from the Goa design and returns a service value.
-func DecodeProjectAgent(data []byte) (out *ProjectAgent, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode ProjectAgent JSON: %w", err)
-	}
-	if err := validateProjectAgentJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode ProjectAgent JSON: %w", err)
-	}
-	var body *jsonProjectAgentTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode ProjectAgent JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode ProjectAgent JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode ProjectAgent JSON after first value: %w", err)
-	}
-	if err := validatejsonProjectAgentTransport(body); err != nil {
-		return out, fmt.Errorf("validate ProjectAgent JSON: %w", err)
-	}
-	{
-		out = &ProjectAgent{
-			ActorID:        *body.ActorID,
-			Role:           *body.Role,
-			CredentialFile: *body.CredentialFile,
-		}
-	}
-	return out, nil
 }
 
 // EncodeProjectIdentity turns a service value into JSON using the field names in the Goa design.
@@ -911,74 +743,6 @@ func encodeProjectTeamRoleToProjectTeamRoleTransport(v *ProjectTeamRole) *jsonPr
 	return res
 }
 
-// validateProjectAgentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateProjectAgentJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "actor_id":
-			if err := validateProjectAgentJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Agent identity, separate from resource ownership.",
-			); err != nil {
-				return err
-			}
-		case "credential_file":
-			if err := validateProjectAgentJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Private credential file for the launcher; never put its contents in arguments or labels.",
-			); err != nil {
-				return err
-			}
-		case "role":
-			if err := validateProjectAgentJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Trusted agent purpose.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"actor_id",
-				"credential_file",
-				"role",
-			})
-		}
-	}
-	return nil
-}
-
-// validateProjectAgentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateProjectAgentJSONValue2(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "string", "null", description)
-	}
-	_, ok := value.(string)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "string", decodedJSONType(value), description)
-	}
-	return nil
-}
-
 // validateProjectIdentityJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateProjectIdentityJSONValue(path string, value any, description string) error {
 	field := path
@@ -1000,21 +764,21 @@ func validateProjectIdentityJSONValue(path string, value any, description string
 	for _, key := range keys {
 		switch key {
 		case "directory":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Physical project folder.",
 			); err != nil {
 				return err
 			}
 		case "owner":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Immutable operating-system account identity.",
 			); err != nil {
 				return err
 			}
 		case "project_id":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Stable private project identifier.",
 			); err != nil {
@@ -1027,6 +791,22 @@ func validateProjectIdentityJSONValue(path string, value any, description string
 				"project_id",
 			})
 		}
+	}
+	return nil
+}
+
+// validateProjectIdentityJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProjectIdentityJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "string", "null", description)
+	}
+	_, ok := value.(string)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "string", decodedJSONType(value), description)
 	}
 	return nil
 }
@@ -1052,7 +832,7 @@ func validateProjectTeamJSONValue(path string, value any, description string) er
 	for _, key := range keys {
 		switch key {
 		case "dialog":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Launcher state after ensuring the team.",
 			); err != nil {
@@ -1066,14 +846,14 @@ func validateProjectTeamJSONValue(path string, value any, description string) er
 				return err
 			}
 		case "space":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Local Herdr space identifier.",
 			); err != nil {
 				return err
 			}
 		case "team":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Stable Chorus team name.",
 			); err != nil {
@@ -1139,14 +919,14 @@ func validateProjectTeamJSONValue3(path string, value any, description string) e
 	for _, key := range keys {
 		switch key {
 		case "handle":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Stable Chorus handle and Surla actor identity.",
 			); err != nil {
 				return err
 			}
 		case "role":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Trusted role.",
 			); err != nil {
@@ -1214,7 +994,7 @@ func validateTeamSpaceConflictJSONValue(path string, value any, description stri
 				return err
 			}
 		case "name":
-			if err := validateProjectAgentJSONValue2(
+			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Error name.",
 			); err != nil {
@@ -1401,42 +1181,6 @@ func decodedJSONType(value any) string {
 // generatedJSONChildPath appends an unambiguous quoted member or array index.
 func generatedJSONChildPath(path, key string, _ bool) string {
 	return path + "[" + strconv.Quote(key) + "]"
-}
-
-// checkProjectAgentValue checks text and cycles before conversion.
-func checkProjectAgentValue(in *ProjectAgent) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkProjectAgentProjectAgentValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkProjectAgentProjectAgentValue checks one generated value on the active path.
-func checkProjectAgentProjectAgentValue(in *ProjectAgent, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.ActorID)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "actor_id", false))
-		}
-		if !utf8.ValidString(string(in.Role)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "role", false))
-		}
-		if !utf8.ValidString(string(in.CredentialFile)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "credential_file", false))
-		}
-	}
-	return nil
 }
 
 // checkProjectIdentityValue checks text and cycles before conversion.

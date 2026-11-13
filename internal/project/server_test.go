@@ -63,22 +63,27 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	identity, err := client.Identity(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, state.Record.Owner, identity.Owner)
-	guide, err := client.AddAgent(t.Context(), &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
+	guide, err := registerTestAgent(server, "guide", "guide", state.Record.Directory)
 	require.NoError(t, err)
 	guideRaw, err := os.ReadFile(guide.CredentialFile)
 	require.NoError(t, err)
 	assert.Equal(t, state.AgentFile("guide"), guide.CredentialFile)
 	actorTokens := map[controlplane.CallerKind]string{controlplane.CallerGuide: string(guideRaw)}
 	for _, role := range []string{"builder", "test_writer"} {
-		actor, err := client.AddAgent(t.Context(), &genproject.AddAgentPayload{ActorID: role, Role: role})
+		actor, err := registerTestAgent(server, role, role, state.Record.Directory)
 		require.NoError(t, err)
 		raw, err := os.ReadFile(actor.CredentialFile)
 		require.NoError(t, err)
 		actorTokens[controlplane.CallerKind(role)] = string(raw)
 	}
-	rejectedRole := testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/project/agents", `{"actor_id":"forbidden-manager","role":"management"}`, management, false)
-	assert.Equal(t, http.StatusBadRequest, rejectedRole.StatusCode)
-	require.NoError(t, rejectedRole.Body.Close())
+	for _, removed := range []struct{ method, path string }{
+		{http.MethodPost, "/project/agents"},
+		{http.MethodDelete, "/project/agents/guide"},
+	} {
+		response := testRequest(t, api.Client(), removed.method, state.Origin()+removed.path, "", management, false)
+		assert.Equal(t, http.StatusNotFound, response.StatusCode)
+		require.NoError(t, response.Body.Close())
+	}
 
 	link, err := client.BrowserLink(t.Context())
 	require.NoError(t, err)
@@ -230,8 +235,6 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 					{http.MethodGet, "/project/identity", ""},
 					{http.MethodPost, "/project/stop", ""},
 					{http.MethodPost, "/project/team", ""},
-					{http.MethodPost, "/project/agents", `{"actor_id":"injected","role":"guide"}`},
-					{http.MethodDelete, "/project/agents/guide", ""},
 					{http.MethodPost, "/project/browser-link", ""},
 				} {
 					denied := testRequest(t, api.Client(), managementCall.method, state.Origin()+managementCall.path, managementCall.body, tc.token, tc.role == controlplane.CallerUser)
@@ -329,7 +332,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, state.Record.Owner, principal.ID)
 	assert.Equal(t, "guide", principal.CallerID)
-	require.NoError(t, client.RemoveAgent(t.Context(), &genproject.RemoveAgentPayload{ActorID: "guide"}))
+	require.NoError(t, os.Remove(state.AgentFile("guide")))
 	_, err = fresh.Authenticate(request)
 	assert.Error(t, err)
 }
@@ -378,7 +381,7 @@ func testState(t *testing.T) *State {
 }
 func testClient(state *State, client *http.Client, token string, browser bool) *genproject.Client {
 	transport := genprojectclient.NewClient("http", state.Address(), headerDoer{client: client, token: token, browser: browser}, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	return genproject.NewClient(transport.Identity(), transport.EnsureTeam(), transport.Stop(), transport.AddAgent(), transport.RemoveAgent(), transport.BrowserLink(), transport.ExchangeBrowserLink())
+	return genproject.NewClient(transport.Identity(), transport.EnsureTeam(), transport.Stop(), transport.BrowserLink(), transport.ExchangeBrowserLink())
 }
 func testRequest(t *testing.T, client *http.Client, method, target, body, token string, browser bool) *http.Response {
 	t.Helper()

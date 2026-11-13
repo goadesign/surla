@@ -71,7 +71,7 @@ func (f *teamFixture) OpenLauncher(context.Context) error {
 
 // fixtureTeamDependencies prevents all external effects in server authentication/lifecycle tests.
 func fixtureTeamDependencies(state *State) TeamDependencies {
-	return TeamDependencies{Lifetime: context.Background(), Host: &teamFixture{}, TestWriterFolder: func(context.Context) (string, error) { return "", nil }, RosterDirectory: filepath.Join(state.Dir, "test-rosters"), Shell: "/bin/zsh"}
+	return TeamDependencies{Lifetime: context.Background(), Host: &teamFixture{}, RosterDirectory: filepath.Join(state.Dir, "test-rosters"), Shell: "/bin/zsh"}
 }
 
 // teamContext grants management through the same trusted principal boundary used by HTTP.
@@ -197,7 +197,7 @@ func TestTeamNamesAndThreeRoleRoster(t *testing.T) {
 		handle := teamName(role, state.Record.ID)
 		assert.LessOrEqual(t, len(handle), 32)
 		assert.Regexp(t, `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`, handle)
-		_, err := s.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handle, Role: role})
+		_, err := registerTestAgent(s, handle, role, s.state.Record.Directory)
 		require.NoError(t, err)
 		roles = append(roles, launcherRole{Role: role, Title: role, Handle: handle, Folder: state.Record.Directory, FirstMessage: "Use your Surla connection."})
 	}
@@ -301,7 +301,7 @@ func TestEnsureTeamGuideInvariant(t *testing.T) {
 			if scenario == "role" {
 				role = "builder"
 			}
-			_, err = s.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handle, Role: role})
+			_, err = registerTestAgent(s, handle, role, s.state.Record.Directory)
 			require.NoError(t, err)
 			if scenario == "credential" {
 				require.NoError(t, os.Remove(state.AgentFile(handle)))
@@ -385,4 +385,19 @@ func TestMissingForegroundPreservesLiveGuide(t *testing.T) {
 			assert.NotContains(t, host.calls, "open")
 		})
 	}
+}
+
+// testAgent exposes credential paths to package tests without a management API.
+type testAgent struct {
+	ActorID        string
+	CredentialFile string
+}
+
+// registerTestAgent exercises the owning private admission with explicit saved folders.
+func registerTestAgent(server *Server, handle, role, folder string) (*testAgent, error) {
+	actual, err := server.registerAgent(handle, agentRecord{Role: role, Folder: folder})
+	if err != nil {
+		return nil, err
+	}
+	return &testAgent{ActorID: actual, CredentialFile: server.state.AgentFile(actual)}, nil
 }

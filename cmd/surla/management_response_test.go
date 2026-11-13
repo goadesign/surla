@@ -137,7 +137,7 @@ func TestUnexpectedManagementResponseDoesNotEchoCredential(t *testing.T) {
 // TestManagementErrorsUseOnlyCLIText covers declared errors, malformed bodies and
 // malformed HTTP itself. The peer deliberately copies the sent credential into each reply.
 func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
-	for _, scenario := range []string{"forbidden", "conflict", "unprocessable", "unknown name", "invalid JSON", "malformed status", "malformed header"} {
+	for _, scenario := range []string{"forbidden", "window_busy", "unprocessable", "unknown name", "invalid JSON", "malformed status", "malformed header"} {
 		t.Run(scenario, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			state, err := fixtureProjectState("")
@@ -145,7 +145,7 @@ func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
 			key := strings.Repeat("c", 64)
 			marker := "peer-must-never-print"
 			status := http.StatusForbidden
-			if scenario == "conflict" {
+			if scenario == "window_busy" {
 				status = http.StatusConflict
 			}
 			if scenario == "unprocessable" {
@@ -169,6 +169,7 @@ func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("goa-error", scenario)
 				w.WriteHeader(status)
 				if scenario == "invalid JSON" {
 					_, err := fmt.Fprintf(w, "%s %s", r.Header.Get("Authorization"), marker)
@@ -186,7 +187,11 @@ func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
 			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: key}))
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			_, err = projectClient(state).Identity(ctx)
+			if scenario == "window_busy" {
+				_, err = projectClient(state).EnsureTeam(ctx)
+			} else {
+				_, err = projectClient(state).Identity(ctx)
+			}
 			require.Error(t, err)
 			assert.False(t, strings.Contains(err.Error(), key), "the CLI must never echo the sent credential")
 			assert.False(t, strings.Contains(err.Error(), marker), "the CLI must never print peer-authored text")

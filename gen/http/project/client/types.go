@@ -12,15 +12,6 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
-// AddAgentRequestBody is the type of the "project" service "add_agent"
-// endpoint HTTP request body.
-type AddAgentRequestBody struct {
-	// Agent identifier.
-	ActorID string `form:"actor_id" json:"actor_id" xml:"actor_id"`
-	// Agent purpose.
-	Role string `form:"role" json:"role" xml:"role"`
-}
-
 // ExchangeBrowserLinkRequestBody is the type of the "project" service
 // "exchange_browser_link" endpoint HTTP request body.
 type ExchangeBrowserLinkRequestBody struct {
@@ -49,18 +40,6 @@ type EnsureTeamResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles,omitempty" json:"roles,omitempty" xml:"roles,omitempty"`
 	// Launcher state after ensuring the team.
 	Dialog *string `form:"dialog,omitempty" json:"dialog,omitempty" xml:"dialog,omitempty"`
-}
-
-// AddAgentResponseBody is the type of the "project" service "add_agent"
-// endpoint HTTP response body.
-type AddAgentResponseBody struct {
-	// Agent identity, separate from resource ownership.
-	ActorID *string `form:"actor_id,omitempty" json:"actor_id,omitempty" xml:"actor_id,omitempty"`
-	// Trusted agent purpose.
-	Role *string `form:"role,omitempty" json:"role,omitempty" xml:"role,omitempty"`
-	// Private credential file for the launcher; never put its contents in
-	// arguments or labels.
-	CredentialFile *string `form:"credential_file,omitempty" json:"credential_file,omitempty" xml:"credential_file,omitempty"`
 }
 
 // BrowserLinkResponseBody is the type of the "project" service "browser_link"
@@ -115,45 +94,9 @@ type IdentityUnprocessableResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
-// IdentityConflictResponseBody is the type of the "project" service "identity"
-// endpoint HTTP response body for the "conflict" error.
-type IdentityConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
 // EnsureTeamWindowBusyResponseBody is the type of the "project" service
 // "ensure_team" endpoint HTTP response body for the "window_busy" error.
 type EnsureTeamWindowBusyResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// EnsureTeamConflictResponseBody is the type of the "project" service
-// "ensure_team" endpoint HTTP response body for the "conflict" error.
-type EnsureTeamConflictResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -268,132 +211,6 @@ type StopUnprocessableResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
-// StopConflictResponseBody is the type of the "project" service "stop"
-// endpoint HTTP response body for the "conflict" error.
-type StopConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// AddAgentForbiddenResponseBody is the type of the "project" service
-// "add_agent" endpoint HTTP response body for the "forbidden" error.
-type AddAgentForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// AddAgentUnprocessableResponseBody is the type of the "project" service
-// "add_agent" endpoint HTTP response body for the "unprocessable" error.
-type AddAgentUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// AddAgentConflictResponseBody is the type of the "project" service
-// "add_agent" endpoint HTTP response body for the "conflict" error.
-type AddAgentConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// RemoveAgentForbiddenResponseBody is the type of the "project" service
-// "remove_agent" endpoint HTTP response body for the "forbidden" error.
-type RemoveAgentForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// RemoveAgentUnprocessableResponseBody is the type of the "project" service
-// "remove_agent" endpoint HTTP response body for the "unprocessable" error.
-type RemoveAgentUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// RemoveAgentConflictResponseBody is the type of the "project" service
-// "remove_agent" endpoint HTTP response body for the "conflict" error.
-type RemoveAgentConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
 // BrowserLinkForbiddenResponseBody is the type of the "project" service
 // "browser_link" endpoint HTTP response body for the "forbidden" error.
 type BrowserLinkForbiddenResponseBody struct {
@@ -415,24 +232,6 @@ type BrowserLinkForbiddenResponseBody struct {
 // BrowserLinkUnprocessableResponseBody is the type of the "project" service
 // "browser_link" endpoint HTTP response body for the "unprocessable" error.
 type BrowserLinkUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// BrowserLinkConflictResponseBody is the type of the "project" service
-// "browser_link" endpoint HTTP response body for the "conflict" error.
-type BrowserLinkConflictResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -486,24 +285,6 @@ type ExchangeBrowserLinkUnprocessableResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
-// ExchangeBrowserLinkConflictResponseBody is the type of the "project" service
-// "exchange_browser_link" endpoint HTTP response body for the "conflict" error.
-type ExchangeBrowserLinkConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
 // ProjectTeamRoleResponseBody is used to define fields on response body types.
 type ProjectTeamRoleResponseBody struct {
 	// Trusted role.
@@ -513,16 +294,6 @@ type ProjectTeamRoleResponseBody struct {
 	// The matching live terminal is not reported as an idle shell; missing
 	// foreground information counts as running.
 	Running *bool `form:"running,omitempty" json:"running,omitempty" xml:"running,omitempty"`
-}
-
-// NewAddAgentRequestBody builds the HTTP request body from the payload of the
-// "add_agent" endpoint of the "project" service.
-func NewAddAgentRequestBody(p *project.AddAgentPayload) *AddAgentRequestBody {
-	body := &AddAgentRequestBody{
-		ActorID: p.ActorID,
-		Role:    p.Role,
-	}
-	return body
 }
 
 // NewExchangeBrowserLinkRequestBody builds the HTTP request body from the
@@ -576,21 +347,6 @@ func NewIdentityUnprocessable(body *IdentityUnprocessableResponseBody) *goa.Serv
 	return v
 }
 
-// NewIdentityConflict builds a project service identity endpoint conflict
-// error.
-func NewIdentityConflict(body *IdentityConflictResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
 // NewEnsureTeamProjectTeamOK builds a "project" service "ensure_team" endpoint
 // result from a HTTP "OK" response.
 func NewEnsureTeamProjectTeamOK(body *EnsureTeamResponseBody) *project.ProjectTeam {
@@ -614,21 +370,6 @@ func NewEnsureTeamProjectTeamOK(body *EnsureTeamResponseBody) *project.ProjectTe
 // NewEnsureTeamWindowBusy builds a project service ensure_team endpoint
 // window_busy error.
 func NewEnsureTeamWindowBusy(body *EnsureTeamWindowBusyResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewEnsureTeamConflict builds a project service ensure_team endpoint conflict
-// error.
-func NewEnsureTeamConflict(body *EnsureTeamConflictResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -726,122 +467,6 @@ func NewStopUnprocessable(body *StopUnprocessableResponseBody) *goa.ServiceError
 	return v
 }
 
-// NewStopConflict builds a project service stop endpoint conflict error.
-func NewStopConflict(body *StopConflictResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewAddAgentProjectAgentCreated builds a "project" service "add_agent"
-// endpoint result from a HTTP "Created" response.
-func NewAddAgentProjectAgentCreated(body *AddAgentResponseBody) *project.ProjectAgent {
-	v := &project.ProjectAgent{
-		ActorID:        *body.ActorID,
-		Role:           *body.Role,
-		CredentialFile: *body.CredentialFile,
-	}
-
-	return v
-}
-
-// NewAddAgentForbidden builds a project service add_agent endpoint forbidden
-// error.
-func NewAddAgentForbidden(body *AddAgentForbiddenResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewAddAgentUnprocessable builds a project service add_agent endpoint
-// unprocessable error.
-func NewAddAgentUnprocessable(body *AddAgentUnprocessableResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewAddAgentConflict builds a project service add_agent endpoint conflict
-// error.
-func NewAddAgentConflict(body *AddAgentConflictResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewRemoveAgentForbidden builds a project service remove_agent endpoint
-// forbidden error.
-func NewRemoveAgentForbidden(body *RemoveAgentForbiddenResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewRemoveAgentUnprocessable builds a project service remove_agent endpoint
-// unprocessable error.
-func NewRemoveAgentUnprocessable(body *RemoveAgentUnprocessableResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewRemoveAgentConflict builds a project service remove_agent endpoint
-// conflict error.
-func NewRemoveAgentConflict(body *RemoveAgentConflictResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
 // NewBrowserLinkResultCreated builds a "project" service "browser_link"
 // endpoint result from a HTTP "Created" response.
 func NewBrowserLinkResultCreated(body *BrowserLinkResponseBody) *project.BrowserLinkResult {
@@ -883,21 +508,6 @@ func NewBrowserLinkUnprocessable(body *BrowserLinkUnprocessableResponseBody) *go
 	return v
 }
 
-// NewBrowserLinkConflict builds a project service browser_link endpoint
-// conflict error.
-func NewBrowserLinkConflict(body *BrowserLinkConflictResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
 // NewExchangeBrowserLinkResultCreated builds a "project" service
 // "exchange_browser_link" endpoint result from a HTTP "Created" response.
 func NewExchangeBrowserLinkResultCreated(body *ExchangeBrowserLinkResponseBody) *project.ExchangeBrowserLinkResult {
@@ -926,21 +536,6 @@ func NewExchangeBrowserLinkForbidden(body *ExchangeBrowserLinkForbiddenResponseB
 // NewExchangeBrowserLinkUnprocessable builds a project service
 // exchange_browser_link endpoint unprocessable error.
 func NewExchangeBrowserLinkUnprocessable(body *ExchangeBrowserLinkUnprocessableResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewExchangeBrowserLinkConflict builds a project service
-// exchange_browser_link endpoint conflict error.
-func NewExchangeBrowserLinkConflict(body *ExchangeBrowserLinkConflictResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -996,26 +591,6 @@ func ValidateEnsureTeamResponseBody(body *EnsureTeamResponseBody) (err error) {
 	if body.Dialog != nil {
 		if !(*body.Dialog == "opened" || *body.Dialog == "already_open" || *body.Dialog == "not_needed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.dialog", *body.Dialog, []any{"opened", "already_open", "not_needed"}))
-		}
-	}
-	return
-}
-
-// ValidateAddAgentResponseBody runs the validations defined on
-// AddAgentResponseBody
-func ValidateAddAgentResponseBody(body *AddAgentResponseBody) (err error) {
-	if body.ActorID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actor_id", "body"))
-	}
-	if body.Role == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
-	}
-	if body.CredentialFile == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("credential_file", "body"))
-	}
-	if body.Role != nil {
-		if !(*body.Role == "guide" || *body.Role == "builder" || *body.Role == "test_writer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *body.Role, []any{"guide", "builder", "test_writer"}))
 		}
 	}
 	return
@@ -1093,57 +668,9 @@ func ValidateIdentityUnprocessableResponseBody(body *IdentityUnprocessableRespon
 	return
 }
 
-// ValidateIdentityConflictResponseBody runs the validations defined on
-// IdentityConflictResponseBody
-func ValidateIdentityConflictResponseBody(body *IdentityConflictResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
 // ValidateEnsureTeamWindowBusyResponseBody runs the validations defined on
 // EnsureTeamWindowBusyResponseBody
 func ValidateEnsureTeamWindowBusyResponseBody(body *EnsureTeamWindowBusyResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateEnsureTeamConflictResponseBody runs the validations defined on
-// EnsureTeamConflictResponseBody
-func ValidateEnsureTeamConflictResponseBody(body *EnsureTeamConflictResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -1302,174 +829,6 @@ func ValidateStopUnprocessableResponseBody(body *StopUnprocessableResponseBody) 
 	return
 }
 
-// ValidateStopConflictResponseBody runs the validations defined on
-// StopConflictResponseBody
-func ValidateStopConflictResponseBody(body *StopConflictResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateAddAgentForbiddenResponseBody runs the validations defined on
-// AddAgentForbiddenResponseBody
-func ValidateAddAgentForbiddenResponseBody(body *AddAgentForbiddenResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateAddAgentUnprocessableResponseBody runs the validations defined on
-// AddAgentUnprocessableResponseBody
-func ValidateAddAgentUnprocessableResponseBody(body *AddAgentUnprocessableResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateAddAgentConflictResponseBody runs the validations defined on
-// AddAgentConflictResponseBody
-func ValidateAddAgentConflictResponseBody(body *AddAgentConflictResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateRemoveAgentForbiddenResponseBody runs the validations defined on
-// RemoveAgentForbiddenResponseBody
-func ValidateRemoveAgentForbiddenResponseBody(body *RemoveAgentForbiddenResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateRemoveAgentUnprocessableResponseBody runs the validations defined on
-// RemoveAgentUnprocessableResponseBody
-func ValidateRemoveAgentUnprocessableResponseBody(body *RemoveAgentUnprocessableResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateRemoveAgentConflictResponseBody runs the validations defined on
-// RemoveAgentConflictResponseBody
-func ValidateRemoveAgentConflictResponseBody(body *RemoveAgentConflictResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
 // ValidateBrowserLinkForbiddenResponseBody runs the validations defined on
 // BrowserLinkForbiddenResponseBody
 func ValidateBrowserLinkForbiddenResponseBody(body *BrowserLinkForbiddenResponseBody) (err error) {
@@ -1518,30 +877,6 @@ func ValidateBrowserLinkUnprocessableResponseBody(body *BrowserLinkUnprocessable
 	return
 }
 
-// ValidateBrowserLinkConflictResponseBody runs the validations defined on
-// BrowserLinkConflictResponseBody
-func ValidateBrowserLinkConflictResponseBody(body *BrowserLinkConflictResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
 // ValidateExchangeBrowserLinkForbiddenResponseBody runs the validations
 // defined on ExchangeBrowserLinkForbiddenResponseBody
 func ValidateExchangeBrowserLinkForbiddenResponseBody(body *ExchangeBrowserLinkForbiddenResponseBody) (err error) {
@@ -1569,30 +904,6 @@ func ValidateExchangeBrowserLinkForbiddenResponseBody(body *ExchangeBrowserLinkF
 // ValidateExchangeBrowserLinkUnprocessableResponseBody runs the validations
 // defined on ExchangeBrowserLinkUnprocessableResponseBody
 func ValidateExchangeBrowserLinkUnprocessableResponseBody(body *ExchangeBrowserLinkUnprocessableResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateExchangeBrowserLinkConflictResponseBody runs the validations defined
-// on ExchangeBrowserLinkConflictResponseBody
-func ValidateExchangeBrowserLinkConflictResponseBody(body *ExchangeBrowserLinkConflictResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

@@ -15,11 +15,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	genprojectserver "github.com/goadesign/surla/gen/http/project/server"
 	"github.com/goadesign/surla/internal/abspath"
 )
 
@@ -47,8 +47,13 @@ type (
 		Team string `json:"team,omitempty"`
 		// Space is the most recently adopted local Herdr space.
 		Space string `json:"space,omitempty"`
-		// Agents maps each stable actor ID to its trusted role; secrets are separate files.
-		Agents map[string]string `json:"agents"`
+		// Agents maps each stable actor ID to its trusted role and working folder; secrets are separate files.
+		Agents map[string]agentRecord `json:"agents"`
+	}
+	// agentRecord is the sole persisted role and working-folder contract for one stable handle.
+	agentRecord struct {
+		Role   string `json:"role"`
+		Folder string `json:"folder"`
 	}
 	// Lock serializes CLI starts until an answering server owns the existing store lock.
 	Lock struct {
@@ -154,7 +159,7 @@ func (s *State) Initialize(owner string) (bool, error) {
 	if err := ln.Close(); err != nil {
 		return false, err
 	}
-	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Agents: map[string]string{}}
+	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Agents: map[string]agentRecord{}}
 	if err := s.save(); err != nil {
 		return false, err
 	}
@@ -251,14 +256,14 @@ func validateRecord(r Record, directory string) error {
 		return errors.New("invalid project space")
 	}
 	seenRoles := map[string]bool{}
-	for actor, role := range r.Agents {
-		if err := genprojectserver.ValidateAddAgentRequestBody(&genprojectserver.AddAgentRequestBody{ActorID: &actor, Role: &role}); err != nil {
+	for actor, agent := range r.Agents {
+		if err := validateAgent(actor, agent); err != nil {
 			return fmt.Errorf("invalid stored agent: %w", err)
 		}
-		if seenRoles[role] {
-			return fmt.Errorf("invalid stored role %q: more than one agent is registered", role)
+		if seenRoles[agent.Role] {
+			return fmt.Errorf("invalid stored role %q: more than one agent is registered", agent.Role)
 		}
-		seenRoles[role] = true
+		seenRoles[agent.Role] = true
 	}
 	return nil
 }
@@ -372,4 +377,18 @@ func readCredential(path string) (string, error) {
 		return "", errors.New("invalid credential file")
 	}
 	return string(raw), nil
+}
+
+// validateAgent checks the private stored contract without relying on removed HTTP methods.
+func validateAgent(actor string, agent agentRecord) error {
+	if !validTeamName(actor) {
+		return errors.New("agent handle must be a Chorus identifier of at most 32 characters")
+	}
+	if agent.Role != "guide" && agent.Role != "builder" && agent.Role != "test_writer" {
+		return errors.New("agent role must be guide, builder or test_writer")
+	}
+	if !filepath.IsAbs(agent.Folder) || filepath.Clean(agent.Folder) != agent.Folder || strings.ContainsRune(agent.Folder, 0) {
+		return errors.New("agent folder must be an absolute clean directory path")
+	}
+	return nil
 }

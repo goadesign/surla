@@ -24,7 +24,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"project (identity|ensure-team|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
+		"project (identity|ensure-team|stop|browser-link|exchange-browser-link)",
 		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
@@ -72,12 +72,6 @@ func ParseEndpoint(
 		projectEnsureTeamFlags = flag.NewFlagSet("ensure-team", flag.ExitOnError)
 
 		projectStopFlags = flag.NewFlagSet("stop", flag.ExitOnError)
-
-		projectAddAgentFlags    = flag.NewFlagSet("add-agent", flag.ExitOnError)
-		projectAddAgentBodyFlag = new(cliStringFlag)
-
-		projectRemoveAgentFlags       = flag.NewFlagSet("remove-agent", flag.ExitOnError)
-		projectRemoveAgentActorIDFlag = new(cliStringFlag)
 
 		projectBrowserLinkFlags = flag.NewFlagSet("browser-link", flag.ExitOnError)
 
@@ -188,8 +182,6 @@ func ParseEndpoint(
 		surlaReportTestsFinishedBodyFlag     = new(cliStringFlag)
 		surlaReportTestsFinishedChangeIDFlag = new(cliStringFlag)
 	)
-	projectAddAgentFlags.Var(projectAddAgentBodyFlag, "body", "")
-	projectRemoveAgentFlags.Var(projectRemoveAgentActorIDFlag, "actor-id", "Agent identifier.")
 	projectExchangeBrowserLinkFlags.Var(projectExchangeBrowserLinkBodyFlag, "body", "")
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -224,8 +216,6 @@ func ParseEndpoint(
 	projectIdentityFlags.Usage = projectIdentityUsage
 	projectEnsureTeamFlags.Usage = projectEnsureTeamUsage
 	projectStopFlags.Usage = projectStopUsage
-	projectAddAgentFlags.Usage = projectAddAgentUsage
-	projectRemoveAgentFlags.Usage = projectRemoveAgentUsage
 	projectBrowserLinkFlags.Usage = projectBrowserLinkUsage
 	projectExchangeBrowserLinkFlags.Usage = projectExchangeBrowserLinkUsage
 
@@ -311,12 +301,6 @@ func ParseEndpoint(
 
 			case "stop":
 				epf = projectStopFlags
-
-			case "add-agent":
-				epf = projectAddAgentFlags
-
-			case "remove-agent":
-				epf = projectRemoveAgentFlags
 
 			case "browser-link":
 				epf = projectBrowserLinkFlags
@@ -467,12 +451,6 @@ func ParseEndpoint(
 				endpoint = c.EnsureTeam()
 			case "stop":
 				endpoint = c.Stop()
-			case "add-agent":
-				endpoint = c.AddAgent()
-				data, err = projectc.BuildAddAgentPayload(projectAddAgentBodyFlag.value)
-			case "remove-agent":
-				endpoint = c.RemoveAgent()
-				data, err = projectc.BuildRemoveAgentPayload(projectRemoveAgentActorIDFlag.value)
 			case "browser-link":
 				endpoint = c.BrowserLink()
 			case "exchange-browser-link":
@@ -597,8 +575,6 @@ func projectUsage() {
 	fmt.Fprintln(os.Stderr, `    identity: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
 	fmt.Fprintln(os.Stderr, `    ensure-team: The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.`)
 	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.`)
-	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
-	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
 	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
 	fmt.Fprintln(os.Stderr, `    exchange-browser-link: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
 	fmt.Fprintln(os.Stderr)
@@ -651,42 +627,6 @@ func projectStopUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project stop")
-}
-
-func projectAddAgentUsage() {
-	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] project add-agent", os.Args[0])
-	fmt.Fprint(os.Stderr, " -body JSON")
-	fmt.Fprintln(os.Stderr)
-
-	// Description
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
-
-	// Flags list
-	fmt.Fprintln(os.Stderr, `    -body JSON: `)
-
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project add-agent --body '{\n      \"actor_id\": \"s5\",\n      \"role\": \"builder\"\n   }'")
-}
-
-func projectRemoveAgentUsage() {
-	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] project remove-agent", os.Args[0])
-	fmt.Fprint(os.Stderr, " -actor-id STRING")
-	fmt.Fprintln(os.Stderr)
-
-	// Description
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI revokes an agent and removes its private credential file before returning.`)
-
-	// Flags list
-	fmt.Fprintln(os.Stderr, `    -actor-id STRING: Agent identifier.`)
-
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project remove-agent --actor-id \"I3\"")
 }
 
 func projectBrowserLinkUsage() {

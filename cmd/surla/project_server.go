@@ -438,8 +438,6 @@ func projectClient(state *project.State) *genproject.Client {
 		managementEndpoint(state, client, (*genprojectclient.Client).Identity),
 		teamManagementEndpoint(state),
 		managementEndpoint(state, client, (*genprojectclient.Client).Stop),
-		managementEndpoint(state, client, (*genprojectclient.Client).AddAgent),
-		managementEndpoint(state, client, (*genprojectclient.Client).RemoveAgent),
 		managementEndpoint(state, client, (*genprojectclient.Client).BrowserLink),
 		managementEndpoint(state, client, (*genprojectclient.Client).ExchangeBrowserLink),
 	)
@@ -501,8 +499,6 @@ func managementEndpoint(
 				return nil, fmt.Errorf("project team could not be prepared; check Herdr and run surla again (HTTP %d)", doer.lastStatus)
 			case "forbidden":
 				return nil, fmt.Errorf("project management operation is not permitted (HTTP %d); run surla again", doer.lastStatus)
-			case "conflict":
-				return nil, fmt.Errorf("project management operation conflicts with current state (HTTP %d)", doer.lastStatus)
 			case "unprocessable":
 				return nil, fmt.Errorf("project management request could not be applied (HTTP %d)", doer.lastStatus)
 			}

@@ -19,8 +19,6 @@ import (
 	"testing"
 	"time"
 
-	genprojectclient "github.com/goadesign/surla/gen/http/project/client"
-	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/project"
 	"github.com/stretchr/testify/assert"
@@ -263,11 +261,8 @@ func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
 				}
 				assert.True(t, r.Header.Get("Authorization") == "Bearer "+expected)
 				if scenario == "changed" {
-					var body genprojectclient.AddAgentRequestBody
-					assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-					assert.NotNil(t, body.ActorID)
 					w.WriteHeader(http.StatusCreated)
-					_, err := io.WriteString(w, `{"actor_id":"guide","role":"guide","credential_file":"/private/guide"}`)
+					_, err := io.WriteString(w, `{"url":"http://127.0.0.1/views#link=value","expires_at":"2026-11-13T00:00:00Z"}`)
 					assert.NoError(t, err)
 					return
 				}
@@ -280,7 +275,7 @@ func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
 			if scenario == "changed" {
-				_, err = client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
+				_, err = client.BrowserLink(ctx)
 				require.NoError(t, err)
 			} else {
 				_, err = client.Identity(ctx)
@@ -482,8 +477,7 @@ func TestManagementCredentialStaysOutOfMetadata(t *testing.T) {
 	require.NoError(t, management.PublishRunning(os.Getpid(), "test"))
 	running, err := state.ReadRunning()
 	require.NoError(t, err)
-	principal := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
-	agent, err := management.AddAgent(principal, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
+	agent, err := management.StartAgents(t.Context())
 	require.NoError(t, err)
 	roster, err := json.Marshal(state.Record)
 	require.NoError(t, err)

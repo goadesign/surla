@@ -22,8 +22,6 @@ type Server struct {
 	Identity            http.Handler
 	EnsureTeam          http.Handler
 	Stop                http.Handler
-	AddAgent            http.Handler
-	RemoveAgent         http.Handler
 	BrowserLink         http.Handler
 	ExchangeBrowserLink http.Handler
 }
@@ -58,16 +56,12 @@ func New(
 			{"Identity", "GET", "/project/identity"},
 			{"EnsureTeam", "POST", "/project/team"},
 			{"Stop", "POST", "/project/stop"},
-			{"AddAgent", "POST", "/project/agents"},
-			{"RemoveAgent", "DELETE", "/project/agents/{actor_id}"},
 			{"BrowserLink", "POST", "/project/browser-link"},
 			{"ExchangeBrowserLink", "POST", "/project/browser-session"},
 		},
 		Identity:            NewIdentityHandler(e.Identity, mux, decoder, encoder, errhandler, formatter),
 		EnsureTeam:          NewEnsureTeamHandler(e.EnsureTeam, mux, decoder, encoder, errhandler, formatter),
 		Stop:                NewStopHandler(e.Stop, mux, decoder, encoder, errhandler, formatter),
-		AddAgent:            NewAddAgentHandler(e.AddAgent, mux, decoder, encoder, errhandler, formatter),
-		RemoveAgent:         NewRemoveAgentHandler(e.RemoveAgent, mux, decoder, encoder, errhandler, formatter),
 		BrowserLink:         NewBrowserLinkHandler(e.BrowserLink, mux, decoder, encoder, errhandler, formatter),
 		ExchangeBrowserLink: NewExchangeBrowserLinkHandler(e.ExchangeBrowserLink, mux, decoder, encoder, errhandler, formatter),
 	}
@@ -81,8 +75,6 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Identity = m(s.Identity)
 	s.EnsureTeam = m(s.EnsureTeam)
 	s.Stop = m(s.Stop)
-	s.AddAgent = m(s.AddAgent)
-	s.RemoveAgent = m(s.RemoveAgent)
 	s.BrowserLink = m(s.BrowserLink)
 	s.ExchangeBrowserLink = m(s.ExchangeBrowserLink)
 }
@@ -95,8 +87,6 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountIdentityHandler(mux, h.Identity)
 	MountEnsureTeamHandler(mux, h.EnsureTeam)
 	MountStopHandler(mux, h.Stop)
-	MountAddAgentHandler(mux, h.AddAgent)
-	MountRemoveAgentHandler(mux, h.RemoveAgent)
 	MountBrowserLinkHandler(mux, h.BrowserLink)
 	MountExchangeBrowserLinkHandler(mux, h.ExchangeBrowserLink)
 }
@@ -230,112 +220,6 @@ func NewStopHandler(
 		ctx = context.WithValue(ctx, goa.ServiceKey, "project")
 		var err error
 		res, err := endpoint(ctx, nil)
-		if err != nil {
-			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
-				errhandler(ctx, w, err)
-			}
-			return
-		}
-		if err := encodeResponse(ctx, w, res); err != nil {
-			if errhandler != nil {
-				errhandler(ctx, w, err)
-			}
-		}
-	})
-}
-
-// MountAddAgentHandler configures the mux to serve the "project" service
-// "add_agent" endpoint.
-func MountAddAgentHandler(mux goahttp.Muxer, h http.Handler) {
-	f, ok := h.(http.HandlerFunc)
-	if !ok {
-		f = func(w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(w, r)
-		}
-	}
-	mux.Handle("POST", "/project/agents", f)
-}
-
-// NewAddAgentHandler creates a HTTP handler which loads the HTTP request and
-// calls the "project" service "add_agent" endpoint.
-func NewAddAgentHandler(
-	endpoint goa.Endpoint,
-	mux goahttp.Muxer,
-	decoder func(*http.Request) goahttp.Decoder,
-	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
-	errhandler func(context.Context, http.ResponseWriter, error),
-	formatter func(ctx context.Context, err error) goahttp.Statuser,
-) http.Handler {
-	var (
-		decodeRequest  = DecodeAddAgentRequest(mux, decoder)
-		encodeResponse = EncodeAddAgentResponse(encoder)
-		encodeError    = EncodeAddAgentError(encoder, formatter)
-	)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "add_agent")
-		ctx = context.WithValue(ctx, goa.ServiceKey, "project")
-		payload, err := decodeRequest(r)
-		if err != nil {
-			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
-				errhandler(ctx, w, err)
-			}
-			return
-		}
-		res, err := endpoint(ctx, payload)
-		if err != nil {
-			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
-				errhandler(ctx, w, err)
-			}
-			return
-		}
-		if err := encodeResponse(ctx, w, res); err != nil {
-			if errhandler != nil {
-				errhandler(ctx, w, err)
-			}
-		}
-	})
-}
-
-// MountRemoveAgentHandler configures the mux to serve the "project" service
-// "remove_agent" endpoint.
-func MountRemoveAgentHandler(mux goahttp.Muxer, h http.Handler) {
-	f, ok := h.(http.HandlerFunc)
-	if !ok {
-		f = func(w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(w, r)
-		}
-	}
-	mux.Handle("DELETE", "/project/agents/{actor_id}", f)
-}
-
-// NewRemoveAgentHandler creates a HTTP handler which loads the HTTP request
-// and calls the "project" service "remove_agent" endpoint.
-func NewRemoveAgentHandler(
-	endpoint goa.Endpoint,
-	mux goahttp.Muxer,
-	decoder func(*http.Request) goahttp.Decoder,
-	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
-	errhandler func(context.Context, http.ResponseWriter, error),
-	formatter func(ctx context.Context, err error) goahttp.Statuser,
-) http.Handler {
-	var (
-		decodeRequest  = DecodeRemoveAgentRequest(mux, decoder)
-		encodeResponse = EncodeRemoveAgentResponse(encoder)
-		encodeError    = EncodeRemoveAgentError(encoder, formatter)
-	)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "remove_agent")
-		ctx = context.WithValue(ctx, goa.ServiceKey, "project")
-		payload, err := decodeRequest(r)
-		if err != nil {
-			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
-				errhandler(ctx, w, err)
-			}
-			return
-		}
-		res, err := endpoint(ctx, payload)
 		if err != nil {
 			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
 				errhandler(ctx, w, err)

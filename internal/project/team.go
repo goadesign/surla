@@ -35,9 +35,6 @@ type (
 		Host TeamHost
 		// RosterDirectory is Herdr's local launcher roster directory.
 		RosterDirectory string
-		// TestWriterFolder reads the test writer's existing project folder without creating it.
-		// An empty result means no working folder exists; errors stop team preparation.
-		TestWriterFolder func(context.Context) (string, error)
 		// Shell is the server login shell used by the shared running predicate.
 		Shell string
 		// Observer follows only the registered selection. Nil refuses all observations.
@@ -233,30 +230,17 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	if err != nil {
 		return nil, teamUnavailable(ctx, "save_team")
 	}
+	if _, err := s.registerAgent(teamName("guide", record.ID), agentRecord{Role: "guide", Folder: record.Directory}); err != nil {
+		return nil, teamUnavailable(ctx, "register_guide")
+	}
+	// Snapshot after admission: every registered actor survives this operation.
 	s.state.mu.Lock()
-	hasGuide := false
-	for _, role := range s.state.Record.Agents {
-		if role == "guide" {
-			hasGuide = true
-		}
+	agents := make(map[string]agentRecord, len(s.state.Record.Agents))
+	for actor, agent := range s.state.Record.Agents {
+		agents[actor] = agent
 	}
 	s.state.mu.Unlock()
-	if !hasGuide {
-		if _, err := s.addAgent(&genproject.AddAgentPayload{ActorID: teamName("guide", record.ID), Role: "guide"}); err != nil {
-			return nil, teamUnavailable(ctx, "register_guide")
-		}
-	}
-	// Snapshot the registry after guide admission; every registered actor survives this operation.
-	s.state.mu.Lock()
-	agents := make(map[string]string, len(s.state.Record.Agents))
-	for actor, role := range s.state.Record.Agents {
-		agents[actor] = role
-	}
-	s.state.mu.Unlock()
-	roles, err := s.registeredTeamRoles(ctx, agents)
-	if err != nil {
-		return nil, teamUnavailable(ctx, "role_folders")
-	}
+	roles := registeredTeamRoles(agents)
 	roster, err := s.teamRoster(roles)
 	if err != nil {
 		return nil, teamUnavailable(ctx, "roster")
@@ -294,7 +278,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	missing := false
 	for _, role := range roles {
 		running := runningHandles[role.Handle]
-		result.Roles = append(result.Roles, &genproject.ProjectTeamRole{Role: agents[role.Handle], Handle: role.Handle, Running: running})
+		result.Roles = append(result.Roles, &genproject.ProjectTeamRole{Role: agents[role.Handle].Role, Handle: role.Handle, Running: running})
 		if listed[role.Handle] && !running {
 			missing = true
 		}
@@ -316,12 +300,11 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	return result, nil
 }
 
-// registeredTeamRoles reads existing role folders in the canonical guide/builder/test-writer order.
-// The role registry guarantees at most one actor per trusted role; actor IDs remain unchanged.
-func (s *Server) registeredTeamRoles(ctx context.Context, agents map[string]string) ([]launcherRole, error) {
+// registeredTeamRoles derives current launcher text from each saved role and folder.
+func registeredTeamRoles(agents map[string]agentRecord) []launcherRole {
 	byRole := make(map[string]string, len(agents))
-	for actor, role := range agents {
-		byRole[role] = actor
+	for actor, agent := range agents {
+		byRole[agent.Role] = actor
 	}
 	roles := make([]launcherRole, 0, len(agents))
 	for _, role := range []string{"guide", "builder", "test_writer"} {
@@ -329,24 +312,23 @@ func (s *Server) registeredTeamRoles(ctx context.Context, agents map[string]stri
 		if !exists {
 			continue
 		}
-		folder := s.state.Record.Directory
-		title, message := "Guide", "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."
-		switch role {
-		case "builder":
-			title = "Builder"
-			message = "Use your surla connection, starting with the surla://golden-path guidance resource. Build and verify the agreed change in this project. Only the user confirms intent and approves results on the views page."
-		case "test_writer":
-			title = "Test writer"
-			message = "Use your surla connection, starting with the surla://golden-path guidance resource. Work on this project's tests in this folder. Only the user confirms intent and approves results on the views page."
-			var err error
-			folder, err = s.team.dependencies.TestWriterFolder(ctx)
-			if err != nil {
-				return nil, err
-			}
-		}
-		roles = append(roles, launcherRole{Role: role, Title: title, Handle: handle, Folder: folder, FirstMessage: message})
+		title, message := roleFirstMessage(role)
+		roles = append(roles, launcherRole{Role: role, Title: title, Handle: handle, Folder: agents[handle].Folder, FirstMessage: message})
 	}
-	return roles, nil
+	return roles
+}
+
+// roleFirstMessage owns the fixed product instructions; messages never enter saved state.
+func roleFirstMessage(role string) (string, string) {
+	switch role {
+	case "guide":
+		return "Guide", "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."
+	case "builder":
+		return "Builder", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_builder_assignments to find the build, then read get_builder_assignment. Build the agreed revision in this working folder, use generate_code and check_project, and commit. Read the assignment before verification: verify_change is refused until its tests are accepted. Only the user confirms intent and approves results on the views page."
+	case "test_writer":
+		return "Test writer", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_test_writer_assignments to find the build, then read get_test_writer_assignment. Implement one test per required entry inside the test module of the working folder the assignment names. Change nothing outside that module. Use report_tests_finished, then read get_test_writer_assignment again for the verdict. Only the user confirms intent and approves results on the views page."
+	}
+	panic("unregistered team role")
 }
 
 // teamRoster validates folders and credentials before constructing the complete closed launcher schema.

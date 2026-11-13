@@ -71,12 +71,13 @@ func newSupervisionFixture(t *testing.T) (*teamSupervisor, *supervisionFixture, 
 	t.Helper()
 	state := testState(t)
 	state.Record.Team, state.Record.Space = "example-team", "space"
-	state.Record.Agents = map[string]string{"builder-example": "builder"}
 	f := &supervisionFixture{outcome: "sent"}
 	f.terminal = TeamTerminal{Address: "terminal", State: "live", Reported: true, Status: &TeamStatus{State: "idle"}, Foreground: &TeamForeground{Argv: []string{"codex"}}, Labels: map[string]string{"chorus.project": state.Record.Directory, "herdr.space": "space", "chorus.handle": "builder-example"}}
 	deps := fixtureTeamDependencies(state)
 	deps.Observer, deps.Sender = f, f
 	s, err := NewServer(state, func() {}, deps)
+	require.NoError(t, err)
+	_, err = registerTestAgent(s, "builder-example", "builder", state.Record.Directory)
 	require.NoError(t, err)
 	now := time.Unix(1000, 0)
 	s.now = func() time.Time { return now }

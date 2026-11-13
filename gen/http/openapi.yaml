@@ -1342,124 +1342,6 @@ paths:
                             timeout: false
             schemes:
                 - http
-    /project/agents:
-        post:
-            tags:
-                - project
-            summary: add_agent project
-            description: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.
-            operationId: project#add_agent
-            parameters:
-                - name: add_agent_request_body
-                  in: body
-                  required: true
-                  schema:
-                    $ref: '#/definitions/ProjectAddAgentRequestBody'
-                    required:
-                        - actor_id
-                        - role
-            responses:
-                "201":
-                    description: Created response.
-                    schema:
-                        $ref: '#/definitions/ProjectAgent'
-                        required:
-                            - actor_id
-                            - role
-                            - credential_file
-                "403":
-                    description: 'forbidden: The trusted credential cannot perform this operation.'
-                    schema:
-                        $ref: '#/definitions/ProjectAddAgentForbiddenResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: forbidden
-                            temporary: false
-                            timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    schema:
-                        $ref: '#/definitions/ProjectAddAgentConflictResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: conflict
-                            temporary: false
-                            timeout: false
-                "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
-                    schema:
-                        $ref: '#/definitions/ProjectAddAgentUnprocessableResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: unprocessable
-                            temporary: false
-                            timeout: false
-            schemes:
-                - http
-    /project/agents/{actor_id}:
-        delete:
-            tags:
-                - project
-            summary: remove_agent project
-            description: The CLI revokes an agent and removes its private credential file before returning.
-            operationId: project#remove_agent
-            parameters:
-                - name: actor_id
-                  in: path
-                  description: Agent identifier.
-                  required: true
-                  type: string
-                  pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
-            responses:
-                "204":
-                    description: No Content response.
-                "403":
-                    description: 'forbidden: The trusted credential cannot perform this operation.'
-                    schema:
-                        $ref: '#/definitions/ProjectRemoveAgentForbiddenResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: forbidden
-                            temporary: false
-                            timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    schema:
-                        $ref: '#/definitions/ProjectRemoveAgentConflictResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: conflict
-                            temporary: false
-                            timeout: false
-                "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
-                    schema:
-                        $ref: '#/definitions/ProjectRemoveAgentUnprocessableResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: unprocessable
-                            temporary: false
-                            timeout: false
-            schemes:
-                - http
     /project/browser-link:
         post:
             tags:
@@ -1487,20 +1369,8 @@ paths:
                             name: forbidden
                             temporary: false
                             timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    schema:
-                        $ref: '#/definitions/ProjectBrowserLinkConflictResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: conflict
-                            temporary: false
-                            timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     schema:
                         $ref: '#/definitions/ProjectBrowserLinkUnprocessableResponseBody'
                     examples:
@@ -1547,20 +1417,8 @@ paths:
                             name: forbidden
                             temporary: false
                             timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    schema:
-                        $ref: '#/definitions/ProjectExchangeBrowserLinkConflictResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: conflict
-                            temporary: false
-                            timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     schema:
                         $ref: '#/definitions/ProjectExchangeBrowserLinkUnprocessableResponseBody'
                     examples:
@@ -1601,20 +1459,8 @@ paths:
                             name: forbidden
                             temporary: false
                             timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    schema:
-                        $ref: '#/definitions/ProjectIdentityConflictResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: conflict
-                            temporary: false
-                            timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     schema:
                         $ref: '#/definitions/ProjectIdentityUnprocessableResponseBody'
                     examples:
@@ -1649,20 +1495,8 @@ paths:
                             name: forbidden
                             temporary: false
                             timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    schema:
-                        $ref: '#/definitions/ProjectStopConflictResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: conflict
-                            temporary: false
-                            timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     schema:
                         $ref: '#/definitions/ProjectStopUnprocessableResponseBody'
                     examples:
@@ -1705,19 +1539,19 @@ paths:
                             temporary: false
                             timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
+                    description: 'window_busy: Another Herdr dialog is open; close it and run surla again.'
                     schema:
-                        $ref: '#/definitions/ProjectEnsureTeamConflictResponseBody'
+                        $ref: '#/definitions/ProjectEnsureTeamWindowBusyResponseBody'
                     examples:
                         application/vnd.goa.error:
                             fault: false
                             id: 123abc
                             message: parameter 'p' must be an integer
-                            name: conflict
+                            name: window_busy
                             temporary: false
                             timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     schema:
                         $ref: '#/definitions/ProjectEnsureTeamUnprocessableResponseBody'
                     examples:
@@ -6631,229 +6465,6 @@ definitions:
         required:
             - change_id
             - request_revision
-    ProjectAddAgentConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectAddAgentForbiddenResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: false
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: false
-        description: Error response result type (default view)
-        example:
-            fault: false
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: false
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectAddAgentRequestBody:
-        title: ProjectAddAgentRequestBody
-        type: object
-        properties:
-            actor_id:
-                type: string
-                description: Agent identifier.
-                example: s5
-                pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
-            role:
-                type: string
-                description: Agent purpose.
-                example: builder
-                enum:
-                    - guide
-                    - builder
-                    - test_writer
-        example:
-            actor_id: s5
-            role: builder
-        required:
-            - actor_id
-            - role
-    ProjectAddAgentUnprocessableResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: true
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: false
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: true
-            timeout: false
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectAgent:
-        title: ProjectAgent
-        type: object
-        properties:
-            actor_id:
-                type: string
-                description: Agent identity, separate from resource ownership.
-                example: Dignissimos aut.
-            credential_file:
-                type: string
-                description: Private credential file for the launcher; never put its contents in arguments or labels.
-                example: Molestiae sint.
-            role:
-                type: string
-                description: Trusted agent purpose.
-                example: builder
-                enum:
-                    - guide
-                    - builder
-                    - test_writer
-        example:
-            actor_id: Dignissimos aut.
-            credential_file: Molestiae sint.
-            role: builder
-        required:
-            - actor_id
-            - role
-            - credential_file
-    ProjectBrowserLinkConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: false
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: false
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
     ProjectBrowserLinkForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -6947,49 +6558,6 @@ definitions:
         description: Error response result type (default view)
         example:
             fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: true
-            timeout: false
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectEnsureTeamConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: false
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: true
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: false
-        description: Error response result type (default view)
-        example:
-            fault: false
             id: 123abc
             message: parameter 'p' must be an integer
             name: bad_request
@@ -7174,49 +6742,6 @@ definitions:
             - temporary
             - timeout
             - fault
-    ProjectExchangeBrowserLinkConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
     ProjectExchangeBrowserLinkForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -7353,49 +6878,6 @@ definitions:
             - project_id
             - directory
             - owner
-    ProjectIdentityConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: true
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: true
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
     ProjectIdentityForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -7475,178 +6957,6 @@ definitions:
             name: bad_request
             temporary: true
             timeout: false
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectRemoveAgentConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: false
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: true
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: false
-        description: Error response result type (default view)
-        example:
-            fault: false
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: true
-            timeout: false
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectRemoveAgentForbiddenResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectRemoveAgentUnprocessableResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
-    ProjectStopConflictResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: true
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: true
-            timeout: true
         required:
             - name
             - id

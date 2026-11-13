@@ -13078,133 +13078,6 @@ paths:
                                 name: live_target_unavailable
                                 temporary: false
                                 timeout: false
-    /project/agents:
-        post:
-            tags:
-                - project
-            summary: add_agent project
-            description: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.
-            operationId: project#add_agent
-            requestBody:
-                description: Request body for add_agent.
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/AddAgentRequestBody'
-                        example:
-                            actor_id: s5
-                            role: builder
-            responses:
-                "201":
-                    description: Created response.
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ProjectAgent'
-                            example:
-                                actor_id: Dignissimos aut.
-                                credential_file: Molestiae sint.
-                                role: builder
-                "403":
-                    description: 'forbidden: The trusted credential cannot perform this operation.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: forbidden
-                                temporary: false
-                                timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: conflict
-                                temporary: false
-                                timeout: false
-                "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: unprocessable
-                                temporary: false
-                                timeout: false
-    /project/agents/{actor_id}:
-        delete:
-            tags:
-                - project
-            summary: remove_agent project
-            description: The CLI revokes an agent and removes its private credential file before returning.
-            operationId: project#remove_agent
-            parameters:
-                - name: actor_id
-                  in: path
-                  description: Agent identifier.
-                  required: true
-                  schema:
-                    type: string
-                    description: Agent identifier.
-                    example: I3
-                    pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
-                  example: I3
-            responses:
-                "204":
-                    description: No Content response.
-                "403":
-                    description: 'forbidden: The trusted credential cannot perform this operation.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: forbidden
-                                temporary: false
-                                timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: conflict
-                                temporary: false
-                                timeout: false
-                "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: unprocessable
-                                temporary: false
-                                timeout: false
     /project/browser-link:
         post:
             tags:
@@ -13235,21 +13108,8 @@ paths:
                                 name: forbidden
                                 temporary: false
                                 timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: conflict
-                                temporary: false
-                                timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -13299,21 +13159,8 @@ paths:
                                 name: forbidden
                                 temporary: false
                                 timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: conflict
-                                temporary: false
-                                timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -13356,21 +13203,8 @@ paths:
                                 name: forbidden
                                 temporary: false
                                 timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: conflict
-                                temporary: false
-                                timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -13405,21 +13239,8 @@ paths:
                                 name: forbidden
                                 temporary: false
                                 timeout: false
-                "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: conflict
-                                temporary: false
-                                timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -13473,7 +13294,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier or trusted role already exists.'
+                    description: 'window_busy: Another Herdr dialog is open; close it and run surla again.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -13482,11 +13303,11 @@ paths:
                                 fault: false
                                 id: 123abc
                                 message: parameter 'p' must be an integer
-                                name: conflict
+                                name: window_busy
                                 temporary: false
                                 timeout: false
                 "422":
-                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    description: 'unprocessable: The requested credential exchange does not exist or is invalid.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -16166,29 +15987,6 @@ paths:
                                 timeout: false
 components:
     schemas:
-        AddAgentRequestBody:
-            type: object
-            properties:
-                actor_id:
-                    type: string
-                    description: Agent identifier.
-                    example: s5
-                    pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
-                role:
-                    type: string
-                    description: Agent purpose.
-                    example: builder
-                    enum:
-                        - guide
-                        - builder
-                        - test_writer
-            description: Request body for add_agent.
-            example:
-                actor_id: s5
-                role: builder
-            required:
-                - actor_id
-                - role
         AgentPolicyItem:
             type: object
             properties:
@@ -20348,33 +20146,6 @@ components:
             required:
                 - change_id
                 - request_revision
-        ProjectAgent:
-            type: object
-            properties:
-                actor_id:
-                    type: string
-                    description: Agent identity, separate from resource ownership.
-                    example: Dignissimos aut.
-                credential_file:
-                    type: string
-                    description: Private credential file for the launcher; never put its contents in arguments or labels.
-                    example: Molestiae sint.
-                role:
-                    type: string
-                    description: Trusted agent purpose.
-                    example: builder
-                    enum:
-                        - guide
-                        - builder
-                        - test_writer
-            example:
-                actor_id: Dignissimos aut.
-                credential_file: Molestiae sint.
-                role: builder
-            required:
-                - actor_id
-                - role
-                - credential_file
         ProjectIdentity:
             type: object
             properties:

@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/project"
 	"github.com/stretchr/testify/assert"
@@ -188,10 +187,10 @@ func TestHC(t *testing.T) {
 	assert.Nil(t, terminal.Parent)
 	management := running.ManagementCredential
 	assert.False(t, strings.Contains(string(metadata), management), "management credential must not appear in terminal metadata")
-	// Normal start already registered the guide; a builder preserves the distinct-agent credential proof.
-	actor, err := client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "builder", Role: "builder"})
+	// Normal start registered the guide through its owner.
+	team, err := client.EnsureTeam(ctx)
 	require.NoError(t, err)
-	credential, err := os.ReadFile(actor.CredentialFile)
+	credential, err := os.ReadFile(state.AgentFile(team.Roles[0].Handle))
 	require.NoError(t, err)
 	assert.False(t, strings.Contains(string(metadata), string(credential)), "agent credential must not appear in terminal metadata")
 	// Inspect current metadata and server output after agent issuance, never printing credentials.

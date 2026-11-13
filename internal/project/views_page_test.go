@@ -281,7 +281,7 @@ func (vp *viewsProject) restart() {
 // agent adds an agent in role to the project and returns its credential.
 func (vp *viewsProject) agent(t *testing.T, role string) string {
 	t.Helper()
-	agent, err := vp.server.Load().AddAgent(vp.management(), &genproject.AddAgentPayload{ActorID: role, Role: role})
+	agent, err := registerTestAgent(vp.server.Load(), role, role, vp.server.Load().state.Record.Directory)
 	require.NoError(t, err)
 	credential, err := os.ReadFile(agent.CredentialFile)
 	require.NoError(t, err)

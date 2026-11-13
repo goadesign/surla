@@ -124,7 +124,8 @@ func TestTeamAssignmentSetProjection(t *testing.T) {
 	for _, unused := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ordinary project", true: "stored evaluator"}[unused], func(t *testing.T) {
 			o, f, now := newSupervisionFixture(t)
-			o.server.state.Record.Agents["tests-example"] = "test_writer"
+			_, err := registerTestAgent(o.server, "tests-example", "test_writer", o.server.state.Record.Directory)
+			require.NoError(t, err)
 			o.syncSelection(o.server.teamSelection())
 			o.assignments(t.Context(), func(context.Context) ([]controlplane.AssignmentGeneration, error) {
 				owed := []controlplane.AssignmentGeneration{{Role: "builder", Generation: "one"}}
@@ -218,9 +219,8 @@ func TestTeamStreamStallBoundary(t *testing.T) {
 	for _, age := range []time.Duration{teamStreamStallBound - time.Nanosecond, teamStreamStallBound, teamStreamStallBound + time.Nanosecond} {
 		t.Run(age.String(), func(t *testing.T) {
 			o, f, now := newSupervisionFixture(t)
-			o.server.state.mu.Lock()
-			o.server.state.Record.Agents["guide-example"] = "guide"
-			o.server.state.mu.Unlock()
+			_, err := registerTestAgent(o.server, "guide-example", "guide", o.server.state.Record.Directory)
+			require.NoError(t, err)
 			o.syncSelection(o.server.teamSelection())
 			builder := f.terminal
 			guide := TeamTerminal{Address: "guide-terminal", State: "live", Reported: true, Status: &TeamStatus{State: "idle"}, Foreground: &TeamForeground{Argv: []string{"codex"}}, Labels: map[string]string{"chorus.project": o.selection.Root, "herdr.space": o.selection.Space, "chorus.handle": "guide-example"}}
