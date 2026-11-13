@@ -23,7 +23,7 @@ const (
 	compositionHeader = "\n\n## Change Card decision views\n\n" +
 		"`propose_change` and `revise_change` accept an optional `analysis.ui_composition`: an OpenUI Lang program built only from the components below that helps the requester decide the card's open questions. " +
 		"Refer to an ambiguity or example only by its 1-based position in the `ambiguities` or `examples` list you send (1 is the first one you list); never invent identifiers. " +
-		"Surla saves the program unchanged without checking it, and the checkpoint viewer validates and renders it. Omit `ui_composition` when a plain card is clearer.\n\n"
+		"Surla saves the program unchanged without checking it, and the views page validates and renders it. Omit `ui_composition` when a plain card is clearer.\n\n"
 )
 
 var (
@@ -33,9 +33,9 @@ var (
 	playbookMarkdown string
 
 	// decisionCatalog holds the embedded contents of decision_catalog.md: the
-	// description of the OpenUI decision components the checkpoint viewer can
-	// render. The checkpoint UI build writes it from the same component
-	// definitions the viewer renders with; it is not edited by hand.
+	// description of the OpenUI decision components the views page can
+	// render. The ui/checkpoint build writes it from the same component
+	// definitions the page renders with; it is not edited by hand.
 	//
 	//go:embed decision_catalog.md
 	decisionCatalog string

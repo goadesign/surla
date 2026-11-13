@@ -88,7 +88,6 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	require.NoError(t, err)
 	index := slices.IndexFunc(tools.Tools, func(tool *genmcpsurla.ToolInfo) bool { return tool.Name == "generate_code" })
 	require.NotEqual(t, -1, index)
-	assert.Empty(t, tools.Tools[index].Meta, "generation leaves an open checkpoint view undisturbed")
 	args, err := gensurla.EncodeGenerateCodePayload(&gensurla.GenerateCodePayload{})
 	require.NoError(t, err)
 	call, err := mcpClient.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: "generate_code", Arguments: args})

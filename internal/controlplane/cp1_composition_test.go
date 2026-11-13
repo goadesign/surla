@@ -86,7 +86,7 @@ func TestProposeChangeCarriesAnyCallerCompositionVerbatim(t *testing.T) {
 			card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
 				ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(tc.program),
 			})
-			require.NoError(t, err, "a composition the viewer cannot use must not cost the operator the analysis")
+			require.NoError(t, err, "a composition the views page cannot use must not cost the operator the analysis")
 			require.Len(t, card.Ambiguities, 1, "the authoritative questions survive")
 			require.Len(t, card.Examples, 1, "the authoritative examples survive")
 			if tc.program == nil {

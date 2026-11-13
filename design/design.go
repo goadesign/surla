@@ -178,7 +178,7 @@ var ModelConfigResult = Type("ModelConfigResult", func() {
 // Change Card revision.
 var UICompositionItem = Type("UICompositionItem", func() {
 	Description("Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.")
-	Attribute("program", String, "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.")
+	Attribute("program", String, "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.")
 	Attribute("composed_for_revision", String, "request_revision of the Change Card this program was composed for.")
 	Required("program", "composed_for_revision")
 })

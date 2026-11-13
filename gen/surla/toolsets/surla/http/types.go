@@ -953,8 +953,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string `json:"ui_composition,omitempty"`
 	}
 	// CP1RevisionAnalysisExampleTransport is the internal JSON transport type for CP1RevisionAnalysisExampleTransport.
@@ -1006,8 +1006,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string `json:"ui_composition,omitempty"`
 	}
 	// ChangeListItemTransport is the internal JSON transport type for ChangeListItemTransport.
@@ -1233,9 +1233,9 @@ type (
 	// the public tool type.
 	UICompositionItemTransport struct {
 		// OpenUI Lang program from the analysis's ui_composition, exactly as the
-		// caller sent it. The server does not check it; the checkpoint viewer
-		// validates it and shows its error state, with the rest of the card still
-		// usable, when the program is not a valid composition.
+		// caller sent it. The server does not check it; the views page validates it
+		// and shows its error state, with the rest of the card still usable, when the
+		// program is not a valid composition.
 		Program *string `json:"program"`
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision *string `json:"composed_for_revision"`

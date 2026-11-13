@@ -766,8 +766,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string
 	}
 	// CP1AnalysisAmbiguity is a nested type used by the generated JSON contract.
@@ -818,8 +818,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string
 	}
 	// CP1RevisionAnalysisExample is a nested type used by the generated JSON contract.
@@ -1023,9 +1023,9 @@ type (
 	// UICompositionItem is a nested type used by the generated JSON contract.
 	UICompositionItem = struct {
 		// OpenUI Lang program from the analysis's ui_composition, exactly as the
-		// caller sent it. The server does not check it; the checkpoint viewer
-		// validates it and shows its error state, with the rest of the card still
-		// usable, when the program is not a valid composition.
+		// caller sent it. The server does not check it; the views page validates it
+		// and shows its error state, with the rest of the card still usable, when the
+		// program is not a valid composition.
 		Program string
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision string

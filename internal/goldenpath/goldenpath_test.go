@@ -14,7 +14,7 @@ import (
 // surla://golden-path resource starts with the embedded GOLDEN_PATH.md
 // verbatim and ends with the generated decision catalog verbatim, so a caller
 // composing an analysis's ui_composition reads the same component list the
-// checkpoint viewer renders with.
+// views page renders with.
 func TestResourceMarkdownServesThePlaybookThenTheDecisionCatalog(t *testing.T) {
 	t.Parallel()
 

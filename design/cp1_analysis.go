@@ -85,7 +85,7 @@ var CP1Analysis = Type("CP1Analysis", func() {
 	Attribute("preserved_behaviors", ArrayOfRequired(String, func() {
 		Pattern(nonBlank)
 	}), "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.")
-	Attribute("ui_composition", String, "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.")
+	Attribute("ui_composition", String, "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the views page validates and renders it. Omit it when a plain card is clearer.")
 	Required("summary", "ambiguities", "examples", "preserved_behaviors")
 })
 
@@ -106,6 +106,6 @@ var CP1RevisionAnalysis = Type("CP1RevisionAnalysis", func() {
 	Attribute("preserved_behaviors", ArrayOfRequired(String, func() {
 		Pattern(nonBlank)
 	}), "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.")
-	Attribute("ui_composition", String, "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.")
+	Attribute("ui_composition", String, "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the views page validates and renders it. Omit it when a plain card is clearer.")
 	Required("summary", "ambiguities", "examples", "removed_example_ids", "preserved_behaviors")
 })

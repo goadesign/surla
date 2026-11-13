@@ -248,9 +248,9 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	}
 }
 
-// TestTraceToolEncodesEmptyDataWithoutUI verifies the generated data-tool
+// TestTraceToolEncodesEmptyData verifies the generated list_traces tool
 // contract without relying on HTTP's normalization of nil collections.
-func TestTraceToolEncodesEmptyDataWithoutUI(t *testing.T) {
+func TestTraceToolEncodesEmptyData(t *testing.T) {
 	t.Parallel()
 	tp := sdktrace.NewTracerProvider()
 	t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
@@ -262,10 +262,9 @@ func TestTraceToolEncodesEmptyDataWithoutUI(t *testing.T) {
 	for _, tool := range tools.Tools {
 		if tool.Name == "list_traces" {
 			found = true
-			assert.NotContains(t, string(tool.Meta), "resourceUri")
 		}
 	}
-	require.True(t, found, "the data tool must be discoverable without opening a viewer")
+	require.True(t, found, "MCP ToolsList must include list_traces")
 	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	result, err := adapter.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: "list_traces", Arguments: json.RawMessage(`{}`)})
 	require.NoError(t, err)

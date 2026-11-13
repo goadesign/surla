@@ -26,7 +26,7 @@ import (
 )
 
 // TestReviseChangeOverHTTPAndMCP verifies revise_change over the Go service,
-// HTTP (`POST /changes/revise`) and MCP: the tool links the checkpoint viewer;
+// HTTP (`POST /changes/revise`) and MCP: the tool is listed;
 // unknown, foreign and stale cards are refused; an analysis that repeats an
 // option or does not account for every current example exactly once is
 // unprocessable and leaves the saved card file byte for byte unchanged; and a
