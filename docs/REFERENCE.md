@@ -259,6 +259,18 @@ outside the sandbox:
    - `could_not_run`: a cause the test writer cannot fix, with the user's
      step.
 
+   Surla never shows the output of the dependency download, which may hold
+   proxy settings, so it decides whose failure a failed download is from what
+   it can compare. When the test module's `go.mod` and `go.sum` are the
+   project's own, or the project's own cannot be downloaded either, the
+   check could not run, and the step has the user run the download where its
+   output can be read. When the project's own download and only the test
+   writer's changed ones do not, it is the test writer's finding. A module
+   the test writer added that exists but cannot be reached from where Surla
+   runs reads the same as one that does not exist, so that finding also says
+   when to tell the user. A build start decides the same way when generation
+   fails while loading the module's dependencies.
+
 The check runs in the project's working-copy turn, one judgment at a time, so
 a build start during a judgment is refused as busy. A newer report during a
 judgment makes the server discard that judgment's verdict and judge the newer

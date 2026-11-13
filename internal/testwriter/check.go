@@ -75,6 +75,10 @@ type (
 		// and candidate.Output. Tests wrap them with stand-ins that sleep.
 		build func(context.Context, candidate.BuildSpec, func(*exec.Cmd) error) error
 		list  func(context.Context, candidate.Artifact, candidate.Spec, int) ([]byte, error)
+		// download downloads, with the go command goBin, the dependencies of
+		// the module in dir: downloadDependencies, for which tests stand in
+		// so that they need no network.
+		download func(ctx context.Context, goBin, dir string) error
 		// buildLimit and listLimit bound those two steps: buildProgramLimit
 		// and listTestsLimit, which tests shorten.
 		buildLimit, listLimit time.Duration
@@ -138,7 +142,8 @@ const (
 	// does not compile or does not declare exactly one evaluation suite.
 	FindingGeneration FindingKind = "generation"
 	// FindingDependencies means the suite module's dependencies could not be
-	// downloaded from its go.mod and go.sum.
+	// downloaded from its go.mod and go.sum, and the cause may be in the
+	// author's changes to them (dependencyFailure).
 	FindingDependencies FindingKind = "dependencies"
 	// FindingBuild means the suite command does not compile, for example
 	// because a required hook method is missing. The message quotes the
@@ -210,6 +215,15 @@ var (
 	ErrWriteGenerated = errors.New("write the generated folder")
 )
 
+// ErrDependencies reports that the test module's dependencies could not be
+// downloaded where Surla runs, for a cause that is not in the author's
+// changes: the module's go.mod and go.sum are the ones of the copy's base, or
+// the base's own could not be downloaded either (dependencyFailure). The
+// download's output is withheld, so the error's text holds only what Surla
+// decided and the base commit; the user finds the cause by running the
+// download where Surla runs.
+var ErrDependencies = errors.New("the test module's dependencies could not be downloaded where Surla runs")
+
 // absolutePath matches an absolute file path where a word starts: a slash at
 // the start of a line or after a space, a quote, a parenthesis, a bracket, an
 // equals sign or a comma, followed by a name character, up to the next
@@ -235,6 +249,7 @@ func NewChecker(evaluator *designeval.Evaluator, workDir string) *Checker {
 		workDir:    workDir,
 		build:      candidate.Build,
 		list:       candidate.Output,
+		download:   downloadDependencies,
 		buildLimit: buildProgramLimit,
 		listLimit:  listTestsLimit,
 	}
@@ -286,8 +301,11 @@ func WithoutAbsolutePaths(text string) string {
 // the generator failed (the context ended, the platform has no sandbox, which
 // also wraps candidate.ErrIsolationUnavailable, or it failed while preparing
 // its own files), and ErrWriteGenerated, when the generated folder could not
-// be written. A staging folder that an interrupted publication left in the
-// module is removed and never a failure (publish).
+// be written. A third is ErrDependencies: generation failed while loading the
+// module's dependencies, and they cannot be downloaded where Surla runs for a
+// cause outside the author's changes (loadFailure). A staging folder that an
+// interrupted publication left in the module is removed and never a failure
+// (publish).
 func (c *Checker) Prepare(
 	ctx context.Context, wc WorkingCopy, s Suite, stories []designeval.StorySummary,
 ) ([]designeval.StoryScenario, error) {
@@ -298,7 +316,8 @@ func (c *Checker) Prepare(
 	if err != nil {
 		return nil, err
 	}
-	return c.generate(ctx, filepath.Dir(wc.dir), filepath.Base(wc.dir), path.Join(filepath.ToSlash(rel), s.Module), s, stories)
+	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
+	return c.generate(ctx, wc, filepath.Dir(wc.dir), filepath.Base(wc.dir), modulePath, s, stories)
 }
 
 // Check judges the working copy against stories without trusting its author.
@@ -322,8 +341,10 @@ func (c *Checker) Prepare(
 // (WithoutAbsolutePaths). The working copy itself is not written. Errors are
 // failures that say nothing about the author's work: the platform has no
 // sandbox (candidate.ErrIsolationUnavailable), ctx ended, the copy and the
-// project share no history (ErrNoCommonBase), or git, the file system or the
-// build's process cleanup failed. ctx bounds the whole check.
+// project share no history (ErrNoCommonBase), the module's dependencies
+// cannot be downloaded where Surla runs for a cause outside the author's
+// changes (ErrDependencies), or git, the file system or the build's process
+// cleanup failed. ctx bounds the whole check.
 //
 // Only time bounds the bytes the author's code writes to disk: what the
 // sandboxed build writes to its log and to the build cache in the Checker's
@@ -362,7 +383,6 @@ func (c *Checker) Check(
 		return Verdict{}, err
 	}
 	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
-	moduleDir := filepath.Join(src, filepath.FromSlash(modulePath))
 	base, err := copyBase(ctx, wc)
 	if err != nil {
 		return Verdict{}, err
@@ -374,7 +394,7 @@ func (c *Checker) Check(
 	if findings := outsideModule(changed, modulePath, base); len(findings) > 0 {
 		return Verdict{Findings: findings, copy: wc}, nil
 	}
-	required, err := c.generate(ctx, src, ".", modulePath, s, stories)
+	required, err := c.generate(ctx, wc, src, ".", modulePath, s, stories)
 	if author := (*AuthorError)(nil); errors.As(err, &author) {
 		return Verdict{Findings: []Finding{author.Finding}, copy: wc}, nil
 	}
@@ -385,7 +405,7 @@ func (c *Checker) Check(
 	if err != nil {
 		return Verdict{}, err
 	}
-	declared, findings, err := c.listScenarios(ctx, tmp, src, moduleDir, s.Command, &keep)
+	declared, findings, err := c.listScenarios(ctx, wc, tmp, src, modulePath, s.Command, &keep)
 	if err != nil {
 		return Verdict{}, err
 	}
@@ -495,6 +515,17 @@ func goEnv() []string {
 		}
 	}
 	return env
+}
+
+// downloadDependencies runs go mod download with the go command goBin in the
+// module at dir, outside the sandbox and with goEnv, so with the user's module
+// download settings. Its output is discarded and never reaches a finding or a
+// reason: it may print those settings, a proxy's address and credentials
+// among them.
+func downloadDependencies(ctx context.Context, goBin, dir string) error {
+	cmd := exec.CommandContext(ctx, goBin, "mod", "download")
+	cmd.Dir, cmd.Env = dir, goEnv()
+	return cmd.Run()
 }
 
 // forAuthor words message for the test writer: the check's private snapshot
@@ -729,9 +760,13 @@ func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
 // the module's own files; its design does not declare exactly one evaluation
 // suite; or no program was generated at s.Command. A failure of the generator
 // that is not the author's wraps ErrGeneration, and a failure to write the
-// generated folder ErrWriteGenerated.
+// generated folder ErrWriteGenerated. A generation that fails while loading
+// the module's dependencies is the author's unless they cannot be downloaded
+// for a cause outside the changes the author made to wc, which is an error
+// wrapping ErrDependencies (loadFailure).
 func (c *Checker) generate(
-	ctx context.Context, top, copyDir, modulePath string, s Suite, stories []designeval.StorySummary,
+	ctx context.Context, wc WorkingCopy, top, copyDir, modulePath string, s Suite,
+	stories []designeval.StorySummary,
 ) (_ []designeval.StoryScenario, err error) {
 	copyRoot := filepath.Join(top, filepath.FromSlash(copyDir))
 	author := func(cause error, message string) error {
@@ -754,7 +789,23 @@ func (c *Checker) generate(
 		if isFailure(ctx, err) || !designeval.FailedOnModule(err) {
 			return nil, fmt.Errorf("%w: %w", ErrGeneration, err)
 		}
-		return nil, author(err, designeval.GenerationDiagnostic(err))
+		cause := err
+		if designeval.FailedLoadingDependencies(err) {
+			// The load may have failed because the dependencies cannot be
+			// downloaded where Surla runs, which is not the author's to fix
+			// unless the author's own lists are what cannot be downloaded.
+			depErr := c.loadFailure(ctx, wc, modulePath, files)
+			switch {
+			case errors.Is(depErr, ErrDependencies):
+				return nil, depErr
+			case ctx.Err() != nil:
+				return nil, fmt.Errorf("%w: %w", ErrGeneration, err)
+			case depErr != nil:
+				// Deciding failed: the finding stands, as when nothing decides.
+				cause = errors.Join(err, depErr)
+			}
+		}
+		return nil, author(cause, designeval.GenerationDiagnostic(err))
 	}
 	if suites := generatedSuites(gen.Files); suites != 1 {
 		return nil, author(nil, fmt.Sprintf("The test module must declare exactly one evaluation suite, but its design "+
@@ -773,16 +824,19 @@ func (c *Checker) generate(
 	return gen.Included, nil
 }
 
-// listScenarios builds the suite command of the snapshot module at moduleDir in
-// the build sandbox, with src as the only source it may read, within
-// c.buildLimit, runs its --describe in the candidate sandbox within
-// c.listLimit, and returns the scenarios it declares, or findings when the
-// module's dependencies, its build or its listing fail or reach their limit.
-// tmp is the check's private folder; keep is set when build processes may
-// still use it.
+// listScenarios builds the suite command of the module at the slash path
+// modulePath of the snapshot src, in the build sandbox, with src as the only
+// source it may read, within c.buildLimit, runs its --describe in the
+// candidate sandbox within c.listLimit, and returns the scenarios it
+// declares, or findings when the module's dependencies, its build or its
+// listing fail or reach their limit. Dependencies that cannot be downloaded
+// for a cause outside the author's changes to wc are an error wrapping
+// ErrDependencies instead (dependencyFailure). tmp is the check's private
+// folder; keep is set when build processes may still use it.
 func (c *Checker) listScenarios(
-	ctx context.Context, tmp, src, moduleDir, command string, keep *bool,
+	ctx context.Context, wc WorkingCopy, tmp, src, modulePath, command string, keep *bool,
 ) ([]suite.DeclaredScenario, []Finding, error) {
+	moduleDir := filepath.Join(src, filepath.FromSlash(modulePath))
 	finding := func(kind FindingKind, message string) []Finding {
 		return []Finding{{Kind: kind, Message: forAuthor(message, src)}}
 	}
@@ -790,17 +844,31 @@ func (c *Checker) listScenarios(
 	if err != nil {
 		return nil, nil, err
 	}
-	download := exec.CommandContext(ctx, filepath.Join(tc.goroot, "bin", "go"), "mod", "download")
-	download.Dir, download.Env = moduleDir, goEnv()
-	// The download's output is withheld from the finding: it runs outside
-	// the sandbox with the user's proxy settings, which it may print.
-	if err := download.Run(); err != nil {
+	if err := c.download(ctx, tc.goBin(), moduleDir); err != nil {
 		if ctx.Err() != nil {
 			return nil, nil, fmt.Errorf("download the suite module's dependencies: %w", err)
 		}
-		return nil, finding(FindingDependencies, "The suite module's dependencies could not be downloaded "+
-			"(go mod download failed). Check that its go.mod and go.sum list every module it imports, "+
-			"for example by running go mod tidy in it."), nil
+		lists, err := snapshotDependencyLists(moduleDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		base, err := c.dependencyFailure(ctx, wc, tc.goBin(), modulePath, lists)
+		if err != nil {
+			return nil, nil, err
+		}
+		if base == "" {
+			return nil, finding(FindingDependencies, "The suite module's dependencies could not be downloaded "+
+				"(go mod download failed). Check that its go.mod and go.sum list every module it imports, "+
+				"for example by running go mod tidy in it."), nil
+		}
+		return nil, finding(FindingDependencies, fmt.Sprintf("The suite module's dependencies could not be "+
+			"downloaded where Surla runs (go mod download failed), while those that commit %s, the base your "+
+			"working copy is measured from, lists can be. The cause is in your changes to the suite module's "+
+			"go.mod or go.sum: a module or version that does not exist or cannot be fetched there, a go.sum "+
+			"line that does not match, or a go line newer than the Go that Surla runs. Correct them, for "+
+			"example by running go mod tidy in the module, then report again. If go mod download succeeds in "+
+			"your working copy, a module you added cannot be reached from where Surla runs: tell the user.",
+			base)), nil
 	}
 	modCache, err := abspath.Eval(tc.modCache)
 	if err != nil {
@@ -877,6 +945,11 @@ func (c *Checker) listScenarios(
 			"on standard output: "+err.Error()), nil
 	}
 	return d.Scenarios, nil, nil
+}
+
+// goBin returns the toolchain's go command.
+func (tc toolchain) goBin() string {
+	return filepath.Join(tc.goroot, "bin", "go")
 }
 
 // validate requires a local module path and a single-package command path.

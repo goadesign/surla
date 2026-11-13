@@ -230,10 +230,13 @@ func (c *ControlPlane) saveBuildPreparation(
 // preparationFailure returns the reason and the user's step saved when a
 // build's required tests could not be prepared for a cause the test writer
 // cannot fix. ctx is the start's limit and err what the preparation returned.
-// The reason says which step failed: the limit or a server stop, the
-// generator (worded by designeval.GenerationDiagnostic, which names its
-// phase), or writing the generated folder, whose cause is quoted without
-// absolute paths and whose step names what to repair before building again.
+// The reason says which step failed: the limit or a server stop, a download
+// of the test module's dependencies that fails for a cause outside the test
+// writer's changes (testwriter.ErrDependencies, whose step has the user run
+// the download where its output can be read), the generator (worded by
+// designeval.GenerationDiagnostic, which names its phase), or writing the
+// generated folder, whose cause is quoted without absolute paths and whose
+// step names what to repair before building again.
 // Any other failure has no text safe to show: its reason points at the server
 // trace, where StartBuild records the cause.
 func preparationFailure(ctx context.Context, err error) (reason, step string) {
@@ -243,6 +246,9 @@ func preparationFailure(ctx context.Context, err error) (reason, step string) {
 		return "The build-start time limit ended before the required tests could be prepared.", buildAgain
 	case errors.Is(ctx.Err(), context.Canceled):
 		return "The server stopped before the required tests could be prepared.", buildAgain
+	case errors.Is(err, testwriter.ErrDependencies):
+		return "Surla could not prepare the required tests: " + testwriter.WithoutAbsolutePaths(err.Error()),
+			stepDependencies + ", then build this change again on the views page."
 	case errors.Is(err, testwriter.ErrGeneration):
 		return designeval.GenerationDiagnostic(err), buildAgain
 	case errors.Is(err, testwriter.ErrWriteGenerated):

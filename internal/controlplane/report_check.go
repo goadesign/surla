@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/testwriter"
 	"github.com/goadesign/surla/verify/candidate"
 )
@@ -117,6 +118,18 @@ const (
 		"then ask the test writer to report again."
 	stepFailure = "Make sure the project's git repository works (git status in the project folder) " +
 		"and the disk has free space, then ask the test writer to report again."
+
+	// stepDependencies is what the user does when the test module's
+	// dependencies could not be downloaded where Surla runs for a cause
+	// outside the test writer's changes. Surla withholds the download's
+	// output, which may hold proxy settings, so the step has the user run
+	// the same download, with the settings Surla's go commands use, where
+	// its output can be read. A check and a build start each end it with
+	// their own way to run again.
+	stepDependencies = "In the terminal surla was started from, run " +
+		"GOTOOLCHAIN=local GOWORK=off GOFLAGS= go mod download in the project's " + scaffold.SuiteDir +
+		" folder and fix what it reports, such as no network, proxy or private-module settings " +
+		"missing there, or a Go older than the module requires"
 
 	// stepWriteCopy is what the user does when Surla could not write the
 	// required tests into the test writer's working copy. A check and a
@@ -498,6 +511,8 @@ func (r *reportChecker) couldNotRun(err error, deadline time.Time, failed string
 	case errors.Is(err, testwriter.ErrWriteGenerated):
 		reason = "Surla could not write the required tests into the test writer's working copy or its snapshot: " + err.Error()
 		step = stepWriteCopy + ", then ask the test writer to report again."
+	case errors.Is(err, testwriter.ErrDependencies):
+		reason, step = failed+": "+err.Error(), stepDependencies+", then ask the test writer to report again."
 	default:
 		reason, step = failed+": "+err.Error(), stepFailure
 	}

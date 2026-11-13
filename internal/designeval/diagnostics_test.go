@@ -17,7 +17,9 @@ import (
 
 // TestFailedOnModuleNamesTheModulePhases checks every phase runSandboxed sets
 // and the failures outside it: only checking, resolving, compiling and
-// evaluating the module's own files count, whatever the underlying cause.
+// evaluating the module's own files count, whatever the underlying cause. Of
+// those, only the phase that loads the module's dependencies is one
+// FailedLoadingDependencies reports.
 func TestFailedOnModuleNamesTheModulePhases(t *testing.T) {
 	t.Parallel()
 	cause := errors.New("exit status 1")
@@ -25,10 +27,16 @@ func TestFailedOnModuleNamesTheModulePhases(t *testing.T) {
 		name string
 		err  error
 		want bool
+		// wantLoading is what FailedLoadingDependencies reports.
+		wantLoading bool
 	}{
 		{name: "snapshot validation", err: &snapshotValidationError{err: cause}, want: true},
 		{name: "checking the module files", err: &phaseError{phase: phaseCheckFiles, err: cause}, want: true},
-		{name: "loading the module's dependencies", err: &phaseError{phase: phaseLoadModules, err: cause}, want: true},
+		{name: "loading the module's dependencies", err: &phaseError{phase: phaseLoadModules, err: cause}, want: true, wantLoading: true},
+		{
+			name: "loading the module's dependencies, wrapped by a caller",
+			err:  fmt.Errorf("generate: %w", &phaseError{phase: phaseLoadModules, err: cause}), want: true, wantLoading: true,
+		},
 		{name: "compiling the design", err: &phaseError{phase: phaseCompile, err: &buildError{err: cause}}, want: true},
 		{name: "evaluating the design", err: &phaseError{phase: phaseEvaluateDSL, err: cause}, want: true},
 		{name: "preparing the compiler", err: &phaseError{phase: "preparing the design compiler", err: cause}},
@@ -49,6 +57,7 @@ func TestFailedOnModuleNamesTheModulePhases(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assert.Equal(t, test.want, FailedOnModule(test.err))
+			assert.Equal(t, test.wantLoading, FailedLoadingDependencies(test.err))
 		})
 	}
 }

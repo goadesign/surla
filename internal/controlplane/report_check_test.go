@@ -590,6 +590,12 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 			"%w: create staging directory: mkdirat /Users/someone/shop/.surla-tests/eval/.surla-gen-abc: permission denied", testwriter.ErrWriteGenerated)},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"could not write the required tests", "permission denied"},
 			wantStep: stepWriteCopy + ", then ask the test writer to report again."},
+		{name: "the dependencies cannot be downloaded where Surla runs", tests: &standInCopy{check: failing(fmt.Errorf(
+			"%w, and its go.mod and go.sum are those of the project's commit %s, so the cause is not in the test writer's changes",
+			testwriter.ErrDependencies, standInCommit))},
+			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{
+				"check could not run", "dependencies could not be downloaded where Surla runs", "commit " + standInCommit},
+			wantStep: stepDependencies + ", then ask the test writer to report again."},
 		{name: "git fails", tests: &standInCopy{check: failing(errors.New("git write-tree in /private/var/folders/x/check: exit status 128"))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"check could not run", "git write-tree in <absolute path>: exit status 128"}, wantStep: stepFailure},
 		{name: "recording fails", tests: &standInCopy{check: accepting, record: func(context.Context, int) (string, error) {
@@ -634,6 +640,7 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 	for _, step := range []string{
 		stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit, stepFailure,
 		stepWriteCopy + ", then ask the test writer to report again.",
+		stepDependencies + ", then ask the test writer to report again.",
 	} {
 		assert.True(t, boundedText(step, maxCheckStep), "each step fits the contract: %s", step)
 	}

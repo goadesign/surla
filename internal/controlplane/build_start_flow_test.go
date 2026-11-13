@@ -173,6 +173,14 @@ func TestAPreparationThatCouldNotRunSaysWhatFailed(t *testing.T) {
 			wantStep:   stepWriteCopy + ", then build this change again on the views page.",
 		},
 		{
+			name: "the dependencies cannot be downloaded where Surla runs",
+			prepareErr: fmt.Errorf("%w, and its go.mod and go.sum are those of the project's commit %s, so the cause is not in the test writer's changes",
+				testwriter.ErrDependencies, strings.Repeat("b", 40)),
+			wantReason: []string{"could not prepare the required tests", "dependencies could not be downloaded where Surla runs", "commit " + strings.Repeat("b", 40)},
+			notReason:  []string{"Code generation failed"},
+			wantStep:   stepDependencies + ", then build this change again on the views page.",
+		},
+		{
 			name:       "the generator fails before it reaches the module",
 			prepareErr: fmt.Errorf("%w: create design evaluator workspace: mkdir /private/var/surla: permission denied", testwriter.ErrGeneration),
 			wantReason: []string{"Code generation failed while starting the design compiler."},
