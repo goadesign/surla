@@ -27,7 +27,7 @@ func TestValidateAmbiguityAnswersReportsEveryProblemOnce(t *testing.T) {
 		{ID: "chg-ambiguity-02", Question: "Who accepts offers?", Options: []string{"Listing seller", "Any seller"}},
 		{ID: "chg-ambiguity-03", Question: "Keep history?", Options: []string{"Yes", "No"}},
 	}
-	const pointer = "; each answer must be exactly one of its question's options, and a decision that no option expresses goes in revise_change's prompt"
+	const pointer = "; each answer must be exactly one of its question's options; for a decision that no option expresses, ask the guide to revise the change"
 	complete := map[string]string{
 		"chg-ambiguity-01": "Demo persona header",
 		"chg-ambiguity-02": "Listing seller",

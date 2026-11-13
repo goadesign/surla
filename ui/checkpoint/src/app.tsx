@@ -17,6 +17,7 @@ import { ArchitecturePreviewView, IncomingChangeCardView } from "./components/c4
 import { ChangeListView } from "./components/change-list";
 import { CP1EditorView } from "./components/cp1-editor";
 import { VerificationView } from "./components/cp4-verification";
+import { ProposedRevisionView } from "./components/proposal";
 import { ApproveResultControl } from "./components/cp5-approve";
 import { SessionEndedNotice, SignedOutReason, SignedOutView } from "./components/session";
 import { StoryStageView } from "./components/story";
@@ -29,6 +30,7 @@ import {
   ChangeList,
   ExampleItem,
   OperationName,
+  ProposedRevisionItem,
   Operations,
   ROUTES,
   StoryRefreshResult,
@@ -89,6 +91,11 @@ interface ActiveEditorState {
   preservedDraft: PreservedDraft | null;
   // formError describes the latest failed editor request or invalid input.
   formError: string | null;
+  // proposalAnswers holds the user's choices for the waiting proposal's
+  // questions; a re-read keeps those that still fit the proposal.
+  proposalAnswers: Record<string, string>;
+  // proposalError describes the last refused adopt or decline, or null.
+  proposalError: string | null;
 }
 
 // ActiveResultState selects the view displayed in #surla-result-view.
@@ -215,12 +222,17 @@ function nextPriorCard(
   return current.card;
 }
 
-// editorDraftFrom starts editable drafts from a saved card's own values.
+// editorDraftFrom starts editable drafts from a saved card's own values, with
+// no answers chosen yet for a waiting proposal.
 function editorDraftFrom(card: ChangeCardResult): {
   draftAnswers: Record<string, string>;
   draftExamples: ExampleItem[];
+  proposalAnswers: Record<string, string>;
+  proposalError: string | null;
 } {
   return {
+    proposalAnswers: {},
+    proposalError: null,
     draftAnswers: isPlainObject(card.answers) ? { ...card.answers } : {},
     draftExamples: card.examples.map((ex) => ({
       id: ex.id,
@@ -230,6 +242,28 @@ function editorDraftFrom(card: ChangeCardResult): {
       verification_kind: ex.verification_kind,
     })),
   };
+}
+
+// keepProposalAnswers keeps the user's choices that still fit next: same
+// question ID, same question, and the option still offered. A re-read of the
+// same proposal therefore keeps every choice.
+function keepProposalAnswers(
+  answers: Record<string, string>,
+  previous: ProposedRevisionItem | undefined,
+  next: ProposedRevisionItem | undefined
+): Record<string, string> {
+  if (previous === undefined || next === undefined) {
+    return {};
+  }
+  const before = new Map((previous.ambiguities ?? []).map((question) => [question.id, question.question]));
+  const kept: Record<string, string> = {};
+  for (const question of next.ambiguities ?? []) {
+    const chosen = answers[question.id];
+    if (chosen !== undefined && before.get(question.id) === question.question && question.options.includes(chosen)) {
+      kept[question.id] = chosen;
+    }
+  }
+  return kept;
 }
 
 // readLinkFromFragment returns the one-use link carried in the address
@@ -874,7 +908,21 @@ export function bootstrapViewsPage() {
     }
     const ed = activeEditor;
     if (latest.request_revision === ed.card.request_revision) {
-      activeEditor = { ...ed, card: latest };
+      const before = ed.card.proposed_revision;
+      const after = latest.proposed_revision;
+      activeEditor = {
+        ...ed,
+        card: latest,
+        proposalAnswers: keepProposalAnswers(ed.proposalAnswers, before, after),
+        proposalError: before?.request_revision === after?.request_revision ? ed.proposalError : null,
+      };
+      if (after !== undefined && before?.request_revision !== after.request_revision) {
+        statusEl.textContent =
+          (before === undefined
+            ? "The guide proposed a new revision of this change."
+            : "The guide replaced its proposed revision of this change.") +
+          " Adopt or decline it under Decisions & Approval; the agreed revision stays in force until then.";
+      }
       syncAllRegions();
       return;
     }
@@ -1341,10 +1389,34 @@ export function bootstrapViewsPage() {
     editorRegionEl.dataset.state = "cp1-change-card";
     editorRegionEl.dataset.changeId = ed.card.change_id;
     editorRegionEl.dataset.requestRevision = ed.card.request_revision;
+    const proposal = ed.card.proposed_revision;
     flushSync(() => {
       editorRoot.render(
+        <>
+        {proposal !== undefined ? (
+          <ProposedRevisionView
+            card={ed.card}
+            proposal={proposal}
+            answers={ed.proposalAnswers}
+            busy={editorBusy}
+            error={ed.proposalError}
+            onAnswer={(questionId, option) => {
+              if (!activeEditor || editorBusy) {
+                return;
+              }
+              activeEditor = {
+                ...activeEditor,
+                proposalAnswers: { ...activeEditor.proposalAnswers, [questionId]: option },
+              };
+              syncAllRegions();
+            }}
+            onAdopt={handleAdopt}
+            onDecline={handleDecline}
+          />
+        ) : null}
         <CP1EditorView
           card={ed.card}
+          proposalWaiting={proposal !== undefined}
           priorCard={ed.priorCard}
           draftAnswers={ed.draftAnswers}
           draftExamples={ed.draftExamples}
@@ -1381,6 +1453,7 @@ export function bootstrapViewsPage() {
           onLoadVerifications={() => handleListVerifications(ed.card.change_id)}
           onOpenStory={openStory}
         />
+        </>
       );
     });
   }
@@ -1965,6 +2038,93 @@ export function bootstrapViewsPage() {
         focusResult("#surla-confirm-error");
       }
     );
+  }
+
+  // handleAdopt confirms the waiting proposal with the user's answers and its
+  // examples: the proposal becomes the agreed revision and the earlier agreed
+  // revision is shown as the prior one. Unsaved edits made on the earlier
+  // agreed revision are kept as preserved lines, as switching to an incoming
+  // revision keeps them. A refused adoption, such as one the guide's newer
+  // proposal overtook, reads the change again.
+  function handleAdopt() {
+    if (!activeEditor || editorBusy) {
+      return;
+    }
+    const card = activeEditor.card;
+    const proposal = card.proposed_revision;
+    if (proposal === undefined) {
+      return;
+    }
+    const answers: Record<string, string> = {};
+    for (const question of proposal.ambiguities ?? []) {
+      answers[question.id] = activeEditor.proposalAnswers[question.id];
+    }
+    statusEl.textContent = "Adopting the proposed revision...";
+    callEditorServer(
+      "confirm_intent",
+      {
+        change_id: card.change_id,
+        request_revision: proposal.request_revision,
+        answers,
+        examples: proposal.examples,
+      },
+      card.change_id,
+      (adopted) => {
+        const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
+        mountChangeCard(adopted, preserved, nextPriorCard(activeEditor, adopted));
+        statusEl.textContent = "Adopted the proposed revision; it is now the agreed revision.";
+        focusResult("#surla-cp1-editor");
+      },
+      (message, failure) => {
+        failProposal(message, failure, card.change_id);
+      }
+    );
+  }
+
+  // handleDecline removes the waiting proposal; the agreed revision and the
+  // user's drafts on it stay as they are.
+  function handleDecline() {
+    if (!activeEditor || editorBusy) {
+      return;
+    }
+    const card = activeEditor.card;
+    const proposal = card.proposed_revision;
+    if (proposal === undefined) {
+      return;
+    }
+    statusEl.textContent = "Declining the proposed revision...";
+    callEditorServer(
+      "decline_revision",
+      { change_id: card.change_id, request_revision: proposal.request_revision },
+      card.change_id,
+      (declined) => {
+        if (activeEditor && activeEditor.card.request_revision === declined.request_revision) {
+          activeEditor = { ...activeEditor, card: declined, proposalAnswers: {}, proposalError: null };
+        } else {
+          mountChangeCard(declined, null, nextPriorCard(activeEditor, declined));
+        }
+        statusEl.textContent = "Declined the proposed revision; the agreed revision stays in force.";
+        syncAllRegions();
+        focusResult("#surla-cp1-editor");
+      },
+      (message, failure) => {
+        failProposal(message, failure, card.change_id);
+      }
+    );
+  }
+
+  // failProposal shows a refused adopt or decline beside the proposal and,
+  // when the change moved on meanwhile, reads it again.
+  function failProposal(message: string, failure: Failure, changeId: string) {
+    if (activeEditor) {
+      activeEditor = { ...activeEditor, proposalError: message };
+    }
+    statusEl.textContent = "The proposed revision was not changed.";
+    syncAllRegions();
+    focusResult("#surla-proposal-error");
+    if (failure.status === 409) {
+      refreshOpenCard(changeId);
+    }
   }
 
   // handleApprove asks the server to record approval of run's passed report

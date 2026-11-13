@@ -387,16 +387,27 @@ page.close();
 		svc.set(run)
 		svc.list(confirmed.ChangeID, run.RunID)
 		ps := startPageServer(t, svc)
+		// The user refines the confirmed change elsewhere, such as in another
+		// tab, so the page's revision is stale.
+		ps.act("refine", func() {
+			refined := *confirmed.Examples[0]
+			refined.ExpectedOutcome = "Manager approval within a day"
+			_, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
+				ChangeID: confirmed.ChangeID, RequestRevision: confirmed.RequestRevision,
+				Answers: map[string]string{}, Examples: []*gensurla.ExampleItem{&refined},
+			})
+			require.NoError(t, err)
+		})
 		runPageScript(t, ps, nil, viewsPageScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-stale", "the change did not open");
 page.$("#surla-nav-cp4").click();
 await until(() => page.$("#surla-cp5-approve"), "no approval control");
 page.setHidden(true);
-await revise(await readCard("chg-stale"), "Route refunds over $50 to a manager.", "Manager approval");
+await control(origin, "act", { key: "refine" });
 page.$("#surla-cp5-approve").click();
 await until(() => page.$("#surla-confirm-error"), "a stale approval did not show the editor's recovery");
-expect(page.text("#surla-confirm-error").includes("must be confirmed before approval") && page.$("#surla-load-latest-card"), "stale approval did not show the server's refusal and offer Load Latest Card: " + page.text("#surla-confirm-error"));
+expect(page.text("#surla-confirm-error").includes("request_revision mismatch") && page.$("#surla-load-latest-card"), "stale approval did not show the server's refusal and offer Load Latest Card: " + page.text("#surla-confirm-error"));
 expect(page.doc.activeElement === page.$("#surla-confirm-error"), "the refusal did not take focus");
 page.$("#surla-load-latest-card").click();
 await until(() => page.$("#surla-cp1-editor").dataset.requestRevision !== input.revision && page.$("#surla-prior-revision"), "Load Latest Card did not show the newer revision");

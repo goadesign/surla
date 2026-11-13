@@ -616,6 +616,133 @@ func DecodeGetChangeResponse(decoder func(*http.Response) goahttp.Decoder, resto
 	}
 }
 
+// BuildDeclineRevisionRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "decline_revision" endpoint
+func (c *Client) BuildDeclineRevisionRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: DeclineRevisionSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "decline_revision", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeDeclineRevisionRequest returns an encoder for requests sent to the
+// surla decline_revision server.
+func EncodeDeclineRevisionRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.DeclineRevisionPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "decline_revision", "*surla.DeclineRevisionPayload", v)
+		}
+		body := NewDeclineRevisionRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "decline_revision", err)
+		}
+		return nil
+	}
+}
+
+// DecodeDeclineRevisionResponse returns a decoder for responses returned by
+// the surla decline_revision endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeDeclineRevisionResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeDeclineRevisionResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "decline_revision", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "decline_revision", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body DeclineRevisionResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "decline_revision", err)
+			}
+			err = ValidateDeclineRevisionResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "decline_revision", err)
+			}
+			res := NewDeclineRevisionChangeCardResultOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body DeclineRevisionNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "decline_revision", err)
+			}
+			err = ValidateDeclineRevisionNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "decline_revision", err)
+			}
+			return nil, NewDeclineRevisionNotFound(&body)
+		case http.StatusConflict:
+			var (
+				body DeclineRevisionConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "decline_revision", err)
+			}
+			err = ValidateDeclineRevisionConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "decline_revision", err)
+			}
+			return nil, NewDeclineRevisionConflict(&body)
+		case http.StatusForbidden:
+			var (
+				body DeclineRevisionForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "decline_revision", err)
+			}
+			err = ValidateDeclineRevisionForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "decline_revision", err)
+			}
+			return nil, NewDeclineRevisionForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "decline_revision", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "decline_revision", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildPreviewArchitectureRequest instantiates a HTTP request object with
 // method and path set to call the "surla" service "preview_architecture"
 // endpoint
@@ -4624,6 +4751,58 @@ func unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(v 
 	return res
 }
 
+// unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem builds
+// a value of type *surla.ProposedRevisionItem from a value of type
+// *ProposedRevisionItemResponseBody.
+func unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(v *ProposedRevisionItemResponseBody) *surla.ProposedRevisionItem {
+	res := &surla.ProposedRevisionItem{
+		Prompt:          *v.Prompt,
+		Summary:         *v.Summary,
+		RequestRevision: *v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*surla.AmbiguityQuestion, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = unmarshalAmbiguityQuestionResponseBodyToSurlaAmbiguityQuestion(val)
+		}
+	}
+	res.Examples = make([]*surla.ExampleItem, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = unmarshalExampleItemResponseBodyToSurlaExampleItem(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*surla.StorySummaryItem, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
+
+	return res
+}
+
 // marshalSurlaCP1RevisionAnalysisToCP1RevisionAnalysisRequestBody builds a
 // value of type *CP1RevisionAnalysisRequestBody from a value of type
 // *surla.CP1RevisionAnalysis.
@@ -5119,11 +5298,12 @@ func unmarshalProjectTeamRoleResponseBodyToSurlaProjectTeamRole(v *ProjectTeamRo
 // type *surla.ChangeListItem from a value of type *ChangeListItemResponseBody.
 func unmarshalChangeListItemResponseBodyToSurlaChangeListItem(v *ChangeListItemResponseBody) *surla.ChangeListItem {
 	res := &surla.ChangeListItem{
-		ChangeID:        *v.ChangeID,
-		Summary:         *v.Summary,
-		Status:          *v.Status,
-		RequestRevision: *v.RequestRevision,
-		SavedAt:         *v.SavedAt,
+		ChangeID:         *v.ChangeID,
+		Summary:          *v.Summary,
+		Status:           *v.Status,
+		RequestRevision:  *v.RequestRevision,
+		ProposedRevision: v.ProposedRevision,
+		SavedAt:          *v.SavedAt,
 	}
 	if v.LatestVerification != nil {
 		res.LatestVerification = unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem(v.LatestVerification)

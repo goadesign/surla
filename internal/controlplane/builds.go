@@ -258,7 +258,7 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	if !found {
 		return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildNotStarted(&gensurla.BuildNotStarted{})}, nil
 	}
-	held := heldBuild{file: saved, inForce: buildInForce(saved, record.card), storedEvaluator: c.storedEvaluator()}
+	held := heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}
 	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(held))}, nil
 }
 
@@ -405,23 +405,11 @@ func (c *ControlPlane) ReportTestsFinished(
 	return testWriterAssignmentItem(held), nil
 }
 
-// revisionInForce returns the revision of card the user agreed, which
-// start_build requires and against which every read of a build or an
-// assignment reports in_force, or "" when the card awaits the user's
-// confirmation and no revision is in force. preview_architecture,
-// verify_change and approve_merge check the card's status and revision
-// themselves.
-func revisionInForce(card *gensurla.ChangeCardResult) string {
-	if card.Status != StatusConfirmed {
-		return ""
-	}
-	return card.RequestRevision
-}
-
-// buildInForce reports whether saved is a build of card's revision in force;
-// get_build and every assignment read report it as in_force.
-func buildInForce(saved buildFile, card *gensurla.ChangeCardResult) bool {
-	return saved.RequestRevision == revisionInForce(card)
+// buildInForce reports whether saved is a build of record's agreed revision
+// (see storedChangeCard.agreedRevision); get_build and every assignment read
+// report it as in_force.
+func buildInForce(saved buildFile, record storedChangeCard) bool {
+	return saved.RequestRevision == record.agreedRevision()
 }
 
 // startedBuild converts a held build into its transport form.
@@ -593,12 +581,12 @@ func (c *ControlPlane) buildableCard(principal Principal, changeID, revision str
 	if err != nil {
 		return storedChangeCard{}, err
 	}
-	inForce := revisionInForce(record.card)
-	if inForce == "" {
+	agreed := record.agreedRevision()
+	if agreed == "" {
 		return storedChangeCard{}, gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before it is built (status %q)", changeID, record.card.Status))
 	}
-	if inForce != revision {
-		return storedChangeCard{}, gensurla.MakeConflict(fmt.Errorf("request_revision %q is not the revision in force of %q, %q", revision, changeID, inForce))
+	if agreed != revision {
+		return storedChangeCard{}, gensurla.MakeConflict(fmt.Errorf("request_revision %q is not the agreed revision of %q, %q; a proposed revision is built only after the user adopts it", revision, changeID, agreed))
 	}
 	return record, nil
 }
@@ -633,7 +621,7 @@ func (c *ControlPlane) ownedBuild(principal Principal, changeID string) (heldBui
 	if !found {
 		return heldBuild{}, gensurla.MakeNotFound(fmt.Errorf("change_id %q has no build; the user starts one on the views page", changeID))
 	}
-	return heldBuild{file: saved, inForce: buildInForce(saved, record.card), storedEvaluator: c.storedEvaluator()}, nil
+	return heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}, nil
 }
 
 // ownedBuilds returns the build of every change principal owns, most recently
@@ -658,7 +646,7 @@ func (c *ControlPlane) ownedBuilds(owner string) ([]heldBuild, error) {
 		if found {
 			builds = append(builds, heldBuild{
 				file:            saved,
-				inForce:         buildInForce(saved, record.card),
+				inForce:         buildInForce(saved, record),
 				storedEvaluator: c.storedEvaluator(),
 			})
 		}

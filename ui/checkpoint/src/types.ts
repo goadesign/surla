@@ -83,6 +83,7 @@ export interface ChangeCardResult {
   examples: ExampleItem[];
   preserved_behaviors: string[];
   prompt: string;
+  proposed_revision?: ProposedRevisionItem;
   request_revision: string;
   status: "needs_confirmation" | "confirmed";
   stories?: StorySummaryItem[];
@@ -100,6 +101,7 @@ export interface ChangeList {
 export interface ChangeListItem {
   change_id: string;
   latest_verification?: LatestVerificationItem;
+  proposed_revision?: string;
   request_revision: string;
   saved_at: string;
   status: "needs_confirmation" | "confirmed";
@@ -114,6 +116,11 @@ export interface ConfirmIntentPayload {
   answers: Record<string, string>;
   change_id: string;
   examples: ExampleItem[];
+  request_revision: string;
+}
+
+export interface DeclineRevisionPayload {
+  change_id: string;
   request_revision: string;
 }
 
@@ -141,6 +148,18 @@ export interface LatestVerificationItem {
 export interface PreviewArchitecturePayload {
   change_id: string;
   request_revision: string;
+}
+
+export interface ProposedRevisionItem {
+  ambiguities?: AmbiguityQuestion[];
+  changed_design_files: string[];
+  examples: ExampleItem[];
+  preserved_behaviors: string[];
+  prompt: string;
+  request_revision: string;
+  stories?: StorySummaryItem[];
+  summary: string;
+  ui_composition?: UICompositionItem;
 }
 
 export interface ServerError {
@@ -320,6 +339,8 @@ export type GetStoryRefreshRequest = Record<string, never>;
 
 export type ConfirmIntentRequest = ConfirmIntentPayload;
 
+export type DeclineRevisionRequest = DeclineRevisionPayload;
+
 export type ApproveMergeRequest = ApproveMergePayload;
 
 export type PreviewArchitectureRequest = PreviewArchitecturePayload;
@@ -346,6 +367,7 @@ export interface Operations {
   get_change: { request: GetChangeRequest; result: ChangeCardResult };
   get_story_refresh: { request: GetStoryRefreshRequest; result: StoryRefreshResult };
   confirm_intent: { request: ConfirmIntentRequest; result: ChangeCardResult };
+  decline_revision: { request: DeclineRevisionRequest; result: ChangeCardResult };
   approve_merge: { request: ApproveMergeRequest; result: ChangeCardResult };
   preview_architecture: { request: PreviewArchitectureRequest; result: ArchitecturePreviewResult };
   list_verifications: { request: ListVerificationsRequest; result: VerificationListResult };
@@ -403,6 +425,10 @@ function encodeConfirmIntent(request: ConfirmIntentRequest): EncodedRequest {
   return { path: "/changes/confirm", body: JSON.stringify(request) };
 }
 
+function encodeDeclineRevision(request: DeclineRevisionRequest): EncodedRequest {
+  return { path: "/changes/decline", body: JSON.stringify(request) };
+}
+
 function encodeApproveMerge(request: ApproveMergeRequest): EncodedRequest {
   return { path: "/changes/approve", body: JSON.stringify(request) };
 }
@@ -442,6 +468,7 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
   get_change: { method: "GET", success: 200, encode: encodeGetChange, decode: isChangeCardResult },
   get_story_refresh: { method: "GET", success: 200, encode: encodeGetStoryRefresh, decode: isStoryRefreshResult },
   confirm_intent: { method: "POST", success: 200, encode: encodeConfirmIntent, decode: isChangeCardResult },
+  decline_revision: { method: "POST", success: 200, encode: encodeDeclineRevision, decode: isChangeCardResult },
   approve_merge: { method: "POST", success: 200, encode: encodeApproveMerge, decode: isChangeCardResult },
   preview_architecture: { method: "POST", success: 200, encode: encodePreviewArchitecture, decode: isArchitecturePreviewResult },
   list_verifications: { method: "GET", success: 200, encode: encodeListVerifications, decode: isVerificationListResult },
@@ -780,6 +807,9 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "prompt": {
         "type": "string"
       },
+      "proposed_revision": {
+        "$ref": "#/$defs/ProposedRevisionItem"
+      },
       "request_revision": {
         "type": "string"
       },
@@ -847,6 +877,9 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "latest_verification": {
         "$ref": "#/$defs/LatestVerificationItem"
       },
+      "proposed_revision": {
+        "type": "string"
+      },
       "request_revision": {
         "type": "string"
       },
@@ -902,6 +935,22 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
         "items": {
           "$ref": "#/$defs/ExampleItem"
         }
+      },
+      "request_revision": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "DeclineRevisionPayload": {
+    "type": "object",
+    "required": [
+      "change_id",
+      "request_revision"
+    ],
+    "properties": {
+      "change_id": {
+        "type": "string"
       },
       "request_revision": {
         "type": "string"
@@ -999,6 +1048,62 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       },
       "request_revision": {
         "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "ProposedRevisionItem": {
+    "type": "object",
+    "required": [
+      "prompt",
+      "summary",
+      "examples",
+      "preserved_behaviors",
+      "request_revision",
+      "changed_design_files"
+    ],
+    "properties": {
+      "ambiguities": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/AmbiguityQuestion"
+        }
+      },
+      "changed_design_files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "examples": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ExampleItem"
+        }
+      },
+      "preserved_behaviors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "request_revision": {
+        "type": "string"
+      },
+      "stories": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/StorySummaryItem"
+        }
+      },
+      "summary": {
+        "type": "string"
+      },
+      "ui_composition": {
+        "$ref": "#/$defs/UICompositionItem"
       }
     },
     "additionalProperties": false

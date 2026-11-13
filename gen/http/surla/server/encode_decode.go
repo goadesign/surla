@@ -449,6 +449,103 @@ func EncodeGetChangeError(encoder func(context.Context, http.ResponseWriter) goa
 	}
 }
 
+// EncodeDeclineRevisionResponse returns an encoder for responses returned by
+// the surla decline_revision endpoint.
+func EncodeDeclineRevisionResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ChangeCardResult)
+		enc := encoder(ctx, w)
+		body := NewDeclineRevisionResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeDeclineRevisionRequest returns a decoder for requests sent to the
+// surla decline_revision endpoint.
+func DecodeDeclineRevisionRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.DeclineRevisionPayload, error) {
+	return func(r *http.Request) (*surla.DeclineRevisionPayload, error) {
+		var payload *surla.DeclineRevisionPayload
+		var (
+			body DeclineRevisionRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateDeclineRevisionRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+		payload = NewDeclineRevisionPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeDeclineRevisionError returns an encoder for errors returned by the
+// decline_revision surla endpoint.
+func EncodeDeclineRevisionError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewDeclineRevisionNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "conflict":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewDeclineRevisionConflictResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewDeclineRevisionForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodePreviewArchitectureResponse returns an encoder for responses returned
 // by the surla preview_architecture endpoint.
 func EncodePreviewArchitectureResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -3322,6 +3419,70 @@ func marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(v *s
 	return res
 }
 
+// marshalSurlaProposedRevisionItemToProposedRevisionItemResponseBody builds a
+// value of type *ProposedRevisionItemResponseBody from a value of type
+// *surla.ProposedRevisionItem.
+func marshalSurlaProposedRevisionItemToProposedRevisionItemResponseBody(v *surla.ProposedRevisionItem) *ProposedRevisionItemResponseBody {
+	res := &ProposedRevisionItemResponseBody{
+		Prompt:          v.Prompt,
+		Summary:         v.Summary,
+		RequestRevision: v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*AmbiguityQuestionResponseBody, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = marshalSurlaAmbiguityQuestionToAmbiguityQuestionResponseBody(val)
+		}
+	}
+	if v.Examples != nil {
+		res.Examples = make([]*ExampleItemResponseBody, len(v.Examples))
+		for i, val := range v.Examples {
+			if val == nil {
+				res.Examples[i] = nil
+				continue
+			}
+			res.Examples[i] = marshalSurlaExampleItemToExampleItemResponseBody(val)
+		}
+	} else {
+		res.Examples = []*ExampleItemResponseBody{}
+	}
+	if v.PreservedBehaviors != nil {
+		res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+		for i, val := range v.PreservedBehaviors {
+			res.PreservedBehaviors[i] = val
+		}
+	} else {
+		res.PreservedBehaviors = []string{}
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*StorySummaryItemResponseBody, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(v.UIComposition)
+	}
+	if v.ChangedDesignFiles != nil {
+		res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+		for i, val := range v.ChangedDesignFiles {
+			res.ChangedDesignFiles[i] = val
+		}
+	} else {
+		res.ChangedDesignFiles = []string{}
+	}
+
+	return res
+}
+
 // unmarshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis builds a
 // value of type *surla.CP1RevisionAnalysis from a value of type
 // *CP1RevisionAnalysisRequestBody.
@@ -3722,11 +3883,12 @@ func marshalSurlaProjectTeamRoleToProjectTeamRoleResponseBody(v *surla.ProjectTe
 // type *ChangeListItemResponseBody from a value of type *surla.ChangeListItem.
 func marshalSurlaChangeListItemToChangeListItemResponseBody(v *surla.ChangeListItem) *ChangeListItemResponseBody {
 	res := &ChangeListItemResponseBody{
-		ChangeID:        v.ChangeID,
-		Summary:         v.Summary,
-		Status:          v.Status,
-		RequestRevision: v.RequestRevision,
-		SavedAt:         v.SavedAt,
+		ChangeID:         v.ChangeID,
+		Summary:          v.Summary,
+		Status:           v.Status,
+		RequestRevision:  v.RequestRevision,
+		ProposedRevision: v.ProposedRevision,
+		SavedAt:          v.SavedAt,
 	}
 	if v.LatestVerification != nil {
 		res.LatestVerification = marshalSurlaLatestVerificationItemToLatestVerificationItemResponseBody(v.LatestVerification)

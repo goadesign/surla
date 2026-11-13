@@ -23,9 +23,11 @@ import (
 // suite, environment and binary digests from the bound PromotionTarget, and
 // requires verify.Approve to accept the report for exactly that change. The
 // approval is saved on a copy of the card only if the card still has the same
-// request_revision after those calls, so a confirm_intent or revise_change
-// that changed the card meanwhile is never approved with the old report. It
-// returns the approved card; nothing is merged or deployed.
+// request_revision after those calls, so a confirm_intent that refined the
+// card or adopted a proposal meanwhile is never approved with the old report;
+// a revise_change only proposes a revision and leaves the card's revision as
+// it was. It returns the approved card with any proposal waiting beside it;
+// nothing is merged or deployed.
 func (c *ControlPlane) ApproveMerge(
 	ctx context.Context,
 	p *gensurla.ApproveMergePayload,
@@ -132,7 +134,12 @@ func (c *ControlPlane) ApproveMerge(
 	if err := c.cards.save(record); err != nil {
 		return nil, err
 	}
-	return &approved, nil
+	result := approved
+	result.ProposedRevision, err = proposedRevisionItem(record)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // currentCard returns card as get_change and an unchanged confirm_intent

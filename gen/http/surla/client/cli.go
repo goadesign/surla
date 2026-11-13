@@ -166,6 +166,35 @@ func BuildGetChangePayload(surlaGetChangeChangeID *string) (*surla.GetChangePayl
 	return v, nil
 }
 
+// BuildDeclineRevisionPayload builds the payload for the surla
+// decline_revision endpoint from CLI flags.
+func BuildDeclineRevisionPayload(surlaDeclineRevisionBody *string) (*surla.DeclineRevisionPayload, error) {
+	var err error
+	var body DeclineRevisionRequestBody
+	{
+		if surlaDeclineRevisionBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaDeclineRevisionBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"sg\",\n      \"request_revision\": \"cf2a81cc33e3bef57abac8bae9e732fbabea86567fde6e5bc232e41f8d5391a7\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", body.ChangeID, utf8.RuneCountInString(body.ChangeID), 1, true))
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.request_revision", body.RequestRevision, "^[0-9a-f]{64}$"))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.DeclineRevisionPayload{
+		ChangeID:        body.ChangeID,
+		RequestRevision: body.RequestRevision,
+	}
+
+	return v, nil
+}
+
 // BuildPreviewArchitecturePayload builds the payload for the surla
 // preview_architecture endpoint from CLI flags.
 func BuildPreviewArchitecturePayload(surlaPreviewArchitectureBody *string) (*surla.PreviewArchitecturePayload, error) {

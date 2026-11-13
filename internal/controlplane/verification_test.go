@@ -283,7 +283,7 @@ func TestListVerifications(t *testing.T) {
 		assert.Empty(t, res.Runs)
 	})
 
-	t.Run("lists owner runs newest-first with sub-second accepted_at, builder projection, and needs_confirmation support", func(t *testing.T) {
+	t.Run("lists owner runs newest-first with sub-second accepted_at, builder projection, and a waiting proposal", func(t *testing.T) {
 		report := failingReport(t, card.RequestRevision, commit, inputs)
 		b, err := json.Marshal(report)
 		require.NoError(t, err)
@@ -336,7 +336,8 @@ func TestListVerifications(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, StatusNeedsConfirmation, revised.Status)
+		require.Equal(t, StatusConfirmed, revised.Status, "the agreed revision stays in force")
+		require.NotNil(t, revised.ProposedRevision, "the revision waits as a proposal")
 
 		res, err := cp.ListVerifications(alice, &gensurla.ListVerificationsPayload{ChangeID: "chg"})
 		require.NoError(t, err)

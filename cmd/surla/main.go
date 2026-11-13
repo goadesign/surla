@@ -211,7 +211,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 // status of checkpoints CP1–CP5 to w for the project server.
 func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project string) {
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
-	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
+	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on")
 	fmt.Fprintln(w, "surla: CP2 (preview_architecture): on")
 	if (opts.Verification != nil || opts.ResolveVerification != nil) && opts.Live != nil {
 		root := controlplane.LiveRoot(opts.CardsDir)

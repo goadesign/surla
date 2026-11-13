@@ -86,6 +86,22 @@ func ConfirmIntentResultCodec() tools.JSONCodec[*ConfirmIntentResult] {
 	}
 }
 
+// DeclineRevisionPayloadCodec returns a fresh codec for *DeclineRevisionPayload.
+func DeclineRevisionPayloadCodec() tools.JSONCodec[*DeclineRevisionPayload] {
+	return tools.JSONCodec[*DeclineRevisionPayload]{
+		ToJSON:   MarshalDeclineRevisionPayload,
+		FromJSON: UnmarshalDeclineRevisionPayload,
+	}
+}
+
+// DeclineRevisionResultCodec returns a fresh codec for *DeclineRevisionResult.
+func DeclineRevisionResultCodec() tools.JSONCodec[*DeclineRevisionResult] {
+	return tools.JSONCodec[*DeclineRevisionResult]{
+		ToJSON:   MarshalDeclineRevisionResult,
+		FromJSON: UnmarshalDeclineRevisionResult,
+	}
+}
+
 // DiffPayloadCodec returns a fresh codec for *DiffPayload.
 func DiffPayloadCodec() tools.JSONCodec[*DiffPayload] {
 	return tools.JSONCodec[*DiffPayload]{
@@ -589,6 +605,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalConfirmIntentResult(data)
+		},
+	}
+	// declineRevisionPayloadCodec provides an untyped codec for *DeclineRevisionPayload.
+	declineRevisionPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*DeclineRevisionPayload); ok {
+				return MarshalDeclineRevisionPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *DeclineRevisionPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalDeclineRevisionPayload(data)
+		},
+	}
+	// declineRevisionResultCodec provides an untyped codec for *DeclineRevisionResult.
+	declineRevisionResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*DeclineRevisionResult); ok {
+				return MarshalDeclineRevisionResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *DeclineRevisionResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalDeclineRevisionResult(data)
 		},
 	}
 	// diffPayloadCodec provides an untyped codec for *DiffPayload.
@@ -1693,6 +1735,306 @@ var approveMergeResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
+		JSONType:    "object",
+		Description: "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the guide composed for this revision in its analysis, when it sent one.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var checkProjectPayloadFields = []tools.FieldMetadata{
 	{
@@ -1780,12 +2122,12 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -2248,6 +2590,1048 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
+		JSONType:    "object",
+		Description: "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the guide composed for this revision in its analysis, when it sent one.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+}
+var declineRevisionPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Identifies the proposed revision of a confirmed Change Card that the user declines.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.",
+	},
+}
+var declineRevisionResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Checkpoint 1 Change Card containing examples, preserved behaviors, optional adopted domain Stories, and audit metadata.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("status")},
+		JSONType:    "string",
+		Description: "Checkpoint status (needs_confirmation or confirmed).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions surfaced at CP1, retained for audit after confirmation.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions surfaced at CP1, retained for audit after confirmation.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
+		JSONType:    "object",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
+		JSONType:    "string",
+		Description: "User who confirmed the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the canonical versioned Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "User who approved the result.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
+		JSONType:    "object",
+		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Recorded promotion approval from the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "User who approved the result.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
+		JSONType:    "object",
+		Description: "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the guide composed for this revision in its analysis, when it sent one.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var diffPayloadFields = []tools.FieldMetadata{
 	{
@@ -2510,7 +3894,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+		Description: "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -2841,7 +4225,7 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("read")},
@@ -3354,6 +4738,306 @@ var getChangeResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
+		JSONType:    "object",
+		Description: "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the guide composed for this revision in its analysis, when it sent one.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var getStoryRefreshPayloadFields = []tools.FieldMetadata{
 	{
@@ -3599,7 +5283,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
@@ -4458,7 +6142,7 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("read")},
@@ -4591,6 +6275,11 @@ var listChangesResultFields = []tools.FieldMetadata{
 		Description: "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("proposed_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the revision the guide proposed beside this confirmed change, while it waits for the user to adopt or decline it; absent otherwise. status and request_revision describe the revision in force.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("saved_at")},
 		JSONType:    "string",
 		Description: "When the Change Card was last saved. It is not part of request_revision.",
@@ -4639,7 +6328,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress")},
@@ -6113,6 +7802,306 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
+		JSONType:    "object",
+		Description: "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the guide composed for this revision in its analysis, when it sent one.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var readCheckOutputPayloadFields = []tools.FieldMetadata{
 	{
@@ -6405,7 +8394,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
@@ -6607,7 +8596,7 @@ var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
 		JSONType:    "string",
-		Description: "Current CP1 request_revision digest being revised.",
+		Description: "request_revision of the latest revision you read: the proposed revision's when the change shows one waiting (proposed_revision.request_revision), otherwise the change's own.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
@@ -7139,6 +9128,306 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
+		JSONType:    "object",
+		Description: "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the proposed change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions the user answers when adopting this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the guide composed for this revision in its analysis, when it sent one.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
 	},
 }
 var startLiveTargetPayloadFields = []tools.FieldMetadata{
@@ -7761,6 +10050,40 @@ func enrichConfirmIntentResultValidationError(err error) error {
 	m := make(map[string]string)
 	for _, is := range issues {
 		if field, ok := tools.LookupFieldMetadata(confirmIntentResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichDeclineRevisionPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(declineRevisionPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichDeclineRevisionResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(declineRevisionResultFields, is.Field); ok && field.Description != "" {
 			m[is.Field] = field.Description
 		}
 	}
@@ -8725,6 +11048,68 @@ func invalidConfirmIntentResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(confirmIntentResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidDeclineRevisionPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "DeclineRevisionPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(declineRevisionPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidDeclineRevisionResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "DeclineRevisionResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(declineRevisionResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -10407,6 +12792,9 @@ func MarshalApproveMergeResult(v *ApproveMergeResult) ([]byte, error) {
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = encodeProposedRevisionItemToProposedRevisionItemTransport(in.ProposedRevision)
+	}
 	return json.Marshal(out)
 }
 
@@ -10486,6 +12874,9 @@ func UnmarshalApproveMergeResult(data []byte) (*ApproveMergeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = decodeProposedRevisionItemTransportToProposedRevisionItem(in.ProposedRevision)
 	}
 	return out, nil
 }
@@ -10789,6 +13180,9 @@ func MarshalConfirmIntentResult(v *ConfirmIntentResult) ([]byte, error) {
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = encodeProposedRevisionItemToProposedRevisionItemTransport(in.ProposedRevision)
+	}
 	return json.Marshal(out)
 }
 
@@ -10868,6 +13262,205 @@ func UnmarshalConfirmIntentResult(data []byte) (*ConfirmIntentResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = decodeProposedRevisionItemTransportToProposedRevisionItem(in.ProposedRevision)
+	}
+	return out, nil
+}
+
+// MarshalDeclineRevisionPayload serializes *DeclineRevisionPayload into JSON.
+func MarshalDeclineRevisionPayload(v *DeclineRevisionPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("declineRevisionPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.DeclineRevisionPayloadTransport
+	out = &toolhttp.DeclineRevisionPayloadTransport{
+		ChangeID:        &in.ChangeID,
+		RequestRevision: &in.RequestRevision,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalDeclineRevisionPayload deserializes JSON into *DeclineRevisionPayload.
+func UnmarshalDeclineRevisionPayload(data []byte) (*DeclineRevisionPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("declineRevisionPayload JSON is empty")
+	}
+	var tv toolhttp.DeclineRevisionPayloadTransport
+	if err := validateDeclineRevisionPayloadJSON(data); err != nil {
+		return nil, invalidDeclineRevisionPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidDeclineRevisionPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateDeclineRevisionPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichDeclineRevisionPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *DeclineRevisionPayload
+	out = &DeclineRevisionPayload{
+		ChangeID:        *in.ChangeID,
+		RequestRevision: *in.RequestRevision,
+	}
+	return out, nil
+}
+
+// MarshalDeclineRevisionResult serializes *DeclineRevisionResult into JSON.
+func MarshalDeclineRevisionResult(v *DeclineRevisionResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("declineRevisionResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.DeclineRevisionResultTransport
+	out = &toolhttp.DeclineRevisionResultTransport{
+		ChangeID:        &in.ChangeID,
+		Status:          &in.Status,
+		Prompt:          &in.Prompt,
+		Summary:         &in.Summary,
+		ConfirmedBy:     in.ConfirmedBy,
+		RequestRevision: &in.RequestRevision,
+	}
+	if in.Ambiguities != nil {
+		out.Ambiguities = make([]*toolhttp.AmbiguityQuestionTransport, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				out.Ambiguities[i] = nil
+				continue
+			}
+			out.Ambiguities[i] = encodeAmbiguityQuestionToAmbiguityQuestionTransport(val)
+		}
+	}
+	if in.Answers != nil {
+		out.Answers = make(map[string]string, len(in.Answers))
+		for key, val := range in.Answers {
+			tk := key
+			tv := val
+			out.Answers[tk] = tv
+		}
+	}
+	out.Examples = make([]*toolhttp.ExampleItemTransport, len(in.Examples))
+	for i, val := range in.Examples {
+		if val == nil {
+			out.Examples[i] = nil
+			continue
+		}
+		out.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+	}
+	out.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+	for i, val := range in.PreservedBehaviors {
+		out.PreservedBehaviors[i] = val
+	}
+	if in.Stories != nil {
+		out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				out.Stories[i] = nil
+				continue
+			}
+			out.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+		}
+	}
+	if in.UIComposition != nil {
+		out.UIComposition = encodeUICompositionItemToUICompositionItemTransport(in.UIComposition)
+	}
+	if in.Approval != nil {
+		out.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = encodeProposedRevisionItemToProposedRevisionItemTransport(in.ProposedRevision)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalDeclineRevisionResult deserializes JSON into *DeclineRevisionResult.
+func UnmarshalDeclineRevisionResult(data []byte) (*DeclineRevisionResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("declineRevisionResult JSON is empty")
+	}
+	var tv toolhttp.DeclineRevisionResultTransport
+	if err := validateProposeChangeResultJSON(data); err != nil {
+		return nil, invalidDeclineRevisionResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidDeclineRevisionResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateDeclineRevisionResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichDeclineRevisionResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *DeclineRevisionResult
+	out = &DeclineRevisionResult{
+		ChangeID:        *in.ChangeID,
+		Status:          *in.Status,
+		Prompt:          *in.Prompt,
+		Summary:         *in.Summary,
+		ConfirmedBy:     in.ConfirmedBy,
+		RequestRevision: *in.RequestRevision,
+	}
+	if in.Ambiguities != nil {
+		out.Ambiguities = make([]*AmbiguityQuestion, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				out.Ambiguities[i] = nil
+				continue
+			}
+			out.Ambiguities[i] = decodeAmbiguityQuestionTransportToAmbiguityQuestion(val)
+		}
+	}
+	if in.Answers != nil {
+		out.Answers = make(map[string]string, len(in.Answers))
+		for key, val := range in.Answers {
+			tk := key
+			tv := val
+			out.Answers[tk] = tv
+		}
+	}
+	out.Examples = make([]*ExampleItem, len(in.Examples))
+	for i, val := range in.Examples {
+		if val == nil {
+			out.Examples[i] = nil
+			continue
+		}
+		out.Examples[i] = decodeExampleItemTransportToExampleItem(val)
+	}
+	out.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+	for i, val := range in.PreservedBehaviors {
+		out.PreservedBehaviors[i] = val
+	}
+	if in.Stories != nil {
+		out.Stories = make([]*StorySummaryItem, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				out.Stories[i] = nil
+				continue
+			}
+			out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+		}
+	}
+	if in.UIComposition != nil {
+		out.UIComposition = decodeUICompositionItemTransportToUICompositionItem(in.UIComposition)
+	}
+	if in.Approval != nil {
+		out.Approval = decodeApprovalItemTransportToApprovalItem(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = decodeProposedRevisionItemTransportToProposedRevisionItem(in.ProposedRevision)
 	}
 	return out, nil
 }
@@ -11545,6 +14138,9 @@ func MarshalGetChangeResult(v *GetChangeResult) ([]byte, error) {
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = encodeProposedRevisionItemToProposedRevisionItemTransport(in.ProposedRevision)
+	}
 	return json.Marshal(out)
 }
 
@@ -11624,6 +14220,9 @@ func UnmarshalGetChangeResult(data []byte) (*GetChangeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = decodeProposedRevisionItemTransportToProposedRevisionItem(in.ProposedRevision)
 	}
 	return out, nil
 }
@@ -12813,6 +15412,9 @@ func MarshalProposeChangeResult(v *ProposeChangeResult) ([]byte, error) {
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = encodeProposedRevisionItemToProposedRevisionItemTransport(in.ProposedRevision)
+	}
 	return json.Marshal(out)
 }
 
@@ -12892,6 +15494,9 @@ func UnmarshalProposeChangeResult(data []byte) (*ProposeChangeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = decodeProposedRevisionItemTransportToProposedRevisionItem(in.ProposedRevision)
 	}
 	return out, nil
 }
@@ -13281,6 +15886,9 @@ func MarshalReviseChangeResult(v *ReviseChangeResult) ([]byte, error) {
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = encodeProposedRevisionItemToProposedRevisionItemTransport(in.ProposedRevision)
+	}
 	return json.Marshal(out)
 }
 
@@ -13360,6 +15968,9 @@ func UnmarshalReviseChangeResult(data []byte) (*ReviseChangeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	if in.ProposedRevision != nil {
+		out.ProposedRevision = decodeProposedRevisionItemTransportToProposedRevisionItem(in.ProposedRevision)
 	}
 	return out, nil
 }
@@ -13806,6 +16417,16 @@ func validateGetChangePayloadJSON(data []byte) error {
 		return err
 	}
 	return validateGetChangePayloadJSONValue("", root, "")
+}
+
+// validateDeclineRevisionPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateDeclineRevisionPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateDeclineRevisionPayloadJSONValue("", root, "")
 }
 
 // validatePreviewArchitecturePayloadJSON parses one JSON document and checks the exact value
@@ -14716,6 +17337,13 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 			); err != nil {
 				return err
 			}
+		case "proposed_revision":
+			if err := validateProposeChangeResultProposedRevisionItemTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
+			); err != nil {
+				return err
+			}
 		case "request_revision":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -14731,7 +17359,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 				return err
 			}
 		case "stories":
-			if err := validateProposeChangeResultRootStoriesJSONValue(
+			if err := validateProposeChangeResultProposedRevisionItemTransportStoriesJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.",
 			); err != nil {
@@ -14768,6 +17396,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 				"examples",
 				"preserved_behaviors",
 				"prompt",
+				"proposed_revision",
 				"request_revision",
 				"status",
 				"stories",
@@ -15088,8 +17717,108 @@ func validateProposeChangeResultExampleItemTransportJSONValue(path string, value
 	return nil
 }
 
-// validateProposeChangeResultRootStoriesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateProposeChangeResultRootStoriesJSONValue(path string, value any, description string) error {
+// validateProposeChangeResultProposedRevisionItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangeResultProposedRevisionItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "ambiguities":
+			if err := validateProposeChangeResultRootAmbiguitiesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Domain questions the user answers when adopting this revision.",
+			); err != nil {
+				return err
+			}
+		case "changed_design_files":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+			); err != nil {
+				return err
+			}
+		case "examples":
+			if err := validateProposeChangeResultRootExamplesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Concrete examples mapped to evaluator checks.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Existing contract invariants preserved by this change.",
+			); err != nil {
+				return err
+			}
+		case "prompt":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operator feature request for this revision.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.",
+			); err != nil {
+				return err
+			}
+		case "stories":
+			if err := validateProposeChangeResultProposedRevisionItemTransportStoriesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English summary of the proposed change.",
+			); err != nil {
+				return err
+			}
+		case "ui_composition":
+			if err := validateProposeChangeResultUICompositionItemTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Decision view the guide composed for this revision in its analysis, when it sent one.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"ambiguities",
+				"changed_design_files",
+				"examples",
+				"preserved_behaviors",
+				"prompt",
+				"request_revision",
+				"stories",
+				"summary",
+				"ui_composition",
+			})
+		}
+	}
+	return nil
+}
+
+// validateProposeChangeResultProposedRevisionItemTransportStoriesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangeResultProposedRevisionItemTransportStoriesJSONValue(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15680,7 +18409,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "request_revision":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current CP1 request_revision digest being revised.",
+				typed[key], "request_revision of the latest revision you read: the proposed revision's when the change shows one waiting (proposed_revision.request_revision), otherwise the change's own.",
 			); err != nil {
 				return err
 			}
@@ -15895,7 +18624,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.",
 			); err != nil {
 				return err
 			}
@@ -15962,6 +18691,50 @@ func validateGetChangePayloadJSONValue(path string, value any, description strin
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateDeclineRevisionPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateDeclineRevisionPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change identifier.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"request_revision",
 			})
 		}
 	}
@@ -18665,7 +21438,7 @@ func validateRefreshStoryResultJSONValue(path string, value any, description str
 				return err
 			}
 		case "stories":
-			if err := validateProposeChangeResultRootStoriesJSONValue(
+			if err := validateProposeChangeResultProposedRevisionItemTransportStoriesJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
 			); err != nil {
@@ -18795,6 +21568,13 @@ func validateListChangesResultChangeListItemTransportJSONValue(path string, valu
 			); err != nil {
 				return err
 			}
+		case "proposed_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "request_revision of the revision the guide proposed beside this confirmed change, while it waits for the user to adopt or decline it; absent otherwise. status and request_revision describe the revision in force.",
+			); err != nil {
+				return err
+			}
 		case "request_revision":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -18827,6 +21607,7 @@ func validateListChangesResultChangeListItemTransportJSONValue(path string, valu
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
 				"latest_verification",
+				"proposed_revision",
 				"request_revision",
 				"saved_at",
 				"status",
@@ -18989,7 +21770,7 @@ func validateGetBuildResultStartedBuildTransportJSONValue(path string, value any
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+				typed[key], "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -19387,7 +22168,7 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -19587,7 +22368,7 @@ func validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSO
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -19683,7 +22464,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -19709,7 +22490,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 				return err
 			}
 		case "stories":
-			if err := validateProposeChangeResultRootStoriesJSONValue(
+			if err := validateProposeChangeResultProposedRevisionItemTransportStoriesJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
 			); err != nil {
@@ -20147,6 +22928,54 @@ func decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(v *toolhttp.U
 
 	return res
 }
+func decodeProposedRevisionItemTransportToProposedRevisionItem(v *toolhttp.ProposedRevisionItemTransport) *ProposedRevisionItem {
+	res := &ProposedRevisionItem{
+		Prompt:          *v.Prompt,
+		Summary:         *v.Summary,
+		RequestRevision: *v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*AmbiguityQuestion, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = decodeAmbiguityQuestionTransportToAmbiguityQuestion(val)
+		}
+	}
+	res.Examples = make([]*ExampleItem, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeExampleItemTransportToExampleItem(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*StorySummaryItem, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = decodeUICompositionItemTransportToUICompositionItem(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
+
+	return res
+}
 func encodeAmbiguityQuestionToAmbiguityQuestionTransport(v *AmbiguityQuestion) *toolhttp.AmbiguityQuestionTransport {
 	res := &toolhttp.AmbiguityQuestionTransport{
 		ID:       &v.ID,
@@ -20293,6 +23122,54 @@ func encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(v *Unverified
 		Reason: &v.Reason,
 	}
 	res.Approval = encodeApprovalItemToApprovalItemTransport(v.Approval)
+
+	return res
+}
+func encodeProposedRevisionItemToProposedRevisionItemTransport(v *ProposedRevisionItem) *toolhttp.ProposedRevisionItemTransport {
+	res := &toolhttp.ProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*toolhttp.AmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToAmbiguityQuestionTransport(val)
+		}
+	}
+	res.Examples = make([]*toolhttp.ExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*toolhttp.StorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToUICompositionItemTransport(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }
@@ -20856,11 +23733,12 @@ func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *
 }
 func decodeChangeListItemTransportToChangeListItem(v *toolhttp.ChangeListItemTransport) *ChangeListItem {
 	res := &ChangeListItem{
-		ChangeID:        *v.ChangeID,
-		Summary:         *v.Summary,
-		Status:          *v.Status,
-		RequestRevision: *v.RequestRevision,
-		SavedAt:         *v.SavedAt,
+		ChangeID:         *v.ChangeID,
+		Summary:          *v.Summary,
+		Status:           *v.Status,
+		RequestRevision:  *v.RequestRevision,
+		ProposedRevision: v.ProposedRevision,
+		SavedAt:          *v.SavedAt,
 	}
 	if v.LatestVerification != nil {
 		res.LatestVerification = decodeLatestVerificationItemTransportToLatestVerificationItem(v.LatestVerification)
@@ -20878,11 +23756,12 @@ func decodeLatestVerificationItemTransportToLatestVerificationItem(v *toolhttp.L
 }
 func encodeChangeListItemToChangeListItemTransport(v *ChangeListItem) *toolhttp.ChangeListItemTransport {
 	res := &toolhttp.ChangeListItemTransport{
-		ChangeID:        &v.ChangeID,
-		Summary:         &v.Summary,
-		Status:          &v.Status,
-		RequestRevision: &v.RequestRevision,
-		SavedAt:         &v.SavedAt,
+		ChangeID:         &v.ChangeID,
+		Summary:          &v.Summary,
+		Status:           &v.Status,
+		RequestRevision:  &v.RequestRevision,
+		ProposedRevision: v.ProposedRevision,
+		SavedAt:          &v.SavedAt,
 	}
 	if v.LatestVerification != nil {
 		res.LatestVerification = encodeLatestVerificationItemToLatestVerificationItemTransport(v.LatestVerification)

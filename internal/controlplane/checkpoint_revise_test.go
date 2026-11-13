@@ -18,7 +18,9 @@ import (
 // TestCheckpointUIReviseLifecyclePriorComparison follows one change through
 // revisions the guide saves while the page is open, checking what each
 // arrival does to the editor, its previous-revision panel, and the user's
-// unsaved lines.
+// unsaved lines. Until the user confirms, each revision replaces the change;
+// a revision saved while the page's own confirmation awaits its answer then
+// waits as a proposal beside the confirmed change.
 func TestCheckpointUIReviseLifecyclePriorComparison(t *testing.T) {
 	cp := pageControlPlane(t, Options{})
 	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
@@ -95,9 +97,6 @@ expect(editor().dataset.requestRevision === r4.request_revision && prior() && pr
 page.$("#surla-discard-draft").click();
 
 // 3b. Only a changed example is preserved, and successive revisions keep earlier lines.
-editor().querySelector('[data-ambiguity-id="chg-rev-ui-ambiguity-01"][data-option="subtotal_only"]').click();
-page.$("#surla-confirm-submit").click();
-await until(() => editor().textContent.includes("Confirmed Change Decision"), "R4 did not confirm");
 const r4c = await read();
 page.type(outcome("check_02"), "VP finance approval over $50");
 const r5 = await revise(r4c, "Refunds over $50 require approval.", twoExamples("Manager approval", { prior_id: "check_02" }));
@@ -113,11 +112,11 @@ const successive = preserved() ? preserved().textContent : "";
 expect(editor().dataset.requestRevision === r6.request_revision && successive.includes("[" + r4c.request_revision + "] check_02: Refund over $50 | $75 subtotal -> VP finance approval over $50 [deterministic]") && successive.includes("[" + r5.request_revision + "] check_01: Refund under $50 | $40 subtotal ->  [deterministic]") && !successive.includes("chg-rev-ui-ambiguity-01"), "successive revisions did not keep both changed lines: " + successive);
 page.$("#surla-discard-draft").click();
 
-// 4. A revision saved while the page's own confirmation awaits its answer appears after the answer, with the confirmed card as its previous revision.
+// 4. A revision saved while the page's own confirmation awaits its answer appears after the answer, as a proposal beside the confirmed card.
 await control(origin, "answer-later", { key: "POST /changes/confirm" });
 editor().querySelector('[data-ambiguity-id="chg-rev-ui-ambiguity-01"][data-option="subtotal_only"]').click();
 page.$("#surla-confirm-submit").click();
-await until(() => page.sent("POST", "/changes/confirm").length === 2, "the confirmation was not sent");
+await until(() => page.sent("POST", "/changes/confirm").length === 1, "the confirmation was not sent");
 let r6c = await read();
 for (let tries = 0; r6c.status !== "confirmed" && tries < 200; tries++) {
   await sleep(20);
@@ -128,8 +127,8 @@ const r7 = await revise(r6c, "Refunds over $50 require a manager and a receipt."
 await sleep(300);
 expect(!page.$("#surla-incoming-change-card"), "a save during the page's own confirmation was held as incoming");
 await control(origin, "release", { key: "POST /changes/confirm" });
-await until(() => editor().dataset.requestRevision === r7.request_revision, "R7 did not appear after the confirmation's answer");
-expect(prior() && prior().textContent.includes(r6c.request_revision), "expected R7's previous revision to be the confirmed card");
+await until(() => page.$("#surla-proposal") && page.$("#surla-proposal").dataset.requestRevision === r7.proposed_revision.request_revision, "R7 did not appear after the confirmation's answer");
+expect(editor().dataset.requestRevision === r6c.request_revision && r7.request_revision === r6c.request_revision, "expected R7 to wait beside the confirmed card");
 
 // Opening a different change shows no previous revision.
 await api(origin, "POST", "/changes/propose", { change_id: "chg-other", prompt: "Show the order's shipping carrier on its receipt.", analysis: { summary: "Receipts name the carrier that ships the order.", ambiguities: [], examples: [{ scenario: "Shipped order receipt", input_summary: "Order shipped with a ground carrier", expected_outcome: "Receipt names the ground carrier", verification_kind: "deterministic" }], preserved_behaviors: [] } }, input.guide);

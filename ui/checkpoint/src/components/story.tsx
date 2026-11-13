@@ -364,15 +364,7 @@ function SucceededDraft({ card, evaluation }: { card: ChangeCardResult | null; e
           <p>
             <strong>The current draft differs from this change's Story.</strong>
           </p>
-          <ul>
-            <DifferenceItem kind="added" label="Flows added in the draft" names={difference.added} />
-            <DifferenceItem kind="removed" label="Flows removed in the draft" names={difference.removed} />
-            <DifferenceItem kind="changed" label="Flows changed in the draft" names={difference.changed} />
-            <DifferenceItem kind="step-order" label="Flows whose steps are in another order" names={difference.stepOrder} />
-            <DifferenceItem kind="flow-order" label="Stories whose flows are in another order" names={difference.flowOrder} />
-            <DifferenceItem kind="details" label="Stories whose description or roles changed" names={difference.details} />
-            {difference.storyOrder ? <li data-difference="story-order">The Stories are in another order.</li> : null}
-          </ul>
+          <StoryDifferenceList difference={difference} subject="the draft" />
           <p id="surla-story-rule">
             The draft is not part of this change until the guide revises the change with it and you
             confirm the new revision.
@@ -384,6 +376,23 @@ function SucceededDraft({ card, evaluation }: { card: ChangeCardResult | null; e
         {drawing}
       </details>
     </div>
+  );
+}
+
+// StoryDifferenceList names every way a Story differs from the change's
+// Story, one item per kind of difference; subject names what differs, such
+// as "the draft".
+export function StoryDifferenceList({ difference, subject }: { difference: StoryDifference; subject: string }) {
+  return (
+    <ul className="surla-story-differences">
+      <DifferenceItem kind="added" label={"Flows added in " + subject} names={difference.added} />
+      <DifferenceItem kind="removed" label={"Flows removed in " + subject} names={difference.removed} />
+      <DifferenceItem kind="changed" label={"Flows changed in " + subject} names={difference.changed} />
+      <DifferenceItem kind="step-order" label="Flows whose steps are in another order" names={difference.stepOrder} />
+      <DifferenceItem kind="flow-order" label="Stories whose flows are in another order" names={difference.flowOrder} />
+      <DifferenceItem kind="details" label="Stories whose description or roles changed" names={difference.details} />
+      {difference.storyOrder ? <li data-difference="story-order">The Stories are in another order.</li> : null}
+    </ul>
   );
 }
 

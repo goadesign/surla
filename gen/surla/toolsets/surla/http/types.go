@@ -74,6 +74,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
 	// CheckProjectPayloadTransport is the internal JSON transport type for CheckProjectPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -133,8 +137,9 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// Selected resolution per ambiguity question ID. Answer every current
 		// question, and give each value exactly as one string from that question's
-		// options, character for character. To record a decision that no option
-		// expresses, call revise_change with that decision in prompt.
+		// options, character for character. A decision that no option expresses goes
+		// to the guide, which records it with revise_change; the user then confirms
+		// the resulting revision.
 		Answers map[string]string `json:"answers"`
 		// The complete confirmed example table, including examples you edited or
 		// added. Keep an existing example's id when you edit it, and give an example
@@ -191,6 +196,76 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
+	}
+	// DeclineRevisionPayloadTransport is the internal JSON transport type for DeclineRevisionPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	DeclineRevisionPayloadTransport struct {
+		// Change identifier.
+		ChangeID *string `json:"change_id"`
+		// request_revision of the proposed revision being declined
+		// (proposed_revision.request_revision): 64 lowercase hex characters.
+		RequestRevision *string `json:"request_revision"`
+	}
+	// DeclineRevisionResultTransport is the internal JSON transport type for DeclineRevisionResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	DeclineRevisionResultTransport struct {
+		// Change identifier.
+		ChangeID *string `json:"change_id"`
+		// Checkpoint status (needs_confirmation or confirmed).
+		Status *string `json:"status"`
+		// Operator feature request for this revision.
+		Prompt *string `json:"prompt"`
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
+		Summary *string `json:"summary"`
+		// Domain questions surfaced at CP1, retained for audit after confirmation.
+		Ambiguities []*AmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
+		Answers map[string]string `json:"answers,omitempty"`
+		// Concrete examples mapped to evaluator checks.
+		Examples []*ExampleItemTransport `json:"examples"`
+		// Existing contract invariants preserved by this change.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
+		// User who confirmed the Change Card.
+		ConfirmedBy *string `json:"confirmed_by,omitempty"`
+		// SHA-256 digest of the canonical versioned Change Card.
+		RequestRevision *string `json:"request_revision"`
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
+		// revision without it.
+		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
+		Approval *ApprovalItemTransport `json:"approval,omitempty"`
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
 	// DiffPayloadTransport is the internal JSON transport type for DiffPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -308,8 +383,9 @@ type (
 		// Change Card revision to build; verify_change takes it.
 		RequestRevision *string `json:"request_revision"`
 		// True when request_revision is the change's confirmed revision in force, as
-		// get_build reports it. False when the user has since confirmed another
-		// revision or the change awaits confirmation of one: verify_change refuses
+		// get_build reports it. It stays true while a revision the guide proposed
+		// waits beside the agreed one, and is false once the user has adopted a
+		// proposed revision or confirmed another revision: verify_change then refuses
 		// this revision, and the assignment stays as it is until the user builds again.
 		InForce *bool `json:"in_force"`
 		// True once you read this assignment in full with get_builder_assignment.
@@ -378,6 +454,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
 	// GetStoryRefreshPayloadTransport is the internal JSON transport type for GetStoryRefreshPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -427,9 +507,10 @@ type (
 		// Change Card revision the tests are for; report_tests_finished takes it.
 		RequestRevision *string `json:"request_revision"`
 		// True when request_revision is the change's confirmed revision in force, as
-		// get_build reports it. False when the user has since confirmed another
-		// revision or the change awaits confirmation of one: the assignment stays for
-		// this earlier revision until the user builds again.
+		// get_build reports it. It stays true while a revision the guide proposed
+		// waits beside the agreed one, and is false once the user has adopted a
+		// proposed revision or confirmed another revision: the assignment then stays
+		// for this earlier revision until the user builds again.
 		InForce *bool `json:"in_force"`
 		// Where this assignment stands, including Surla's findings when it needs
 		// changes.
@@ -701,6 +782,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
 	// ReadCheckOutputPayloadTransport is the internal JSON transport type for ReadCheckOutputPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -777,9 +862,10 @@ type (
 		// Change Card revision the tests are for.
 		RequestRevision *string `json:"request_revision"`
 		// True when request_revision is the change's confirmed revision in force, as
-		// get_build reports it. False when the user has since confirmed another
-		// revision or the change awaits confirmation of one: the assignment stays for
-		// this earlier revision until the user builds again.
+		// get_build reports it. It stays true while a revision the guide proposed
+		// waits beside the agreed one, and is false once the user has adopted a
+		// proposed revision or confirmed another revision: the assignment then stays
+		// for this earlier revision until the user builds again.
 		InForce *bool `json:"in_force"`
 		// Where this assignment stands.
 		Progress *TestWriterProgressTransport `json:"progress"`
@@ -791,7 +877,9 @@ type (
 	ReviseChangePayloadTransport struct {
 		// Change identifier.
 		ChangeID *string `json:"change_id"`
-		// Current CP1 request_revision digest being revised.
+		// request_revision of the latest revision you read: the proposed revision's
+		// when the change shows one waiting (proposed_revision.request_revision),
+		// otherwise the change's own.
 		RequestRevision *string `json:"request_revision"`
 		// Revised operator feature request.
 		Prompt *string `json:"prompt"`
@@ -856,6 +944,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
 	// StartLiveTargetPayloadTransport is the internal JSON transport type for StartLiveTargetPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1021,8 +1113,9 @@ type (
 		// Change Card revision to build; verify_change takes it.
 		RequestRevision *string `json:"request_revision"`
 		// True when request_revision is the change's confirmed revision in force, as
-		// get_build reports it. False when the user has since confirmed another
-		// revision or the change awaits confirmation of one: verify_change refuses
+		// get_build reports it. It stays true while a revision the guide proposed
+		// waits beside the agreed one, and is false once the user has adopted a
+		// proposed revision or confirmed another revision: verify_change then refuses
 		// this revision, and the assignment stays as it is until the user builds again.
 		InForce *bool `json:"in_force"`
 		// True once you read this assignment in full with get_builder_assignment.
@@ -1211,6 +1304,10 @@ type (
 		// The Change Card's most recently accepted verification run; absent when none
 		// was started.
 		LatestVerification *LatestVerificationItemTransport `json:"latest_verification,omitempty"`
+		// request_revision of the revision the guide proposed beside this confirmed
+		// change, while it waits for the user to adopt or decline it; absent
+		// otherwise. status and request_revision describe the revision in force.
+		ProposedRevision *string `json:"proposed_revision,omitempty"`
 		// When the Change Card was last saved. It is not part of request_revision.
 		SavedAt *string `json:"saved_at"`
 	}
@@ -1253,6 +1350,38 @@ type (
 		// report.
 		State *string `json:"state"`
 	}
+	// ProposedRevisionItemTransport is the internal JSON transport type for ProposedRevisionItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ProposedRevisionItemTransport struct {
+		// Operator feature request for this revision.
+		Prompt *string `json:"prompt"`
+		// Plain-English summary of the proposed change.
+		Summary *string `json:"summary"`
+		// Domain questions the user answers when adopting this revision.
+		Ambiguities []*AmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+		// Concrete examples mapped to evaluator checks.
+		Examples []*ExampleItemTransport `json:"examples"`
+		// Existing contract invariants preserved by this change.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
+		// Evaluated domain Stories of this revision in declaration order; omitted when
+		// it has none. Included in its request_revision.
+		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
+		// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+		// decline_revision declines it, and revise_change replaces it when given this
+		// value.
+		RequestRevision *string `json:"request_revision"`
+		// Decision view the guide composed for this revision in its analysis, when it
+		// sent one.
+		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
+		// Paths of the design/*.go files that differ between the design source the
+		// confirmed revision was made from and the one this revision was made from
+		// (added, removed or changed), in path order; empty when both were made from
+		// the same design files. Adopting the revision binds it to its own design
+		// source.
+		ChangedDesignFiles []string `json:"changed_design_files"`
+	}
 	// RequiredTestTransport is the internal JSON transport type for RequiredTestTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1276,9 +1405,11 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// When the user started this build.
 		StartedAt *string `json:"started_at"`
-		// True when request_revision is the change's confirmed revision in force.
-		// False when the change was revised or confirmed again since: the assignments
-		// stay as they are, for this earlier revision, until the user builds again.
+		// True when request_revision is the change's agreed revision, the one in
+		// force. It stays true while a revision the guide proposed waits beside the
+		// agreed one, and turns false once the user adopts a proposed revision or
+		// confirms another revision: the assignments then stay as they are, for this
+		// earlier revision, until the user builds again.
 		InForce *bool `json:"in_force"`
 		// The builder's assignment.
 		Builder *BuilderProgressTransport `json:"builder"`
@@ -1372,9 +1503,10 @@ type (
 		// Change Card revision the tests are for.
 		RequestRevision *string `json:"request_revision"`
 		// True when request_revision is the change's confirmed revision in force, as
-		// get_build reports it. False when the user has since confirmed another
-		// revision or the change awaits confirmation of one: the assignment stays for
-		// this earlier revision until the user builds again.
+		// get_build reports it. It stays true while a revision the guide proposed
+		// waits beside the agreed one, and is false once the user has adopted a
+		// proposed revision or confirmed another revision: the assignment then stays
+		// for this earlier revision until the user builds again.
 		InForce *bool `json:"in_force"`
 		// Where this assignment stands.
 		Progress *TestWriterProgressTransport `json:"progress"`
