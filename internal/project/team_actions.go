@@ -213,7 +213,9 @@ func userTeamStep(cause string) string {
 	case "stopping":
 		return "the project server is stopping; run surla in the project folder to start it again"
 	case "herdr":
-		return "Herdr did not complete a team command; open the Herdr app, then start the agents again"
+		// Starting agents and showing a pane both fail with this cause, so the step
+		// retries whichever action the user took.
+		return "Herdr did not complete a team command; open the Herdr app, then try again"
 	case "roster_folder":
 		return "Herdr's launcher roster folder could not be written; make data/chorus-launcher/rosters in Herdr's app folder (~/.config/herdr-app unless HERDR_APP_HOME is set) writable by this account, then start the agents again"
 	case "project_state":

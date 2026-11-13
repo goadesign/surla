@@ -124,6 +124,21 @@ func TestTeamShowPaneOverlayAndOwnership(t *testing.T) {
 	}
 }
 
+// TestShowPaneHerdrFailureNamesRetry gives a failed Show pane the Herdr step without
+// sending the user to start agents that are already running: the step retries the
+// action the user took.
+func TestShowPaneHerdrFailureNamesRetry(t *testing.T) {
+	o, _, _ := newSupervisionFixture(t)
+	host := o.server.team.dependencies.Host.(*teamFixture)
+	o.server.team.dependencies.Host = failingOverlays{host}
+	err := o.server.ShowPane(t.Context(), "builder")
+	var page *goa.ServiceError
+	require.ErrorAs(t, err, &page)
+	assert.Equal(t, "team_unavailable", page.Name)
+	assert.Contains(t, page.Message, "open the Herdr app, then try again")
+	assert.NotContains(t, page.Message, "start the agents")
+}
+
 // TestTeamUserStartReusesPreparation proves the same space, registry, roster
 // and declared management refusals serve the user's action without a new flow.
 func TestTeamUserStartReusesPreparation(t *testing.T) {
