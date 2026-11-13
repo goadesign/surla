@@ -303,14 +303,14 @@ func projectHolder(state *project.State) string {
 	return "a server holds this project and may still be starting or stopping"
 }
 
-// serve is the Herdr program entry, with project identity and address derived from private state.
-func (runtime projectRuntime) serve() (err error) {
-	state, err := runtime.discover()
+// serve is the Herdr program entry. stateDir is the private state folder the
+// launching `surla` found and passed with -state; project identity and address
+// come from the record there, and serve never derives a folder from its own
+// environment or working directory.
+func (runtime projectRuntime) serve(stateDir string) (err error) {
+	state, err := project.Open(stateDir)
 	if err != nil {
 		return err
-	}
-	if state.Record.ID == "" {
-		return errors.New("start the project with surla")
 	}
 	provider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
 	if err != nil {
@@ -399,16 +399,22 @@ func serveProjectHTTP(
 	return errors.Join(serveErr, server.Shutdown(shutdownCtx))
 }
 
-// parseProjectArgs accepts no caller-selected server options; serve is an internal entrypoint.
-func parseProjectArgs(name string, args []string) error {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+// parseServeArgs returns the state folder named by serve's one required flag,
+// -state, which only startProjectTerminal supplies; serve is an internal
+// entrypoint and accepts no other option or argument.
+func parseServeArgs(args []string) (string, error) {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	stateDir := fs.String("state", "", "private project state folder, passed by surla when it starts the server")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return "", err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("unexpected arguments %q", fs.Args())
+		return "", fmt.Errorf("unexpected arguments %q", fs.Args())
 	}
-	return nil
+	if *stateDir == "" {
+		return "", errors.New("serve requires -state; start the project with surla")
+	}
+	return *stateDir, nil
 }
 
 // discover uses physical folders and nearest records, independent of the working tree root.
@@ -639,6 +645,8 @@ func confirmProject(ctx context.Context, state *project.State, client *genprojec
 }
 
 // startProjectTerminal delegates process lifetime to a parentless Herdr terminal; Surla never detaches a process itself.
+// The server gets the state folder this command found as -state, because a Herdr terminal runs with the
+// environment of Herdr's core, not this shell's, and could otherwise resolve another configuration folder.
 func startProjectTerminal(
 	ctx context.Context,
 	state *project.State,
@@ -652,7 +660,7 @@ func startProjectTerminal(
 	if err != nil {
 		return "", err
 	}
-	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve"}
+	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve", "-state", state.Dir}
 	command := exec.CommandContext(ctx, hc, argv...)
 	command.Stdin = nil
 	var stderr strings.Builder

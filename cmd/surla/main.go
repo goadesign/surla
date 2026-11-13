@@ -155,10 +155,11 @@ func dispatch(sub string, args []string, stdout io.Writer, runtime projectRuntim
 	case "init":
 		return runtime.init(args, stdout)
 	case "serve":
-		if err := parseProjectArgs("serve", args); err != nil {
+		stateDir, err := parseServeArgs(args)
+		if err != nil {
 			return err
 		}
-		return runtime.serve()
+		return runtime.serve(stateDir)
 	case "stop":
 		return runtime.stop(args, stdout)
 	case "verification", "promotion":

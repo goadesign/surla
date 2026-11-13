@@ -468,6 +468,7 @@ func TestManagementRetryDoesNotReuseFormerPortOwner(t *testing.T) {
 
 // TestManagementCredentialStaysOutOfMetadata uses an owned hc executable stand-in;
 // no terminal or browser is started while inspecting the actual launcher arguments.
+// The launcher hands the server the state folder this command found, and no credential.
 func TestManagementCredentialStaysOutOfMetadata(t *testing.T) {
 	isolateServeWorkspace(t)
 	state, err := fixtureProjectState("")
@@ -495,6 +496,9 @@ func TestManagementCredentialStaysOutOfMetadata(t *testing.T) {
 	assert.Equal(t, "stand-in", terminal)
 	argv, err := os.ReadFile(arguments)
 	require.NoError(t, err)
+	launched := strings.Split(strings.TrimSuffix(string(argv), "\n"), "\n")
+	require.GreaterOrEqual(t, len(launched), 3)
+	assert.Equal(t, []string{"serve", "-state", state.Dir}, launched[len(launched)-3:])
 	var output bytes.Buffer
 	writeServeStatus(&output, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: state.Record.Port}, controlplane.Options{CardsDir: state.CardsDir()}, "")
 	for _, value := range [][]byte{roster, settings, argv, output.Bytes()} {
