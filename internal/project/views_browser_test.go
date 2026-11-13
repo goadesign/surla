@@ -542,7 +542,9 @@ func startOtherOrigin(t *testing.T, framed string) *otherOrigin {
 // startBrowser starts executable headless on a new profile inside the test's
 // temporary directory and returns once the browser printed its DevTools
 // address. The browser leads its own process group so the test can find and
-// end everything it starts.
+// end everything it starts. When the test ends before its cleanup subtest
+// ran, for example under -run or after a failure, the same shutdown and
+// checks run as a cleanup.
 func startBrowser(t *testing.T, executable string) *realBrowser {
 	t.Helper()
 	profile := t.TempDir()
@@ -575,7 +577,11 @@ func startBrowser(t *testing.T, executable string) *realBrowser {
 		b.waitErr = cmd.Wait()
 		close(b.exited)
 	}()
-	t.Cleanup(func() { b.kill(t) })
+	t.Cleanup(func() {
+		if !b.ended() {
+			b.stopAndCheck(t)
+		}
+	})
 	select {
 	case b.devtools = <-output.devtools:
 	case <-b.exited:
@@ -810,15 +816,23 @@ func (b *realBrowser) belongs(p listedProcess) bool {
 	return strings.Contains(p.command, b.profile) || strings.Contains(p.command, resolved)
 }
 
-// kill ends the browser's whole process group when the test ends without
-// stopping it, so a failed test leaves no browser behind.
-func (b *realBrowser) kill(t *testing.T) {
+// ended reports whether the browser process has exited and was waited for.
+func (b *realBrowser) ended() bool {
 	select {
 	case <-b.exited:
-		return
+		return true
 	default:
+		return false
 	}
-	t.Errorf("the browser was still running; ending its process group")
+}
+
+// kill ends the browser's whole process group when it did not shut down
+// when asked, so a failed test leaves no browser behind.
+func (b *realBrowser) kill(t *testing.T) {
+	if b.ended() {
+		return
+	}
+	t.Errorf("the browser did not shut down; ending its process group")
 	if err := syscall.Kill(-b.cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		t.Errorf("ending the browser's process group: %v", err)
 	}
