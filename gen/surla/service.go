@@ -283,7 +283,8 @@ type Service interface {
 	// beside it is built only after the user adopts it. Surla checks the change
 	// and prerequisites without effects, opens and refreshes the test-writer copy
 	// when used, checks the revision again, and saves the build with the agreed
-	// Story and design. Surla immediately registers the build's exact roles and
+	// Story and design and the agreed revision's confirmed answers, examples and
+	// preserved behaviors. Surla immediately registers the build's exact roles and
 	// folders before generating required tests. Stored verification settings use
 	// only the builder and remove a former test writer. Building again replaces
 	// the build and both unread assignments. A refused start saves no build and
@@ -322,11 +323,13 @@ type Service interface {
 	// was read. Reading the list records nothing.
 	ListTestWriterAssignments(context.Context) (res *TestWriterAssignmentList, err error)
 	// Return the test writer's assignment for a change in full (the working
-	// folder, the design and Story as agreed at the built revision, the tests it
-	// requires, and the state with the text of any findings) and record that the
-	// test writer read it at its revision. Later revisions do not change the saved
-	// design or Story. A new build of the change replaces the assignment, which
-	// then counts as unread, and so does each verdict of Surla's check.
+	// folder, the design and Story as agreed at the built revision, the user's
+	// confirmed answers, confirmation examples and preserved behaviors of that
+	// revision, the tests it requires, and the state with the text of any
+	// findings) and record that the test writer read it at its revision. Later
+	// revisions do not change what the build saved. A new build of the change
+	// replaces the assignment, which then counts as unread, and so does each
+	// verdict of Surla's check.
 	GetTestWriterAssignment(context.Context, *GetTestWriterAssignmentPayload) (res *TestWriterAssignment, err error)
 	// The test writer reports that its tests for a change at the build's revision
 	// are finished. Every report raises the build's report number by one and makes
@@ -882,6 +885,17 @@ type ConfirmIntentPayload struct {
 	// added. Keep an existing example's id when you edit it, and give an example
 	// you add a new, unique, non-blank id; ids are saved as sent.
 	Examples []*ExampleItem
+}
+
+// One question of the change as agreed at the built revision, with the option
+// the user confirmed for it.
+type ConfirmedAnswer struct {
+	// Question identifier on the Change Card.
+	ID string
+	// The question as the user answered it.
+	Question string
+	// The option the user confirmed, exactly as confirmed.
+	Answer string
 }
 
 // DeclineRevisionPayload is the payload type of the surla service
@@ -1579,6 +1593,19 @@ type TestWriterAssignment struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*RequiredTest
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*ConfirmedAnswer
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*ExampleItem
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string
 }
 
 // TestWriterAssignmentItem is the result type of the surla service
@@ -3627,6 +3654,33 @@ func validatejsonConfirmIntentPayloadTransport(value *jsonConfirmIntentPayloadTr
 	return err
 }
 
+// jsonConfirmedAnswerTransport stores JSON fields until they have been validated.
+type jsonConfirmedAnswerTransport struct {
+	// Question identifier on the Change Card.
+	ID *string `json:"id"`
+	// The question as the user answered it.
+	Question *string `json:"question"`
+	// The option the user confirmed, exactly as confirmed.
+	Answer *string `json:"answer"`
+}
+
+// validatejsonConfirmedAnswerTransport checks decoded JSON before it becomes a service value.
+func validatejsonConfirmedAnswerTransport(value *jsonConfirmedAnswerTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
+	}
+	return err
+}
+
 // jsonDeclineRevisionPayloadTransport stores JSON fields until they have been validated.
 type jsonDeclineRevisionPayloadTransport struct {
 	// Change identifier.
@@ -5506,6 +5560,19 @@ type jsonTestWriterAssignmentTransport struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*jsonRequiredTestTransport `json:"required_tests"`
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*jsonConfirmedAnswerTransport `json:"answers"`
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*jsonExampleItemTransport `json:"examples"`
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
 }
 
 // validatejsonTestWriterAssignmentTransport checks decoded JSON before it becomes a service value.
@@ -5540,6 +5607,15 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	if value.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if value.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if value.Progress != nil {
 		if err2 := validatejsonTestWriterProgressTransport(value.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -5555,6 +5631,20 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	for _, e := range value.RequiredTests {
 		if e != nil {
 			if err2 := validatejsonRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Answers {
+		if e != nil {
+			if err2 := validatejsonConfirmedAnswerTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := validatejsonExampleItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -7711,6 +7801,15 @@ func validateTestWriterAssignmentOriginal(value *TestWriterAssignment) (err erro
 	if value.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "value"))
 	}
+	if value.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "value"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "value"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
+	}
 	if value.Progress != nil {
 		if err2 := validateTestWriterProgressOriginal(value.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -7719,6 +7818,13 @@ func validateTestWriterAssignmentOriginal(value *TestWriterAssignment) (err erro
 	for _, e := range value.Stories {
 		if e != nil {
 			if err2 := validateStorySummaryItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := validateExampleItemOriginal(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -13588,6 +13694,89 @@ func DecodeConfirmIntentPayload(data []byte) (out *ConfirmIntentPayload, err err
 	return out, nil
 }
 
+// EncodeConfirmedAnswer turns a service value into JSON using the field names in the Goa design.
+func EncodeConfirmedAnswer(in *ConfirmedAnswer) ([]byte, error) {
+	if err := checkConfirmedAnswerValue(in); err != nil {
+		return nil, fmt.Errorf("encode ConfirmedAnswer JSON: %w", err)
+	}
+	var body *jsonConfirmedAnswerTransport
+	{
+		body = &jsonConfirmedAnswerTransport{
+			ID:       &in.ID,
+			Question: &in.Question,
+			Answer:   &in.Answer,
+		}
+	}
+	if err := validatejsonConfirmedAnswerTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ConfirmedAnswer JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ConfirmedAnswer JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateConfirmedAnswerValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateConfirmedAnswerValue(in *ConfirmedAnswer) error {
+	if err := checkConfirmedAnswerValue(in); err != nil {
+		return fmt.Errorf("validate ConfirmedAnswer value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ConfirmedAnswer")
+	}
+
+	var body *jsonConfirmedAnswerTransport
+	{
+		body = &jsonConfirmedAnswerTransport{
+			ID:       &in.ID,
+			Question: &in.Question,
+			Answer:   &in.Answer,
+		}
+	}
+	if err := validatejsonConfirmedAnswerTransport(body); err != nil {
+		return fmt.Errorf("validate ConfirmedAnswer value: %w", err)
+	}
+	return nil
+}
+
+// DecodeConfirmedAnswer checks JSON field names from the Goa design and returns a service value.
+func DecodeConfirmedAnswer(data []byte) (out *ConfirmedAnswer, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON: %w", err)
+	}
+	if err := validateConfirmedAnswerJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON: %w", err)
+	}
+	var body *jsonConfirmedAnswerTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ConfirmedAnswer JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON after first value: %w", err)
+	}
+	if err := validatejsonConfirmedAnswerTransport(body); err != nil {
+		return out, fmt.Errorf("validate ConfirmedAnswer JSON: %w", err)
+	}
+	{
+		out = &ConfirmedAnswer{
+			ID:       *body.ID,
+			Question: *body.Question,
+			Answer:   *body.Answer,
+		}
+	}
+	return out, nil
+}
+
 // EncodeDeclineRevisionPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeDeclineRevisionPayload(in *DeclineRevisionPayload) ([]byte, error) {
 	if err := checkDeclineRevisionPayloadValue(in); err != nil {
@@ -18804,6 +18993,26 @@ func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
 			}
 			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
 		}
+		body.Answers = make([]*jsonConfirmedAnswerTransport, len(in.Answers))
+		for i, val := range in.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = encodeConfirmedAnswerToConfirmedAnswerTransport(val)
+		}
+		body.Examples = make([]*jsonExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
 	}
 	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
 		return nil, fmt.Errorf("validate TestWriterAssignment JSON: %w", err)
@@ -18859,6 +19068,26 @@ func ValidateTestWriterAssignmentValue(in *TestWriterAssignment) error {
 				continue
 			}
 			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
+		}
+		body.Answers = make([]*jsonConfirmedAnswerTransport, len(in.Answers))
+		for i, val := range in.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = encodeConfirmedAnswerToConfirmedAnswerTransport(val)
+		}
+		body.Examples = make([]*jsonExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
 		}
 	}
 	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
@@ -18919,6 +19148,26 @@ func DecodeTestWriterAssignment(data []byte) (out *TestWriterAssignment, err err
 				continue
 			}
 			out.RequiredTests[i] = decodeRequiredTestTransportToRequiredTest(val)
+		}
+		out.Answers = make([]*ConfirmedAnswer, len(body.Answers))
+		for i, val := range body.Answers {
+			if val == nil {
+				out.Answers[i] = nil
+				continue
+			}
+			out.Answers[i] = decodeConfirmedAnswerTransportToConfirmedAnswer(val)
+		}
+		out.Examples = make([]*ExampleItem, len(body.Examples))
+		for i, val := range body.Examples {
+			if val == nil {
+				out.Examples[i] = nil
+				continue
+			}
+			out.Examples[i] = decodeExampleItemTransportToExampleItem(val)
+		}
+		out.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
+		for i, val := range body.PreservedBehaviors {
+			out.PreservedBehaviors[i] = val
 		}
 	}
 	return out, nil
@@ -21995,6 +22244,16 @@ func decodeChangeListItemTransportToChangeListItem(v *jsonChangeListItemTranspor
 	return res
 }
 
+func decodeConfirmedAnswerTransportToConfirmedAnswer(v *jsonConfirmedAnswerTransport) *ConfirmedAnswer {
+	res := &ConfirmedAnswer{
+		ID:       *v.ID,
+		Question: *v.Question,
+		Answer:   *v.Answer,
+	}
+
+	return res
+}
+
 func decodeDesignSnapshotTransportToDesignSnapshot(v *jsonDesignSnapshotTransport) *DesignSnapshot {
 	res := &DesignSnapshot{}
 	res.Files = make(map[string]string, len(v.Files))
@@ -23015,6 +23274,16 @@ func encodeChangeListItemToChangeListItemTransport(v *ChangeListItem) *jsonChang
 	}
 	if v.LatestVerification != nil {
 		res.LatestVerification = encodeLatestVerificationItemToLatestVerificationItemTransport(v.LatestVerification)
+	}
+
+	return res
+}
+
+func encodeConfirmedAnswerToConfirmedAnswerTransport(v *ConfirmedAnswer) *jsonConfirmedAnswerTransport {
+	res := &jsonConfirmedAnswerTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+		Answer:   &v.Answer,
 	}
 
 	return res
@@ -28293,6 +28562,58 @@ func validateConfirmIntentPayloadJSONValue3(path string, value any, description 
 	return nil
 }
 
+// validateConfirmedAnswerJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateConfirmedAnswerJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "answer":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The option the user confirmed, exactly as confirmed.",
+			); err != nil {
+				return err
+			}
+		case "id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Question identifier on the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "question":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The question as the user answered it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"answer",
+				"id",
+				"question",
+			})
+		}
+	}
+	return nil
+}
+
 // validateDeclineRevisionPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateDeclineRevisionPayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -30765,6 +31086,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "answers":
+			if err := validateTestWriterAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -30779,8 +31107,15 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
+		case "examples":
+			if err := validateTestWriterAssignmentJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.",
+			); err != nil {
+				return err
+			}
 		case "findings":
-			if err := validateTestWriterAssignmentJSONValue2(
+			if err := validateTestWriterAssignmentJSONValue4(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
 			); err != nil {
@@ -30790,6 +31125,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateTestWriterAssignmentJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.",
 			); err != nil {
 				return err
 			}
@@ -30808,14 +31150,14 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 				return err
 			}
 		case "required_tests":
-			if err := validateTestWriterAssignmentJSONValue3(
+			if err := validateTestWriterAssignmentJSONValue6(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "One test per finished flow of stories, in declaration order; unfinished flows require none.",
 			); err != nil {
 				return err
 			}
 		case "stories":
-			if err := validateTestWriterAssignmentJSONValue4(
+			if err := validateTestWriterAssignmentJSONValue7(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
 			); err != nil {
@@ -30830,10 +31172,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"answers",
 				"change_id",
 				"design_source",
+				"examples",
 				"findings",
 				"in_force",
+				"preserved_behaviors",
 				"progress",
 				"request_revision",
 				"required_tests",
@@ -30859,7 +31204,10 @@ func validateTestWriterAssignmentJSONValue2(path string, value any, description 
 		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
 	}
 	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
+		if item == nil {
+			continue
+		}
+		if err := validateConfirmedAnswerJSONValue(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -30886,7 +31234,7 @@ func validateTestWriterAssignmentJSONValue3(path string, value any, description 
 		if item == nil {
 			continue
 		}
-		if err := validateRequiredTestJSONValue(
+		if err := validateChangeCardResultJSONValue21(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -30898,6 +31246,81 @@ func validateTestWriterAssignmentJSONValue3(path string, value any, description 
 
 // validateTestWriterAssignmentJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
 func validateTestWriterAssignmentJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateRequiredTestJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue7(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -34044,6 +34467,42 @@ func checkConfirmIntentPayloadConfirmIntentPayloadValue(in *ConfirmIntentPayload
 	return nil
 }
 
+// checkConfirmedAnswerValue checks text and cycles before conversion.
+func checkConfirmedAnswerValue(in *ConfirmedAnswer) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkConfirmedAnswerConfirmedAnswerValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkConfirmedAnswerConfirmedAnswerValue checks one generated value on the active path.
+func checkConfirmedAnswerConfirmedAnswerValue(in *ConfirmedAnswer, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "id", false))
+		}
+		if !utf8.ValidString(string(in.Question)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "question", false))
+		}
+		if !utf8.ValidString(string(in.Answer)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "answer", false))
+		}
+	}
+	return nil
+}
+
 // checkDeclineRevisionPayloadValue checks text and cycles before conversion.
 func checkDeclineRevisionPayloadValue(in *DeclineRevisionPayload) error {
 	if in == nil {
@@ -35802,6 +36261,27 @@ func checkTestWriterAssignmentTestWriterAssignmentValue(in *TestWriterAssignment
 			_ = item1
 			if err := checkRequiredTestRequiredTestValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "required_tests", false), strconv.Itoa(index1), true), active); err != nil {
 				return err
+			}
+		}
+		for index1, item1 := range in.Answers {
+			_ = index1
+			_ = item1
+			if err := checkConfirmedAnswerConfirmedAnswerValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "answers", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Examples {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultExampleItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "examples", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.PreservedBehaviors {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "preserved_behaviors", false), strconv.Itoa(index1), true))
 			}
 		}
 	}

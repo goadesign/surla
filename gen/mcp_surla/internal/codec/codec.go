@@ -3841,6 +3841,77 @@ func ValidateGetTestWriterAssignmentPayloadTransport(value *GetTestWriterAssignm
 	return err
 }
 
+// GetTestWriterAssignmentResultConfirmedAnswerTransport stores JSON fields until they have been validated.
+type GetTestWriterAssignmentResultConfirmedAnswerTransport struct {
+	// Question identifier on the Change Card.
+	ID *string `json:"id"`
+	// The question as the user answered it.
+	Question *string `json:"question"`
+	// The option the user confirmed, exactly as confirmed.
+	Answer *string `json:"answer"`
+}
+
+// ValidateGetTestWriterAssignmentResultConfirmedAnswerTransport checks decoded JSON before it becomes a service value.
+func ValidateGetTestWriterAssignmentResultConfirmedAnswerTransport(value *GetTestWriterAssignmentResultConfirmedAnswerTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
+	}
+	return err
+}
+
+// GetTestWriterAssignmentResultExampleItemTransport stores JSON fields until they have been validated.
+type GetTestWriterAssignmentResultExampleItemTransport struct {
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
+	ID *string `json:"id"`
+	// Plain-English scenario description.
+	Scenario *string `json:"scenario"`
+	// Representative user request and domain fixture state.
+	InputSummary *string `json:"input_summary"`
+	// Expected side effect and response behavior.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// Evaluator check classification (deterministic or model_judged).
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// ValidateGetTestWriterAssignmentResultExampleItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetTestWriterAssignmentResultExampleItemTransport(value *GetTestWriterAssignmentResultExampleItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
 // GetTestWriterAssignmentResultRequiredTestTransport stores JSON fields until they have been validated.
 type GetTestWriterAssignmentResultRequiredTestTransport struct {
 	// Name of the Story the flow belongs to.
@@ -4326,6 +4397,19 @@ type GetTestWriterAssignmentResultTransport struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*GetTestWriterAssignmentResultRequiredTestTransport `json:"required_tests"`
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*GetTestWriterAssignmentResultConfirmedAnswerTransport `json:"answers"`
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*GetTestWriterAssignmentResultExampleItemTransport `json:"examples"`
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
 }
 
 // ValidateGetTestWriterAssignmentResultTransport checks decoded JSON before it becomes a service value.
@@ -4360,6 +4444,15 @@ func ValidateGetTestWriterAssignmentResultTransport(value *GetTestWriterAssignme
 	if value.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if value.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if value.Progress != nil {
 		if err2 := ValidateGetTestWriterAssignmentResultTestWriterProgressTransport(value.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -4375,6 +4468,20 @@ func ValidateGetTestWriterAssignmentResultTransport(value *GetTestWriterAssignme
 	for _, e := range value.RequiredTests {
 		if e != nil {
 			if err2 := ValidateGetTestWriterAssignmentResultRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Answers {
+		if e != nil {
+			if err2 := ValidateGetTestWriterAssignmentResultConfirmedAnswerTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateGetTestWriterAssignmentResultExampleItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -12185,6 +12292,26 @@ func EncodeGetTestWriterAssignmentResult(in *surla.TestWriterAssignment) ([]byte
 			}
 			body.RequiredTests[i] = encodeRequiredTestToGetTestWriterAssignmentResultRequiredTestTransport(val)
 		}
+		body.Answers = make([]*GetTestWriterAssignmentResultConfirmedAnswerTransport, len(in.Answers))
+		for i, val := range in.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = encodeConfirmedAnswerToGetTestWriterAssignmentResultConfirmedAnswerTransport(val)
+		}
+		body.Examples = make([]*GetTestWriterAssignmentResultExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToGetTestWriterAssignmentResultExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
 	}
 	if err := ValidateGetTestWriterAssignmentResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate GetTestWriterAssignmentResult JSON: %w", err)
@@ -13868,6 +13995,16 @@ func encodeChangeListItemToListChangesResultChangeListItemTransport(v *surla.Cha
 	return res
 }
 
+func encodeConfirmedAnswerToGetTestWriterAssignmentResultConfirmedAnswerTransport(v *surla.ConfirmedAnswer) *GetTestWriterAssignmentResultConfirmedAnswerTransport {
+	res := &GetTestWriterAssignmentResultConfirmedAnswerTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+		Answer:   &v.Answer,
+	}
+
+	return res
+}
+
 func encodeExampleItemToApproveMergeResultExampleItemTransport(v *surla.ExampleItem) *ApproveMergeResultExampleItemTransport {
 	res := &ApproveMergeResultExampleItemTransport{
 		ID:               &v.ID,
@@ -13954,6 +14091,18 @@ func encodeExampleItemToGetChangeResultExampleItemTransport(v *surla.ExampleItem
 
 func encodeExampleItemToGetChangeResultExampleItemTransport2(v *surla.ExampleItem) *GetChangeResultExampleItemTransport {
 	res := &GetChangeResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeExampleItemToGetTestWriterAssignmentResultExampleItemTransport(v *surla.ExampleItem) *GetTestWriterAssignmentResultExampleItemTransport {
+	res := &GetTestWriterAssignmentResultExampleItemTransport{
 		ID:               &v.ID,
 		Scenario:         &v.Scenario,
 		InputSummary:     &v.InputSummary,

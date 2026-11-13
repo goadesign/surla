@@ -159,6 +159,16 @@ var RequiredTest = Type("RequiredTest", func() {
 	Required("story", "flow_key", "scenario", "hook")
 })
 
+// ConfirmedAnswer is one question of the agreed revision with the answer the
+// user confirmed for it.
+var ConfirmedAnswer = Type("ConfirmedAnswer", func() {
+	Description("One question of the change as agreed at the built revision, with the option the user confirmed for it.")
+	Attribute("id", String, "Question identifier on the Change Card.")
+	Attribute("question", String, "The question as the user answered it.")
+	Attribute("answer", String, "The option the user confirmed, exactly as confirmed.")
+	Required("id", "question", "answer")
+})
+
 // TestWriterAssignmentItem summarizes one of the test writer's assignments.
 var TestWriterAssignmentItem = Type("TestWriterAssignmentItem", func() {
 	Description("One of the test writer's assignments as list_test_writer_assignments reports it.")
@@ -178,7 +188,7 @@ var TestWriterAssignmentList = Type("TestWriterAssignmentList", func() {
 
 // TestWriterAssignment is the test writer's assignment for one build in full.
 var TestWriterAssignment = Type("TestWriterAssignment", func() {
-	Description("The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.")
+	Description("The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user's confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.")
 	Attribute("change_id", String, "Change Card the tests are for.")
 	Attribute("request_revision", String, "Change Card revision the tests are for; report_tests_finished takes it.")
 	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.")
@@ -188,7 +198,10 @@ var TestWriterAssignment = Type("TestWriterAssignment", func() {
 	Attribute("design_source", String, "The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.")
 	Attribute("required_tests", ArrayOf(RequiredTest), "One test per finished flow of stories, in declaration order; unfinished flows require none.")
-	Required("change_id", "request_revision", "in_force", "progress", "findings", "working_folder", "design_source", "stories", "required_tests")
+	Attribute("answers", ArrayOf(ConfirmedAnswer), "Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.")
+	Attribute("examples", ArrayOf(ExampleItem), "The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.")
+	Attribute("preserved_behaviors", ArrayOf(String), "The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.")
+	Required("change_id", "request_revision", "in_force", "progress", "findings", "working_folder", "design_source", "stories", "required_tests", "answers", "examples", "preserved_behaviors")
 })
 
 // TestFindings is the text of Surla's findings on one build's tests.
@@ -207,7 +220,7 @@ var TestFindings = Type("TestFindings", func() {
 // assignment operations of the builder and the test writer.
 func buildMethods() {
 	Method("start_build", func() {
-		Description("The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.")
+		Description("The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design and the agreed revision's confirmed answers, examples and preserved behaviors. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.")
 		Payload(func() {
 			Attribute("change_id", String, "Confirmed Change Card identifier.", func() { MinLength(1) })
 			Attribute("request_revision", String, "The Change Card's agreed revision, the one in force (not a waiting proposal's).", func() { MinLength(1) })
@@ -302,14 +315,14 @@ func buildMethods() {
 	})
 
 	Method("get_test_writer_assignment", func() {
-		Description("Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.")
+		Description("Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the user's confirmed answers, confirmation examples and preserved behaviors of that revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change what the build saved. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier from list_test_writer_assignments.", func() { MinLength(1) })
 			Required("change_id")
 		})
 		Result(TestWriterAssignment)
 		Error("not_found", ErrorResult, "You have no test assignment for this change_id.")
-		Tool("get_test_writer_assignment", "Read your test assignment for a change: the working folder, the design and Story as agreed, one required test per finished flow, and your state with any findings to fix. Align the service interface in your copy with the agreed design and write tests inside its test module, eval/ in the working folder. Surla generates that module with the required tests when the build starts and again at each report: never regenerate it (neither generate_code nor surla gen), and report to have a changed design generated. Check your work with go build ./... in eval/, then call report_tests_finished with change_id and request_revision; Surla's check is the judge, and its verdict appears here.")
+		Tool("get_test_writer_assignment", "Read your test assignment for a change: the working folder, the design and Story as agreed, the user's confirmed answers, examples and preserved behaviors, one required test per finished flow, and your state with any findings to fix. Your tests must hold the service to every answer, example and preserved behavior, not only to the Story's flows. Align the service interface in your copy with the agreed design and write tests inside its test module, eval/ in the working folder. Surla generates that module with the required tests when the build starts and again at each report: never regenerate it (neither generate_code nor surla gen), and report to have a changed design generated. Check your work with go build ./... in eval/, then call report_tests_finished with change_id and request_revision; Surla's check is the judge, and its verdict appears here.")
 		HTTP(func() {
 			GET("/assignments/test-writer/{change_id}")
 			Response(StatusOK)

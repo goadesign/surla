@@ -979,6 +979,19 @@ type GetTestWriterAssignmentResponseBody struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*RequiredTestResponseBody `form:"required_tests,omitempty" json:"required_tests,omitempty" xml:"required_tests,omitempty"`
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*ConfirmedAnswerResponseBody `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
 }
 
 // ReportTestsFinishedResponseBody is the type of the "surla" service
@@ -3990,6 +4003,16 @@ type RequiredTestResponseBody struct {
 	Scenario *string `form:"scenario,omitempty" json:"scenario,omitempty" xml:"scenario,omitempty"`
 	// Hook method the test writer implements for the scenario.
 	Hook *string `form:"hook,omitempty" json:"hook,omitempty" xml:"hook,omitempty"`
+}
+
+// ConfirmedAnswerResponseBody is used to define fields on response body types.
+type ConfirmedAnswerResponseBody struct {
+	// Question identifier on the Change Card.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// The question as the user answered it.
+	Question *string `form:"question,omitempty" json:"question,omitempty" xml:"question,omitempty"`
+	// The option the user confirmed, exactly as confirmed.
+	Answer *string `form:"answer,omitempty" json:"answer,omitempty" xml:"answer,omitempty"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -9426,6 +9449,26 @@ func NewGetTestWriterAssignmentTestWriterAssignmentOK(body *GetTestWriterAssignm
 		}
 		v.RequiredTests[i] = unmarshalRequiredTestResponseBodyToSurlaRequiredTest(val)
 	}
+	v.Answers = make([]*surla.ConfirmedAnswer, len(body.Answers))
+	for i, val := range body.Answers {
+		if val == nil {
+			v.Answers[i] = nil
+			continue
+		}
+		v.Answers[i] = unmarshalConfirmedAnswerResponseBodyToSurlaConfirmedAnswer(val)
+	}
+	v.Examples = make([]*surla.ExampleItem, len(body.Examples))
+	for i, val := range body.Examples {
+		if val == nil {
+			v.Examples[i] = nil
+			continue
+		}
+		v.Examples[i] = unmarshalExampleItemResponseBodyToSurlaExampleItem(val)
+	}
+	v.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
+	for i, val := range body.PreservedBehaviors {
+		v.PreservedBehaviors[i] = val
+	}
 
 	return v
 }
@@ -10866,6 +10909,15 @@ func ValidateGetTestWriterAssignmentResponseBody(body *GetTestWriterAssignmentRe
 	if body.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if body.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if body.Progress != nil {
 		if err2 := validateTestWriterProgressResponseBody(body.Progress, "body.progress"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -10881,6 +10933,20 @@ func ValidateGetTestWriterAssignmentResponseBody(body *GetTestWriterAssignmentRe
 	for _, e := range body.RequiredTests {
 		if e != nil {
 			if err2 := validateRequiredTestResponseBody(e, "body.required_tests[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Answers {
+		if e != nil {
+			if err2 := validateConfirmedAnswerResponseBody(e, "body.answers[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := validateExampleItemResponseBody(e, "body.examples[*]"); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -16502,6 +16568,36 @@ func validateRequiredTestResponseBody(body *RequiredTestResponseBody, path strin
 	}
 	if body.Hook == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("hook", path))
+	}
+	return
+}
+
+// ValidateConfirmedAnswerResponseBody runs the validations defined on
+// ConfirmedAnswer
+func ValidateConfirmedAnswerResponseBody(body *ConfirmedAnswerResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if body.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
+	}
+	return
+}
+
+// validateConfirmedAnswerResponseBody checks ConfirmedAnswer and reports
+// errors using the path supplied by its caller
+func validateConfirmedAnswerResponseBody(body *ConfirmedAnswerResponseBody, path string) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", path))
+	}
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", path))
+	}
+	if body.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", path))
 	}
 	return
 }

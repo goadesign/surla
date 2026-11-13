@@ -546,6 +546,19 @@ type (
 		// One test per finished flow of stories, in declaration order; unfinished
 		// flows require none.
 		RequiredTests []*RequiredTestTransport `json:"required_tests"`
+		// Each question of the change as agreed at request_revision with the answer
+		// the user confirmed, in question order, copied when this build started; empty
+		// when the agreed revision asked none. The tests must hold the service to
+		// every answer.
+		Answers []*ConfirmedAnswerTransport `json:"answers"`
+		// The confirmation examples as agreed at request_revision, exactly as the user
+		// confirmed them, copied when this build started. The tests must hold the
+		// service to each expected outcome.
+		Examples []*ExampleItemTransport `json:"examples"`
+		// The existing behaviors the change as agreed at request_revision keeps,
+		// copied when this build started; empty when it names none. The tests must
+		// hold the service to each.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
 	}
 	// GetVerificationPayloadTransport is the internal JSON transport type for GetVerificationPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1351,6 +1364,18 @@ type (
 		ProposedRevision *string `json:"proposed_revision,omitempty"`
 		// When the Change Card was last saved. It is not part of request_revision.
 		SavedAt *string `json:"saved_at"`
+	}
+	// ConfirmedAnswerTransport is the internal JSON transport type for ConfirmedAnswerTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ConfirmedAnswerTransport struct {
+		// Question identifier on the Change Card.
+		ID *string `json:"id"`
+		// The question as the user answered it.
+		Question *string `json:"question"`
+		// The option the user confirmed, exactly as confirmed.
+		Answer *string `json:"answer"`
 	}
 	// DesignSnapshotTransport is the internal JSON transport type for DesignSnapshotTransport.
 	// It lives in the toolset-local http package and is used only for JSON
