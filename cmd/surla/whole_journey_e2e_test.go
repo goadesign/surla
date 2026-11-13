@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -56,8 +57,8 @@ type (
 		projectCommit string
 		// state is the project's private state, which the server owns.
 		state *project.State
-		// rosters is the folder where the Herdr stand-in's launcher reads the
-		// roster the server writes for Chorus.
+		// rosters is the fixture team effects' launcher roster folder: the
+		// server writes there the roster Chorus's launcher starts agents from.
 		rosters string
 		// space is the Herdr space the server prepared for the team.
 		space string
@@ -107,7 +108,7 @@ type (
 	credentialDoer struct {
 		// client sends the requests; contexts bound each call.
 		client *http.Client
-		// header replaces the request's headers of the same names.
+		// header sets one value for each of its names on every request.
 		header http.Header
 	}
 )
@@ -171,6 +172,14 @@ func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 	}
 }
 
+// Do sends r with the caller's headers.
+func (d credentialDoer) Do(r *http.Request) (*http.Response, error) {
+	for name := range d.header {
+		r.Header.Set(name, d.header.Get(name))
+	}
+	return d.client.Do(r)
+}
+
 // newWholeJourney isolates the journey from the user's configuration, Git
 // identity, model keys and trace export, and moves into an empty workspace.
 func newWholeJourney(t *testing.T) *wholeJourney {
@@ -191,16 +200,45 @@ func newWholeJourney(t *testing.T) *wholeJourney {
 	return &wholeJourney{t: t, workspace: workspace}
 }
 
+// journeyReportArgs returns report_tests_finished's arguments for revision
+// of the journey's change.
+func journeyReportArgs(t *testing.T, revision string) []byte {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{
+		"change_id": journeyChangeID, "request_revision": revision,
+	})
+	require.NoError(t, err)
+	return raw
+}
+
+// journeyRefusal calls the tool name and returns the text of the refusal it
+// must answer with: a refused operation reaches an agent as a failed tool
+// result, not as a transport error.
+func journeyRefusal(t *testing.T, ctx context.Context, client *genmcpsurla.Client,
+	name string, args []byte,
+) string {
+	t.Helper()
+	result, err := client.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: name, Arguments: args})
+	require.NoError(t, err)
+	complete, ok := result.Outcome.AsComplete()
+	require.True(t, ok, "%s completes in the same call", name)
+	require.True(t, complete.IsError != nil && *complete.IsError, "%s must be refused", name)
+	return toolErrorText(complete.Content)
+}
+
 // commitStarterWithStory creates the starter with surla init, adds the Story
 // and the Story module it imports, and makes the project's first commit, as
 // the commands surla init prints do.
 func (j *wholeJourney) commitStarterWithStory(t *testing.T) {
 	dir := filepath.Join(j.workspace, "shop")
-	require.NoError(t, runInit([]string{"-dir", dir, "-module", "example.com/shop", "-surla-version", starterSurlaVersion}, io.Discard))
+	require.NoError(t, runInit([]string{
+		"-dir", dir, "-module", "example.com/shop", "-surla-version", starterSurlaVersion,
+	}, io.Discard))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "design", "story.go"), []byte(journeyStory), 0o644))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
-	get := exec.CommandContext(ctx, "go", "get", "github.com/goadesign/surla/story/dsl@"+journeyStoryVersion)
+	get := exec.CommandContext(ctx, "go", "get",
+		"github.com/goadesign/surla/story/dsl@"+journeyStoryVersion)
 	get.Dir = dir
 	get.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local")
 	out, err := get.CombinedOutput()
@@ -208,7 +246,8 @@ func (j *wholeJourney) commitStarterWithStory(t *testing.T) {
 	runTestGit(t, dir, "init", "-q")
 	commit := gitCommitAll(t, dir, "Start shop with its Story")
 	assert.Regexp(t, "^[0-9a-f]{40}$", commit)
-	assert.Empty(t, runTestGit(t, dir, "status", "--porcelain", "--untracked-files=all"), "the commit holds every file")
+	assert.Empty(t, runTestGit(t, dir, "status", "--porcelain", "--untracked-files=all"),
+		"the commit holds every file")
 	physical, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
 	j.dir, j.projectCommit = physical, commit
@@ -248,7 +287,8 @@ func (j *wholeJourney) serveProject(t *testing.T) {
 	link, err := management.BrowserLink(ctx)
 	require.NoError(t, err)
 	require.NoError(t, validateProjectViewsLink(state, link.URL))
-	page := genprojectclient.NewClient("http", state.Address(), credentialDoer{client: &http.Client{}, header: j.pageHeader()},
+	page := genprojectclient.NewClient("http", state.Address(),
+		credentialDoer{client: &http.Client{}, header: j.pageHeader()},
 		goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 	exchanged, err := page.ExchangeBrowserLink()(ctx, &genproject.ExchangeBrowserLinkPayload{
 		Link: strings.TrimPrefix(link.URL, state.Origin()+"/views#link="),
@@ -256,7 +296,8 @@ func (j *wholeJourney) serveProject(t *testing.T) {
 	require.NoError(t, err)
 	header := j.pageHeader()
 	header.Set("Authorization", "Bearer "+exchanged.(*genproject.ExchangeBrowserLinkResult).Session)
-	transport := genhttpclient.NewClient("http", state.Address(), credentialDoer{client: &http.Client{}, header: header},
+	transport := genhttpclient.NewClient("http", state.Address(),
+		credentialDoer{client: &http.Client{}, header: header},
 		goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 	j.user = &gensurla.Client{
 		GetTeamEndpoint:       transport.GetTeam(),
@@ -279,7 +320,8 @@ func (j *wholeJourney) serveProject(t *testing.T) {
 func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
-	refresh, err := gensurla.DecodeStoryRefreshResult(trustedSuiteCall(t, ctx, j.guide, "refresh_story", []byte(`{}`)))
+	refresh, err := gensurla.DecodeStoryRefreshResult(
+		trustedSuiteCall(t, ctx, j.guide, "refresh_story", []byte(`{}`)))
 	require.NoError(t, err)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -289,7 +331,8 @@ func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 			t.Fatalf("the Story evaluation did not finish: %v", ctx.Err())
 		case <-ticker.C:
 		}
-		refresh, err = gensurla.DecodeStoryRefreshResult(trustedSuiteCall(t, ctx, j.guide, "get_story_refresh", []byte(`{}`)))
+		refresh, err = gensurla.DecodeStoryRefreshResult(
+			trustedSuiteCall(t, ctx, j.guide, "get_story_refresh", []byte(`{}`)))
 		require.NoError(t, err)
 	}
 	require.Equal(t, "succeeded", refresh.State, "%+v", refresh.Diagnostic)
@@ -305,17 +348,20 @@ func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 		Prompt:           "Sell scones for $2.75 and let the helper answer their price.",
 		StoryRefreshOpID: refresh.OpID,
 		Analysis: &gensurla.CP1Analysis{
-			Summary:     "The shop sells scones at $2.75, and the helper answers a scone's price as it answers tea's.",
+			Summary: "The shop sells scones at $2.75, and the helper answers a scone's price " +
+				"as it answers tea's.",
 			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
 			Examples: []*gensurla.CP1AnalysisExample{{
 				Scenario: "Scone price", InputSummary: "Ask how much a scone is.",
-				ExpectedOutcome: "The helper answers that a scone costs $2.75.", VerificationKind: "deterministic",
+				ExpectedOutcome:  "The helper answers that a scone costs $2.75.",
+				VerificationKind: "deterministic",
 			}},
 			PreservedBehaviors: []string{"Tea costs $3.50 and a cookie $1.25."},
 		},
 	})
 	require.NoError(t, err)
-	proposed, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, ctx, j.guide, "propose_change", args))
+	proposed, err := gensurla.DecodeChangeCardResult(
+		trustedSuiteCall(t, ctx, j.guide, "propose_change", args))
 	require.NoError(t, err)
 	assert.Equal(t, controlplane.StatusNeedsConfirmation, proposed.Status)
 	assert.Equal(t, refresh.Stories, proposed.Stories, "the card adopts the evaluated Story")
@@ -326,10 +372,12 @@ func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, controlplane.StatusConfirmed, confirmed.Status)
-	assert.NotEqual(t, proposed.RequestRevision, confirmed.RequestRevision, "confirming makes a new revision")
+	assert.NotEqual(t, proposed.RequestRevision, confirmed.RequestRevision,
+		"confirming makes a new revision")
 	assert.Equal(t, proposed.Stories, confirmed.Stories)
 	if assert.NotNil(t, confirmed.ConfirmedBy) {
-		assert.Equal(t, j.state.Record.Owner, *confirmed.ConfirmedBy, "the page session acts for the project's owner")
+		assert.Equal(t, j.state.Record.Owner, *confirmed.ConfirmedBy,
+			"the page session acts for the project's owner")
 	}
 	j.proposed, j.confirmed = proposed.RequestRevision, confirmed.RequestRevision
 }
@@ -340,14 +388,17 @@ func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 func (j *wholeJourney) startBuild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
-	started, err := j.user.StartBuild(ctx, &gensurla.StartBuildPayload{ChangeID: journeyChangeID, RequestRevision: j.confirmed})
+	started, err := j.user.StartBuild(ctx, &gensurla.StartBuildPayload{
+		ChangeID: journeyChangeID, RequestRevision: j.confirmed,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, j.confirmed, started.Build.RequestRevision)
 	assert.True(t, started.Build.InForce)
 	assert.Equal(t, 1, started.Build.RequiredTestCount)
 	assert.Equal(t, gensurla.TestsKindAssigned, started.Build.TestWriter.Tests.Kind())
 	copied, ok := started.WorkingCopy.AsAtProjectCommit()
-	require.True(t, ok, "the test writer's copy starts at the project's commit: %s", started.WorkingCopy.Kind())
+	require.True(t, ok, "the test writer's copy starts at the project's commit: %s",
+		started.WorkingCopy.Kind())
 	assert.Equal(t, j.projectCommit, copied.Commit)
 	team, ok := started.Team.AsReady()
 	require.True(t, ok, "the team is ready: %s", started.Team.Kind())
@@ -359,7 +410,8 @@ func (j *wholeJourney) startBuild(t *testing.T) {
 
 	copyDir := filepath.Join(j.dir, testwriter.Folder)
 	assert.Equal(t, j.projectCommit, strings.TrimSpace(runTestGit(t, copyDir, "rev-parse", "HEAD")))
-	assert.Equal(t, testwriter.Branch, strings.TrimSpace(runTestGit(t, copyDir, "symbolic-ref", "--short", "HEAD")))
+	assert.Equal(t, testwriter.Branch,
+		strings.TrimSpace(runTestGit(t, copyDir, "symbolic-ref", "--short", "HEAD")))
 
 	roster := j.roster(t)
 	credentials := map[string]string{}
@@ -381,27 +433,29 @@ func (j *wholeJourney) startBuild(t *testing.T) {
 	j.testWriter, folder = j.scriptedAgent(t, "test_writer")
 	assert.Equal(t, copyDir, folder, "the test writer works in its own copy")
 
-	listed, err := gensurla.DecodeBuilderAssignmentList(trustedSuiteCall(t, ctx, j.builder, "list_builder_assignments", []byte(`{}`)))
+	listed, err := gensurla.DecodeBuilderAssignmentList(
+		trustedSuiteCall(t, ctx, j.builder, "list_builder_assignments", []byte(`{}`)))
 	require.NoError(t, err)
 	require.Len(t, listed.Assignments, 1)
 	assert.Equal(t, journeyChangeID, listed.Assignments[0].ChangeID)
-	built, err := gensurla.DecodeBuilderAssignment(trustedSuiteCall(t, ctx, j.builder, "get_builder_assignment", journeyChangeArgs))
-	require.NoError(t, err)
+	built := j.readBuilderAssignment(t, ctx)
 	assert.Equal(t, j.confirmed, built.RequestRevision)
 	assert.True(t, built.InForce)
 	assert.True(t, built.Read)
-	assert.Equal(t, gensurla.WrittenTestsKindNotYetAccepted, built.WrittenTests.Kind(), "the builder sees that no tests are accepted yet")
+	assert.Equal(t, gensurla.WrittenTestsKindNotYetAccepted, built.WrittenTests.Kind(),
+		"the builder sees that no tests are accepted yet")
 
-	tests, err := gensurla.DecodeTestWriterAssignmentList(trustedSuiteCall(t, ctx, j.testWriter, "list_test_writer_assignments", []byte(`{}`)))
+	tests, err := gensurla.DecodeTestWriterAssignmentList(
+		trustedSuiteCall(t, ctx, j.testWriter, "list_test_writer_assignments", []byte(`{}`)))
 	require.NoError(t, err)
 	require.Len(t, tests.Assignments, 1)
 	assert.Equal(t, journeyChangeID, tests.Assignments[0].ChangeID)
-	assignment, err := gensurla.DecodeTestWriterAssignment(trustedSuiteCall(t, ctx, j.testWriter, "get_test_writer_assignment", journeyChangeArgs))
-	require.NoError(t, err)
+	assignment := j.readTestWriterAssignment(t, ctx)
 	assert.Equal(t, j.confirmed, assignment.RequestRevision)
 	assert.Equal(t, copyDir, assignment.WorkingFolder)
-	assert.Equal(t, []*gensurla.RequiredTest{{Story: "Shop", FlowKey: "prices-scone", Scenario: "prices_scone", Hook: "PricesScone"}},
-		assignment.RequiredTests, "the Story's finished flow requires one test")
+	assert.Equal(t, []*gensurla.RequiredTest{{
+		Story: "Shop", FlowKey: "prices-scone", Scenario: "prices_scone", Hook: "PricesScone",
+	}}, assignment.RequiredTests, "the Story's finished flow requires one test")
 	assert.Equal(t, gensurla.TestsKindAssigned, assignment.Progress.Tests.Kind())
 	assert.True(t, assignment.Progress.Read)
 }
@@ -412,11 +466,12 @@ func (j *wholeJourney) startBuild(t *testing.T) {
 func (j *wholeJourney) refuseEarlierReport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	refused := journeyRefusal(t, ctx, j.testWriter, "report_tests_finished", journeyReportArgs(t, j.proposed))
-	assert.Contains(t, refused, "is for request_revision \""+j.confirmed+"\", not \""+j.proposed+"\"")
-	assignment, err := gensurla.DecodeTestWriterAssignment(trustedSuiteCall(t, ctx, j.testWriter, "get_test_writer_assignment", journeyChangeArgs))
-	require.NoError(t, err)
-	assert.Equal(t, gensurla.TestsKindAssigned, assignment.Progress.Tests.Kind(), "a refused report changes nothing")
+	refused := journeyRefusal(t, ctx, j.testWriter, "report_tests_finished",
+		journeyReportArgs(t, j.proposed))
+	assert.Contains(t, refused, fmt.Sprintf("is for request_revision %q, not %q", j.confirmed, j.proposed))
+	assignment := j.readTestWriterAssignment(t, ctx)
+	assert.Equal(t, gensurla.TestsKindAssigned, assignment.Progress.Tests.Kind(),
+		"a refused report changes nothing")
 }
 
 // startServer runs the real serve composition until the journey's test ends.
@@ -447,7 +502,8 @@ func (j *wholeJourney) startServer(t *testing.T, runtime projectRuntime) {
 		case err := <-served:
 			assert.NoError(j.t, err, "the project server stopped with an error")
 		case <-ctx.Done():
-			retainAndExit(errors.Join(errors.New("the project server did not stop"), stopErr), state.Dir, j.dir)
+			retainAndExit(errors.Join(errors.New("the project server did not stop"), stopErr),
+				state.Dir, j.dir)
 		}
 	})
 	_, err := waitForRunning(starting, state)
@@ -475,12 +531,40 @@ func (j *wholeJourney) scriptedAgent(t *testing.T, role string) (*genmcpsurla.Cl
 		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "only the owner reads a credential")
 		credential, err := os.ReadFile(connection.CredentialFile)
 		require.NoError(t, err)
-		doer := credentialDoer{client: &http.Client{}, header: http.Header{"Authorization": {"Bearer " + string(credential)}}}
-		transport := genmcpclient.NewClient(address.Scheme, address.Host, doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+		doer := credentialDoer{
+			client: &http.Client{},
+			header: http.Header{"Authorization": {"Bearer " + string(credential)}},
+		}
+		transport := genmcpclient.NewClient(address.Scheme, address.Host, doer,
+			goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 		return &genmcpsurla.Client{ToolsCallEndpoint: transport.ToolsCall()}, row.Folder
 	}
 	t.Fatalf("the roster has no %s", role)
 	return nil, ""
+}
+
+// readBuilderAssignment has the builder read its assignment for the journey's
+// change in full.
+func (j *wholeJourney) readBuilderAssignment(
+	t *testing.T, ctx context.Context,
+) *gensurla.BuilderAssignment {
+	t.Helper()
+	assignment, err := gensurla.DecodeBuilderAssignment(
+		trustedSuiteCall(t, ctx, j.builder, "get_builder_assignment", journeyChangeArgs))
+	require.NoError(t, err)
+	return assignment
+}
+
+// readTestWriterAssignment has the test writer read its assignment for the
+// journey's change in full.
+func (j *wholeJourney) readTestWriterAssignment(
+	t *testing.T, ctx context.Context,
+) *gensurla.TestWriterAssignment {
+	t.Helper()
+	assignment, err := gensurla.DecodeTestWriterAssignment(
+		trustedSuiteCall(t, ctx, j.testWriter, "get_test_writer_assignment", journeyChangeArgs))
+	require.NoError(t, err)
+	return assignment
 }
 
 // roster reads the launcher roster the server last wrote for the team's space.
@@ -497,34 +581,4 @@ func (j *wholeJourney) roster(t *testing.T) journeyRoster {
 // requests to the project server.
 func (j *wholeJourney) pageHeader() http.Header {
 	return http.Header{"Sec-Fetch-Site": {"same-origin"}, "Origin": {j.state.Origin()}}
-}
-
-// Do sends r with the caller's headers.
-func (d credentialDoer) Do(r *http.Request) (*http.Response, error) {
-	for name, values := range d.header {
-		r.Header[name] = values
-	}
-	return d.client.Do(r)
-}
-
-// journeyReportArgs returns report_tests_finished's arguments for revision
-// of the journey's change.
-func journeyReportArgs(t *testing.T, revision string) []byte {
-	t.Helper()
-	raw, err := json.Marshal(map[string]string{"change_id": journeyChangeID, "request_revision": revision})
-	require.NoError(t, err)
-	return raw
-}
-
-// journeyRefusal calls the tool name and returns the text of the refusal it
-// must answer with: a refused operation reaches an agent as a failed tool
-// result, not as a transport error.
-func journeyRefusal(t *testing.T, ctx context.Context, client *genmcpsurla.Client, name string, args []byte) string {
-	t.Helper()
-	result, err := client.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: name, Arguments: args})
-	require.NoError(t, err)
-	complete, ok := result.Outcome.AsComplete()
-	require.True(t, ok, "%s completes in the same call", name)
-	require.True(t, complete.IsError != nil && *complete.IsError, "%s must be refused", name)
-	return toolErrorText(complete.Content)
 }
