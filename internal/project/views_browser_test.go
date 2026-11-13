@@ -66,8 +66,9 @@ type (
 	browserFacts struct {
 		// Browser names the browser that ran the scenario.
 		Browser struct {
-			Product  string `json:"product"`
-			Protocol string `json:"protocol"`
+			Product   string `json:"product"`
+			Protocol  string `json:"protocol"`
+			UserAgent string `json:"user_agent"`
 		} `json:"browser"`
 		// Views is the views page opened with the link.
 		Views viewsFacts `json:"views"`
@@ -414,6 +415,7 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 
 	t.Run("f other origins cannot read or act on the server", func(t *testing.T) {
 		marks := map[string]string{other.sameSite: "same-site", other.crossSite: "cross-site"}
+		assert.True(t, facts.Views.SessionSeen, "the views page's session was not captured for the other origins to try")
 		require.Len(t, facts.OtherPages, len(marks))
 		for _, page := range facts.OtherPages {
 			assert.Equal(t, "answered: opaque 0", page.WithoutCredentials, "what %s could see of its read", page.Origin)
@@ -443,9 +445,7 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		assert.Contains(t, facts.Reload.SignedOutText, "Run surla in your project folder", "the reloaded page's message")
 		assert.Equal(t, origin+"/views", facts.Reload.Href, "the reloaded page's address")
 		assert.Len(t, requestsTo(facts.Reload.PageRequests, http.MethodGet, "/views"), 1, "the reload did not load the page again")
-		for _, r := range facts.Reload.PageRequests {
-			assert.Equal(t, "Document", r.Type, "the reloaded page sent %s %s", r.Method, r.URL)
-		}
+		assert.Empty(t, pageFetches(facts.Reload.PageRequests), "the reloaded page sent requests of its own")
 		assert.JSONEq(t, strconv.Itoa(http.StatusUnauthorized), string(facts.Reload.DataRequestStatus), "a data read from the reloaded page")
 		if assert.Len(t, facts.Reload.DataRequest, 1) && assert.NotNil(t, facts.Reload.DataRequest[0].SentHeaders) {
 			sent := facts.Reload.DataRequest[0].SentHeaders
@@ -456,6 +456,7 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 	})
 
 	t.Run("browser ended and left nothing", func(t *testing.T) {
+		assert.Contains(t, facts.Browser.UserAgent, "HeadlessChrome", "the browser did not run headless")
 		browser.stopAndCheck(t)
 	})
 }

@@ -454,7 +454,7 @@ async function main(input, facts) {
   const dt = await DevTools.connect(input.devtools);
   try {
     const version = await dt.send("Browser.getVersion");
-    facts.browser = { product: version.product, protocol: version.protocolVersion };
+    facts.browser = { product: version.product, protocol: version.protocolVersion, user_agent: version.userAgent };
     const server = (r) => r.url.startsWith(input.origin + "/");
     const longPoll = (r) => new URL(r.url).pathname === "/change-updates";
 
