@@ -789,8 +789,7 @@ export function bootstrapViewsPage() {
     if (
       !before ||
       before.request_revision !== after.request_revision ||
-      before.saved_at !== after.saved_at ||
-      before.proposed_revision !== after.proposed_revision
+      before.saved_at !== after.saved_at
     ) {
       refreshOpenCard(openId);
     }

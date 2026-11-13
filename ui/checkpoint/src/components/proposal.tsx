@@ -1,10 +1,12 @@
 // proposal.tsx shows the revision the guide proposed beside an agreed
-// change: what it would change against the agreed revision (the summary,
-// the questions, and the Story's flows), with Adopt as the primary action and
-// Decline beside it. The agreed revision stays in force until the user acts.
+// change: every part adopting it would confirm, against the agreed revision
+// (the request, summary, questions, examples, preserved behaviors, the
+// Story's flows and the design files it was made from), with Adopt as the
+// primary action and Decline beside it. The agreed revision stays in force
+// until the user acts.
 
 import React from "react";
-import { AmbiguityQuestion, ChangeCardResult, ProposedRevisionItem } from "../types";
+import { AmbiguityQuestion, ChangeCardResult, ExampleItem, ProposedRevisionItem } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
 import { compareStories, StoryDifferenceList } from "./story";
 
@@ -69,6 +71,24 @@ export function ProposedRevisionView({
         approval of the agreed revision does not carry over.
       </p>
 
+      <h3>Request</h3>
+      {proposal.prompt === card.prompt ? (
+        <p id="surla-proposal-prompt" data-changed="false">
+          Unchanged: {proposal.prompt}
+        </p>
+      ) : (
+        <div id="surla-proposal-prompt" data-changed="true">
+          <p>
+            <strong>Proposed: </strong>
+            {proposal.prompt}
+          </p>
+          <p>
+            <strong>Agreed: </strong>
+            {card.prompt}
+          </p>
+        </div>
+      )}
+
       <h3>Summary</h3>
       {proposal.summary === card.summary ? (
         <p id="surla-proposal-summary" data-changed="false">
@@ -107,6 +127,44 @@ export function ProposedRevisionView({
         </p>
       ) : null}
 
+      <h3>{"Examples (" + proposal.examples.length + ")"}</h3>
+      <ul id="surla-proposal-examples">
+        {exampleChanges(card.examples, proposal.examples).map(({ example, status }) => (
+          <li key={status + example.id} data-example-id={example.id} data-status={status}>
+            <code>{example.id}</code>{" "}
+            <Badge variant={status === "Kept" ? "default" : status === "Removed" ? "destructive" : "accent"}>
+              {status}
+            </Badge>{" "}
+            <strong>{example.scenario}</strong>
+            {" — Input: " +
+              example.input_summary +
+              " -> Expected: " +
+              example.expected_outcome +
+              " [" +
+              example.verification_kind +
+              "]"}
+          </li>
+        ))}
+      </ul>
+
+      <h3>{"Preserved behaviors (" + proposal.preserved_behaviors.length + ")"}</h3>
+      {proposal.preserved_behaviors.length === 0 ? <p>None declared.</p> : null}
+      <ul id="surla-proposal-preserved">
+        {proposal.preserved_behaviors.map((behavior, index) => (
+          <li key={String(index)} data-new={card.preserved_behaviors.includes(behavior) ? "false" : "true"}>
+            {behavior} {card.preserved_behaviors.includes(behavior) ? null : <Badge variant="accent">New</Badge>}
+          </li>
+        ))}
+      </ul>
+      {card.preserved_behaviors.some((behavior) => !proposal.preserved_behaviors.includes(behavior)) ? (
+        <p id="surla-proposal-dropped-preserved">
+          {"No longer preserved: " +
+            card.preserved_behaviors
+              .filter((behavior) => !proposal.preserved_behaviors.includes(behavior))
+              .join(" ")}
+        </p>
+      ) : null}
+
       <h3>Story</h3>
       {story.same ? (
         <p id="surla-proposal-story" data-same="true">
@@ -115,6 +173,24 @@ export function ProposedRevisionView({
       ) : (
         <div id="surla-proposal-story" data-same="false">
           <StoryDifferenceList difference={story} subject="this revision" />
+        </div>
+      )}
+
+      <h3>Design files</h3>
+      {proposal.changed_design_files.length === 0 ? (
+        <p id="surla-proposal-design" data-changed="false">
+          Made from the same design files as the agreed revision.
+        </p>
+      ) : (
+        <div id="surla-proposal-design" data-changed="true">
+          <p>Made from different design files than the agreed revision. Changed:</p>
+          <ul>
+            {proposal.changed_design_files.map((path) => (
+              <li key={path}>
+                <code>{path}</code>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -181,4 +257,39 @@ function ProposalQuestion({
       </div>
     </li>
   );
+}
+
+// ExampleChange is one example as the proposal view lists it, with how it
+// differs from the agreed revision.
+interface ExampleChange {
+  // example is the proposal's example, or the agreed one it removes.
+  example: ExampleItem;
+  // status says how the example differs from the agreed revision.
+  status: "New" | "Edited" | "Kept" | "Removed";
+}
+
+// exampleChanges lists the proposal's examples, each marked New, Edited or
+// Kept against the agreed example with the same ID, followed by the agreed
+// examples the proposal removes.
+function exampleChanges(agreed: ExampleItem[], proposed: ExampleItem[]): ExampleChange[] {
+  const byID = new Map(agreed.map((example) => [example.id, example]));
+  const kept = new Set(proposed.map((example) => example.id));
+  const changes: ExampleChange[] = proposed.map((example): ExampleChange => {
+    const prior = byID.get(example.id);
+    if (prior === undefined) {
+      return { example, status: "New" };
+    }
+    const same =
+      prior.scenario === example.scenario &&
+      prior.input_summary === example.input_summary &&
+      prior.expected_outcome === example.expected_outcome &&
+      prior.verification_kind === example.verification_kind;
+    return { example, status: same ? "Kept" : "Edited" };
+  });
+  for (const example of agreed) {
+    if (!kept.has(example.id)) {
+      changes.push({ example, status: "Removed" });
+    }
+  }
+  return changes;
 }

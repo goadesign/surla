@@ -15,66 +15,16 @@ import (
 
 // TestViewsPageAdoptsAndDeclinesAProposedRevision opens an agreed change with
 // a Story and a typed edit. The guide's revision appears as a proposal
-// without a reload, keeping the edit; the page names what would change (the
-// summary, a new question, an added flow), blocks refining the agreed
-// revision, keeps a chosen answer across a re-read, lists the proposal, and
-// declines it. A second proposal is adopted: it becomes the agreed revision,
+// without a reload, keeping the edit; the page shows every part that would
+// change (the request, summary, a new question, an edited example, a dropped
+// preserved behavior, an added flow and a changed design file), blocks
+// refining the agreed revision, keeps a chosen answer across a re-read,
+// lists the proposal, and declines it. A second proposal is adopted: it becomes the agreed revision,
 // confirmed by the user, with the earlier revision shown as prior and the
 // edit typed on it preserved.
 func TestViewsPageAdoptsAndDeclinesAProposedRevision(t *testing.T) {
-	cp, ps := storyPageServer(t)
-	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
-	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
-	op := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, pageStories(), "")
-	proposeWithStory(t, cp, guide, "chg-proposal", op)
-	proposed, err := cp.GetChange(guide, &gensurla.GetChangePayload{ChangeID: "chg-proposal"})
-	require.NoError(t, err)
-	agreed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
-		ChangeID: proposed.ChangeID, RequestRevision: proposed.RequestRevision,
-		Answers: map[string]string{}, Examples: proposed.Examples,
-	})
-	require.NoError(t, err)
-	ps.act("propose", func() {
-		draft := pageStories()
-		draft[0].Flows = append(draft[0].Flows, designeval.StoryFlow{
-			Key: "exchange", Title: "Exchange instead of refund", Complete: true,
-			Steps: []designeval.StoryStep{
-				{Key: "ask", ActorKey: "customer", Summary: "Customer asks for an exchange", Kind: "start"},
-				{Key: "shipped", ActorKey: "customer", Summary: "The replacement ships", Kind: "outcome"},
-			},
-		})
-		storyOp := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, draft, "")
-		change, err := cp.GetChange(guide, &gensurla.GetChangePayload{ChangeID: "chg-proposal"})
-		require.NoError(t, err)
-		latest := change.RequestRevision
-		if change.ProposedRevision != nil {
-			latest = change.ProposedRevision.RequestRevision
-		}
-		kept := "check_01"
-		_, err = cp.ReviseChange(guide, &gensurla.ReviseChangePayload{
-			ChangeID: "chg-proposal", RequestRevision: latest, Prompt: "Refunds up to $60 are instant.", StoryRefreshOpID: &storyOp,
-			Analysis: &gensurla.CP1RevisionAnalysis{
-				Summary:     "Refunds up to $60 are instant; exchanges ship a replacement.",
-				Ambiguities: []*gensurla.CP1AnalysisAmbiguity{refundTaxQuestion()},
-				Examples: []*gensurla.CP1RevisionAnalysisExample{{
-					PriorID: &kept, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
-					ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
-				}},
-				RemovedExampleIds:  []string{},
-				PreservedBehaviors: []string{},
-			},
-		})
-		require.NoError(t, err)
-	})
-	ps.act("resave", func() {
-		cp.mu.Lock()
-		defer cp.mu.Unlock()
-		record, ok, err := cp.cards.load("chg-proposal")
-		require.NoError(t, err)
-		require.True(t, ok)
-		require.NoError(t, cp.cards.save(record))
-	})
-	runPageScript(t, ps, map[string]any{"agreed": agreed.RequestRevision}, viewsPageScriptHelpers+`
+	ps, agreed := proposalPage(t)
+	runPageScript(t, ps, map[string]any{"agreed": agreed}, viewsPageScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
 const editor = () => page.$("#surla-cp1-editor");
 const outcome = () => page.$('textarea[data-example-id="check_01"][data-field="expected_outcome"]');
@@ -91,6 +41,11 @@ const question = page.$('#surla-proposal [data-question-id="chg-proposal-ambigui
 expect(question && question.dataset.new === "true" && question.textContent.includes("Does the limit include tax?"), "the new question is not shown");
 const added = page.$$('#surla-proposal-story [data-difference="added"] strong').map((s) => s.textContent);
 expect(JSON.stringify(added) === JSON.stringify(["Exchange instead of refund"]), "the added flow is not named: " + JSON.stringify(added));
+expect(page.$("#surla-proposal-prompt").dataset.changed === "true" && page.text("#surla-proposal-prompt").includes("Refunds up to $60 are instant.") && page.text("#surla-proposal-prompt").includes("Route refunds to a manager."), "the changed request is not shown beside the agreed one");
+const example = page.$('#surla-proposal-examples [data-example-id="check_01"]');
+expect(example && example.dataset.status === "Edited" && example.textContent.includes("Order total $60.00"), "the edited example is not shown as edited");
+expect(page.text("#surla-proposal-dropped-preserved").includes("Cross-tenant order lookups return 404 Not Found."), "the dropped preserved behavior is not shown");
+expect(page.$("#surla-proposal-design").dataset.changed === "true" && page.text("#surla-proposal-design").includes("design/design.go"), "the changed design file is not named");
 expect(page.$("#surla-confirm-submit").disabled && page.$("#surla-confirm-blocked"), "refining the agreed revision is still offered");
 expect(page.$("#surla-proposal-adopt").disabled && page.$("#surla-proposal-adopt-hint"), "Adopt is offered before every question is answered");
 checkControl(page, page.$("#surla-proposal-decline"), "Decline");
@@ -129,4 +84,102 @@ expect(editor().dataset.requestRevision === adopted.request_revision && page.$("
 expect(page.$("#surla-preserved-draft") && page.text("#surla-preserved-draft").includes("Typed on the agreed revision"), "adopting lost the edit typed on the earlier revision");
 page.close();
 `)
+}
+
+// TestViewsPageKeepsAnswersWhenAdoptOrDeclineIsRefused answers a proposal's
+// question, then has the server refuse first the adoption and then the
+// decline: each refusal is shown with the server's message and the answer
+// the user chose stays selected, with the proposal still waiting.
+func TestViewsPageKeepsAnswersWhenAdoptOrDeclineIsRefused(t *testing.T) {
+	ps, agreed := proposalPage(t)
+	runPageScript(t, ps, map[string]any{"agreed": agreed}, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+const answer = () => page.$('#surla-proposal [data-question-id="chg-proposal-ambiguity-01"] [data-option="with_tax"]');
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-proposal", "the agreed change did not open");
+await control(origin, "act", { key: "propose" });
+await until(() => page.$("#surla-proposal"), "the proposal did not appear");
+answer().click();
+const refusal = (message) => ({ name: "conflict", id: "x", message, temporary: false, timeout: false, fault: false });
+
+await control(origin, "reply", { key: "POST /changes/confirm", status: 409, body: refusal("The adoption was refused for this test") });
+page.$("#surla-proposal-adopt").click();
+await until(() => page.$("#surla-proposal-error") && page.text("#surla-proposal-error").includes("The adoption was refused for this test"), "a refused adoption was not shown");
+await sleep(200);
+expect(answer().getAttribute("aria-pressed") === "true" && !page.$("#surla-proposal-adopt").disabled, "a refused adoption lost the chosen answer");
+expect(page.$("#surla-cp1-editor").dataset.requestRevision === input.agreed && page.$("#surla-proposal"), "a refused adoption changed what is shown in force");
+
+await control(origin, "reply", { key: "POST /changes/decline", status: 409, body: refusal("The decline was refused for this test") });
+page.$("#surla-proposal-decline").click();
+await until(() => page.text("#surla-proposal-error").includes("The decline was refused for this test"), "a refused decline was not shown");
+await sleep(200);
+expect(answer().getAttribute("aria-pressed") === "true" && page.$("#surla-proposal"), "a refused decline lost the chosen answer or the proposal");
+const saved = await readCard("chg-proposal");
+expect(saved.proposed_revision && saved.request_revision === input.agreed, "the refusals changed the saved change");
+page.close();
+`)
+}
+
+// proposalPage serves an agreed change with a Story behind the page session,
+// with two server-side actions a script can run: "propose", where the guide
+// revises the change from changed design files with an added flow, a new
+// question, a new prompt, an edited example and no preserved behavior; and
+// "resave", which saves the change unchanged so the page reads it again. It
+// returns the server and the agreed revision.
+func proposalPage(t *testing.T) (*pageServer, string) {
+	t.Helper()
+	cp, ps := storyPageServer(t)
+	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
+	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
+	op := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, pageStories(), "")
+	proposeWithStory(t, cp, guide, "chg-proposal", op)
+	proposed, err := cp.GetChange(guide, &gensurla.GetChangePayload{ChangeID: "chg-proposal"})
+	require.NoError(t, err)
+	agreed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
+		ChangeID: proposed.ChangeID, RequestRevision: proposed.RequestRevision,
+		Answers: map[string]string{}, Examples: proposed.Examples,
+	})
+	require.NoError(t, err)
+	ps.act("propose", func() {
+		draft := pageStories()
+		draft[0].Flows = append(draft[0].Flows, designeval.StoryFlow{
+			Key: "exchange", Title: "Exchange instead of refund", Complete: true,
+			Steps: []designeval.StoryStep{
+				{Key: "ask", ActorKey: "customer", Summary: "Customer asks for an exchange", Kind: "start"},
+				{Key: "shipped", ActorKey: "customer", Summary: "The replacement ships", Kind: "outcome"},
+			},
+		})
+		wsDir, _, _ := cp.currentWorkspaceTarget()
+		writeWorkspaceFiles(t, wsDir, map[string]string{"design/design.go": "package design // exchanges\n"})
+		storyOp := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, draft, "")
+		change, err := cp.GetChange(guide, &gensurla.GetChangePayload{ChangeID: "chg-proposal"})
+		require.NoError(t, err)
+		latest := change.RequestRevision
+		if change.ProposedRevision != nil {
+			latest = change.ProposedRevision.RequestRevision
+		}
+		kept := "check_01"
+		_, err = cp.ReviseChange(guide, &gensurla.ReviseChangePayload{
+			ChangeID: "chg-proposal", RequestRevision: latest, Prompt: "Refunds up to $60 are instant.", StoryRefreshOpID: &storyOp,
+			Analysis: &gensurla.CP1RevisionAnalysis{
+				Summary:     "Refunds up to $60 are instant; exchanges ship a replacement.",
+				Ambiguities: []*gensurla.CP1AnalysisAmbiguity{refundTaxQuestion()},
+				Examples: []*gensurla.CP1RevisionAnalysisExample{{
+					PriorID: &kept, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
+					ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+				}},
+				RemovedExampleIds:  []string{},
+				PreservedBehaviors: []string{},
+			},
+		})
+		require.NoError(t, err)
+	})
+	ps.act("resave", func() {
+		cp.mu.Lock()
+		defer cp.mu.Unlock()
+		record, ok, err := cp.cards.load("chg-proposal")
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.NoError(t, cp.cards.save(record))
+	})
+	return ps, agreed.RequestRevision
 }
