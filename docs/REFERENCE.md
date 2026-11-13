@@ -511,7 +511,9 @@ folder from the configuration folder of the shell where it runs and starts the
 server with that folder. The server never looks the folder up itself: Herdr
 starts it with the environment of Herdr's core, not the environment of your
 shell, so a lookup there could find another folder. The server refuses a folder
-that is not private to your account or that holds no project created by `surla`.
+that is not private to your account, holds no project created by `surla`, is
+named for another project folder, lies inside the project folder, or is not
+spelled as its physical path.
 
 Port selection briefly binds and releases an available port; that check is a snapshot, and another process can take the port before the server binds it. If that happens, startup fails and retains the saved port and credentials.
 

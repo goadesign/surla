@@ -469,10 +469,16 @@ func TestManagementRetryDoesNotReuseFormerPortOwner(t *testing.T) {
 // TestManagementCredentialStaysOutOfMetadata uses an owned hc executable stand-in;
 // no terminal or browser is started while inspecting the actual launcher arguments.
 // The launcher hands the server the state folder this command found, and no credential.
+// The configuration folder's name contains a space, as macOS's Application Support does,
+// and the folder must still arrive as one argument.
 func TestManagementCredentialStaysOutOfMetadata(t *testing.T) {
 	isolateServeWorkspace(t)
+	spaced := filepath.Join(t.TempDir(), "Application Support")
+	require.NoError(t, os.Mkdir(spaced, 0o700))
+	t.Setenv("SURLA_TEST_USER_CONFIG_DIR", spaced)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
+	require.Contains(t, state.Dir, " ")
 	management, err := project.NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
 	require.NoError(t, management.PublishRunning(os.Getpid(), "test"))
