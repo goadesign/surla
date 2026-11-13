@@ -567,7 +567,8 @@ func TestReadinessStopsOnAnyReceivedHTTPResponse(t *testing.T) {
 			client := projectClient(state)
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			require.Error(t, confirmProject(ctx, state, client))
+			_, err = confirmProject(ctx, state, client)
+			require.Error(t, err)
 			assert.EqualValues(t, 1, probes.Load(), "no redirect or retry may resend the credential")
 			assert.NoError(t, ctx.Err(), "a reply ends polling before the deadline")
 		})
@@ -589,7 +590,8 @@ func TestReadinessDoesNotResendAfterConnectionFailure(t *testing.T) {
 	}}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	require.Error(t, confirmProject(ctx, state, client))
+	_, err = confirmProject(ctx, state, client)
+	require.Error(t, err)
 	assert.Equal(t, 1, probes)
 }
 

@@ -8,6 +8,9 @@ var ProjectIdentity = Type("ProjectIdentity", func() {
 	Attribute("project_id", String, "Stable private project identifier.")
 	Attribute("directory", String, "Physical project folder.")
 	Attribute("owner", String, "Immutable operating-system account identity.")
+	Attribute("build", String, "SHA-256 of the surla executable the server started from, read when it started; it tells any two builds apart, including two local builds of one commit. The CLI attaches only to its own build. Servers built before this field omit it, and surla stop must still reach them, so it is not required.", func() {
+		Pattern("^[0-9a-f]{64}$")
+	})
 	Required("project_id", "directory", "owner")
 })
 

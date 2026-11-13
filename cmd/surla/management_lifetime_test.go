@@ -266,7 +266,7 @@ func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
 					assert.NoError(t, err)
 					return
 				}
-				_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner)
+				_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q,"build":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner, testBuild(t))
 				assert.NoError(t, err)
 			}))
 			t.Cleanup(server.Close)
@@ -314,7 +314,7 @@ func TestManagementWaitsForRecord(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				w.Header().Set("Content-Type", "application/json")
-				_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner)
+				_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q,"build":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner, testBuild(t))
 				assert.NoError(t, err)
 			}))
 			t.Cleanup(server.Close)
@@ -416,7 +416,7 @@ func TestManagementRetryDoesNotReuseFormerPortOwner(t *testing.T) {
 	requestCtx, stopRequest := context.WithDeadline(t.Context(), deadline)
 	defer stopRequest()
 	done := make(chan error, 1)
-	go func() { done <- confirmProject(requestCtx, state, projectClient(state)) }()
+	go func() { _, err := confirmProject(requestCtx, state, projectClient(state)); done <- err }()
 	conn, err := former.Accept()
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, conn.Close()) }()

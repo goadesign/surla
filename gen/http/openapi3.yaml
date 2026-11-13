@@ -13334,6 +13334,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ProjectIdentity'
                             example:
+                                build: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
                                 directory: Nihil accusamus qui.
                                 owner: Officiis laborum cum quo suscipit ducimus.
                                 project_id: Sunt iure praesentium temporibus aspernatur minus.
@@ -20507,6 +20508,11 @@ components:
         ProjectIdentity:
             type: object
             properties:
+                build:
+                    type: string
+                    description: SHA-256 of the surla executable the server started from, read when it started; it tells any two builds apart, including two local builds of one commit. The CLI attaches only to its own build. Servers built before this field omit it, and surla stop must still reach them, so it is not required.
+                    example: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
+                    pattern: ^[0-9a-f]{64}$
                 directory:
                     type: string
                     description: Physical project folder.
@@ -20520,6 +20526,7 @@ components:
                     description: Stable private project identifier.
                     example: Sunt iure praesentium temporibus aspernatur minus.
             example:
+                build: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
                 directory: Nihil accusamus qui.
                 owner: Officiis laborum cum quo suscipit ducimus.
                 project_id: Sunt iure praesentium temporibus aspernatur minus.

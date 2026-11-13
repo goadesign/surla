@@ -30,6 +30,11 @@ type IdentityResponseBody struct {
 	Directory string `form:"directory" json:"directory" xml:"directory"`
 	// Immutable operating-system account identity.
 	Owner string `form:"owner" json:"owner" xml:"owner"`
+	// SHA-256 of the surla executable the server started from, read when it
+	// started; it tells any two builds apart, including two local builds of one
+	// commit. The CLI attaches only to its own build. Servers built before this
+	// field omit it, and surla stop must still reach them, so it is not required.
+	Build *string `form:"build,omitempty" json:"build,omitempty" xml:"build,omitempty"`
 }
 
 // EnsureTeamResponseBody is the type of the "project" service "ensure_team"
@@ -302,6 +307,7 @@ func NewIdentityResponseBody(res *project.ProjectIdentity) *IdentityResponseBody
 		ProjectID: res.ProjectID,
 		Directory: res.Directory,
 		Owner:     res.Owner,
+		Build:     res.Build,
 	}
 	return body
 }

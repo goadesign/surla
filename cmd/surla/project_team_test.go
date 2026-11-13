@@ -312,7 +312,7 @@ func TestStartOpensViewsWhenTeamFails(t *testing.T) {
 				switch r.URL.Path {
 				case "/project/identity":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
-						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner, "build": testBuild(t),
 					}))
 				case "/project/team":
 					assert.Nil(t, tc.programs, "a team whose programs did not start is not requested")

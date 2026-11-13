@@ -256,11 +256,15 @@ func attachOrStartProject(
 		}
 	}
 	client = projectClient(state)
-	if err := confirmProject(ctx, state, client); err != nil {
+	identity, err := confirmProject(ctx, state, client)
+	if err != nil {
 		if inUse {
 			return nil, created, fmt.Errorf("%s; no second server was started: %w", projectHolder(state), err)
 		}
 		return nil, created, fmt.Errorf("the project server in Herdr terminal %s did not start answering: %w", terminal, err)
+	}
+	if err := confirmBuild(identity); err != nil {
+		return nil, created, err
 	}
 	return client, created, nil
 }
@@ -407,7 +411,7 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 		return err
 	}
 	client := projectClient(state)
-	if err := confirmProject(ctx, state, client); err != nil {
+	if _, err := confirmProject(ctx, state, client); err != nil {
 		return fmt.Errorf("%s: %w", projectHolder(state), err)
 	}
 	if err := client.Stop(ctx); err != nil {
@@ -786,14 +790,33 @@ func waitForRunning(ctx context.Context, state *project.State) (project.Running,
 // errWrongProject ends attachment before any further management operation is sent.
 var errWrongProject = errors.New("the saved port answered for another project")
 
+// errOtherBuild refuses to attach to a server another surla build started, such as the
+// one still running after an upgrade: it would serve its own tools and page, and start
+// the new executable for its child processes. surla stop accepts any build.
+var errOtherBuild = errors.New("this project's server was started by another build of surla; run surla stop, then surla")
+
 // confirmProject verifies the typed identity before trusting a saved port's answering process.
-func confirmProject(ctx context.Context, state *project.State, client *genproject.Client) error {
+// It accepts a server of any build, so surla stop reaches one an earlier build started.
+func confirmProject(ctx context.Context, state *project.State, client *genproject.Client) (*genproject.ProjectIdentity, error) {
 	identity, err := client.Identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if identity.ProjectID != state.Record.ID || identity.Directory != state.Record.Directory || identity.Owner != state.Record.Owner {
+		return nil, errWrongProject
+	}
+	return identity, nil
+}
+
+// confirmBuild attaches only to a server started by this build; a server that reports no
+// build predates the field and is another build.
+func confirmBuild(identity *genproject.ProjectIdentity) error {
+	build, err := project.BuildIdentity()
 	if err != nil {
 		return err
 	}
-	if identity.ProjectID != state.Record.ID || identity.Directory != state.Record.Directory || identity.Owner != state.Record.Owner {
-		return errWrongProject
+	if identity.Build == nil || *identity.Build != build {
+		return errOtherBuild
 	}
 	return nil
 }

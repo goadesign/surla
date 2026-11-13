@@ -95,6 +95,11 @@ type ProjectIdentity struct {
 	Directory string
 	// Immutable operating-system account identity.
 	Owner string
+	// SHA-256 of the surla executable the server started from, read when it
+	// started; it tells any two builds apart, including two local builds of one
+	// commit. The CLI attaches only to its own build. Servers built before this
+	// field omit it, and surla stop must still reach them, so it is not required.
+	Build *string
 }
 
 // ProjectTeam is the result type of the project service ensure_team method.
@@ -195,6 +200,11 @@ type jsonProjectIdentityTransport struct {
 	Directory *string `json:"directory"`
 	// Immutable operating-system account identity.
 	Owner *string `json:"owner"`
+	// SHA-256 of the surla executable the server started from, read when it
+	// started; it tells any two builds apart, including two local builds of one
+	// commit. The CLI attaches only to its own build. Servers built before this
+	// field omit it, and surla stop must still reach them, so it is not required.
+	Build *string `json:"build,omitempty"`
 }
 
 // validatejsonProjectIdentityTransport checks decoded JSON before it becomes a service value.
@@ -210,6 +220,9 @@ func validatejsonProjectIdentityTransport(value *jsonProjectIdentityTransport) (
 	}
 	if value.Owner == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("owner", "body"))
+	}
+	if value.Build != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.build", *value.Build, "^[0-9a-f]{64}$"))
 	}
 	return err
 }
@@ -384,6 +397,14 @@ func ValidateteamSpaceConflictIntTransport(value teamSpaceConflictIntTransport) 
 	return err
 }
 
+// validateProjectIdentityOriginal checks the original typed value before JSON conversion.
+func validateProjectIdentityOriginal(value *ProjectIdentity) (err error) {
+	if value.Build != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.build", *value.Build, "^[0-9a-f]{64}$"))
+	}
+	return err
+}
+
 // validateProjectTeamOriginal checks the original typed value before JSON conversion.
 func validateProjectTeamOriginal(value *ProjectTeam) (err error) {
 	if value.Roles == nil {
@@ -438,12 +459,16 @@ func EncodeProjectIdentity(in *ProjectIdentity) ([]byte, error) {
 	if err := checkProjectIdentityValue(in); err != nil {
 		return nil, fmt.Errorf("encode ProjectIdentity JSON: %w", err)
 	}
+	if err := validateProjectIdentityOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ProjectIdentity value: %w", err)
+	}
 	var body *jsonProjectIdentityTransport
 	{
 		body = &jsonProjectIdentityTransport{
 			ProjectID: &in.ProjectID,
 			Directory: &in.Directory,
 			Owner:     &in.Owner,
+			Build:     in.Build,
 		}
 	}
 	if err := validatejsonProjectIdentityTransport(body); err != nil {
@@ -463,6 +488,9 @@ func ValidateProjectIdentityValue(in *ProjectIdentity) error {
 	if err := checkProjectIdentityValue(in); err != nil {
 		return fmt.Errorf("validate ProjectIdentity value: %w", err)
 	}
+	if err := validateProjectIdentityOriginal(in); err != nil {
+		return fmt.Errorf("validate ProjectIdentity value: %w", err)
+	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "ProjectIdentity")
@@ -474,6 +502,7 @@ func ValidateProjectIdentityValue(in *ProjectIdentity) error {
 			ProjectID: &in.ProjectID,
 			Directory: &in.Directory,
 			Owner:     &in.Owner,
+			Build:     in.Build,
 		}
 	}
 	if err := validatejsonProjectIdentityTransport(body); err != nil {
@@ -511,6 +540,7 @@ func DecodeProjectIdentity(data []byte) (out *ProjectIdentity, err error) {
 			ProjectID: *body.ProjectID,
 			Directory: *body.Directory,
 			Owner:     *body.Owner,
+			Build:     body.Build,
 		}
 	}
 	return out, nil
@@ -935,6 +965,13 @@ func validateProjectIdentityJSONValue(path string, value any, description string
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "build":
+			if err := validateProjectIdentityJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "SHA-256 of the surla executable the server started from, read when it started; it tells any two builds apart, including two local builds of one commit. The CLI attaches only to its own build. Servers built before this field omit it, and surla stop must still reach them, so it is not required.",
+			); err != nil {
+				return err
+			}
 		case "directory":
 			if err := validateProjectIdentityJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -958,6 +995,7 @@ func validateProjectIdentityJSONValue(path string, value any, description string
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"build",
 				"directory",
 				"owner",
 				"project_id",
@@ -1438,6 +1476,11 @@ func checkProjectIdentityProjectIdentityValue(in *ProjectIdentity, field string,
 		}
 		if !utf8.ValidString(string(in.Owner)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "owner", false))
+		}
+		if in.Build != nil {
+			if !utf8.ValidString(string(*in.Build)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "build", false))
+			}
 		}
 	}
 	return nil

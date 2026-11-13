@@ -58,7 +58,7 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/project/identity" {
-					_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner)
+					_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q,"build":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner, testBuild(t))
 					assert.NoError(t, err)
 					return
 				}
@@ -346,7 +346,7 @@ func TestStartPrintsProjectTeamStep(t *testing.T) {
 				switch r.URL.Path {
 				case "/project/identity":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
-						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner, "build": testBuild(t),
 					}))
 				case "/project/team":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
