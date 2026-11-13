@@ -555,6 +555,35 @@ async function main(input, facts) {
     }
     facts.views.session_seen = views.session !== null;
 
+    // (h) Open the change saved with a Story, then its Story stage, and
+    // measure the long flow's row of steps once the page has made it a tab
+    // stop, which it does when it measures that the row overflows.
+    const beforeStory = await evaluate(views, "window.__surlaViolations.length");
+    await evaluate(views, "document.getElementById(" + JSON.stringify("surla-open-change-" + input.story_change_id) + ").click(), true");
+    await until(views, "(document.getElementById('surla-cp1-editor') || { dataset: {} }).dataset.changeId === " + JSON.stringify(input.story_change_id));
+    await evaluate(views, "document.getElementById('surla-nav-story').click(), true");
+    const row =
+      "document.querySelector('#surla-story-change .surla-story-flow[data-flow-key=" +
+      JSON.stringify(input.story_flow) +
+      "] .surla-story-steps')";
+    const shown = await until(views, row + " !== null");
+    const tabStop = await until(views, "(" + row + " || {}).tabIndex === 0");
+    facts.story = shown.timed_out
+      ? { found: false }
+      : await evaluate(
+          views,
+          "(() => { const row = " +
+            row +
+            "; const start = row.scrollLeft; row.scrollLeft = row.scrollWidth; const scrolled = row.scrollLeft; row.scrollLeft = start;" +
+            " return { found: true, steps: row.querySelectorAll('.surla-story-step').length, tab_index: row.tabIndex," +
+            " overflow_x: getComputedStyle(row).overflowX, row_scroll_width: row.scrollWidth, row_client_width: row.clientWidth," +
+            " scrolled_to: scrolled, row_right: row.getBoundingClientRect().right," +
+            " stage_right: document.getElementById('surla-story-stage').getBoundingClientRect().right," +
+            " document_scroll_width: document.documentElement.scrollWidth, viewport_width: document.documentElement.clientWidth }; })()"
+        );
+    facts.story.tab_stop_timed_out = tabStop.timed_out;
+    facts.story.violations = await evaluate(views, "window.__surlaViolations.slice(" + beforeStory + ")");
+
     // (g) Reload the views page.
     const beforeReload = views.requests.length;
     await reload(views);

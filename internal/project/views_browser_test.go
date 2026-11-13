@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"io"
 	"net"
@@ -39,6 +40,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/testmodule"
 )
 
 type (
@@ -57,6 +59,10 @@ type (
 		Link string `json:"link"`
 		// ChangeIDs are the saved changes the page must list.
 		ChangeIDs []string `json:"change_ids"`
+		// StoryChangeID is the change saved with the Story, and StoryFlow
+		// the key of its flow whose row of steps is wider than the page.
+		StoryChangeID string `json:"story_change_id"`
+		StoryFlow     string `json:"story_flow"`
 	}
 
 	// browserFacts is everything browser_harness.cjs observed in the browser.
@@ -75,6 +81,8 @@ type (
 		Framing framingFacts `json:"framing"`
 		// OtherPages are pages on other origins that call the server.
 		OtherPages []otherPageFacts `json:"other_pages"`
+		// Story is the Story stage of the change saved with a Story.
+		Story storyFacts `json:"story"`
 		// Reload is the views page after a reload.
 		Reload reloadFacts `json:"reload"`
 	}
@@ -184,6 +192,34 @@ type (
 		Console     []string          `json:"console"`
 	}
 
+	// storyFacts is how the browser laid out a row of Story steps wider than
+	// the page. Widths are CSS pixels.
+	storyFacts struct {
+		// Found says the long flow's row of steps rendered.
+		Found bool `json:"found"`
+		// TabStopTimedOut says the row never became a tab stop, which the
+		// page makes it once it measures that the row overflows.
+		TabStopTimedOut bool   `json:"tab_stop_timed_out"`
+		Steps           int    `json:"steps"`
+		TabIndex        int    `json:"tab_index"`
+		OverflowX       string `json:"overflow_x"`
+		RowScrollWidth  int    `json:"row_scroll_width"`
+		RowClientWidth  int    `json:"row_client_width"`
+		// ScrolledTo is the row's scroll offset after scrolling it to its end.
+		ScrolledTo float64 `json:"scrolled_to"`
+		// RowRight and StageRight are the right edges of the row and of the
+		// Story stage.
+		RowRight   float64 `json:"row_right"`
+		StageRight float64 `json:"stage_right"`
+		// DocumentScrollWidth is the page's scroll width and ViewportWidth
+		// the width of the browser's viewport.
+		DocumentScrollWidth int `json:"document_scroll_width"`
+		ViewportWidth       int `json:"viewport_width"`
+		// Violations are policy reports raised while the change and its
+		// Story stage opened.
+		Violations []violation `json:"violations"`
+	}
+
 	// reloadFacts is the views page after a reload.
 	reloadFacts struct {
 		SignedOutText     string `json:"signed_out_text"`
@@ -232,6 +268,14 @@ type (
 		devtools chan string
 	}
 
+	// storyRefresh is the part of a refresh_story or get_story_refresh
+	// answer the test reads.
+	storyRefresh struct {
+		State      string `json:"state"`
+		OpID       string `json:"op_id"`
+		Diagnostic string `json:"diagnostic"`
+	}
+
 	// listedProcess is one process as ps lists it.
 	listedProcess struct {
 		pid, ppid, pgid int
@@ -247,6 +291,12 @@ const (
 	maxBrowserOutput = 64 << 10
 	// browserDeadline bounds each wait on the browser process.
 	browserDeadline = 30 * time.Second
+	// storyDeadline bounds the guide's Story evaluation, which compiles the
+	// workspace's design with the Go toolchain in its sandbox.
+	storyDeadline = 3 * time.Minute
+	// longStoryFlow is the key of the Story flow whose row of steps is wider
+	// than the page.
+	longStoryFlow = "audited-refund"
 )
 
 // wellKnownBrowsers are the executables tried, in order, when browserEnv is
@@ -265,7 +315,9 @@ var wellKnownBrowsers = []string{
 // subtest, what only a real browser shows: the link exchange and the address,
 // the browser's own same-origin mark, empty browser storage, a load without
 // policy violations, the enforced policy, refused framing, refused requests
-// from other origins, a reload ending the session, and the browser's cleanup.
+// from other origins, a long row of Story steps scrolling inside its stage,
+// a reload ending the session, and the browser's cleanup. The Story comes
+// from a real evaluation of a workspace design, which takes most of a minute.
 func TestViewsPageInARealBrowser(t *testing.T) {
 	executable := findBrowser(t)
 	node, err := exec.LookPath("node")
@@ -275,13 +327,13 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 	harness, err := filepath.Abs("../../ui/checkpoint/testing/browser_harness.cjs")
 	require.NoError(t, err)
 
-	vp := startViewsProject(t, controlplane.Options{})
+	vp := startViewsProject(t, controlplane.Options{WorkspaceDir: longStoryWorkspace(t)})
 	origin := vp.state.Origin()
 	guide := vp.agent(t, "guide")
-	changeIDs := []string{"chg-refunds", "chg-invoices"}
-	for _, id := range changeIDs {
-		proposeChange(t, origin, guide, id)
-	}
+	proposeChange(t, origin, guide, "chg-refunds", "")
+	proposeChange(t, origin, guide, "chg-invoices", "")
+	proposeChange(t, origin, guide, "chg-story", evaluateStory(t, origin, guide))
+	changeIDs := []string{"chg-refunds", "chg-invoices", "chg-story"}
 	link, err := vp.link()
 	require.NoError(t, err)
 
@@ -296,6 +348,8 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		CrossSiteOrigin: other.crossSite,
 		Link:            link,
 		ChangeIDs:       changeIDs,
+		StoryChangeID:   "chg-story",
+		StoryFlow:       longStoryFlow,
 	})
 	t.Logf("browser: %s (DevTools protocol %s); listening after %s, scenario took %s",
 		facts.Browser.Product, facts.Browser.Protocol, listening.Sub(started).Round(time.Millisecond), time.Since(listening).Round(time.Millisecond))
@@ -446,6 +500,22 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		}
 	})
 
+	t.Run("h a row of Story steps wider than the page scrolls inside the stage", func(t *testing.T) {
+		story := facts.Story
+		require.True(t, story.Found, "the Story stage did not show the change's long flow")
+		assert.Equal(t, 10, story.Steps, "steps drawn for the long flow")
+		assert.Greater(t, story.RowScrollWidth, story.RowClientWidth, "the row of steps does not overflow")
+		assert.Equal(t, "auto", story.OverflowX, "the row's overflow-x")
+		assert.Positive(t, story.ScrolledTo, "scrolling the row did not move it")
+		assert.False(t, story.TabStopTimedOut, "the overflowing row never became a tab stop")
+		assert.Zero(t, story.TabIndex, "the overflowing row's tab index")
+		assert.LessOrEqual(t, story.RowRight, story.StageRight, "the row reaches past the Story stage")
+		assert.LessOrEqual(t, story.DocumentScrollWidth, story.ViewportWidth, "the row widened the page")
+		assert.Empty(t, story.Violations, "opening the Story stage raised policy violations")
+		t.Logf("story row: %d steps, scroll width %d in %d, scrolled to %.0f, row right %.0f, stage right %.0f; page %d in viewport %d",
+			story.Steps, story.RowScrollWidth, story.RowClientWidth, story.ScrolledTo, story.RowRight, story.StageRight, story.DocumentScrollWidth, story.ViewportWidth)
+	})
+
 	t.Run("browser ended and left nothing", func(t *testing.T) {
 		assert.Contains(t, facts.Browser.UserAgent, "HeadlessChrome", "the browser did not run headless")
 		browser.stopAndCheck(t)
@@ -478,10 +548,11 @@ func findBrowser(t *testing.T) string {
 }
 
 // proposeChange saves change id through the guide's credential, as the
-// guide agent does.
-func proposeChange(t *testing.T, origin, credential, id string) {
+// guide agent does. A non-empty storyOp adopts that succeeded Story
+// evaluation into the change.
+func proposeChange(t *testing.T, origin, credential, id, storyOp string) {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"change_id": id,
 		"prompt":    "Route " + id + " to a manager.",
 		"analysis": map[string]any{
@@ -492,7 +563,11 @@ func proposeChange(t *testing.T, origin, credential, id string) {
 			}},
 			"preserved_behaviors": []any{},
 		},
-	})
+	}
+	if storyOp != "" {
+		payload["story_refresh_op_id"] = storyOp
+	}
+	body, err := json.Marshal(payload)
 	require.NoError(t, err)
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, origin+"/changes/propose", bytes.NewReader(body))
 	require.NoError(t, err)
@@ -505,6 +580,77 @@ func proposeChange(t *testing.T, origin, credential, id string) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusOK, resp.StatusCode, "proposing %s: %s", id, answer)
+}
+
+// longStoryWorkspace writes a Goa design workspace whose Story has one flow
+// of ten steps, each naming an unbroken receipt identifier, so the flow's
+// row of steps is wider than the page, and tidies its module.
+func longStoryWorkspace(t *testing.T) string {
+	t.Helper()
+	steps := ""
+	for i := range 8 {
+		steps += fmt.Sprintf("\t\tStep(\"check-part-%c\", \"manager\", \"Manager checks part %c of receipt %s\")\n",
+			'a'+i, 'A'+i, strings.Repeat("0123456789", 6))
+	}
+	design := `package design
+
+import . "github.com/goadesign/surla/story/dsl"
+
+var _ = Story("Order Refunds", func() {
+	Actor("customer", "Customer")
+	Actor("manager", "Support Manager")
+
+	Flow("` + longStoryFlow + `", "Refund checked part by part", func() {
+		StartsWith("request-refund", "customer", "Customer requests a refund for a split receipt")
+` + steps + `		Outcome("refund-paid", "customer", "Every checked part is refunded")
+	})
+})
+`
+	return storyWorkspace(t, testmodule.Tidy(t, map[string]string{
+		"go.mod": "module example.com/story-design\n\ngo 1.27.3\n\nrequire (\n" +
+			"\tgithub.com/goadesign/surla/story v0.0.0-20261111183703-4568fcf5bb85\n" +
+			"\tgoa.design/goa/v3 " + testmodule.SurlaVersion(t, "goa.design/goa/v3") + "\n)\n",
+		"design/design.go": design,
+	}))
+}
+
+// evaluateStory has the guide evaluate the workspace's Story through the
+// project server, as the guide agent does, waits until the evaluation ends,
+// and returns the op_id of the succeeded evaluation.
+func evaluateStory(t *testing.T, origin, guide string) string {
+	t.Helper()
+	started := storyRefreshCall(t, origin, guide, http.MethodPost)
+	require.Equal(t, "running", started.State, "the guide could not start a Story evaluation")
+	deadline := time.Now().Add(storyDeadline)
+	for {
+		current := storyRefreshCall(t, origin, guide, http.MethodGet)
+		require.Equal(t, started.OpID, current.OpID, "the guide reads another evaluation")
+		if current.State != "running" {
+			require.Equal(t, "succeeded", current.State, "the Story evaluation: %s", current.Diagnostic)
+			return current.OpID
+		}
+		require.True(t, time.Now().Before(deadline), "the Story evaluation did not end within %s", storyDeadline)
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// storyRefreshCall starts (POST) or reads (GET) the guide's Story
+// evaluation with the guide's credential.
+func storyRefreshCall(t *testing.T, origin, guide, method string) storyRefresh {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), method, origin+"/workspace/story/refresh", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+guide)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	answer, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode, "%s /workspace/story/refresh: %s", method, answer)
+	var refresh storyRefresh
+	require.NoError(t, json.Unmarshal(answer, &refresh))
+	return refresh
 }
 
 // startOtherOrigin starts the test's second listener. It serves a page that
