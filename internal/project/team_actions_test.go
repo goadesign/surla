@@ -99,11 +99,12 @@ func TestTeamShowPaneOverlayAndOwnership(t *testing.T) {
 				role = "guide"
 			case "space folder changed":
 				host.spaces[0].Folder = "/other"
+				host.spaces[0].Name = "renamed by user"
 			}
 			err := o.server.ShowPane(t.Context(), role)
-			if scenario == "owned" {
+			if scenario == "owned" || scenario == "space folder changed" {
 				require.NoError(t, err)
-				assert.Equal(t, TeamSpace{ID: "space", Folder: o.selection.Root, Tabs: []TeamTab{{ID: "tab", Terminals: []TeamPane{{Terminal: "terminal"}}}}}, host.focused)
+				assert.Equal(t, TeamSpace{ID: "space", Name: host.spaces[0].Name, Folder: host.spaces[0].Folder, Tabs: []TeamTab{{ID: "tab", Terminals: []TeamPane{{Terminal: "terminal"}}}}}, host.focused)
 				assert.Equal(t, []string{"overlays", "spaces", "focus"}, host.calls)
 				assert.Equal(t, []string{"terminal"}, f.reads)
 			} else {

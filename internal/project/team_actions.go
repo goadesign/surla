@@ -105,7 +105,7 @@ func (s *Server) ShowPane(ctx context.Context, role string) error {
 		return userTeamError(teamUnavailable(ctx, "spaces"))
 	}
 	for _, space := range spaces {
-		if space.ID != selection.Space || space.Folder != selection.Root {
+		if space.ID != selection.Space {
 			continue
 		}
 		for _, tab := range space.Tabs {
