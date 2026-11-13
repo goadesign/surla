@@ -33,10 +33,6 @@ type (
 	// gateway in tests, standing in for the model a live target plans with.
 	// It answers every Complete call with an empty assistant text.
 	scriptedModelProvider struct{}
-
-	// noopTargetUpdater is a TargetPromptUpdater stub used to verify CP3
-	// startup status formatting when a host binds TargetUpdater.
-	noopTargetUpdater struct{}
 )
 
 // TestNewLiveModelEnvBuildsTheLiveTargetEnvironment verifies configure_model's
@@ -150,7 +146,6 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
-	assert.Nil(t, opts.TargetUpdater)
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + defaultOpenAIModel}, opts.Live.Env)
 	closeServeOptions(t, opts)
@@ -403,26 +398,10 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 `,
 		},
 		{
-			name: "loopback without target updater",
-			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
-			opts: controlplane.Options{
-				CardsDir: ".surla/cards",
-			},
-			want: `surla: serving on http://127.0.0.1:8090
-surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (initialize a committed starter or use surla verification set, or run surla verify on the CLI)
-surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
-`,
-		},
-		{
-			name: "loopback with all checkpoints configured",
+			name: "loopback with verification and promotion but no live targets",
 			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
 			opts: controlplane.Options{
 				CardsDir:        "/var/lib/surla/cards",
-				TargetUpdater:   noopTargetUpdater{},
 				Verification:    &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs", Plan: fixedSuite},
 				PromotionTarget: &releaseTarget{},
 			},
@@ -430,7 +409,7 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 surla: saving Change Cards in /var/lib/surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override): on
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): on
 `,
@@ -542,11 +521,6 @@ func (*scriptedModelProvider) Complete(context.Context, *model.Request) (*model.
 // Stream is unused: callers of this provider only call Complete.
 func (*scriptedModelProvider) Stream(context.Context, *model.Request) (model.Streamer, error) {
 	return nil, errors.New("streaming is not scripted")
-}
-
-// ApplyPromptOverride satisfies controlplane.TargetPromptUpdater for status tests.
-func (noopTargetUpdater) ApplyPromptOverride(context.Context, string, string) (string, error) {
-	return "v1", nil
 }
 
 // startModelGateway serves provider through a Goa-AI model gateway on a

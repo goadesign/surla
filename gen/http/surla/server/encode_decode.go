@@ -611,6 +611,32 @@ func EncodeDraftOverrideError(encoder func(context.Context, http.ResponseWriter)
 			return encodeError(ctx, w, v)
 		}
 		switch en.GoaErrorName() {
+		case "no_live_target":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewDraftOverrideNoLiveTargetResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "live_target_ended":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewDraftOverrideLiveTargetEndedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
 		case "prompt_not_found":
 			var res *goa.ServiceError
 			errors.As(v, &res)
@@ -636,19 +662,6 @@ func EncodeDraftOverrideError(encoder func(context.Context, http.ResponseWriter)
 			}
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusUnprocessableEntity)
-			return enc.Encode(body)
-		case "live_target_ended":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewDraftOverrideLiveTargetEndedResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "target_rejected_credential":
 			var res *goa.ServiceError

@@ -23,16 +23,6 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/goldenpath"
 	"github.com/goadesign/surla/internal/testmodule"
-	"goa.design/goa-ai/runtime/agent/prompt"
-)
-
-type (
-	// boundTargetPromptUpdater binds a target platform's prompt.Store to the
-	// TargetPromptUpdater contract for testing CP3 Fast Draft Mode.
-	boundTargetPromptUpdater struct {
-		// store is the target platform's prompt.Store.
-		store prompt.Store
-	}
 )
 
 // TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock verifies
@@ -431,8 +421,9 @@ func TestGoCallersGetTheDesignRules(t *testing.T) {
 }
 
 // TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP verifies
-// CP2 design evaluation, Golden Path MCP resource serving, CP3 prompt overrides,
-// and bearer-token authentication.
+// CP2 design evaluation, Golden Path MCP resource serving, the CP3 refusal of
+// a prompt draft with no live target running, and bearer-token
+// authentication.
 func TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
@@ -452,12 +443,8 @@ func TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP(t *testing.T)
 		PreservedBehaviors: []string{"Idempotency key refund/<tenant>/<order>"},
 	}
 
-	targetStore := prompt.NewInMemoryStore()
 	workspace := t.TempDir()
-	cp := newControlPlane(t, Options{
-		WorkspaceDir:  workspace,
-		TargetUpdater: &boundTargetPromptUpdater{store: targetStore},
-	})
+	cp := newControlPlane(t, Options{WorkspaceDir: workspace})
 
 	candidateDesign := `package design
 
@@ -544,19 +531,16 @@ var _ = Service("orders", func() {
 		t.Fatalf("unexpected evaluated ToolContractItem: %+v", preview.Tools)
 	}
 
-	// CP3: Fast Draft Mode updates the bound TargetPromptUpdater and rejects compiled_rule hacks.
+	// CP3: Surla changes prompts only in a live target it runs; with none
+	// running, a prompt draft is refused with the declared no_live_target
+	// error. live_test.go covers drafts on a running live target.
 	promptID := "orders.refund.system"
-	draftPrompt, err := cp.DraftOverride(ctx, &gensurla.DraftOverridePayload{
+	_, err = cp.DraftOverride(ctx, &gensurla.DraftOverridePayload{
 		TargetKind: TargetKindPromptTemplate,
 		PromptID:   &promptID,
 		NewContent: "You are a concise, empathetic refund specialist.",
 	})
-	if err != nil {
-		t.Fatalf("DraftOverride(prompt_template) failed: %v", err)
-	}
-	if !draftPrompt.AppliedInStore || draftPrompt.RequiresRebuild || draftPrompt.PromptVersion == nil || *draftPrompt.PromptVersion == "" {
-		t.Fatalf("unexpected prompt_template DraftOverrideResult: %+v", draftPrompt)
-	}
+	assert.Equal(t, "no_live_target", goaErrorName(err))
 
 	// Verified bearer-token authenticator rejects unauthenticated HTTP requests and accepts valid bearer token.
 	auth := workflowAuthenticator(map[string]Principal{
@@ -635,19 +619,6 @@ var _ = Service("orders", func() {
 		t.Fatalf("unexpected surla://golden-path content: %+v", goldenRes)
 	}
 
-}
-
-// ApplyPromptOverride writes newContent into the target prompt.Store and returns the resolved version.
-func (u *boundTargetPromptUpdater) ApplyPromptOverride(ctx context.Context, promptID, newContent string) (string, error) {
-	id := prompt.Ident(promptID)
-	if err := u.store.Set(ctx, id, prompt.Scope{}, newContent, map[string]string{"source": "cp3_fast_draft"}); err != nil {
-		return "", err
-	}
-	override, err := u.store.Resolve(ctx, id, prompt.Scope{})
-	if err != nil || override == nil {
-		return "", err
-	}
-	return override.Version, nil
 }
 
 // TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards verifies that the

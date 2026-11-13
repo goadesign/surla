@@ -213,16 +213,13 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project strin
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
 	fmt.Fprintln(w, "surla: CP2 (preview_architecture): on")
-	switch {
-	case opts.TargetUpdater == nil && (opts.Verification != nil || opts.ResolveVerification != nil) && opts.Live != nil:
+	if (opts.Verification != nil || opts.ResolveVerification != nil) && opts.Live != nil {
 		root := controlplane.LiveRoot(opts.CardsDir)
 		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
-	case opts.TargetUpdater == nil:
+	} else {
 		fmt.Fprintln(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off"+
 			" (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
-	default:
-		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}
 	switch {
 	case opts.Verification != nil:

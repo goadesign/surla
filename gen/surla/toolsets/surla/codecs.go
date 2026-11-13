@@ -2092,7 +2092,7 @@ var diffResultFields = []tools.FieldMetadata{
 var draftOverridePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.",
+		Description: "Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("target_kind")},
@@ -2118,7 +2118,7 @@ var draftOverrideResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("applied_in_store")},
 		JSONType:    "boolean",
-		Description: "True when updated in the target platform's prompt.Store for 0s reload.",
+		Description: "True when the live target saved the prompt text in its prompt store for 0s reload.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("requires_rebuild")},
@@ -2128,7 +2128,7 @@ var draftOverrideResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt_version")},
 		JSONType:    "string",
-		Description: "New prompt version digest returned by the target platform.",
+		Description: "Version of the accepted prompt text, as the live target returned it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
@@ -13677,7 +13677,7 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 		case "applied_in_store":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when updated in the target platform's prompt.Store for 0s reload.",
+				typed[key], "True when the live target saved the prompt text in its prompt store for 0s reload.",
 			); err != nil {
 				return err
 			}
@@ -13691,7 +13691,7 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 		case "prompt_version":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "New prompt version digest returned by the target platform.",
+				typed[key], "Version of the accepted prompt text, as the live target returned it.",
 			); err != nil {
 				return err
 			}

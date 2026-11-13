@@ -402,11 +402,12 @@ type PreviewArchitectureResponseBody struct {
 // DraftOverrideResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body.
 type DraftOverrideResponseBody struct {
-	// True when updated in the target platform's prompt.Store for 0s reload.
+	// True when the live target saved the prompt text in its prompt store for 0s
+	// reload.
 	AppliedInStore *bool `form:"applied_in_store,omitempty" json:"applied_in_store,omitempty" xml:"applied_in_store,omitempty"`
 	// True when the change modifies a compiled Go business rule.
 	RequiresRebuild *bool `form:"requires_rebuild,omitempty" json:"requires_rebuild,omitempty" xml:"requires_rebuild,omitempty"`
-	// New prompt version digest returned by the target platform.
+	// Version of the accepted prompt text, as the live target returned it.
 	PromptVersion *string `form:"prompt_version,omitempty" json:"prompt_version,omitempty" xml:"prompt_version,omitempty"`
 	// Operator-facing status explanation.
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
@@ -1035,6 +1036,43 @@ type PreviewArchitectureForbiddenResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// DraftOverrideNoLiveTargetResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "no_live_target" error.
+type DraftOverrideNoLiveTargetResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// DraftOverrideLiveTargetEndedResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "live_target_ended"
+// error.
+type DraftOverrideLiveTargetEndedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // DraftOverridePromptNotFoundResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body for the "prompt_not_found"
 // error.
@@ -1057,25 +1095,6 @@ type DraftOverridePromptNotFoundResponseBody struct {
 // DraftOverrideInvalidPromptResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body for the "invalid_prompt" error.
 type DraftOverrideInvalidPromptResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// DraftOverrideLiveTargetEndedResponseBody is the type of the "surla" service
-// "draft_override" endpoint HTTP response body for the "live_target_ended"
-// error.
-type DraftOverrideLiveTargetEndedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3575,6 +3594,36 @@ func NewDraftOverrideResultOK(body *DraftOverrideResponseBody) *surla.DraftOverr
 	return v
 }
 
+// NewDraftOverrideNoLiveTarget builds a surla service draft_override endpoint
+// no_live_target error.
+func NewDraftOverrideNoLiveTarget(body *DraftOverrideNoLiveTargetResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewDraftOverrideLiveTargetEnded builds a surla service draft_override
+// endpoint live_target_ended error.
+func NewDraftOverrideLiveTargetEnded(body *DraftOverrideLiveTargetEndedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // NewDraftOverridePromptNotFound builds a surla service draft_override
 // endpoint prompt_not_found error.
 func NewDraftOverridePromptNotFound(body *DraftOverridePromptNotFoundResponseBody) *goa.ServiceError {
@@ -3593,21 +3642,6 @@ func NewDraftOverridePromptNotFound(body *DraftOverridePromptNotFoundResponseBod
 // NewDraftOverrideInvalidPrompt builds a surla service draft_override endpoint
 // invalid_prompt error.
 func NewDraftOverrideInvalidPrompt(body *DraftOverrideInvalidPromptResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
-// NewDraftOverrideLiveTargetEnded builds a surla service draft_override
-// endpoint live_target_ended error.
-func NewDraftOverrideLiveTargetEnded(body *DraftOverrideLiveTargetEndedResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -6104,6 +6138,54 @@ func ValidatePreviewArchitectureForbiddenResponseBody(body *PreviewArchitectureF
 	return
 }
 
+// ValidateDraftOverrideNoLiveTargetResponseBody runs the validations defined
+// on DraftOverrideNoLiveTargetResponseBody
+func ValidateDraftOverrideNoLiveTargetResponseBody(body *DraftOverrideNoLiveTargetResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateDraftOverrideLiveTargetEndedResponseBody runs the validations
+// defined on DraftOverrideLiveTargetEndedResponseBody
+func ValidateDraftOverrideLiveTargetEndedResponseBody(body *DraftOverrideLiveTargetEndedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateDraftOverridePromptNotFoundResponseBody runs the validations defined
 // on DraftOverridePromptNotFoundResponseBody
 func ValidateDraftOverridePromptNotFoundResponseBody(body *DraftOverridePromptNotFoundResponseBody) (err error) {
@@ -6131,30 +6213,6 @@ func ValidateDraftOverridePromptNotFoundResponseBody(body *DraftOverridePromptNo
 // ValidateDraftOverrideInvalidPromptResponseBody runs the validations defined
 // on DraftOverrideInvalidPromptResponseBody
 func ValidateDraftOverrideInvalidPromptResponseBody(body *DraftOverrideInvalidPromptResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
-// ValidateDraftOverrideLiveTargetEndedResponseBody runs the validations
-// defined on DraftOverrideLiveTargetEndedResponseBody
-func ValidateDraftOverrideLiveTargetEndedResponseBody(body *DraftOverrideLiveTargetEndedResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

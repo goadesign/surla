@@ -110,6 +110,10 @@ const (
 	// msgStopFailed is the public explanation of a target whose processes
 	// could not be confirmed stopped.
 	msgStopFailed = "The live target's processes could not be confirmed stopped, so no other live target can start; stop and start Surla."
+	// msgNoLiveTarget is draft_override's explanation when no live target
+	// runs: Surla changes prompts only in a live target it started, so the
+	// enabling step is start_live_target.
+	msgNoLiveTarget = "No live target is running, so nothing changed. Call start_live_target with a candidate commit first; draft_override then sends prompt text to that target."
 )
 
 // StartLiveTarget builds the candidate commit with the operator's
@@ -273,8 +277,8 @@ func (c *ControlPlane) closeLive() error {
 }
 
 // watchLive handles a live target that ended on its own: it unbinds it and
-// stops it, so later drafts get the unbound error and stop reports that
-// nothing runs. A target that cannot be confirmed stopped stays owned.
+// stops it, so later drafts get no_live_target and stop reports that nothing
+// runs. A target that cannot be confirmed stopped stays owned.
 func (c *ControlPlane) watchLive(lt *liveTarget) {
 	<-lt.proc.Done()
 	c.liveMu.Lock()

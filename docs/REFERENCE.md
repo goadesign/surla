@@ -13,7 +13,7 @@
 | **`request_revision`** | The SHA-256 hex digest of a Change Card's canonical content (including `design_source` and any adopted `stories`). `preview_architecture`, `verify_change`, `surla verify`, `surla approve`, and `approve_merge` bind to `request_revision` so changing the agreed examples, answers, or Story flows automatically invalidates stale previews, reports, and approvals. When running standalone `surla verify` and `surla approve` on the CLI without a control-plane Change Card, pass any explicit revision string (such as a commit or label) consistently to both commands. |
 | **`holdout`** | An unseen acceptance scenario (tagged `"holdout"` in the evaluator suite) whose name, inputs, checks, and logs are redacted to `"id": "holdout-N"` in `verify_change` / `get_verification` and the default `surla verify` report (`Report.ForBuilders()`) so coding agents cannot hardcode around the test cases. |
 | **`input_binding`** | The generated input schemas and compiler-listed `injected_fields` for a tool used by an agent (`ToolInputBindingItem`). It describes the declared input choices, not which option the running application installed. |
-| **`CardsDir` / `WorkspaceDir` / `TargetUpdater` / `PromotionTarget` / `Verification`** | Options of `controlplane.New`, owned by `internal/controlplane`: private card storage, the workspace, a live prompt target, independently measured promotion inputs, and the verification plan. The CLI derives storage and identity from its [project state](#surla-serve). |
+| **`CardsDir` / `WorkspaceDir` / `PromotionTarget` / `Verification` / `Live`** | Options of `controlplane.New`, owned by `internal/controlplane`: private card storage, the workspace, independently measured promotion inputs, the verification plan, and the live targets `start_live_target` runs. The CLI derives storage and identity from its [project state](#surla-serve). |
 
 ---
 
@@ -123,7 +123,7 @@ Surla cannot judge whether an analysis is complete or correct; the requester doe
     - `target_rejected_credential` (HTTP 502) means the target rejected the server's key, so nothing changed; start the target again;
     - `live_target_ended` (HTTP 409) means the target is no longer running; start it again;
     - `update_not_confirmed` (HTTP 502) means the target did not answer, so it may or may not have applied the text; keep the draft and send it again.
-  - With no live target and no `TargetUpdater`, `prompt_template` requests keep returning `no target prompt updater is bound to this control plane`, and `compiled_rule` requests never need a target.
+  - Surla changes prompts only in a live target it built and started itself, never in an application the user started or deployed. With no live target running, `prompt_template` requests return `no_live_target` (HTTP 409), which names `start_live_target` as the step that enables them; nothing changed. `compiled_rule` requests never need a target.
 - **`start_live_target`** (`POST /live-target`)
   - **Input:** `candidate_commit` (a full commit ID) → **Output:** `LiveTargetResult` (`candidate_commit`, `url`, `message`)
   - Requires a configured verification target (stored verification settings or a committed starter workspace): the server builds the commit with that configuration's candidate repository, binaries, and evaluator suite, exactly as `CP4` builds a candidate. It then runs the suite's `--live` mode (see [the suite contract](#surla-verify)) and binds `draft_override` to the running candidate. `url` is the candidate's loopback origin, for trying its own API.

@@ -79,12 +79,12 @@ type Service interface {
 	// workspace. The result reports what the design declares; it does not compare
 	// the design with the Change Card's requirements.
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
-	// Apply a Fast Draft Mode prompt override on the bound target or reject a
-	// compiled-rule prompt hack. A prompt_template override needs a bound target:
-	// on the project server, that is the live target start_live_target runs. On a
-	// live target started with start_live_target, a rejected update leaves the
-	// target's text unchanged; update_not_confirmed means the target may or may
-	// not have applied it.
+	// Apply a Fast Draft Mode prompt override on the live target start_live_target
+	// runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a
+	// live target it built and started itself, so a prompt_template override with
+	// no live target running is refused with no_live_target. A rejected update
+	// leaves the target's text unchanged; update_not_confirmed means the target
+	// may or may not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
 	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
 	// operator's evaluator suite, as this server's one live CP3 target, then bind
@@ -687,11 +687,12 @@ type DraftOverridePayload struct {
 // DraftOverrideResult is the result type of the surla service draft_override
 // method.
 type DraftOverrideResult struct {
-	// True when updated in the target platform's prompt.Store for 0s reload.
+	// True when the live target saved the prompt text in its prompt store for 0s
+	// reload.
 	AppliedInStore bool
 	// True when the change modifies a compiled Go business rule.
 	RequiresRebuild bool
-	// New prompt version digest returned by the target platform.
+	// Version of the accepted prompt text, as the live target returned it.
 	PromptVersion *string
 	// Operator-facing status explanation.
 	Message string
@@ -1253,6 +1254,11 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 // MakeNotFound builds a goa.ServiceError from an error.
 func MakeNotFound(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "not_found", false, false, false)
+}
+
+// MakeNoLiveTarget builds a goa.ServiceError from an error.
+func MakeNoLiveTarget(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_live_target", false, false, false)
 }
 
 // MakePromptNotFound builds a goa.ServiceError from an error.
@@ -2572,11 +2578,12 @@ func validatejsonDraftOverridePayloadTransport(value *jsonDraftOverridePayloadTr
 
 // jsonDraftOverrideResultTransport stores JSON fields until they have been validated.
 type jsonDraftOverrideResultTransport struct {
-	// True when updated in the target platform's prompt.Store for 0s reload.
+	// True when the live target saved the prompt text in its prompt store for 0s
+	// reload.
 	AppliedInStore *bool `json:"applied_in_store"`
 	// True when the change modifies a compiled Go business rule.
 	RequiresRebuild *bool `json:"requires_rebuild"`
-	// New prompt version digest returned by the target platform.
+	// Version of the accepted prompt text, as the live target returned it.
 	PromptVersion *string `json:"prompt_version,omitempty"`
 	// Operator-facing status explanation.
 	Message *string `json:"message"`
@@ -16501,7 +16508,7 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 		case "applied_in_store":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when updated in the target platform's prompt.Store for 0s reload.",
+				typed[key], "True when the live target saved the prompt text in its prompt store for 0s reload.",
 			); err != nil {
 				return err
 			}
@@ -16515,7 +16522,7 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 		case "prompt_version":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "New prompt version digest returned by the target platform.",
+				typed[key], "Version of the accepted prompt text, as the live target returned it.",
 			); err != nil {
 				return err
 			}

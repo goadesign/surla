@@ -5383,7 +5383,7 @@ paths:
             tags:
                 - surla
             summary: draft_override surla
-            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
+            description: Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.
             operationId: surla#draft_override
             requestBody:
                 description: Request body for draft_override.
@@ -10551,7 +10551,7 @@ components:
             properties:
                 applied_in_store:
                     type: boolean
-                    description: True when updated in the target platform's prompt.Store for 0s reload.
+                    description: True when the live target saved the prompt text in its prompt store for 0s reload.
                     example: true
                 message:
                     type: string
@@ -10559,7 +10559,7 @@ components:
                     example: Mollitia voluptatem error voluptatem molestiae quia.
                 prompt_version:
                     type: string
-                    description: New prompt version digest returned by the target platform.
+                    description: Version of the accepted prompt text, as the live target returned it.
                     example: Pariatur numquam quisquam sunt sequi recusandae adipisci.
                 requires_rebuild:
                     type: boolean
