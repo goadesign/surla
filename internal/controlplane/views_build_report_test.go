@@ -175,6 +175,9 @@ page.close();
 // Only the external team/window owner is a fixture; generation, checking and
 // recording use the production owners and their candidate sandbox unchanged.
 func TestViewsPageFollowsRealTestReports(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs real sandboxed test generation, compilation and repair; covered by the full suite")
+	}
 	if err := candidate.CheckSandbox(); err != nil {
 		t.Skipf("real report-worker page proof requires the candidate sandbox: %v", err)
 	}
