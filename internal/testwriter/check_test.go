@@ -91,6 +91,27 @@ func TestPrepareWritesOneRequiredMethodPerFinishedFlow(t *testing.T) {
 	assert.Empty(t, ranHooks(t, markers))
 }
 
+// TestPrepareGivesTheAuthorItsGenerationFailure breaks the copy's design, as
+// its author could: Prepare returns an *AuthorError whose finding quotes the
+// compiler, with no absolute path, and writes no generated folder.
+func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
+	skipWithoutSandbox(t)
+	repo, _ := newProject(t, fixtureProject(t))
+	wc, err := OpenWorkingCopy(t.Context(), repo)
+	require.NoError(t, err)
+	design := filepath.Join(wc.Project(), "eval", "design", "design.go")
+	raw, err := os.ReadFile(design)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(design, append(raw, "\nvar _ = undefinedInTheDesign\n"...), 0o600))
+
+	_, err = testChecker.Prepare(t.Context(), wc, fixtureSuite, refundStories)
+	var author *AuthorError
+	require.ErrorAs(t, err, &author)
+	assert.Equal(t, FindingGeneration, author.Finding.Kind)
+	assert.Contains(t, author.Finding.Message, "undefinedInTheDesign")
+	assert.NotContains(t, author.Finding.Message, wc.Dir())
+}
+
 // TestCheckJudgesTheWorkingCopy plays the test writer through a prepared copy:
 // each step changes the copy's files and checks it. A missing hook method, an
 // edit of the generated folder that drops a requirement, a renamed or removed

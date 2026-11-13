@@ -81,6 +81,22 @@ type (
 	// FindingKind names the step of the check that failed.
 	FindingKind string
 
+	// AuthorError is a failure of Prepare that the working copy's author
+	// caused and can fix: the suite module cannot be opened (for example
+	// because a folder on its path is a symbolic link) or read, or its
+	// generation failed while working on the module's own files
+	// (designeval.FailedOnModule), such as a design that does not compile.
+	// Finding says what to change, worded as Check words the same failure.
+	// Callers find it with errors.As; any other error from Prepare is a
+	// failure the author cannot fix.
+	AuthorError struct {
+		// Finding is what the author must change, with paths relative to the
+		// working copy.
+		Finding Finding
+		// cause is the underlying failure, kept for errors.Is and traces.
+		cause error
+	}
+
 	// toolchain is the Go toolchain and module cache a check builds with.
 	toolchain struct {
 		// goroot is the resolved toolchain root.
@@ -160,40 +176,28 @@ func Record(ctx context.Context, v Verdict, message string) (string, error) {
 // result. It returns the required scenarios, one per finished flow, named by
 // the generator. The project folder is not touched: the module is opened one
 // real folder at a time from the project folder through the copy, and a
-// symbolic link on the way is refused with ErrLinkedFolder naming it, before
-// anything is read or written. A generation failure
-// wraps the evaluator's error, from which designeval.GenerationDiagnostic
-// derives the caller-safe text; on a platform without the sandbox it wraps
-// candidate.ErrIsolationUnavailable.
+// symbolic link on the way is refused, naming it, before anything is read or
+// written.
+//
+// A failure the copy's author can fix is an *AuthorError carrying the finding
+// Check would give, worded relative to the copy; a symbolic link on the way
+// also wraps ErrLinkedFolder. Any other error is a failure the author cannot
+// fix: the context ended, the platform has no sandbox (it wraps
+// candidate.ErrIsolationUnavailable), the generator failed while preparing
+// its own files, or the generated folder could not be written. A generation
+// failure wraps the evaluator's error, from which
+// designeval.GenerationDiagnostic derives the caller-safe text.
 func (c *Checker) Prepare(
 	ctx context.Context, wc WorkingCopy, s Suite, stories []designeval.StorySummary,
-) (_ []designeval.StoryScenario, err error) {
+) ([]designeval.StoryScenario, error) {
 	if err := errors.Join(wc.opened(), s.validate()); err != nil {
 		return nil, err
 	}
-	projectDir := filepath.Dir(wc.dir)
-	rel, err := filepath.Rel(projectDir, wc.project)
+	rel, err := filepath.Rel(wc.dir, wc.project)
 	if err != nil {
 		return nil, err
 	}
-	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
-	root, err := openModule(projectDir, modulePath)
-	if err != nil {
-		return nil, fmt.Errorf("open the suite module %s: %w", modulePath, err)
-	}
-	defer func() { err = errors.Join(err, root.Close()) }()
-	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(projectDir, modulePath), root)
-	if err != nil {
-		return nil, fmt.Errorf("read the suite module %s: %w", s.Module, err)
-	}
-	gen, err := c.evaluator.GenerateWithStories(ctx, files, stories)
-	if err != nil {
-		return nil, fmt.Errorf("generate the required tests: %w", err)
-	}
-	if err := publish(ctx, root, gen.Files); err != nil {
-		return nil, err
-	}
-	return gen.Included, nil
+	return c.generate(ctx, filepath.Dir(wc.dir), filepath.Base(wc.dir), path.Join(filepath.ToSlash(rel), s.Module), stories)
 }
 
 // Check judges the working copy against stories without trusting its author.
@@ -252,12 +256,12 @@ func (c *Checker) Check(
 	}
 	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
 	moduleDir := filepath.Join(src, filepath.FromSlash(modulePath))
-	required, findings, err := c.regenerate(ctx, src, modulePath, stories)
+	required, err := c.generate(ctx, src, ".", modulePath, stories)
+	if author := (*AuthorError)(nil); errors.As(err, &author) {
+		return Verdict{Findings: []Finding{author.Finding}, copy: wc}, nil
+	}
 	if err != nil {
 		return Verdict{}, err
-	}
-	if len(findings) > 0 {
-		return Verdict{Findings: findings, copy: wc}, nil
 	}
 	tree, err := writeTree(ctx, wc, index, src)
 	if err != nil {
@@ -282,6 +286,16 @@ func (c *Checker) Check(
 		return Verdict{Findings: findings, copy: wc}, nil
 	}
 	return Verdict{copy: wc, tree: tree}, nil
+}
+
+// Error returns the finding's message.
+func (e *AuthorError) Error() string {
+	return e.Finding.Message
+}
+
+// Unwrap returns the underlying failure.
+func (e *AuthorError) Unwrap() error {
+	return e.cause
 }
 
 // Accepted reports whether the working copy passed the check.
@@ -414,31 +428,36 @@ func resolveToolchain(ctx context.Context, dir string) (toolchain, error) {
 	return toolchain{goroot: goroot, modCache: lines[1]}, nil
 }
 
-// openModule opens the folder at the slash path rel below the real folder top,
-// one folder at a time, each through the folder above it. Each step is checked
-// with Lstat and then opened, and the opened folder must be the one checked,
-// so a symbolic link anywhere on rel, even one swapped in meanwhile, is
-// refused with ErrLinkedFolder naming it, and nothing outside top is opened.
-// The caller closes the result.
-func openModule(top, rel string) (_ *os.Root, err error) {
+// openModule opens the folder at the slash path rel below the copy's root,
+// which is the slash path copyDir below the real folder top, one folder at a
+// time, each through the folder above it. Each step is checked with Lstat and
+// then opened, and the opened folder must be the one checked, so a symbolic
+// link anywhere on the way, even one swapped in meanwhile, is refused with
+// ErrLinkedFolder naming it, and nothing outside top is opened. A message
+// names a folder on rel relative to the copy's root, which is how the copy's
+// author sees it, and a folder on copyDir, the copy's own folder, relative to
+// top. The caller closes the result.
+func openModule(top, copyDir, rel string) (_ *os.Root, err error) {
 	cur, err := os.OpenRoot(top)
 	if err != nil {
 		return nil, err
 	}
-	walked := ""
-	for _, name := range strings.Split(path.Clean(rel), "/") {
-		if name == "." {
-			continue
-		}
-		walked = path.Join(walked, name)
-		next, err := openFolder(cur, name, walked)
-		if err := errors.Join(err, cur.Close()); err != nil {
-			if next != nil {
-				err = errors.Join(err, next.Close())
+	for _, part := range []string{copyDir, rel} {
+		walked := ""
+		for _, name := range strings.Split(path.Clean(part), "/") {
+			if name == "." {
+				continue
 			}
-			return nil, err
+			walked = path.Join(walked, name)
+			next, err := openFolder(cur, name, walked)
+			if err := errors.Join(err, cur.Close()); err != nil {
+				if next != nil {
+					err = errors.Join(err, next.Close())
+				}
+				return nil, err
+			}
+			cur = next
 		}
-		cur = next
 	}
 	return cur, nil
 }
@@ -467,40 +486,46 @@ func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
 	return next, nil
 }
 
-// regenerate writes the generated folder of the suite module at the slash
-// path modulePath in the snapshot src again from stories and returns the
-// required scenarios. A module that cannot be opened, including one reached
-// through a symbolic link, read or generated is a finding naming the path
-// relative to the copy.
-func (c *Checker) regenerate(
-	ctx context.Context, src, modulePath string, stories []designeval.StorySummary,
-) (_ []designeval.StoryScenario, _ []Finding, err error) {
-	finding := func(message string) []Finding {
-		return []Finding{{Kind: FindingGeneration, Message: forAuthor(message, src)}}
+// generate writes the generated folder of the suite module again from
+// stories and returns the required scenarios. The module is at the slash path
+// modulePath below the copy's root, and the copy's root is the slash path
+// copyDir below the real folder top. Prepare runs it on the working copy (top
+// is the project folder and copyDir the copy's folder in it) and Check on its
+// snapshot (top is the snapshot and copyDir is "."). A cause the module's
+// author can fix is an *AuthorError whose finding gives paths relative to the
+// copy's root, in Prepare as in Check: the module cannot be opened, including
+// through a symbolic link, or read, or its generation failed while working on
+// the module's own files. Any other failure is returned as it is.
+func (c *Checker) generate(
+	ctx context.Context, top, copyDir, modulePath string, stories []designeval.StorySummary,
+) (_ []designeval.StoryScenario, err error) {
+	copyRoot := filepath.Join(top, filepath.FromSlash(copyDir))
+	author := func(cause error, message string) error {
+		return &AuthorError{Finding: Finding{Kind: FindingGeneration, Message: forAuthor(message, copyRoot)}, cause: cause}
 	}
-	root, err := openModule(src, modulePath)
+	root, err := openModule(top, copyDir, modulePath)
 	if err != nil {
-		return nil, finding(fmt.Sprintf("The suite module %s could not be opened: %v", modulePath, err)), nil
+		return nil, author(err, fmt.Sprintf("The suite module %s could not be opened: %v", modulePath, err))
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(src, filepath.FromSlash(modulePath)), root)
+	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(copyRoot, filepath.FromSlash(modulePath)), root)
 	if _, ok := files["go.mod"]; err == nil && !ok {
 		err = errors.New("it has no go.mod")
 	}
 	if err != nil {
-		return nil, finding(fmt.Sprintf("The suite module could not be read: %v", err)), nil
+		return nil, author(err, fmt.Sprintf("The suite module could not be read: %v", err))
 	}
 	gen, err := c.evaluator.GenerateWithStories(ctx, files, stories)
 	if err != nil {
-		if isFailure(ctx, err) {
-			return nil, nil, fmt.Errorf("generate the required tests: %w", err)
+		if isFailure(ctx, err) || !designeval.FailedOnModule(err) {
+			return nil, fmt.Errorf("generate the required tests: %w", err)
 		}
-		return nil, finding(designeval.GenerationDiagnostic(err)), nil
+		return nil, author(err, designeval.GenerationDiagnostic(err))
 	}
 	if err := publish(ctx, root, gen.Files); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return gen.Included, nil, nil
+	return gen.Included, nil
 }
 
 // listScenarios builds the suite command of the snapshot module at moduleDir in
