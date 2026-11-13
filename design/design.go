@@ -985,7 +985,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("get_model_connection", func() {
-		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none; the first hand_over_model_settings that holds a provider's settings selects that provider's default model, and every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.")
+		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none. While no model is chosen, a hand_over_model_settings call that holds a provider's settings selects that provider's default model; every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.")
 		Result(ModelConnection)
 		HTTP(func() {
 			GET("/cp1/model")

@@ -154,6 +154,33 @@ func TestHandOverModelSettingsChoosesTheDefaultOnArrival(t *testing.T) {
 	}
 }
 
+// TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice reads the
+// published contract and the user documents: each says a hand-over selects
+// a provider's default model only while no model is chosen, which is what
+// TestHandOverModelSettingsChoosesTheDefaultOnArrival proves ("gateway +
+// settings" keeps the gateway), and none says it does so unconditionally.
+func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
+	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
+	require.NoError(t, err)
+	reference, err := os.ReadFile("../../docs/REFERENCE.md")
+	require.NoError(t, err)
+	readme, err := os.ReadFile("../../README.md")
+	require.NoError(t, err)
+	assert.Contains(t, string(openAPI), "While no model is chosen, a hand_over_model_settings call that holds a provider's settings selects that provider's default model")
+	assert.Contains(t, string(reference), "While no model is chosen, a hand-over that holds a provider's settings selects that provider's default model")
+	assert.Contains(t, string(readme), "while no model is chosen, live targets then use")
+	for _, stale := range []string{
+		"the first hand_over_model_settings that holds a provider's settings selects",
+		"until `surla` hands over a provider's settings, which selects",
+		"the next `surla` hands the settings over again, which selects",
+		"until `surla stop` and starts live targets with",
+	} {
+		for name, text := range map[string][]byte{"OpenAPI": openAPI, "REFERENCE.md": reference, "README.md": readme} {
+			assert.NotContains(t, string(text), stale, "%s says a hand-over always selects the default", name)
+		}
+	}
+}
+
 // TestHandOverModelSettingsRefusesWithNamesOnly sends each refused request,
 // carrying sentinels, as the management caller over HTTP: the 400 and 422
 // bodies, the spans and the diagnostics history hold no value, a 422 names

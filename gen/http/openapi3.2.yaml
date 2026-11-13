@@ -12894,7 +12894,7 @@ paths:
             tags:
                 - surla
             summary: get_model_connection surla
-            description: 'Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none; the first hand_over_model_settings that holds a provider''s settings selects that provider''s default model, and every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.'
+            description: 'Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none. While no model is chosen, a hand_over_model_settings call that holds a provider''s settings selects that provider''s default model; every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.'
             operationId: surla#get_model_connection
             responses:
                 "200":
