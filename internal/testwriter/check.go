@@ -47,7 +47,8 @@ type (
 	// evaluation design, its generated gen/ folder and the test writer's
 	// scenario hooks, and the suite command in it that follows Surla's suite
 	// command contract (verify/suite). A surla init starter has Module "eval"
-	// and Command "./cmd/<name>-evals".
+	// and Command "./gen/cmd/<name>-evals", the program the generator writes
+	// in every Surla test module (designeval.SuiteCommandPackage).
 	Suite struct {
 		// Module is the module's slash-separated path relative to the
 		// project folder.
@@ -278,29 +279,35 @@ func (c *Checker) Prepare(
 
 // Check judges the working copy against stories without trusting its author.
 // It snapshots the copy's files as a commit would hold them into a private
-// folder, writes the suite module's generated folder there again from the
-// stories (so the author cannot change what is required), downloads the
-// module's dependencies, compiles the suite command in the verify/candidate
-// build sandbox, lists the scenarios it declares by running its --describe in
-// the candidate sandbox, reading standard output alone, and compares them
-// with the required ones by the generator's own names.
+// folder, compares them with the copy's base (copyBase), writes the suite
+// module's generated folder there again from the stories (so the author
+// cannot change what is required), downloads the module's dependencies,
+// compiles the generated suite command in the verify/candidate build sandbox,
+// lists the scenarios it declares by running its --describe in the candidate
+// sandbox, reading standard output alone, and compares them with the required
+// ones by the generator's own names.
 //
 // The verdict is accepted, or carries findings for the first step the
-// author's files failed: generation, dependencies, the build (quoting the
-// compiler, which names a missing hook method), the listing, or each required
-// scenario not declared. The working copy itself is not written. Errors are
+// author's files failed: each file changed outside the test module, the
+// generation (including a module that does not declare exactly one
+// evaluation suite), dependencies, the build (quoting the compiler, which
+// names a missing hook method), the listing, or each declared scenario
+// tagged holdout and each required scenario not declared. A build that does
+// not finish within buildProgramLimit, or a listing within listTestsLimit,
+// is a finding too. No finding holds an absolute path
+// (WithoutAbsolutePaths). The working copy itself is not written. Errors are
 // failures that say nothing about the author's work: the platform has no
-// sandbox (candidate.ErrIsolationUnavailable), ctx ended, or git, the file
-// system or the build's process cleanup failed. ctx bounds the whole check,
-// including a --describe that never exits.
+// sandbox (candidate.ErrIsolationUnavailable), ctx ended, the copy and the
+// project share no history (ErrNoCommonBase), or git, the file system or the
+// build's process cleanup failed. ctx bounds the whole check.
 //
-// Only ctx bounds the bytes the author's code writes to disk: what the
+// Only time bounds the bytes the author's code writes to disk: what the
 // sandboxed build writes to its log and to the build cache in the Checker's
-// folder, and what --describe writes to its standard error and its state
-// folder. Its standard output is kept in memory, at most 1 MiB. The check's
-// own folder, holding that log, standard error and state, is removed when
-// Check returns; the build cache stays until the owner removes the Checker's
-// folder.
+// folder within its limit, and what --describe writes to its standard error
+// and its state folder within its own. Its standard output is kept in
+// memory, at most 1 MiB. The check's own folder, holding that log, standard
+// error and state, is removed when Check returns; the build cache stays until
+// the owner removes the Checker's folder.
 func (c *Checker) Check(
 	ctx context.Context, wc WorkingCopy, s Suite, stories []designeval.StorySummary,
 ) (_ Verdict, err error) {
