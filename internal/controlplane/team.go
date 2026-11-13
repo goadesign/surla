@@ -22,13 +22,14 @@ type (
 		ReadTeam(context.Context) (*gensurla.TeamSnapshot, error)
 		ShowPane(context.Context, string) error
 		StartAgents(context.Context) (*gensurla.ProjectTeam, error)
-		AdmitBuild(context.Context, BuildFolders) (*gensurla.ProjectTeam, error)
+		RegisterBuildRoles(context.Context, BuildFolders) error
 		Supervise(context.Context, AssignmentReader) error
 	}
 	// BuildFolders selects the roles a build adds to the project-owned team.
 	// Its two cases carry only working folders: admission cannot name the guide,
-	// duplicate a role, or supply credentials or first messages. AdmitBuild returns
-	// the existing project-team result and typed team errors.
+	// duplicate a role, or supply credentials or first messages. Registration saves
+	// exactly these roles and folders, removing an old test writer and credential
+	// for BuilderOnly. It performs no window operation; StartAgents owns that phase.
 	BuildFolders interface {
 		buildFolders()
 	}

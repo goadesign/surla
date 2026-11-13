@@ -53,12 +53,12 @@ func (f *teamServiceFixture) StartAgents(context.Context) (*gensurla.ProjectTeam
 	return &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "opened", Roles: []*gensurla.ProjectTeamRole{}}, nil
 }
 
-// AdmitBuild records admission without changing a roster or starting any process.
-func (f *teamServiceFixture) AdmitBuild(context.Context, BuildFolders) (*gensurla.ProjectTeam, error) {
+// RegisterBuildRoles records registration without changing a window or starting any process.
+func (f *teamServiceFixture) RegisterBuildRoles(context.Context, BuildFolders) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls = append(f.calls, "admit")
-	return &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "opened", Roles: []*gensurla.ProjectTeamRole{}}, nil
+	f.calls = append(f.calls, "register")
+	return nil
 }
 
 // Supervise is a bounded stand-in that ends when its owner does.
