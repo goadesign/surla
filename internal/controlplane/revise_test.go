@@ -664,7 +664,7 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 				_, cp, card := newWS(t)
 				return cp, "story-refresh-1", nil, card
 			},
-			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+			want: "is not the current Story refresh operation for this project and workspace; call refresh_story",
 		},
 		{
 			name: "blank story_refresh_op_id",
@@ -682,7 +682,7 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 				_ = seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
 				return cp, firstOp, nil, card
 			},
-			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+			want: "is not the current Story refresh operation for this project and workspace; call refresh_story",
 		},
 		{
 			name: "another principal's story_refresh_op_id",
@@ -691,7 +691,7 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 				bobOp := seedStoryRefreshForTest(t, cp, "bob@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
 				return cp, bobOp, nil, card
 			},
-			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+			want: "is not the current Story refresh operation for this project and workspace; call refresh_story",
 		},
 		{
 			name: "running refresh_story operation",
@@ -737,7 +737,7 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 				cp.workspaceMu.Unlock()
 				return cp, opID, nil, card
 			},
-			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+			want: "is not the current Story refresh operation for this project and workspace; call refresh_story",
 		},
 		{
 			name: "rebound workspace inode at the same path",
@@ -756,7 +756,7 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 				cp.workspaceMu.Unlock()
 				return cp, opID, nil, card
 			},
-			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+			want: "is not the current Story refresh operation for this project and workspace; call refresh_story",
 		},
 		{
 			name: "workspace design changed after refresh_story",
@@ -820,12 +820,12 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 
 }
 
-// seedStoryRefreshForTest records a Story refresh operation for principalID
+// seedStoryRefreshForTest records a Story refresh operation for owner
 // against cp's currently bound workspace snapshot and returns its op_id.
 func seedStoryRefreshForTest(
 	t *testing.T,
 	cp *ControlPlane,
-	principalID, state string,
+	owner, state string,
 	stories []designeval.StorySummary,
 	diagnostic string,
 ) string {
@@ -839,7 +839,7 @@ func seedStoryRefreshForTest(
 	require.NoError(t, err)
 
 	key := storyRefreshKey{
-		principalID:  principalID,
+		owner:        owner,
 		workspaceDir: wsDir,
 		workspaceDev: wsDev,
 		workspaceIno: wsIno,

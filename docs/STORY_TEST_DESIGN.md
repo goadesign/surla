@@ -66,7 +66,7 @@ synchronously; when the evaluated target imports
 observed typed Story (`Result.Stories`) without adding `story` to targets that
 do not import it. `refresh_story` and `get_story_refresh` evaluate the bound
 workspace's Story in the background and keep one current operation in memory
-per principal and bound workspace. Passing a succeeded operation's `op_id` as
+per project owner and bound workspace. Passing a succeeded operation's `op_id` as
 `story_refresh_op_id` on `propose_change` or `revise_change` verifies the
 bound workspace snapshot digest and records the observed `stories` and
 `design/*.go` source together in the saved Change Card and its
@@ -157,13 +157,13 @@ Editing through chat or the timeline changes the same repository source.
 `refresh_story` reads the bound workspace's module snapshot itself, starts
 sandboxed evaluation under a fixed control-plane deadline, and returns
 promptly with the operation's `op_id`, `state`, and `snapshot_digest`.
-`get_story_refresh` returns the caller's current operation (`none`, `running`,
+`get_story_refresh` returns the owner's current operation (`none`, `running`,
 `succeeded`, or `failed`) with the observed `stories` or a safe `diagnostic`.
 Clients provide neither source blobs nor a filesystem path the server already
 knows.
 
 The control plane owns admission and completion in memory, keeping one current
-operation per principal and bound workspace identity without writing anything
+operation per project owner and bound workspace identity without writing anything
 to disk. It captures a full module snapshot, uses the existing snapshot digest
 to reuse a `running` or `succeeded` operation for an unchanged snapshot, and
 cancels and replaces a prior operation when the snapshot changes or after a

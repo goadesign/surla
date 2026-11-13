@@ -1,7 +1,8 @@
 // This file implements bound-workspace Story refresh operations: refresh_story
 // reads the active workspace's Go module snapshot, starts or reuses an
-// in-memory sandboxed evaluation per authenticated principal and workspace
-// identity, and get_story_refresh reads the current operation state.
+// in-memory sandboxed evaluation per project owner and workspace identity,
+// and get_story_refresh reads the current operation state. Every caller acts
+// for the owner, so the user, the guide and the builder share one operation.
 package controlplane
 
 import (
@@ -19,17 +20,33 @@ import (
 )
 
 type (
-	// storyRefreshKey identifies one caller's current Story refresh slot for a
+	// storyRefreshKey identifies the owner's current Story refresh slot for a
 	// verified bound workspace directory identity.
 	storyRefreshKey struct {
-		// principalID is the authenticated caller's Principal.ID.
-		principalID string
+		// owner is the project owner every caller acts for (Principal.ID).
+		owner string
 		// workspaceDir is the bound physical workspace path.
 		workspaceDir string
 		// workspaceDev is the device ID of workspaceDir.
 		workspaceDev uint64
 		// workspaceIno is the inode number of workspaceDir.
 		workspaceIno uint64
+	}
+
+	// storyEvaluationVersion is what the change list's version covers of the
+	// owner's current Story evaluation: enough to change whenever the
+	// evaluation starts, finishes or is replaced, so a page waiting on the
+	// list reads the evaluation again. All fields are empty when no
+	// workspace is bound; State is storyRefreshStateNone when no evaluation
+	// has run in this server process.
+	storyEvaluationVersion struct {
+		// OpID identifies the current operation; a replacement on the same
+		// snapshot changes it even when its state and digest do not.
+		OpID string `json:"op_id"`
+		// State is the operation's state.
+		State string `json:"state"`
+		// SnapshotDigest identifies the evaluated workspace snapshot.
+		SnapshotDigest string `json:"snapshot_digest"`
 	}
 
 	// storyRefreshOp holds the in-memory state of one Story refresh operation.
@@ -55,7 +72,7 @@ type (
 
 const (
 	// storyRefreshStateNone reports that no Story refresh has run yet for the
-	// caller and bound workspace in this server process.
+	// owner and bound workspace in this server process.
 	storyRefreshStateNone = "none"
 	// storyRefreshStateRunning reports that sandboxed Story evaluation is in progress.
 	storyRefreshStateRunning = "running"
@@ -72,8 +89,8 @@ const (
 )
 
 // RefreshStory reads the bound workspace's module snapshot, computes its
-// canonical snapshot digest, and starts or reuses the authenticated caller's
-// current in-memory Story refresh operation for that workspace.
+// canonical snapshot digest, and starts or reuses the owner's current
+// in-memory Story refresh operation for that workspace.
 func (c *ControlPlane) RefreshStory(ctx context.Context) (*gensurla.StoryRefreshResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -106,7 +123,7 @@ func (c *ControlPlane) RefreshStory(ctx context.Context) (*gensurla.StoryRefresh
 	}
 
 	key := storyRefreshKey{
-		principalID:  principal.ID,
+		owner:        principal.ID,
 		workspaceDir: wsDir,
 		workspaceDev: wsDev,
 		workspaceIno: wsIno,
@@ -156,8 +173,8 @@ func (c *ControlPlane) RefreshStory(ctx context.Context) (*gensurla.StoryRefresh
 	return res, nil
 }
 
-// GetStoryRefresh returns the authenticated caller's current in-memory Story
-// refresh operation for the bound workspace, or state "none" when none has run.
+// GetStoryRefresh returns the owner's current in-memory Story refresh
+// operation for the bound workspace, or state "none" when none has run.
 func (c *ControlPlane) GetStoryRefresh(ctx context.Context) (*gensurla.StoryRefreshResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -170,7 +187,7 @@ func (c *ControlPlane) GetStoryRefresh(ctx context.Context) (*gensurla.StoryRefr
 		))
 	}
 	key := storyRefreshKey{
-		principalID:  principal.ID,
+		owner:        principal.ID,
 		workspaceDir: wsDir,
 		workspaceDev: wsDev,
 		workspaceIno: wsIno,
@@ -180,6 +197,24 @@ func (c *ControlPlane) GetStoryRefresh(ctx context.Context) (*gensurla.StoryRefr
 	res := storyRefreshResultFromOp(op)
 	c.storyRefreshMu.Unlock()
 	return res, nil
+}
+
+// storyEvaluation returns what the change list's version covers of owner's
+// current Story evaluation for the bound workspace. It reads the same slot
+// GetStoryRefresh reads, without starting anything.
+func (c *ControlPlane) storyEvaluation(owner string) storyEvaluationVersion {
+	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
+	if wsDir == "" {
+		return storyEvaluationVersion{}
+	}
+	key := storyRefreshKey{owner: owner, workspaceDir: wsDir, workspaceDev: wsDev, workspaceIno: wsIno}
+	c.storyRefreshMu.Lock()
+	defer c.storyRefreshMu.Unlock()
+	op := c.storyRefreshes[key]
+	if op == nil {
+		return storyEvaluationVersion{State: storyRefreshStateNone}
+	}
+	return storyEvaluationVersion{OpID: op.id, State: op.state, SnapshotDigest: op.snapshotDigest}
 }
 
 // runStoryRefresh executes one sandboxed design evaluation for op on a
@@ -236,7 +271,7 @@ func (c *ControlPlane) closeStoryRefreshes() {
 }
 
 // adoptStoryRefresh reads one module snapshot from the bound workspace,
-// verifies that rawOpID is the caller's current succeeded Story refresh
+// verifies that rawOpID is the owner's current succeeded Story refresh
 // operation for that exact workspace identity and snapshot digest, and returns
 // the snapshot's encoded design/*.go source and a deep copy of its evaluated
 // Stories (nil when the design declared zero Stories). Every rejection is an
@@ -269,7 +304,7 @@ func (c *ControlPlane) adoptStoryRefresh(
 		c.boundWorkspaceDev == wsDev &&
 		c.boundWorkspaceIno == wsIno
 	key := storyRefreshKey{
-		principalID:  principal.ID,
+		owner:        principal.ID,
 		workspaceDir: wsDir,
 		workspaceDev: wsDev,
 		workspaceIno: wsIno,
@@ -293,7 +328,7 @@ func (c *ControlPlane) adoptStoryRefresh(
 
 	if !matched {
 		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf(
-			"story_refresh_op_id %q is not the current Story refresh operation for this caller and workspace; call refresh_story and pass the latest succeeded op_id",
+			"story_refresh_op_id %q is not the current Story refresh operation for this project and workspace; call refresh_story and pass the latest succeeded op_id",
 			opID,
 		))
 	}

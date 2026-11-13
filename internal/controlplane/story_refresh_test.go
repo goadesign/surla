@@ -466,9 +466,9 @@ func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
 	})
 }
 
-// TestStoryRefreshPrincipalIsolation verifies that another authenticated
-// principal cannot read or replace a caller's Story refresh operation.
-func TestStoryRefreshPrincipalIsolation(t *testing.T) {
+// TestStoryRefreshOwnerIsolation verifies that callers acting for another
+// project owner cannot read or replace this owner's Story refresh operation.
+func TestStoryRefreshOwnerIsolation(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()

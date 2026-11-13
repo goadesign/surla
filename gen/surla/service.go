@@ -32,12 +32,12 @@ type Service interface {
 	// gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs
 	// check_01, check_02, ... in list order, binds the card to the authenticated
 	// owner, records the design source (or, when story_refresh_op_id is given,
-	// reads one workspace snapshot, verifies its digest against the caller's
-	// succeeded refresh_story operation, and records both its evaluated Stories
-	// and its design/*.go files), and computes request_revision. Every card waits
-	// for user confirmation, including a card without ambiguities. Surla runs no
-	// model for this step and cannot judge whether the analysis is complete or
-	// correct.
+	// reads one workspace snapshot, verifies its digest against the owner's
+	// current succeeded refresh_story operation, and records both its evaluated
+	// Stories and its design/*.go files), and computes request_revision. Every
+	// card waits for user confirmation, including a card without ambiguities.
+	// Surla runs no model for this step and cannot judge whether the analysis is
+	// complete or correct.
 	ProposeChange(context.Context, *ProposeChangePayload) (res *ChangeCardResult, err error)
 	// Save the next revision of an existing Checkpoint 1 Change Card from a
 	// revised feature request and the caller's analysis of it, bound to the card's
@@ -180,21 +180,22 @@ type Service interface {
 	// separate verification processes are absent.
 	ListTraces(context.Context, *ListTracesPayload) (res *TraceList, err error)
 	// Read the bound workspace's Go module snapshot, compute its canonical
-	// snapshot_digest, and start or reuse the authenticated caller's in-memory
-	// Story refresh operation for that workspace. Return promptly with the
-	// operation's op_id, state, and snapshot_digest while sandboxed evaluation
-	// continues on a server-owned context that survives client disconnects.
-	// Refreshing an unchanged snapshot whose current operation is running or
-	// succeeded returns that operation without starting another evaluation;
-	// refreshing a changed snapshot or a failed operation cancels and replaces the
-	// prior operation.
+	// snapshot_digest, and start or reuse the project owner's in-memory Story
+	// refresh operation for that workspace, which every caller acting for the
+	// owner reads. Return promptly with the operation's op_id, state, and
+	// snapshot_digest while sandboxed evaluation continues on a server-owned
+	// context that survives client disconnects. Refreshing an unchanged snapshot
+	// whose current operation is running or succeeded returns that operation
+	// without starting another evaluation; refreshing a changed snapshot or a
+	// failed operation cancels and replaces the prior operation.
 	RefreshStory(context.Context) (res *StoryRefreshResult, err error)
-	// Return the authenticated caller's current in-memory Story refresh operation
-	// for the bound workspace: op_id, state (none, running, succeeded, or failed),
-	// snapshot_digest, and the evaluated stories (empty when the design does not
-	// load the Story module) or a failure diagnostic. When no refresh has been run
-	// yet in this server process for the bound workspace, state is none with a
-	// message instructing the caller to run refresh_story.
+	// Return the project owner's current in-memory Story refresh operation for the
+	// bound workspace, the same one for every caller acting for the owner: op_id,
+	// state (none, running, succeeded, or failed), snapshot_digest, and the
+	// evaluated stories (empty when the design does not load the Story module) or
+	// a failure diagnostic. When no refresh has been run yet in this server
+	// process for the bound workspace, state is none with a message instructing
+	// the caller to run refresh_story.
 	GetStoryRefresh(context.Context) (res *StoryRefreshResult, err error)
 	// List the owner's saved Change Cards for this project, most recently saved
 	// first, with each card's summary, status, current request_revision, the state
@@ -204,10 +205,12 @@ type Service interface {
 	ListChanges(context.Context) (res *ChangeList, err error)
 	// Return the current change list's version as soon as it differs from since,
 	// the version of the list the caller last read, or after a bounded wait of a
-	// few seconds when nothing changed. The views page keeps one such read open
-	// and calls list_changes again only when the version changed. Each call is
-	// traced but never saved in the diagnostics history list_traces reads, so an
-	// open page does not push real operations out of view.
+	// few seconds when nothing changed. The version also changes when the owner's
+	// Story evaluation starts, finishes or is replaced. The views page keeps one
+	// such read open and, only when the version changed, calls list_changes again
+	// and, while it shows the Story, get_story_refresh. Each call is traced but
+	// never saved in the diagnostics history list_traces reads, so an open page
+	// does not push real operations out of view.
 	WaitForChanges(context.Context, *WaitForChangesPayload) (res *ChangeListVersion, err error)
 }
 
@@ -538,8 +541,9 @@ type ChangeCardResult struct {
 type ChangeList struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*ChangeListItem
-	// Opaque value identifying this exact list; it changes whenever any listed
-	// value changes.
+	// Opaque value identifying this exact list and the owner's current Story
+	// evaluation; it changes whenever any listed value changes, and when a Story
+	// evaluation (get_story_refresh) starts, finishes or is replaced.
 	Version string
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its
@@ -938,7 +942,7 @@ type StoryQuestionItem struct {
 // StoryRefreshResult is the result type of the surla service refresh_story
 // method.
 type StoryRefreshResult struct {
-	// Identifier of the caller's current Story refresh operation for the bound
+	// Identifier of the owner's current Story refresh operation for the bound
 	// workspace; present when state is running, succeeded, or failed. Pass it as
 	// story_refresh_op_id to propose_change or revise_change once state is
 	// succeeded to adopt the evaluated Story into a Change Card.
@@ -2251,8 +2255,9 @@ func validatejsonChangeListItemTransport(value *jsonChangeListItemTransport) (er
 type jsonChangeListTransport struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*jsonChangeListItemTransport `json:"changes"`
-	// Opaque value identifying this exact list; it changes whenever any listed
-	// value changes.
+	// Opaque value identifying this exact list and the owner's current Story
+	// evaluation; it changes whenever any listed value changes, and when a Story
+	// evaluation (get_story_refresh) starts, finishes or is replaced.
 	Version *string `json:"version"`
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its
@@ -3211,7 +3216,7 @@ func validatejsonStoryQuestionItemTransport(value *jsonStoryQuestionItemTranspor
 
 // jsonStoryRefreshResultTransport stores JSON fields until they have been validated.
 type jsonStoryRefreshResultTransport struct {
-	// Identifier of the caller's current Story refresh operation for the bound
+	// Identifier of the owner's current Story refresh operation for the bound
 	// workspace; present when state is running, succeeded, or failed. Pass it as
 	// story_refresh_op_id to propose_change or revise_change once state is
 	// succeeded to adopt the evaluated Story into a Change Card.
@@ -15646,7 +15651,7 @@ func validateChangeListJSONValue(path string, value any, description string) err
 		case "version":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Opaque value identifying this exact list; it changes whenever any listed value changes.",
+				typed[key], "Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
 			); err != nil {
 				return err
 			}
@@ -17370,7 +17375,7 @@ func validateStoryRefreshResultJSONValue(path string, value any, description str
 		case "op_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
+				typed[key], "Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
 			); err != nil {
 				return err
 			}

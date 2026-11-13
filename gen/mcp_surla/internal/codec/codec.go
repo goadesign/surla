@@ -2161,7 +2161,7 @@ func ValidateGetStoryRefreshResultStorySummaryItemTransport(value *GetStoryRefre
 
 // GetStoryRefreshResultTransport stores JSON fields until they have been validated.
 type GetStoryRefreshResultTransport struct {
-	// Identifier of the caller's current Story refresh operation for the bound
+	// Identifier of the owner's current Story refresh operation for the bound
 	// workspace; present when state is running, succeeded, or failed. Pass it as
 	// story_refresh_op_id to propose_change or revise_change once state is
 	// succeeded to adopt the evaluated Story into a Change Card.
@@ -2697,8 +2697,9 @@ func ValidateListChangesResultLatestVerificationItemTransport(value *ListChanges
 type ListChangesResultTransport struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*ListChangesResultChangeListItemTransport `json:"changes"`
-	// Opaque value identifying this exact list; it changes whenever any listed
-	// value changes.
+	// Opaque value identifying this exact list and the owner's current Story
+	// evaluation; it changes whenever any listed value changes, and when a Story
+	// evaluation (get_story_refresh) starts, finishes or is replaced.
 	Version *string `json:"version"`
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its
@@ -4551,7 +4552,7 @@ func ValidateRefreshStoryResultStorySummaryItemTransport(value *RefreshStoryResu
 
 // RefreshStoryResultTransport stores JSON fields until they have been validated.
 type RefreshStoryResultTransport struct {
-	// Identifier of the caller's current Story refresh operation for the bound
+	// Identifier of the owner's current Story refresh operation for the bound
 	// workspace; present when state is running, succeeded, or failed. Pass it as
 	// story_refresh_op_id to propose_change or revise_change once state is
 	// succeeded to adopt the evaluated Story into a Change Card.

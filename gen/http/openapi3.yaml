@@ -12,7 +12,7 @@ paths:
             tags:
                 - surla
             summary: wait_for_changes surla
-            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
             operationId: surla#wait_for_changes
             parameters:
                 - name: since
@@ -3303,7 +3303,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
+            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the owner's current succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
             operationId: surla#propose_change
             requestBody:
                 description: Request body for propose_change.
@@ -6108,7 +6108,7 @@ paths:
             tags:
                 - surla
             summary: get_story_refresh surla
-            description: 'Return the authenticated caller''s current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.'
+            description: 'Return the project owner''s current in-memory Story refresh operation for the bound workspace, the same one for every caller acting for the owner: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.'
             operationId: surla#get_story_refresh
             responses:
                 "200":
@@ -7242,7 +7242,7 @@ paths:
             tags:
                 - surla
             summary: refresh_story surla
-            description: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.
+            description: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the project owner's in-memory Story refresh operation for that workspace, which every caller acting for the owner reads. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.
             operationId: surla#refresh_story
             responses:
                 "200":
@@ -10177,7 +10177,7 @@ components:
                           summary: Ut saepe incidunt odit.
                 version:
                     type: string
-                    description: Opaque value identifying this exact list; it changes whenever any listed value changes.
+                    description: Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.
                     example: Voluptas voluptates.
             description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
             example:
@@ -11469,7 +11469,7 @@ components:
                     example: Temporibus et qui dicta repellat molestiae.
                 op_id:
                     type: string
-                    description: Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.
+                    description: Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.
                     example: Non alias aliquid.
                 snapshot_digest:
                     type: string
@@ -12034,7 +12034,7 @@ components:
                                   summary: Nihil sunt ea molestiae voluptate aut.
                               title: Mollitia rerum nihil consectetur excepturi aspernatur.
                           name: Et minima.
-            description: Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.
+            description: 'Current Story refresh operation of the project''s owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.'
             example:
                 diagnostic: Distinctio voluptas qui voluptatibus corporis et quia.
                 message: Temporibus et qui dicta repellat molestiae.

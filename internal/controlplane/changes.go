@@ -1,5 +1,5 @@
 // This file lists the owner's saved Change Cards and lets the views page wait
-// until that list changes.
+// until that list or the owner's Story evaluation changes.
 package controlplane
 
 import (
@@ -41,7 +41,8 @@ const (
 // recently saved first (tie-broken by change_id), with the state of each
 // card's most recently accepted verification run, whether this server can
 // record approvals, and a version that changes whenever any listed value
-// changes. A card or run record that cannot be read fails the call rather
+// changes or the owner's Story evaluation starts, finishes or is replaced. A
+// card or run record that cannot be read fails the call rather
 // than being left out of the list.
 func (c *ControlPlane) ListChanges(ctx context.Context) (*gensurla.ChangeList, error) {
 	principal, ok := PrincipalFromContext(ctx)
@@ -103,7 +104,9 @@ func (c *ControlPlane) WaitForChanges(
 // changeList reads owner's saved cards and, when verification is configured,
 // the newest run of each of owner's changes in one pass over the runs
 // directory, then orders the cards by saved time, resolves whether approvals
-// can be recorded, and derives the list's version from both. Card files are
+// can be recorded, and derives the list's version from both and from the
+// owner's current Story evaluation, so the version also changes when that
+// evaluation starts, finishes or is replaced. Card files are
 // read under the control plane's read lock; run records, which verification
 // processes write without that lock, are read after it is released. When a
 // record cannot be read, the cause is recorded on span and the returned error
@@ -158,7 +161,8 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 	raw, err := json.Marshal(struct {
 		Changes           []*gensurla.ChangeListItem `json:"changes"`
 		ApprovalAvailable bool                       `json:"approval_available"`
-	}{items, approvalAvailable})
+		StoryEvaluation   storyEvaluationVersion     `json:"story_evaluation"`
+	}{items, approvalAvailable, c.storyEvaluation(owner)})
 	if err != nil {
 		err = fmt.Errorf("encode change list version: %w", err)
 		span.RecordError(err)

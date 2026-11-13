@@ -6,6 +6,8 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,14 +27,20 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 )
 
-// viewsProject is one running project server composed as the `surla serve`
-// composition root composes it, with a test-only restart that replaces the
-// project server (and so every in-memory session) behind the same address.
+// viewsProject is one running project composed as Surla's composition root
+// composes it: a control plane and a project server behind the project's
+// saved address, with a test-only restart that replaces both, as starting
+// Surla again does.
 type viewsProject struct {
+	// t reports failures of a restart requested over HTTP.
+	t *testing.T
 	// state is the project's private state.
 	state *State
-	// cp is the project's control plane.
-	cp *controlplane.ControlPlane
+	// opts configures every control plane the project starts; CardsDir is
+	// the project's.
+	opts controlplane.Options
+	// cp is the control plane currently answering.
+	cp atomic.Pointer[controlplane.ControlPlane]
 	// server is the project server currently answering.
 	server atomic.Pointer[Server]
 	// handler is server's guarded handler.
@@ -45,26 +53,13 @@ type viewsProject struct {
 // link, the browser marks reads carry, and a server restart while the user
 // has typed edits.
 func TestViewsPageSessionLifecycle(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		missingPageTool(t, "node is required to exercise the views page")
-	}
-	if _, err := os.Stat("../../ui/checkpoint/node_modules/jsdom"); err != nil {
-		missingPageTool(t, "ui/checkpoint/node_modules is missing; run npm ci --prefix ui/checkpoint")
-	}
-	vp := startViewsProject(t)
-	management := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: vp.state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
-	agent, err := vp.server.Load().AddAgent(management, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
-	require.NoError(t, err)
-	guide, err := os.ReadFile(agent.CredentialFile)
-	require.NoError(t, err)
+	node := requireViewsPageTools(t)
+	vp := startViewsProject(t, controlplane.Options{})
+	guide := vp.agent(t, "guide")
 	link := func() string {
-		minted, err := vp.server.Load().BrowserLink(management)
+		minted, err := vp.link()
 		require.NoError(t, err)
-		u, err := url.Parse(minted.URL)
-		require.NoError(t, err)
-		require.Equal(t, vp.state.Origin(), u.Scheme+"://"+u.Host)
-		return strings.TrimPrefix(u.Fragment, "link=")
+		return minted
 	}
 
 	shell, err := http.Get(vp.state.Origin() + "/views")
@@ -81,20 +76,7 @@ func TestViewsPageSessionLifecycle(t *testing.T) {
 	input := map[string]any{
 		"origin": vp.state.Origin(), "first": link(), "guide": string(guide),
 	}
-	raw, err := json.Marshal(input)
-	require.NoError(t, err)
-	inputPath := filepath.Join(t.TempDir(), "input.json")
-	require.NoError(t, os.WriteFile(inputPath, raw, 0o600))
-	harness, err := filepath.Abs("../../ui/checkpoint/testing/page_harness.cjs")
-	require.NoError(t, err)
-	harnessLiteral, err := json.Marshal(harness)
-	require.NoError(t, err)
-	script := `
-const fs = require("fs");
-const { api, control, expect, openPage, sleep, until } = require(` + string(harnessLiteral) + `);
-const input = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-const origin = input.origin;
-async function main() {
+	runViewsPageScript(t, node, input, `
   // Without a link the page explains how to open it and asks the server nothing.
   const bare = await openPage(origin);
   await until(() => bare.$("#surla-signed-out"), "a page without a link did not say how to open it");
@@ -158,16 +140,7 @@ async function main() {
   const afterRestart = await fetch(origin + "/changes", { headers: { Authorization: session, "Sec-Fetch-Site": "same-origin" } });
   expect(afterRestart.status === 401, "a session from before the restart answered " + afterRestart.status);
   page.close();
-}
-main().then(() => { process.stdout.write("PAGE-PASSED"); process.exit(0); }, (err) => { console.error(err && err.stack || err); process.exit(1); });
-`
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "-e", script, inputPath)
-	cmd.Env = append(os.Environ(), "CI=true")
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "views page session script failed:\n%s", out)
-	require.True(t, strings.HasSuffix(string(out), "PAGE-PASSED"), "views page session script output:\n%s", out)
+`)
 }
 
 // TestViewsPageReadsNeedTheSameOriginMark sends the page's two reads with a
@@ -176,7 +149,7 @@ main().then(() => { process.stdout.write("PAGE-PASSED"); process.exit(0); }, (er
 // omit Origin on same-origin GET requests), and a missing mark, another
 // site's mark, or another page's Origin is refused.
 func TestViewsPageReadsNeedTheSameOriginMark(t *testing.T) {
-	vp := startViewsProject(t)
+	vp := startViewsProject(t, controlplane.Options{})
 	management := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: vp.state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
 	minted, err := vp.server.Load().BrowserLink(management)
 	require.NoError(t, err)
@@ -230,24 +203,41 @@ func TestViewsPageReadsNeedTheSameOriginMark(t *testing.T) {
 	}
 }
 
-// startViewsProject starts a project's server on its saved address.
-func startViewsProject(t *testing.T) *viewsProject {
+// startViewsProject starts a project on its saved address with a control
+// plane configured by opts. Test-only endpoints restart the project
+// (POST /__test/restart) and mint a browser link from the server currently
+// answering (POST /__test/link).
+func startViewsProject(t *testing.T, opts controlplane.Options) *viewsProject {
 	t.Helper()
 	state := testState(t)
-	cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, cp.Close()) })
-	vp := &viewsProject{state: state, cp: cp}
-	vp.restart(t)
-	api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/__test/restart" {
-			vp.restart(t)
-			w.WriteHeader(http.StatusNoContent)
-			return
+	opts.CardsDir = state.CardsDir()
+	vp := &viewsProject{t: t, state: state, opts: opts}
+	vp.restart()
+	t.Cleanup(func() {
+		if cp := vp.cp.Load(); cp != nil {
+			assert.NoError(t, cp.Close())
 		}
-		(*vp.handler.Load()).ServeHTTP(w, r)
+	})
+	api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/__test/restart":
+			vp.restart()
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/__test/link":
+			link, err := vp.link()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if _, err := io.WriteString(w, link); err != nil {
+				t.Errorf("write minted link: %v", err)
+			}
+		default:
+			(*vp.handler.Load()).ServeHTTP(w, r)
+		}
 	}))
 	require.NoError(t, api.Listener.Close())
+	var err error
 	api.Listener, err = net.Listen("tcp", state.Address())
 	require.NoError(t, err)
 	api.Start()
@@ -255,18 +245,118 @@ func startViewsProject(t *testing.T) *viewsProject {
 	return vp
 }
 
-// restart replaces the project server, as a restarted `surla serve` does:
-// agent credentials survive in the state folder and every session ends.
-func (vp *viewsProject) restart(t *testing.T) {
-	t.Helper()
+// restart stops the current control plane, if any, and starts a new control
+// plane and project server on the same state, as starting Surla again does:
+// saved changes and agent credentials survive, while every session and
+// everything the old control plane held only in memory, such as the Story
+// evaluation, ends.
+func (vp *viewsProject) restart() {
+	if old := vp.cp.Load(); old != nil {
+		if err := old.Close(); err != nil {
+			vp.t.Errorf("stop the control plane: %v", err)
+		}
+	}
+	cp, err := controlplane.New(vp.opts)
+	if err != nil {
+		vp.t.Errorf("start the control plane: %v", err)
+		return
+	}
 	server, err := NewServer(vp.state, func() {})
-	require.NoError(t, err)
+	if err != nil {
+		vp.t.Errorf("start the project server: %v", err)
+		if closeErr := cp.Close(); closeErr != nil {
+			vp.t.Errorf("stop the control plane: %v", closeErr)
+		}
+		return
+	}
 	application := http.NewServeMux()
 	application.Handle("GET /views", controlplane.ViewsPage())
-	application.Handle("/", controlplane.NewHTTPHandler(vp.cp, server.Authenticate))
+	application.Handle("/", controlplane.NewHTTPHandler(cp, server.Authenticate))
 	handler := server.Handler(application)
+	vp.cp.Store(cp)
 	vp.server.Store(server)
 	vp.handler.Store(&handler)
+}
+
+// agent adds an agent in role to the project and returns its credential.
+func (vp *viewsProject) agent(t *testing.T, role string) string {
+	t.Helper()
+	agent, err := vp.server.Load().AddAgent(vp.management(), &genproject.AddAgentPayload{ActorID: role, Role: role})
+	require.NoError(t, err)
+	credential, err := os.ReadFile(agent.CredentialFile)
+	require.NoError(t, err)
+	return string(credential)
+}
+
+// link mints a one-use browser link from the server currently answering and
+// returns the value the page reads from its address fragment.
+func (vp *viewsProject) link() (string, error) {
+	minted, err := vp.server.Load().BrowserLink(vp.management())
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(minted.URL)
+	if err != nil {
+		return "", err
+	}
+	if origin := u.Scheme + "://" + u.Host; origin != vp.state.Origin() {
+		return "", fmt.Errorf("link is for %s, not the project's %s", origin, vp.state.Origin())
+	}
+	return strings.TrimPrefix(u.Fragment, "link="), nil
+}
+
+// management is the context of the management caller `surla` uses.
+func (vp *viewsProject) management() context.Context {
+	return controlplane.WithPrincipal(context.Background(), controlplane.Principal{
+		ID: vp.state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement,
+	})
+}
+
+// requireViewsPageTools returns the node binary the views page tests run,
+// which also need ui/checkpoint's installed packages.
+func requireViewsPageTools(t *testing.T) string {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		missingPageTool(t, "node is required to exercise the views page")
+	}
+	if _, err := os.Stat("../../ui/checkpoint/node_modules/jsdom"); err != nil {
+		missingPageTool(t, "ui/checkpoint/node_modules is missing; run npm ci --prefix ui/checkpoint")
+	}
+	return node
+}
+
+// runViewsPageScript runs body, an async JavaScript function body, in node
+// with the page harness (ui/checkpoint/testing/page_harness.cjs), origin and
+// input in scope, and fails the test with the script's output when it
+// throws.
+func runViewsPageScript(t *testing.T, node string, input map[string]any, body string) {
+	t.Helper()
+	raw, err := json.Marshal(input)
+	require.NoError(t, err)
+	inputPath := filepath.Join(t.TempDir(), "input.json")
+	require.NoError(t, os.WriteFile(inputPath, raw, 0o600))
+	harness, err := filepath.Abs("../../ui/checkpoint/testing/page_harness.cjs")
+	require.NoError(t, err)
+	harnessLiteral, err := json.Marshal(harness)
+	require.NoError(t, err)
+	script := `
+const fs = require("fs");
+const { api, control, expect, openPage, sleep, until } = require(` + string(harnessLiteral) + `);
+const input = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const origin = input.origin;
+async function main() {
+` + body + `
+}
+main().then(() => { process.stdout.write("PAGE-PASSED"); process.exit(0); }, (err) => { console.error(err && err.stack || err); process.exit(1); });
+`
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "-e", script, inputPath)
+	cmd.Env = append(os.Environ(), "CI=true")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "views page script failed:\n%s", out)
+	require.True(t, strings.HasSuffix(string(out), "PAGE-PASSED"), "views page script output:\n%s", out)
 }
 
 // missingPageTool fails the test under CI=true, because CI installs node and
