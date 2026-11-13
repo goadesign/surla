@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"go/format"
-	"go/token"
 	"io"
 	"io/fs"
 	"maps"
@@ -40,6 +39,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/goadesign/surla"
+	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/procgroup"
 )
 
@@ -62,9 +62,10 @@ type (
 		SurlaVersion string
 	}
 
-	// Layout names the command packages Init writes for one starter project,
-	// which the project server builds: the candidate in the project
-	// directory and the evaluator suite in its SuiteDir module.
+	// Layout names the command packages of one starter project, which the
+	// project server builds: the candidate Init writes in the project
+	// directory, and the evaluator suite's program the generator writes in
+	// its SuiteDir module (GeneratedSuiteCommand).
 	Layout struct {
 		// Service is the candidate service and binary name, the last element
 		// of the module path, such as "shop".
@@ -72,9 +73,6 @@ type (
 		// CandidatePackage is the candidate command package relative to the
 		// project directory, such as "./cmd/shop".
 		CandidatePackage string
-		// SuiteCommand is the evaluator suite command package relative to
-		// SuiteDir, such as "./cmd/shop-evals".
-		SuiteCommand string
 	}
 
 	// Runner runs one command in dir, writing its combined output to the
@@ -153,8 +151,9 @@ type (
 
 // SuiteDir is the directory, relative to the project directory, where Init
 // writes the evaluator suite's module <module>/eval. The project server
-// reads that module's go.mod from there.
-const SuiteDir = "eval"
+// reads that module's go.mod from there. The generator recognizes the same
+// folder (designeval.TestModuleDir) when it writes the suite's program.
+const SuiteDir = designeval.TestModuleDir
 
 const (
 	// quickstartGuide is the one generated file outside gen/: goa-ai's guide
@@ -178,11 +177,6 @@ var (
 	//
 	//go:embed all:templates
 	templatesFS embed.FS
-
-	// lowerAlnum is the form a service name must have: lowercase letters and
-	// digits starting with a letter, so Goa generates a Go package of the
-	// same name.
-	lowerAlnum = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
 	// commitHexPattern matches a full 40- or 64-character lowercase hex Git
 	// commit ID.
@@ -278,23 +272,23 @@ func SurlaVersion(info *debug.BuildInfo) string {
 }
 
 // LayoutForModule validates a Go module path and returns the service and command
-// names Init writes for it. Starter generation and workspace initialization use
-// the same rule: the last path element must contain lowercase letters and digits,
-// start with a letter, and be neither a Go keyword nor main. For example,
-// example.com/shop returns service shop and candidate command ./cmd/shop.
-// Invalid module paths or service names return an error without running tooling.
+// names of its starter project. Starter generation, workspace initialization
+// and the generator use the same rule, designeval.ValidServiceName: the last
+// path element must contain lowercase letters and digits, start with a letter,
+// and be neither a Go keyword nor main. For example, example.com/shop returns
+// service shop and candidate command ./cmd/shop. Invalid module paths or
+// service names return an error without running tooling.
 func LayoutForModule(modulePath string) (Layout, error) {
 	if err := module.CheckPath(modulePath); err != nil {
 		return Layout{}, fmt.Errorf("%q: %w", modulePath, err)
 	}
 	name := path.Base(modulePath)
-	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
+	if !designeval.ValidServiceName(name) {
 		return Layout{}, fmt.Errorf("%q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", modulePath)
 	}
 	return Layout{
 		Service:          name,
 		CandidatePackage: "./cmd/" + name,
-		SuiteCommand:     "./cmd/" + name + "-evals",
 	}, nil
 }
 
@@ -330,14 +324,15 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 	return layout, nil
 }
 
-// GeneratedSuiteCommand returns the package, relative to SuiteDir, that is
-// reserved for the generated entry point of the starter's test module:
-// ./gen/cmd/<service>-evals, beside the hand-written SuiteCommand. It uses
-// only l.Service, so a Layout from LayoutForModule or StarterLayout gives
-// the same path. For example, the layout of example.com/shop gives
-// ./gen/cmd/shop-evals. Nothing generates that package yet.
+// GeneratedSuiteCommand returns the package, relative to SuiteDir, of the
+// evaluator suite's program, which the generator writes with the test
+// module's gen/ folder: ./gen/cmd/<service>-evals, named by
+// designeval.SuiteCommandPackage, the rule the generator uses. It uses only
+// l.Service, so a Layout from LayoutForModule or StarterLayout gives the same
+// path. For example, the layout of example.com/shop gives
+// ./gen/cmd/shop-evals.
 func (l Layout) GeneratedSuiteCommand() string {
-	return "./gen/cmd/" + l.Service + "-evals"
+	return designeval.SuiteCommandPackage(l.Service)
 }
 
 // Error describes the failed command and the end of its output.

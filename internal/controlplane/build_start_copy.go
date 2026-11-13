@@ -40,7 +40,7 @@ func (c *ControlPlane) openBuildCopy(
 	return writerBuildCopy{
 		copy:    wc,
 		checker: testwriter.NewChecker(c.evaluator, filepath.Join(c.cards.dir, "test-writer")),
-		suite:   testwriter.Suite{Module: scaffold.SuiteDir, Command: layout.SuiteCommand},
+		suite:   testwriter.Suite{Module: scaffold.SuiteDir, Command: layout.GeneratedSuiteCommand()},
 	}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"go/format"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/goadesign/surla/internal/designeval"
 )
 
 // published is a Surla version that exists on the module proxy.
@@ -114,11 +117,7 @@ func TestLayoutForModulePreservesStarterNames(t *testing.T) {
 			t.Parallel()
 			got, err := LayoutForModule("example.com/" + name)
 			require.NoError(t, err)
-			assert.Equal(t, Layout{
-				Service:          name,
-				CandidatePackage: "./cmd/" + name,
-				SuiteCommand:     "./cmd/" + name + "-evals",
-			}, got)
+			assert.Equal(t, Layout{Service: name, CandidatePackage: "./cmd/" + name}, got)
 		})
 	}
 	for _, modulePath := range []string{
@@ -301,15 +300,12 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	require.NoError(t, err)
 	layout, err := StarterLayout(rootGoMod, evalGoMod)
 	require.NoError(t, err, "the project server accepts the modules Init writes")
-	for _, pkgDir := range []string{
-		filepath.Join(dir, filepath.FromSlash(layout.CandidatePackage)),
-		filepath.Join(dir, SuiteDir, filepath.FromSlash(layout.SuiteCommand)),
-	} {
-		info, err := os.Stat(pkgDir)
-		require.NoError(t, err, "Init writes the command directory the layout names")
-		assert.True(t, info.IsDir())
-	}
-	info, err := os.Stat(dir)
+	info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(layout.CandidatePackage)))
+	require.NoError(t, err, "Init writes the candidate command directory the layout names")
+	assert.True(t, info.IsDir())
+	assert.NoDirExists(t, filepath.Join(dir, SuiteDir, "cmd"),
+		"the evaluator suite's only program is the generated one, "+layout.GeneratedSuiteCommand())
+	info, err = os.Stat(dir)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
 	err = filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
@@ -332,7 +328,7 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 		"go.mod", ".gitignore", "README.md", "design/design.go", "design/model.go",
 		"internal/helper/planner.go", "internal/service/service.go", "cmd/bakery/main.go",
 		"eval/go.mod", "eval/design/design.go", "eval/scripted/scripted.go",
-		"eval/acceptance/acceptance.go", "eval/cmd/bakery-evals/main.go",
+		"eval/acceptance/acceptance.go",
 		"gen/bakery/service.go", quickstartGuide, "eval/gen/bakery/service.go", "eval/" + quickstartGuide,
 	} {
 		assert.FileExists(t, filepath.Join(dir, f))
@@ -675,21 +671,13 @@ func TestStarterLayoutValidatesModulesAndDerivesPaths(t *testing.T) {
 			name:      "standard starter module pair",
 			rootGoMod: "module example.com/shop\n\ngo 1.26\n",
 			evalGoMod: "module example.com/shop/eval\n\ngo 1.26\n",
-			want: Layout{
-				Service:          "shop",
-				CandidatePackage: "./cmd/shop",
-				SuiteCommand:     "./cmd/shop-evals",
-			},
+			want:      Layout{Service: "shop", CandidatePackage: "./cmd/shop"},
 		},
 		{
 			name:      "service name reserved in generated Go code",
 			rootGoMod: "module example.com/errors\n\ngo 1.26\n",
 			evalGoMod: "module example.com/errors/eval\n\ngo 1.26\n",
-			want: Layout{
-				Service:          "errors",
-				CandidatePackage: "./cmd/errors",
-				SuiteCommand:     "./cmd/errors-evals",
-			},
+			want:      Layout{Service: "errors", CandidatePackage: "./cmd/errors"},
 		},
 		{
 			name:      "missing root module directive",
@@ -730,8 +718,8 @@ func TestStarterLayoutValidatesModulesAndDerivesPaths(t *testing.T) {
 }
 
 // TestGeneratedSuiteCommandNamesTheGeneratedEntryPoint checks the path of the
-// test module's generated entry point, from both layout readers, beside the
-// hand-written command the starter writes today.
+// test module's generated program from both layout readers: the package
+// designeval.SuiteCommandPackage names, the rule the generator writes it by.
 func TestGeneratedSuiteCommandNamesTheGeneratedEntryPoint(t *testing.T) {
 	cases := []struct {
 		module, want string
@@ -750,7 +738,7 @@ func TestGeneratedSuiteCommandNamesTheGeneratedEntryPoint(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, fromModule.GeneratedSuiteCommand())
 			assert.Equal(t, tc.want, fromFiles.GeneratedSuiteCommand())
-			assert.NotEqual(t, fromFiles.SuiteCommand, fromFiles.GeneratedSuiteCommand(), "the hand-written command is unchanged")
+			assert.Equal(t, designeval.SuiteCommandPackage(fromFiles.Service), fromFiles.GeneratedSuiteCommand())
 		})
 	}
 }
@@ -850,4 +838,24 @@ func between(t *testing.T, s, start, end string) string {
 	body, _, ok := strings.Cut(after, end)
 	require.True(t, ok, "missing %q after %q", end, start)
 	return body
+}
+
+// TestStarterHidesNoScenarioAndWritesNoProgram reads the starter's templates:
+// no scenario is tagged holdout, because tests in files a builder can read are
+// not hidden, and the evaluator module has no hand-written program, because
+// the generator writes its only one.
+func TestStarterHidesNoScenarioAndWritesNoProgram(t *testing.T) {
+	t.Parallel()
+	require.NoError(t, fs.WalkDir(templatesFS, "templates", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		assert.False(t, strings.HasPrefix(p, "templates/eval/cmd/"), "%s is a hand-written evaluator program", p)
+		raw, err := templatesFS.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		assert.NotContains(t, string(raw), `Tags("holdout")`, p)
+		return nil
+	}))
 }

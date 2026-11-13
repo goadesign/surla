@@ -48,22 +48,23 @@ can run against it.
   LLM) through its own model gateway. Its three scenarios are:
   - `prices_tea`: asks "How much is tea?" and checks that the agent called
     `lookup_price` and answered from that call's result;
-  - `unknown_item` (tagged `holdout`): asks "How much is coffee?", which the
+  - `unknown_item`: asks "How much is coffee?", which the
     catalog does not price, and checks that the agent calls `lookup_price`
     and reports that it found no price;
   - `prompt_override_reaches_model`: checks that `override_prompt` rejects a
     missing or wrong key and that the next question's model request carries the
     new prompt text. Its `--live` mode starts the
   `[[.Name]]` for the Surla project server's `start_live_target`, planning with the model
-  the Surla project server was started with. After changing
+  the Surla project server was started with. Its program,
+  `eval/gen/cmd/[[.Name]]-evals`, is generated with the rest of `eval/gen/`
+  from `eval/design/` and calls `eval/acceptance`, the package you write: its
+  `Name`, `Hooks`, `New`, `Live` and `LiveThroughGateway`. After changing
   `eval/design/`, regenerate its code with
   `surla gen -dir eval` (or call `generate_code` with `target: "eval"`).
 
 The evaluator suite lives in this repository, so anyone who can read the code
-can read its scenarios. Its `holdout` tag only hides that scenario's details
-in the report view `surla verify -builder-view` prints; it is not a secret
-test. Keep real holdout scenarios in an evaluator repository builders cannot
-read.
+can read its scenarios; none of them is hidden. Keep scenarios that must stay
+hidden from builders in an evaluator repository they cannot read.
 
 ## Next steps
 
@@ -115,7 +116,7 @@ WORK_DIR="$VERIFY_DIR/work"
 REPORT_DIR="$VERIFY_DIR/reports"
 surla verify \
   -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary [[.Name]]=./cmd/[[.Name]] \
-  -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/[[.Name]]-evals \
+  -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./gen/cmd/[[.Name]]-evals \
   -request-revision starter -work-dir "$WORK_DIR" -report-dir "$REPORT_DIR" -builder-view
 ```
 

@@ -82,7 +82,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 			RunsDir: runsDir,
 			Plan: verify.Plan{
 				CandidateRepo: dir, CandidateModule: ".", Binaries: map[string]string{name: "./cmd/" + name},
-				SuiteRepo: dir, SuiteCommit: commit, SuiteModule: "eval", SuiteCommand: "./cmd/" + name + "-evals",
+				SuiteRepo: dir, SuiteCommit: commit, SuiteModule: "eval", SuiteCommand: "./gen/cmd/" + name + "-evals",
 				ReportDir: t.TempDir(),
 			},
 			Command: []string{surlaBin},

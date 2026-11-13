@@ -707,8 +707,8 @@ func TestGenerateWithStoriesFailsAfterClose(t *testing.T) {
 // internal/scaffold/templates/eval for module example.com/shop/eval, tidies
 // the module against Surla's own dependency versions, and returns both the
 // generator input snapshot (go.mod, go.sum, design/design.go) and the complete
-// hand-written module tree (including acceptance/, scripted/, and
-// cmd/shop-evals/).
+// hand-written module tree (acceptance/ and scripted/); the module's program,
+// gen/cmd/shop-evals, comes from the generator.
 func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	t.Helper()
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -741,7 +741,6 @@ func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 		"acceptance/acceptance.go": readRendered("acceptance/acceptance.go.tmpl"),
 		"acceptance/forwarder.go":  readRendered("acceptance/forwarder.go.tmpl"),
 		"scripted/scripted.go":     readRendered("scripted/scripted.go.tmpl"),
-		"cmd/shop-evals/main.go":   readRendered("cmd/_name_-evals/main.go.tmpl"),
 	}
 	withGen := maps.Clone(fullTree)
 	for path, content := range initGen {
@@ -773,13 +772,13 @@ func stageStarterEvalTree(t *testing.T, baseFiles map[string]string, generatedFi
 	return dir
 }
 
-// buildEvalCommand runs `go build -mod=readonly` on ./cmd/shop-evals in dir
-// and returns the output binary path, combined compiler output, and build
-// error.
+// buildEvalCommand runs `go build -mod=readonly` on the generated program,
+// ./gen/cmd/shop-evals, in dir and returns the output binary path, combined
+// compiler output, and build error.
 func buildEvalCommand(t *testing.T, dir string) (string, string, error) {
 	t.Helper()
 	bin := filepath.Join(dir, "shop-evals")
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-mod=readonly", "-o", bin, "./cmd/shop-evals")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-mod=readonly", "-o", bin, "./gen/cmd/shop-evals")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()

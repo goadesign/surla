@@ -3,13 +3,13 @@
 // generation program that Evaluator.Generate builds in its harness module.
 // That module requires Goa, Goa-AI and goa.design/model at the target's
 // versions, or the evaluator's when the target does not require one, so this
-// file may import only the standard library, Goa and Goa-AI.
+// file may import only the standard library, Goa and Goa-AI. It uses
+// declaredSuites from suite_command.go, compiled beside it.
 package designeval
 
 import (
 	"fmt"
 
-	evalexpr "goa.design/goa-ai/eval/expr"
 	"goa.design/goa/v3/codegen"
 	"goa.design/goa/v3/eval"
 )
@@ -54,10 +54,5 @@ func surlaQuickstart(_ string, roots []eval.Root, files []*codegen.File) ([]*cod
 // declaresSuites reports whether the design declares an evaluation suite, the
 // fact Goa-AI's evaluations section branches on.
 func declaresSuites(roots []eval.Root) bool {
-	for _, r := range roots {
-		if root, ok := r.(*evalexpr.RootExpr); ok {
-			return len(root.Suites) > 0
-		}
-	}
-	return false
+	return len(declaredSuites(roots)) > 0
 }
