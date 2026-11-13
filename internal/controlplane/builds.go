@@ -170,15 +170,7 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	if err != nil {
 		return nil, err
 	}
-	saved, found, err := c.cards.loadBuild(p.ChangeID)
-	if err != nil {
-		return nil, err
-	}
-	if !found || !c.usableBuild(saved) {
-		return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildNotStarted(&gensurla.BuildNotStarted{})}, nil
-	}
-	held := heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}
-	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(held))}, nil
+	return c.changeBuild(record)
 }
 
 // GetTestFindings returns, for the owner's page, the text of the findings of
@@ -381,6 +373,21 @@ func (c *ControlPlane) ReportTestsFinished(
 	}
 	span.SetAttributes(attribute.String("surla.tests_state", saved.TestWriter.State), attribute.Int("surla.report_number", saved.ReportNumber))
 	return testWriterAssignmentItem(held), nil
+}
+
+// changeBuild reads and renders record's usable build without changing it.
+// Callers hold c.mu and have already authorized access to record.
+func (c *ControlPlane) changeBuild(record storedChangeCard) (*gensurla.ChangeBuild, error) {
+	changeID := record.card.ChangeID
+	saved, found, err := c.cards.loadBuild(changeID)
+	if err != nil {
+		return nil, err
+	}
+	if !found || !c.usableBuild(saved) {
+		return &gensurla.ChangeBuild{ChangeID: changeID, Build: gensurla.NewBuildNotStarted(&gensurla.BuildNotStarted{})}, nil
+	}
+	held := heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}
+	return &gensurla.ChangeBuild{ChangeID: changeID, Build: gensurla.NewBuildStarted(startedBuild(held))}, nil
 }
 
 // buildInForce reports whether saved is a build of record's agreed revision
