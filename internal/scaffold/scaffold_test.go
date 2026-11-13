@@ -482,7 +482,7 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assertInOrder(t, steps, "The guide", "`propose_change`", "You confirm it on the views page", "The builder", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "The builder commits,", "`verify_change`", "operator tools", "surla verify")
 	assert.NotContains(t, readme, "`confirm_intent`")
 	draft := between(t, readme, "To try prompt wording on a running", "the confirmed Change Card")
-	assertInOrder(t, draft, "`check_project`", "commit,", "`verify_change`")
+	assertInOrder(t, draft, "builder calls `start_live_target`", "the builder writes", "`check_project`", "commits,", "`verify_change`")
 	cli := between(t, readme, "`surla verify` checks a commit.", "## Change checkpoints")
 	assertInOrder(t, cli, "The builder", "`check_project`", "before it commits")
 

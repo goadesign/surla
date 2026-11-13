@@ -74,7 +74,7 @@ Rules for agents building services with Goa, Goa-AI, Model, Pulse and Clue. Rule
 - Decisions code can derive belong in code: the authenticated caller, authorization, runtime IDs, cursors, pagination, valid state transitions. Leave semantic choices to the model.
 - Default acceptance check IDs to `check_01`, `check_02`, ... in `lower_snake_case` matching `goa-ai/eval` `validateID` so examples map directly to evaluator scenarios without identifier translation.
 - Account for every prior example when revising intent (`revise_change`): the analysis links surviving or edited checks via `prior_id` and lists dropped checks in `removed_example_ids`. Code preserves surviving IDs, prevents collision with removed IDs, and allocates brand-new checks to the lowest unused `check_NN` ID.
-- The user answers each ambiguity question on the views page by choosing one of its declared options, which confirms the card (`confirm_intent`); no agent confirms a card. When a domain decision requires a choice the options do not list, the guide calls `revise_change` with that guidance in `prompt`, and the user confirms the revised card.
+- The user answers each ambiguity question on the views page by choosing one of its declared options, then confirms the card with the page's Confirm action (`confirm_intent`), which a card without questions also needs; no agent confirms a card. When a domain decision requires a choice the options do not list, the guide calls `revise_change` with that guidance in `prompt`, and the user confirms the revised card.
 
 ## 6. Durability
 

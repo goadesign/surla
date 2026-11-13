@@ -142,8 +142,9 @@ the Story and matching source.
 An adopted Story remains paired with its source when a later revision omits
 `story_refresh_op_id`.
 
-To try prompt wording on a running `[[.Name]]` before you verify it,
-call `start_live_target` with the full candidate commit ID, then `draft_override`
-with `prompt_id` `[[.Name]].helper.system`. To keep a draft, write the text into
-`internal/helper/planner.go`, run `check_project`, commit, and call `verify_change`
-with the new commit ID and the confirmed Change Card's `request_revision`.
+To try prompt wording on a running `[[.Name]]` before it is verified, the
+builder calls `start_live_target` with the full candidate commit ID, then
+`draft_override` with `prompt_id` `[[.Name]].helper.system`. To keep a draft,
+the builder writes the text into `internal/helper/planner.go`, runs
+`check_project`, commits, and calls `verify_change` with the new commit ID and
+the confirmed Change Card's `request_revision`.

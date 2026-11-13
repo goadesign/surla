@@ -37,6 +37,7 @@ func TestPlaybookLeavesConfirmationToTheUser(t *testing.T) {
 
 	md := ResourceMarkdown()
 	assert.Contains(t, md, "The user answers each ambiguity question on the views page")
+	assert.Contains(t, md, "confirms the card with the page's Confirm action (`confirm_intent`), which a card without questions also needs")
 	assert.Contains(t, md, "no agent confirms a card")
 	assert.Contains(t, md, "the guide calls `revise_change`")
 	assert.NotContains(t, md, "and confirm the revised card")
