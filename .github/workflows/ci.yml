@@ -67,6 +67,13 @@ jobs:
         # a separate plain build. JSON retains individual test durations.
         run: |
           go test -race -vet=all -short -timeout 3m -json ./... </dev/null
+      - name: Vet the opt-in real-browser test
+        # The views page's real-browser test builds only with the browser tag
+        # and runs only on request; vetting it here keeps it compiling. This
+        # step does not run it.
+        if: matrix.module == '.'
+        run: |
+          go vet -tags browser ./internal/project </dev/null
 
   generated:
     name: Generated code and views page

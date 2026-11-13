@@ -454,9 +454,10 @@ appropriate for CPU, memory, and restarts.
   - `npm --prefix ui/checkpoint run typecheck` for views page TypeScript changes
   - `go test -race -count=1 -tags browser ./internal/project`, opt-in and not
     in CI, for views page policy, session, or layout changes: it drives a
-    headless Chrome or Chromium with a throwaway profile and evaluates a real
-    Story (about a minute); set `SURLA_TEST_BROWSER` to the browser's
-    executable when it is not in a standard location
+    headless Chrome or Chromium with a throwaway profile, needs Node 22 or
+    newer, and evaluates a real Story (about a minute); set
+    `SURLA_TEST_BROWSER` to the browser's executable when it is not in a
+    standard location
 - Set `CI=true` and close stdin on these invocations. Do not regenerate or
   run runtime/browser suites for text-only instructions or documentation;
   verify accuracy, references, links, and applicable doc checks instead.

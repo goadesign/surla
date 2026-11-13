@@ -170,7 +170,7 @@ The Surla server serves the views page at `GET /views` on its numeric loopback a
 
 On load, the page exchanges the link once through `POST /project/browser-session` for a session, removes the link from the address, and keeps the session only in the page's memory: never in browser storage or a cookie. It sends the session as `Authorization: Bearer <session>` with every request. Reloading or closing the tab ends the session, and a new tab needs a new link from `surla`. Without a link the page explains how to open it and sends no request. A link that was already used, or has expired, is reported as such. When the server answers `401` (as it does for every session after a restart), the page keeps everything the user typed visible and copyable and says to run `surla` again. Leaving the page with unsaved edits asks the browser to confirm.
 
-An opt-in check, `go test -race -count=1 -tags browser ./internal/project`, opens the page in a real headless Chrome or Chromium and confirms that the browser itself enforces this policy and the `frame-ancestors` rule, sends `Sec-Fetch-Site: same-origin` on the page's requests, keeps nothing in browser storage or cookies, ends the session on reload, and scrolls a long row of Story steps inside the Story stage without widening the page, and that the server refuses requests that pages on other origins send.
+An opt-in check, listed with the developer tests below, opens the page in a real headless Chrome or Chromium and confirms that the browser itself enforces this policy and the `frame-ancestors` rule, sends `Sec-Fetch-Site: same-origin` on the page's requests, keeps nothing in browser storage or cookies, ends the session on reload, and scrolls a long row of Story steps inside the Story stage without widening the page, and that the server refuses requests that pages on other origins send.
 
 The page sends only the operations listed in `PAGE_OPERATIONS` in [`ui/checkpoint/build.mjs`](../ui/checkpoint/build.mjs). The build generates their request types, address table and result validators from `gen/http/openapi3.json` into `ui/checkpoint/src/types.ts`, so the page has no hand-written copy of any request or result shape, and it refuses an answer that does not match its declared result.
 
@@ -492,6 +492,12 @@ The end-to-end and starter-project integration tests require macOS (`sandbox-exe
 go test -race -tags e2e ./internal/verify
 go test -race -count=1 -tags e2e ./cmd/surla
 go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold
+```
+
+The views page's real-browser check runs only on request; CI compiles it but never runs it. It needs Chrome or Chromium and Node 22 or newer, evaluates a real Story with the Go toolchain, and ends its browser however the test ends; set `SURLA_TEST_BROWSER` to the browser's executable when it is not in a standard location:
+
+```bash
+go test -race -count=1 -tags browser ./internal/project
 ```
 
 See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-step walkthrough including `surla verify` (default builder view vs. full operator report with `-builder-view=false`).
