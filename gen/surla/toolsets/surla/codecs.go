@@ -2092,7 +2092,7 @@ var diffResultFields = []tools.FieldMetadata{
 var draftOverridePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.",
+		Description: "Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("target_kind")},

@@ -794,9 +794,10 @@ func EncodeDraftOverrideRequest(encoder func(*http.Request) goahttp.Encoder) fun
 // surla draft_override endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
 // DecodeDraftOverrideResponse may return the following errors:
+//   - "no_live_target" (type *goa.ServiceError): http.StatusConflict
+//   - "live_target_ended" (type *goa.ServiceError): http.StatusConflict
 //   - "prompt_not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "invalid_prompt" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "live_target_ended" (type *goa.ServiceError): http.StatusConflict
 //   - "target_rejected_credential" (type *goa.ServiceError): http.StatusBadGateway
 //   - "update_not_confirmed" (type *goa.ServiceError): http.StatusBadGateway
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
@@ -837,6 +838,44 @@ func DecodeDraftOverrideResponse(decoder func(*http.Response) goahttp.Decoder, r
 			}
 			res := NewDraftOverrideResultOK(&body)
 			return res, nil
+		case http.StatusConflict:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "no_live_target":
+				var (
+					body DraftOverrideNoLiveTargetResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+				}
+				err = ValidateDraftOverrideNoLiveTargetResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+				}
+				return nil, NewDraftOverrideNoLiveTarget(&body)
+			case "live_target_ended":
+				var (
+					body DraftOverrideLiveTargetEndedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+				}
+				err = ValidateDraftOverrideLiveTargetEndedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+				}
+				return nil, NewDraftOverrideLiveTargetEnded(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "draft_override", resp.StatusCode, string(body))
+			}
 		case http.StatusNotFound:
 			var (
 				body DraftOverridePromptNotFoundResponseBody
@@ -865,20 +904,6 @@ func DecodeDraftOverrideResponse(decoder func(*http.Response) goahttp.Decoder, r
 				return nil, goahttp.ErrValidationError("surla", "draft_override", err)
 			}
 			return nil, NewDraftOverrideInvalidPrompt(&body)
-		case http.StatusConflict:
-			var (
-				body DraftOverrideLiveTargetEndedResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
-			}
-			err = ValidateDraftOverrideLiveTargetEndedResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "draft_override", err)
-			}
-			return nil, NewDraftOverrideLiveTargetEnded(&body)
 		case http.StatusBadGateway:
 			en := resp.Header.Get("goa-error")
 			switch en {

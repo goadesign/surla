@@ -367,7 +367,7 @@ var ArchitecturePreviewResult = Type("ArchitecturePreviewResult", func() {
 
 // DraftOverridePayload is the input to the CP3 Fast Draft Mode tool.
 var DraftOverridePayload = Type("DraftOverridePayload", func() {
-	Description("Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.")
+	Description("Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.")
 	Attribute("target_kind", String, "Override target kind (prompt_template or compiled_rule).", func() {
 		Enum("prompt_template", "compiled_rule")
 	})
@@ -671,18 +671,20 @@ var _ = Service("surla", func() {
 	})
 
 	Method("draft_override", func() {
-		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
+		Description("Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
 		Payload(DraftOverridePayload)
 		Result(DraftOverrideResult)
+		Error("no_live_target", ErrorResult, "No live target is running, so nothing changed. Call start_live_target with a candidate commit first.")
 		Error("prompt_not_found", ErrorResult, "The live target has no prompt with this ID; nothing changed.")
 		Error("invalid_prompt", ErrorResult, "The live target rejected the template because it does not render; nothing changed.")
 		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
 		Error("target_rejected_credential", ErrorResult, "The live target rejected this server's key; nothing changed. Start the target again with start_live_target.")
 		Error("update_not_confirmed", ErrorResult, "The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.")
-		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on the project server, call start_live_target with a candidate commit first.")
+		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a running live target: call start_live_target with a candidate commit first.")
 		HTTP(func() {
 			POST("/sandbox/draft")
 			Response(StatusOK)
+			Response("no_live_target", StatusConflict)
 			Response("prompt_not_found", StatusNotFound)
 			Response("invalid_prompt", StatusUnprocessableEntity)
 			Response("live_target_ended", StatusConflict)

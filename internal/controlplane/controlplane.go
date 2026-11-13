@@ -59,18 +59,11 @@ type (
 	// principalContextKey is the context key storing the authenticated Principal.
 	principalContextKey struct{}
 
-	// TargetPromptUpdater applies a Checkpoint 3 Fast Draft Mode prompt template
-	// override to the bound target platform's runtime prompt store.
-	TargetPromptUpdater interface {
-		// ApplyPromptOverride updates promptID with newContent on the bound target
-		// platform and returns the resulting prompt version identifier.
-		ApplyPromptOverride(ctx context.Context, promptID, newContent string) (version string, err error)
-	}
-
 	// PromotionTarget is the promotion owner's view of a candidate being
-	// promoted at Checkpoint 5. The embedding host binds it; approve_merge never
-	// takes these facts from its caller, because a caller-supplied report or
-	// binary digest would let the caller approve its own claims.
+	// promoted at Checkpoint 5. The project server binds it from the stored
+	// promotion settings; approve_merge never takes these facts from its
+	// caller, because a caller-supplied report or binary digest would let the
+	// caller approve its own claims.
 	PromotionTarget interface {
 		// LoadReport returns the verification report that verify.Run wrote
 		// under digest, from storage only the evaluator writes. It fails when
@@ -80,12 +73,10 @@ type (
 		// promotion requires and the digests of the candidate binaries
 		// measured independently for candidateCommit, as one coherent
 		// snapshot the implementation does not change after returning it.
-		// It fails when those facts do not fix the target's behavior, for
-		// example when the host also binds Options.TargetUpdater to the same
-		// running target, whose runtime prompt overrides no verification
-		// report covers (see the verify package). approve_merge checks a
-		// report against it, and get_change and confirm_intent return a
-		// saved approval only while it still matches.
+		// It fails when those facts do not fix the target's behavior (see
+		// the verify package). approve_merge checks a report against it,
+		// and get_change and confirm_intent return a saved approval only
+		// while it still matches.
 		CurrentInputs(ctx context.Context, candidateCommit string) (PromotionInputs, error)
 	}
 
@@ -168,8 +159,6 @@ type (
 		// choice made with configure_model. Without it, configure_model returns
 		// not_implemented.
 		LiveModelEnv LiveModelEnv
-		// TargetUpdater applies CP3 Fast Draft Mode prompt overrides to the bound target platform.
-		TargetUpdater TargetPromptUpdater
 		// PromotionTarget supplies CP5 verification reports and current
 		// promotion inputs. Without it or ResolvePromotionTarget, approve_merge
 		// fails.
@@ -273,10 +262,8 @@ type (
 		// liveModelEnvFor is Options.LiveModelEnv, or nil when runtime model
 		// reconfiguration is not configured.
 		liveModelEnvFor LiveModelEnv
-		// targetUpdater applies CP3 Fast Draft Mode prompt overrides to the target platform.
-		targetUpdater TargetPromptUpdater
 		// promotionTarget supplies CP5 reports and current promotion inputs;
-		// nil when the host bound none.
+		// nil when the project server bound none.
 		promotionTarget PromotionTarget
 		// resolvePromotionTarget dynamically resolves a PromotionTarget from
 		// the currently bound workspace when promotionTarget is nil.
@@ -410,10 +397,6 @@ func New(opts Options) (*ControlPlane, error) {
 		}
 		return evalErr
 	}
-	if opts.TargetUpdater != nil && opts.Live != nil {
-		err := errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
-		return nil, errors.Join(err, cleanupFailedNew())
-	}
 	surlaVersion := strings.TrimSpace(opts.SurlaVersion)
 	if surlaVersion != "" && !scaffold.ValidVersion(surlaVersion) {
 		err := fmt.Errorf("surla version %q must be a canonical semantic version such as v0.1.0", opts.SurlaVersion)
@@ -453,7 +436,6 @@ func New(opts Options) (*ControlPlane, error) {
 		traceProvider:          opts.TracerProvider,
 		liveModelEnv:           initialLiveEnv,
 		liveModelEnvFor:        opts.LiveModelEnv,
-		targetUpdater:          opts.TargetUpdater,
 		promotionTarget:        opts.PromotionTarget,
 		resolvePromotionTarget: opts.ResolvePromotionTarget,
 		verification:           verCfg,
@@ -820,9 +802,12 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 	}, nil
 }
 
-// DraftOverride applies a 0-second prompt override on the bound target platform
-// via TargetPromptUpdater when target_kind is "prompt_template", or refuses to
-// mask a compiled Go business rule when target_kind is "compiled_rule".
+// DraftOverride sends a prompt template to the live target start_live_target
+// runs when target_kind is "prompt_template", or refuses to mask a compiled
+// Go business rule when target_kind is "compiled_rule". Surla changes prompts
+// only in a live target it built and started itself, so a prompt template
+// with no live target running is refused with no_live_target, which names
+// start_live_target as the step that enables it.
 func (c *ControlPlane) DraftOverride(ctx context.Context, p *gensurla.DraftOverridePayload) (*gensurla.DraftOverrideResult, error) {
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -844,26 +829,11 @@ func (c *ControlPlane) DraftOverride(ctx context.Context, p *gensurla.DraftOverr
 		if strings.TrimSpace(p.NewContent) == "" {
 			return nil, errors.New("new_content is required when target_kind is prompt_template")
 		}
-		id := strings.TrimSpace(*p.PromptID)
-		if c.targetUpdater == nil {
-			if lt := c.boundLive(); lt != nil {
-				return c.draftLive(ctx, lt, id, p.NewContent)
-			}
-			return nil, errors.New("no target prompt updater is bound to this control plane")
+		lt := c.boundLive()
+		if lt == nil {
+			return nil, gensurla.MakeNoLiveTarget(errors.New(msgNoLiveTarget))
 		}
-		version, err := c.targetUpdater.ApplyPromptOverride(ctx, id, p.NewContent)
-		if err != nil {
-			return nil, fmt.Errorf("apply target prompt override: %w", err)
-		}
-		if strings.TrimSpace(version) == "" {
-			return nil, errors.New("target prompt updater returned an empty version")
-		}
-		return &gensurla.DraftOverrideResult{
-			AppliedInStore:  true,
-			RequiresRebuild: false,
-			PromptVersion:   &version,
-			Message:         fmt.Sprintf("Updated prompt %q on target platform (version %s) for 0s hot reload.", id, version),
-		}, nil
+		return c.draftLive(ctx, lt, strings.TrimSpace(*p.PromptID), p.NewContent)
 	default:
 		return nil, fmt.Errorf("unsupported target_kind %q", p.TargetKind)
 	}

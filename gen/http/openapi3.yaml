@@ -5382,7 +5382,7 @@ paths:
             tags:
                 - surla
             summary: draft_override surla
-            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
+            description: Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.
             operationId: surla#draft_override
             requestBody:
                 description: Request body for draft_override.

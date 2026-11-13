@@ -273,7 +273,7 @@ func TestLiveTargetAppliesDraftsThroughTheGeneratedContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, dirs)
 	_, err = draft(alice, cp, fakePromptID, "x")
-	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "stopping restores today's unbound error")
+	assert.Equal(t, "no_live_target", goaErrorName(err), "after a stop, drafts are refused until a live target starts again")
 	again, err := cp.StopLiveTarget(alice)
 	require.NoError(t, err)
 	assert.False(t, again.Stopped, "stopping when none runs is not an error")
@@ -315,7 +315,7 @@ func TestLiveTargetThatEndsIsUnboundAndCleanedUp(t *testing.T) {
 		"an ended target is unbound")
 	<-lt.proc.Done()
 	_, err = draft(alice, cp, fakePromptID, "x")
-	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "later drafts get the unbound error")
+	assert.Equal(t, "no_live_target", goaErrorName(err), "later drafts find no live target")
 	stopped, err := cp.StopLiveTarget(alice)
 	require.NoError(t, err)
 	assert.False(t, stopped.Stopped, "nothing runs after the target ended and was cleaned up")
@@ -387,7 +387,7 @@ func TestLiveTargetReplacementNeverReachesTwoTargets(t *testing.T) {
 		}
 		// A draft during the replacement either reached the old target before
 		// it was unbound, or found no target bound; nothing else.
-		allowed := err.Error() == "no target prompt updater is bound to this control plane" ||
+		allowed := goaErrorName(err) == "no_live_target" ||
 			goaErrorName(err) == "update_not_confirmed" || goaErrorName(err) == "live_target_ended"
 		assert.True(t, allowed, "unexpected draft error during replacement: %v", err)
 	}
@@ -510,7 +510,7 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, lt.proc.Dir(), resolvedDir, "the original target's directory remains")
 	_, err = draft(alice, cp, fakePromptID, "x")
-	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "drafts are unbound while stopping")
+	assert.Equal(t, "no_live_target", goaErrorName(err), "drafts are unbound while stopping")
 
 	// A diff admits a design evaluation, which creates the evaluator's
 	// workspace, and fails on the incomplete snapshot.
@@ -581,6 +581,66 @@ func TestTargetMessagesNeverReachCallers(t *testing.T) {
 	assert.Contains(t, string(body), "does not render")
 }
 
+// TestDraftWithNoLiveTargetNamesTheStepThatEnablesIt verifies that a
+// prompt_template draft is refused with the declared no_live_target error,
+// which names start_live_target, whether or not the server can start live
+// targets, over the Go service, HTTP (409 with the goa-error name) and MCP.
+// A compiled_rule draft needs no target and still answers.
+func TestDraftWithNoLiveTargetNamesTheStepThatEnablesIt(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerBuilder})
+	cases := []struct {
+		name string
+		cp   func(t *testing.T) *ControlPlane
+	}{
+		{name: "no live settings", cp: func(t *testing.T) *ControlPlane { return newControlPlane(t, Options{}) }},
+		{name: "live settings but no target started", cp: func(t *testing.T) *ControlPlane {
+			cp, _ := newLiveControlPlane(t, "serve")
+			return cp
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := tc.cp(t)
+			_, err := draft(alice, cp, fakePromptID, "x")
+			assert.Equal(t, "no_live_target", goaErrorName(err))
+			assert.ErrorContains(t, err, "start_live_target", "the error names the step that enables drafts")
+
+			args, err := json.Marshal(map[string]string{"target_kind": TargetKindPromptTemplate, "prompt_id": fakePromptID, "new_content": "x"})
+			require.NoError(t, err)
+			srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
+			defer srv.Close()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/sandbox/draft", strings.NewReader(string(args)))
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer tok-builder")
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			assert.Equal(t, http.StatusConflict, resp.StatusCode)
+			assert.Equal(t, "no_live_target", resp.Header.Get("goa-error"))
+			assert.Contains(t, string(body), "start_live_target")
+
+			adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+			call, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "draft_override", Arguments: args})
+			mcpText := ""
+			if err != nil {
+				mcpText = err.Error()
+			} else {
+				b, merr := json.Marshal(call)
+				require.NoError(t, merr)
+				mcpText = string(b)
+			}
+			assert.Contains(t, mcpText, "start_live_target", "the MCP caller sees the enabling step")
+
+			rule, err := cp.DraftOverride(alice, &gensurla.DraftOverridePayload{TargetKind: TargetKindCompiledRule, NewContent: "refund limit 60"})
+			require.NoError(t, err)
+			assert.True(t, rule.RequiresRebuild, "a compiled rule needs no live target")
+		})
+	}
+}
+
 func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
@@ -613,18 +673,6 @@ func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 	}
 }
 
-func TestStaticUpdaterAndLiveCannotBeCombined(t *testing.T) {
-	_, err := New(Options{CardsDir: t.TempDir(), TargetUpdater: staticUpdater{}, Live: &LiveConfig{}})
-	require.EqualError(t, err, "set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
-
-	cp, err := New(Options{CardsDir: t.TempDir(), TargetUpdater: staticUpdater{}, Verification: &VerificationConfig{RunsDir: t.TempDir()}})
-	require.NoError(t, err, "a static updater with verification and no Live keeps working")
-	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	out, err := draft(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}), cp, "orders.refund.system", "x")
-	require.NoError(t, err)
-	assert.Equal(t, "static-v1", *out.PromptVersion)
-}
-
 func TestServersWithDifferentCardsDirectoriesNeverSeeEachOthersTargets(t *testing.T) {
 	a, rootA := newLiveControlPlane(t, "serve")
 	_, rootB := newLiveControlPlane(t, "serve")
@@ -637,14 +685,6 @@ func TestServersWithDifferentCardsDirectoriesNeverSeeEachOthersTargets(t *testin
 	dirsB, err := verifyrun.LeftoverLiveDirs(rootB)
 	require.NoError(t, err)
 	assert.Empty(t, dirsB, "B lists nothing of A's active target")
-}
-
-// staticUpdater is a TargetPromptUpdater that accepts every prompt.
-type staticUpdater struct{}
-
-// ApplyPromptOverride returns a fixed version.
-func (staticUpdater) ApplyPromptOverride(context.Context, string, string) (string, error) {
-	return "static-v1", nil
 }
 
 func TestToolsListWarnsThatStartingDiscardsTheRunningTargetsDrafts(t *testing.T) {

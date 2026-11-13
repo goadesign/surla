@@ -1035,6 +1035,43 @@ type PreviewArchitectureForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// DraftOverrideNoLiveTargetResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "no_live_target" error.
+type DraftOverrideNoLiveTargetResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// DraftOverrideLiveTargetEndedResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "live_target_ended"
+// error.
+type DraftOverrideLiveTargetEndedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // DraftOverridePromptNotFoundResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body for the "prompt_not_found"
 // error.
@@ -1057,25 +1094,6 @@ type DraftOverridePromptNotFoundResponseBody struct {
 // DraftOverrideInvalidPromptResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body for the "invalid_prompt" error.
 type DraftOverrideInvalidPromptResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// DraftOverrideLiveTargetEndedResponseBody is the type of the "surla" service
-// "draft_override" endpoint HTTP response body for the "live_target_ended"
-// error.
-type DraftOverrideLiveTargetEndedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3876,6 +3894,34 @@ func NewPreviewArchitectureForbiddenResponseBody(res *goa.ServiceError) *Preview
 	return body
 }
 
+// NewDraftOverrideNoLiveTargetResponseBody builds the HTTP response body from
+// the result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverrideNoLiveTargetResponseBody(res *goa.ServiceError) *DraftOverrideNoLiveTargetResponseBody {
+	body := &DraftOverrideNoLiveTargetResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewDraftOverrideLiveTargetEndedResponseBody builds the HTTP response body
+// from the result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverrideLiveTargetEndedResponseBody(res *goa.ServiceError) *DraftOverrideLiveTargetEndedResponseBody {
+	body := &DraftOverrideLiveTargetEndedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewDraftOverridePromptNotFoundResponseBody builds the HTTP response body
 // from the result of the "draft_override" endpoint of the "surla" service.
 func NewDraftOverridePromptNotFoundResponseBody(res *goa.ServiceError) *DraftOverridePromptNotFoundResponseBody {
@@ -3894,20 +3940,6 @@ func NewDraftOverridePromptNotFoundResponseBody(res *goa.ServiceError) *DraftOve
 // the result of the "draft_override" endpoint of the "surla" service.
 func NewDraftOverrideInvalidPromptResponseBody(res *goa.ServiceError) *DraftOverrideInvalidPromptResponseBody {
 	body := &DraftOverrideInvalidPromptResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewDraftOverrideLiveTargetEndedResponseBody builds the HTTP response body
-// from the result of the "draft_override" endpoint of the "surla" service.
-func NewDraftOverrideLiveTargetEndedResponseBody(res *goa.ServiceError) *DraftOverrideLiveTargetEndedResponseBody {
-	body := &DraftOverrideLiveTargetEndedResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

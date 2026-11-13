@@ -4296,29 +4296,29 @@ func (registryDeclarations) field267() *genregistry.ToolFieldMetadata {
 
 // schema268 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema268() *genregistry.ToolSchema {
-	registryText1 := "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on the project server, call start_live_target with a candidate commit first."
+	registryText1 := "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a running live target: call start_live_target with a candidate commit first."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.draft_override",
 		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
 		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when updated in the target platform's prompt.Store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"New prompt version digest returned by the target platform.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Draft Override",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 39,
-				Terms:  map[string]int{"0s": 1, "a": 5, "bound": 1, "business": 1, "call": 1, "candidate": 1, "change": 1, "commit": 1, "compiled": 1, "draft": 2, "first": 1, "flag": 1, "hot": 1, "in": 1, "live": 1, "needs": 1, "on": 1, "or": 1, "override": 2, "project": 1, "prompt": 2, "reload": 1, "rule": 1, "server": 1, "start": 1, "surla": 1, "target": 2, "template": 2, "the": 1, "with": 1},
+				Length: 36,
+				Terms:  map[string]int{"0s": 1, "a": 5, "business": 1, "call": 1, "candidate": 1, "change": 1, "commit": 1, "compiled": 1, "draft": 2, "first": 1, "flag": 1, "hot": 1, "in": 1, "live": 2, "needs": 1, "or": 1, "override": 2, "prompt": 2, "reload": 1, "rule": 1, "running": 1, "start": 1, "surla": 1, "target": 2, "template": 2, "with": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
-				Description:     "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on the project server, call start_live_target with a candidate commit first.",
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
+				Description:     "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a running live target: call start_live_target with a candidate commit first.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 39,
-					Terms:  map[string]int{"0s": 1, "a": 5, "bound": 1, "business": 1, "call": 1, "candidate": 1, "change": 1, "commit": 1, "compiled": 1, "draft": 2, "first": 1, "flag": 1, "hot": 1, "in": 1, "live": 1, "needs": 1, "on": 1, "or": 1, "override": 2, "project": 1, "prompt": 2, "reload": 1, "rule": 1, "server": 1, "start": 1, "surla": 1, "target": 2, "template": 2, "the": 1, "with": 1},
+					Length: 36,
+					Terms:  map[string]int{"0s": 1, "a": 5, "business": 1, "call": 1, "candidate": 1, "change": 1, "commit": 1, "compiled": 1, "draft": 2, "first": 1, "flag": 1, "hot": 1, "in": 1, "live": 2, "needs": 1, "or": 1, "override": 2, "prompt": 2, "reload": 1, "rule": 1, "running": 1, "start": 1, "surla": 1, "target": 2, "template": 2, "with": 1},
 				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
 				Payload:       declarations.metadata280(),
 			},
 			Payload: declarations.metadata269(),
@@ -4332,7 +4332,7 @@ func (declarations registryDeclarations) metadata269() *genregistry.ToolTypeMeta
 	registryText1 := "DraftOverridePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field270(),
 			declarations.field271(),
@@ -4345,7 +4345,7 @@ func (declarations registryDeclarations) metadata269() *genregistry.ToolTypeMeta
 // field270 constructs one generated field declaration.
 func (registryDeclarations) field270() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit."
+	registryText2 := "Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit."
 	return &genregistry.ToolFieldMetadata{
 		JSONType:    &registryText1,
 		Description: &registryText2,
@@ -4474,7 +4474,7 @@ func (declarations registryDeclarations) metadata280() *genregistry.ToolTypeMeta
 	registryText1 := "DraftOverridePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field281(),
 			declarations.field282(),
@@ -4487,7 +4487,7 @@ func (declarations registryDeclarations) metadata280() *genregistry.ToolTypeMeta
 // field281 constructs one generated field declaration.
 func (registryDeclarations) field281() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit."
+	registryText2 := "Fast Draft Mode request to hot-reload a prompt template on the live target start_live_target runs, or reject a compiled business-rule edit."
 	return &genregistry.ToolFieldMetadata{
 		JSONType:    &registryText1,
 		Description: &registryText2,

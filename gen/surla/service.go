@@ -79,12 +79,12 @@ type Service interface {
 	// workspace. The result reports what the design declares; it does not compare
 	// the design with the Change Card's requirements.
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
-	// Apply a Fast Draft Mode prompt override on the bound target or reject a
-	// compiled-rule prompt hack. A prompt_template override needs a bound target:
-	// on the project server, that is the live target start_live_target runs. On a
-	// live target started with start_live_target, a rejected update leaves the
-	// target's text unchanged; update_not_confirmed means the target may or may
-	// not have applied it.
+	// Apply a Fast Draft Mode prompt override on the live target start_live_target
+	// runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a
+	// live target it built and started itself, so a prompt_template override with
+	// no live target running is refused with no_live_target. A rejected update
+	// leaves the target's text unchanged; update_not_confirmed means the target
+	// may or may not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
 	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
 	// operator's evaluator suite, as this server's one live CP3 target, then bind
@@ -1253,6 +1253,11 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 // MakeNotFound builds a goa.ServiceError from an error.
 func MakeNotFound(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "not_found", false, false, false)
+}
+
+// MakeNoLiveTarget builds a goa.ServiceError from an error.
+func MakeNoLiveTarget(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_live_target", false, false, false)
 }
 
 // MakePromptNotFound builds a goa.ServiceError from an error.
