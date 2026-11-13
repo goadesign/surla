@@ -2726,15 +2726,6 @@ type StartBuildSandboxUnavailableResponseBody struct {
 	Step string `form:"step" json:"step" xml:"step"`
 }
 
-// StartBuildGoToolsMissingResponseBody is the type of the "surla" service
-// "start_build" endpoint HTTP response body for the "go_tools_missing" error.
-type StartBuildGoToolsMissingResponseBody struct {
-	// Declared refusal name.
-	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
-}
-
 // StartBuildUnavailableResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "unavailable" error.
 type StartBuildUnavailableResponseBody struct {
@@ -3566,6 +3557,8 @@ type BuildCopyAtProjectCommitResponseBody struct {
 type BuildCopyNotContainedResponseBody struct {
 	// The retained working-copy commit.
 	Commit string `form:"commit" json:"commit" xml:"commit"`
+	// Merge the tests branch into the project's branch, then build again.
+	Step string `form:"step" json:"step" xml:"step"`
 }
 
 // BuildCopyDirtyResponseBody is used to define fields on response body types.
@@ -7816,16 +7809,6 @@ func NewStartBuildNotImplementedResponseBody(res *goa.ServiceError) *StartBuildN
 // from the result of the "start_build" endpoint of the "surla" service.
 func NewStartBuildSandboxUnavailableResponseBody(res *surla.BuildStartRefusal) *StartBuildSandboxUnavailableResponseBody {
 	body := &StartBuildSandboxUnavailableResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
-	}
-	return body
-}
-
-// NewStartBuildGoToolsMissingResponseBody builds the HTTP response body from
-// the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildGoToolsMissingResponseBody(res *surla.BuildStartRefusal) *StartBuildGoToolsMissingResponseBody {
-	body := &StartBuildGoToolsMissingResponseBody{
 		Name: res.Name,
 		Step: string(res.Step),
 	}

@@ -13,7 +13,46 @@ import (
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	goa "goa.design/goa/v3/pkg"
 )
+
+// TestBuildRefusalSpansKeepTruthfulStatus checks the request and build consumers:
+// declared structured refusals stay expected; actual errors retain error status.
+func TestBuildRefusalSpansKeepTruthfulStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code codes.Code
+	}{
+		{name: "structured refusal", err: &gensurla.BuildStartRefusal{Name: "working_copy_busy", Step: "Start again after the check ends."}, code: codes.Unset},
+		{name: "ordinary refusal", err: gensurla.MakeConflict(errors.New("revision changed")), code: codes.Unset},
+		{name: "fault", err: goa.Fault("store failed"), code: codes.Error},
+		{name: "unexpected failure", err: errors.New("store failed"), code: codes.Error},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := tracetest.NewInMemoryExporter()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+			tracer := provider.Tracer("test")
+			next := func(ctx context.Context, _ any) (any, error) {
+				_, span := tracer.Start(ctx, "surla.controlplane.start_build")
+				defer span.End()
+				return nil, recordBuildError(span, tc.err, "start build")
+			}
+			_, err := authorizeOperation("start_build", next, tracer)(asCaller("alice@example.com", CallerUser), nil)
+			assert.ErrorIs(t, err, tc.err)
+			spans := exporter.GetSpans()
+			require.Len(t, spans, 2)
+			for _, span := range spans {
+				assert.Equal(t, tc.code, span.Status.Code, span.Name)
+			}
+		})
+	}
+}
 
 // TestBuildStartAdmissionOwnsCancellation keeps accepted work after a client
 // disconnect and makes Close cancel and drain it before stores are released.
@@ -29,7 +68,9 @@ func TestBuildStartAdmissionOwnsCancellation(t *testing.T) {
 	principal, ok := PrincipalFromContext(accepted)
 	assert.True(t, ok)
 	assert.Equal(t, "alice@example.com", principal.ID)
-	deadline, ok := accepted.Deadline()
+	phase, cancelPhase := cp.buildStartDeadline(accepted)
+	defer cancelPhase()
+	deadline, ok := phase.Deadline()
 	assert.True(t, ok)
 	assert.InDelta(t, defaultBuildStartTimeout.Seconds(), time.Until(deadline).Seconds(), 1)
 
@@ -64,9 +105,12 @@ func TestBuildStartLimitUsesTheDeadlineSeam(t *testing.T) {
 	accepted, finish, err := cp.admitBuildStart(t.Context())
 	require.NoError(t, err)
 	defer finish()
+	phase, cancel := cp.buildStartDeadline(accepted)
+	defer cancel()
 	select {
-	case <-accepted.Done():
-		assert.ErrorIs(t, accepted.Err(), context.DeadlineExceeded)
+	case <-phase.Done():
+		assert.ErrorIs(t, phase.Err(), context.DeadlineExceeded)
+		assert.NoError(t, accepted.Err(), "the team phase retains the server-owned lifetime")
 	case <-time.After(time.Second):
 		t.Fatal("accepted start did not reach its limit")
 	}

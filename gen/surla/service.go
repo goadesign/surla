@@ -259,14 +259,18 @@ type Service interface {
 	// beside it is built only after the user adopts it. Surla checks the change
 	// and prerequisites without effects, opens and refreshes the test-writer copy
 	// when used, checks the revision again, and saves the build with the agreed
-	// Story and design before generating required tests or admitting roles to the
-	// team. Stored verification settings use only the builder. Building again
-	// replaces the build and both unread assignments. A refused start saves no
-	// build and admits no role; a refusal at the second revision check may leave a
+	// Story and design. Surla immediately registers the build's exact roles and
+	// folders before generating required tests. Stored verification settings use
+	// only the builder and remove a former test writer. Building again replaces
+	// the build and both unread assignments. A refused start saves no build and
+	// registers no role; a refusal at the second revision check may leave a
 	// reusable working copy. Generation trouble and team warnings after saving
-	// leave the saved build intact. Accepted work belongs to the server, survives
-	// client disconnection, and has a five-minute limit; get_build reads the saved
-	// build without this start's transient team or copy outcome.
+	// leave the saved build intact. Accepted work belongs to the server and
+	// survives client disconnection. Copy work and generation have a five-minute
+	// limit under the project's turn; after that turn is released, bringing the
+	// team up has its own 45-second limit. A server stop after saving leaves the
+	// saved assignment or verdict; build again to complete it. get_build reads the
+	// saved build without this start's transient team or copy outcome.
 	StartBuild(context.Context, *StartBuildPayload) (res *StartBuildResult, err error)
 	// Return a change's build: not_started until the user starts one; otherwise
 	// the revision built, when, whether the builder read its assignment, the test
@@ -436,6 +440,8 @@ type BuildCopyDirty struct {
 type BuildCopyNotContained struct {
 	// The retained working-copy commit.
 	Commit string
+	// Merge the tests branch into the project's branch, then build again.
+	Step BuildStartStep
 }
 
 // This project uses its stored evaluator, so this start uses no test-writer
@@ -447,6 +453,7 @@ type BuildCopyNotUsed struct {
 type BuildNotStarted struct {
 }
 
+// The build was refused before saving; follow step before starting it again.
 type BuildStartRefusal struct {
 	// Declared refusal name.
 	Name string
@@ -1751,7 +1758,7 @@ type WaitForChangesPayload struct {
 
 // Error returns an error description.
 func (e *BuildStartRefusal) Error() string {
-	return ""
+	return "The build was refused before saving; follow step before starting it again."
 }
 
 // ErrorName returns the error name.
@@ -2295,6 +2302,8 @@ func validatejsonBuildCopyDirtyTransport(value *jsonBuildCopyDirtyTransport) (er
 type jsonBuildCopyNotContainedTransport struct {
 	// The retained working-copy commit.
 	Commit *string `json:"commit"`
+	// Merge the tests branch into the project's branch, then build again.
+	Step *jsonBuildStartStepTransport `json:"step"`
 }
 
 // validatejsonBuildCopyNotContainedTransport checks decoded JSON before it becomes a service value.
@@ -2305,8 +2314,19 @@ func validatejsonBuildCopyNotContainedTransport(value *jsonBuildCopyNotContained
 	if value.Commit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
 	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(string(*value.Step)) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 1, true))
+		}
+		if utf8.RuneCountInString(string(*value.Step)) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 512, false))
+		}
 	}
 	return err
 }
@@ -6015,6 +6035,12 @@ func validateBuildCopyDirtyOriginal(value *BuildCopyDirty) (err error) {
 // validateBuildCopyNotContainedOriginal checks the original typed value before JSON conversion.
 func validateBuildCopyNotContainedOriginal(value *BuildCopyNotContained) (err error) {
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	if utf8.RuneCountInString(string(value.Step)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value.Step)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 512, false))
+	}
 	return err
 }
 
@@ -9300,6 +9326,8 @@ func EncodeBuildCopyNotContained(in *BuildCopyNotContained) ([]byte, error) {
 		body = &jsonBuildCopyNotContainedTransport{
 			Commit: &in.Commit,
 		}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
 	}
 	if err := validatejsonBuildCopyNotContainedTransport(body); err != nil {
 		return nil, fmt.Errorf("validate BuildCopyNotContained JSON: %w", err)
@@ -9331,6 +9359,8 @@ func ValidateBuildCopyNotContainedValue(in *BuildCopyNotContained) error {
 		body = &jsonBuildCopyNotContainedTransport{
 			Commit: &in.Commit,
 		}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
 	}
 	if err := validatejsonBuildCopyNotContainedTransport(body); err != nil {
 		return fmt.Errorf("validate BuildCopyNotContained value: %w", err)
@@ -9365,6 +9395,7 @@ func DecodeBuildCopyNotContained(data []byte) (out *BuildCopyNotContained, err e
 	{
 		out = &BuildCopyNotContained{
 			Commit: *body.Commit,
+			Step:   BuildStartStep(*body.Step),
 		}
 	}
 	return out, nil
@@ -19211,6 +19242,7 @@ func decodeBuildCopyDirtyTransportToBuildCopyDirty(v *jsonBuildCopyDirtyTranspor
 func decodeBuildCopyNotContainedTransportToBuildCopyNotContained(v *jsonBuildCopyNotContainedTransport) *BuildCopyNotContained {
 	res := &BuildCopyNotContained{
 		Commit: *v.Commit,
+		Step:   BuildStartStep(*v.Step),
 	}
 
 	return res
@@ -20115,6 +20147,8 @@ func encodeBuildCopyNotContainedToBuildCopyNotContainedTransport(v *BuildCopyNot
 	res := &jsonBuildCopyNotContainedTransport{
 		Commit: &v.Commit,
 	}
+	step := jsonBuildStartStepTransport(v.Step)
+	res.Step = &step
 
 	return res
 }
@@ -22172,9 +22206,17 @@ func validateBuildCopyNotContainedJSONValue(path string, value any, description 
 			); err != nil {
 				return err
 			}
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Merge the tests branch into the project's branch, then build again.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"commit",
+				"step",
 			})
 		}
 	}
@@ -29039,6 +29081,17 @@ func checkBuildCopyNotContainedBuildCopyNotContainedValue(in *BuildCopyNotContai
 		if !utf8.ValidString(string(in.Commit)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
 		}
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkBuildCopyNotContainedBuildStartStepValue checks one generated value on the active path.
+func checkBuildCopyNotContainedBuildStartStepValue(in BuildStartStep, field string, active map[any]bool) error {
+	if !utf8.ValidString(string(in)) {
+		return fmt.Errorf("%s: invalid UTF-8", field)
 	}
 	return nil
 }
@@ -29123,17 +29176,9 @@ func checkBuildStartRefusalBuildStartRefusalValue(in *BuildStartRefusal, field s
 		if !utf8.ValidString(string(in.Name)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
 		}
-		if err := checkBuildStartRefusalBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// checkBuildStartRefusalBuildStartStepValue checks one generated value on the active path.
-func checkBuildStartRefusalBuildStartStepValue(in BuildStartStep, field string, active map[any]bool) error {
-	if !utf8.ValidString(string(in)) {
-		return fmt.Errorf("%s: invalid UTF-8", field)
 	}
 	return nil
 }
@@ -29141,7 +29186,7 @@ func checkBuildStartRefusalBuildStartStepValue(in BuildStartStep, field string, 
 // checkBuildStartStepValue checks text and cycles before conversion.
 func checkBuildStartStepValue(in BuildStartStep) error {
 	active := make(map[any]bool)
-	if err := checkBuildStartRefusalBuildStartStepValue(in, "$", active); err != nil {
+	if err := checkBuildCopyNotContainedBuildStartStepValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
@@ -29170,7 +29215,7 @@ func checkBuildTeamAmbiguousSpaceBuildTeamAmbiguousSpaceValue(in *BuildTeamAmbig
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
-		if err := checkBuildStartRefusalBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
 			return err
 		}
 	}
@@ -29200,7 +29245,7 @@ func checkBuildTeamUnavailableBuildTeamUnavailableValue(in *BuildTeamUnavailable
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
-		if err := checkBuildStartRefusalBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
 			return err
 		}
 	}
@@ -29230,7 +29275,7 @@ func checkBuildTeamWindowBusyBuildTeamWindowBusyValue(in *BuildTeamWindowBusy, f
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
-		if err := checkBuildStartRefusalBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
 			return err
 		}
 	}

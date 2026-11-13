@@ -3146,7 +3146,7 @@ paths:
             tags:
                 - surla
             summary: start_build surla
-            description: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design before generating required tests or admitting roles to the team. Stored verification settings use only the builder. Building again replaces the build and both unread assignments. A refused start saves no build and admits no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server, survives client disconnection, and has a five-minute limit; get_build reads the saved build without this start's transient team or copy outcome.
+            description: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.
             operationId: surla#start_build
             parameters:
                 - name: change_id
@@ -3248,13 +3248,13 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'go_tools_missing: This system cannot resolve the required Go tools; nothing was saved.'
+                    description: 'sandbox_unavailable: This system has no candidate sandbox; nothing was saved.'
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/BuildStartRefusal'
                             example:
-                                name: Iusto dolorem qui excepturi sequi dolore reiciendis.
+                                name: Est quasi hic exercitationem fugiat voluptatem tenetur.
                                 step: "4"
                 "503":
                     description: 'unavailable: The server is stopping or the start''s time limit ended before saving; call again on a running server. Nothing was saved.'
@@ -16672,6 +16672,7 @@ components:
                     example: "4"
                     minLength: 1
                     maxLength: 512
+            description: The build was refused before saving; follow step before starting it again.
             example:
                 name: Ut nihil enim sed autem nihil.
                 step: "4"
@@ -22623,10 +22624,18 @@ components:
                                 type: string
                                 enum:
                                     - not_contained
+                            step:
+                                type: string
+                                description: Merge the tests branch into the project's branch, then build again.
+                                example: "4"
+                                minLength: 1
+                                maxLength: 512
                           example:
                             commit: b1cb4ae575d68493037f6385fb68eca7e60995b5fbddbeee56286e0ce3a729d7
+                            step: "4"
                           required:
                             - commit
+                            - step
                             - state
                         - type: object
                           properties:

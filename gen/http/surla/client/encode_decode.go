@@ -3690,7 +3690,6 @@ func EncodeStartBuildRequest(encoder func(*http.Request) goahttp.Encoder) func(*
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "sandbox_unavailable" (type *surla.BuildStartRefusal): http.StatusNotImplemented
-//   - "go_tools_missing" (type *surla.BuildStartRefusal): http.StatusNotImplemented
 //   - "unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
@@ -3911,20 +3910,6 @@ func DecodeStartBuildResponse(decoder func(*http.Response) goahttp.Decoder, rest
 					return nil, goahttp.ErrValidationError("surla", "start_build", err)
 				}
 				return nil, NewStartBuildSandboxUnavailable(&body)
-			case "go_tools_missing":
-				var (
-					body StartBuildGoToolsMissingResponseBody
-					err  error
-				)
-				err = decoder(resp).Decode(&body)
-				if err != nil {
-					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
-				}
-				err = ValidateStartBuildGoToolsMissingResponseBody(&body)
-				if err != nil {
-					return nil, goahttp.ErrValidationError("surla", "start_build", err)
-				}
-				return nil, NewStartBuildGoToolsMissing(&body)
 			default:
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
@@ -5746,6 +5731,7 @@ func unmarshalBuildCopyAtProjectCommitResponseBodyToSurlaBuildCopyAtProjectCommi
 func unmarshalBuildCopyNotContainedResponseBodyToSurlaBuildCopyNotContained(v *BuildCopyNotContainedResponseBody) *surla.BuildCopyNotContained {
 	res := &surla.BuildCopyNotContained{
 		Commit: *v.Commit,
+		Step:   surla.BuildStartStep(*v.Step),
 	}
 
 	return res

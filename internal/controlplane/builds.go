@@ -24,7 +24,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
@@ -520,8 +519,7 @@ func verdictTime(at time.Time) string {
 // recordBuildError records err on span as a failure unless it is a refusal
 // the design declares, and returns err.
 func recordBuildError(span trace.Span, err error, status string) error {
-	var refused *goa.ServiceError
-	if !errors.As(err, &refused) || refused.Fault {
+	if operationFailed(err) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, status)
 	}

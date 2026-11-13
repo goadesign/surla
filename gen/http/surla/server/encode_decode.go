@@ -2815,19 +2815,6 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusNotImplemented)
 			return enc.Encode(body)
-		case "go_tools_missing":
-			var res *surla.BuildStartRefusal
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewStartBuildGoToolsMissingResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusNotImplemented)
-			return enc.Encode(body)
 		case "unavailable":
 			var res *goa.ServiceError
 			errors.As(v, &res)
@@ -4303,6 +4290,7 @@ func marshalSurlaBuildCopyAtProjectCommitToBuildCopyAtProjectCommitResponseBody(
 func marshalSurlaBuildCopyNotContainedToBuildCopyNotContainedResponseBody(v *surla.BuildCopyNotContained) *BuildCopyNotContainedResponseBody {
 	res := &BuildCopyNotContainedResponseBody{
 		Commit: v.Commit,
+		Step:   string(v.Step),
 	}
 
 	return res

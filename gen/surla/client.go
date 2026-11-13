@@ -543,10 +543,9 @@ func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (
 //   - "no_test_layout" (type *BuildStartRefusal): This project has neither stored verification settings nor Surla's test layout; nothing was saved.
 //   - "git_identity_missing" (type *BuildStartRefusal): Git has no configured name and address; nothing was saved.
 //   - "copy_folder_in_use" (type *BuildStartRefusal): The test-writer copy's folder is occupied; nothing was saved.
-//   - "tests_branch_in_use" (type *BuildStartRefusal): The tests branch is checked out elsewhere; nothing was saved.
+//   - "tests_branch_in_use" (type *BuildStartRefusal): The tests branch is held by another working copy; nothing was saved.
 //   - "working_copy_busy" (type *BuildStartRefusal): A build start or test check holds the project's working-copy turn; nothing was saved.
 //   - "sandbox_unavailable" (type *BuildStartRefusal): This system has no candidate sandbox; nothing was saved.
-//   - "go_tools_missing" (type *BuildStartRefusal): This system cannot resolve the required Go tools; nothing was saved.
 //   - "not_implemented" (type *goa.ServiceError): Start this project with surla to bind the team; nothing was saved.
 //   - "unavailable" (type *goa.ServiceError): The server is stopping or the start's time limit ended before saving; call again on a running server. Nothing was saved.
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.

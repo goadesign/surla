@@ -10,9 +10,9 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
-// defaultBuildStartTimeout bounds opening and refreshing one copy, one sandboxed
-// generation, and the team owner's bounded window operation. A single accepted
-// start cannot retain the copy turn or delay server shutdown indefinitely.
+// defaultBuildStartTimeout bounds opening and refreshing one copy and one
+// sandboxed generation while the start holds the copy turn. The team owner's
+// window phase has its own 45-second bound after that turn is released.
 const defaultBuildStartTimeout = 5 * time.Minute
 
 // admitBuildStart uses the workspace admission barrier so Close cannot miss
@@ -26,11 +26,7 @@ func (c *ControlPlane) admitBuildStart(ctx context.Context) (context.Context, fu
 		return nil, nil, gensurla.MakeUnavailable(errors.New("the server is shutting down; call again on a running server"))
 	}
 	c.buildStartOps.Add(1)
-	limit := defaultBuildStartTimeout
-	if c.buildStartTimeout > 0 {
-		limit = c.buildStartTimeout
-	}
-	accepted, cancel := context.WithTimeout(context.WithoutCancel(ctx), limit)
+	accepted, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	stop := context.AfterFunc(c.serverCtx, cancel)
 	if c.serverCtx.Err() != nil {
 		cancel()
@@ -40,6 +36,16 @@ func (c *ControlPlane) admitBuildStart(ctx context.Context) (context.Context, fu
 		stop()
 		c.buildStartOps.Done()
 	}, nil
+}
+
+// buildStartDeadline bounds only the work under the copy turn. Team start uses
+// the server-owned admission context after this phase, with its own limit.
+func (c *ControlPlane) buildStartDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	limit := defaultBuildStartTimeout
+	if c.buildStartTimeout > 0 {
+		limit = c.buildStartTimeout
+	}
+	return context.WithTimeout(ctx, limit)
 }
 
 // buildTeamOutcome preserves a saved build when its team cannot become ready.

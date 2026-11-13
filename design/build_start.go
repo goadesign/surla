@@ -11,6 +11,7 @@ var BuildStartStep = Type("BuildStartStep", String, func() {
 
 // BuildStartRefusal names a pre-save condition and the action that enables a start.
 var BuildStartRefusal = Type("BuildStartRefusal", func() {
+	Description("The build was refused before saving; follow step before starting it again.")
 	Attribute("name", String, "Declared refusal name.", func() { Meta("struct:error:name") })
 	Attribute("step", BuildStartStep, "What the user does before starting the build again.")
 	Required("name", "step")
@@ -51,7 +52,8 @@ var BuildCopyAtProjectCommit = Type("BuildCopyAtProjectCommit", func() {
 var BuildCopyNotContained = Type("BuildCopyNotContained", func() {
 	Description("The tests branch is not contained in the project's branch, so this start retained the copy's commit.")
 	Attribute("commit", String, "The retained working-copy commit.", func() { Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$") })
-	Required("commit")
+	Attribute("step", BuildStartStep, "Merge the tests branch into the project's branch, then build again.")
+	Required("commit", "step")
 })
 
 // BuildCopyDirty reports a copy retained to preserve uncommitted work.
@@ -91,10 +93,9 @@ func buildStartRefusals() {
 	Error("no_test_layout", BuildStartRefusal, "This project has neither stored verification settings nor Surla's test layout; nothing was saved.")
 	Error("git_identity_missing", BuildStartRefusal, "Git has no configured name and address; nothing was saved.")
 	Error("copy_folder_in_use", BuildStartRefusal, "The test-writer copy's folder is occupied; nothing was saved.")
-	Error("tests_branch_in_use", BuildStartRefusal, "The tests branch is checked out elsewhere; nothing was saved.")
+	Error("tests_branch_in_use", BuildStartRefusal, "The tests branch is held by another working copy; nothing was saved.")
 	Error("working_copy_busy", BuildStartRefusal, "A build start or test check holds the project's working-copy turn; nothing was saved.")
 	Error("sandbox_unavailable", BuildStartRefusal, "This system has no candidate sandbox; nothing was saved.")
-	Error("go_tools_missing", BuildStartRefusal, "This system cannot resolve the required Go tools; nothing was saved.")
 }
 
 // buildStartRefusalResponses maps project state and host availability distinctly.
@@ -107,5 +108,4 @@ func buildStartRefusalResponses() {
 	Response("tests_branch_in_use", StatusConflict)
 	Response("working_copy_busy", StatusConflict)
 	Response("sandbox_unavailable", StatusNotImplemented)
-	Response("go_tools_missing", StatusNotImplemented)
 }

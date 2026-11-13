@@ -73,12 +73,9 @@ func authorizeOperation(name string, next goa.Endpoint, recorder trace.Tracer) g
 		ctx, span := recorder.Start(ctx, "surla.request."+name)
 		defer span.End()
 		defer func() {
-			if err != nil {
-				var domain *goa.ServiceError
-				if !errors.As(err, &domain) || domain.Fault {
-					span.RecordError(err)
-					span.SetStatus(codes.Error, "operation failed")
-				}
+			if operationFailed(err) {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "operation failed")
 			}
 		}()
 
@@ -88,6 +85,20 @@ func authorizeOperation(name string, next goa.Endpoint, recorder trace.Tracer) g
 		}
 		return next(ctx, req)
 	}
+}
+
+// operationFailed distinguishes application failures from the declared refusals
+// both request and build spans report without marking them as failed operations.
+func operationFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	var startRefusal *gensurla.BuildStartRefusal
+	if errors.As(err, &startRefusal) {
+		return false
+	}
+	var domain *goa.ServiceError
+	return !errors.As(err, &domain) || domain.Fault
 }
 
 // applyOperationPolicy wraps the one endpoint set supplied to both generated transports.

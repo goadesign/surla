@@ -2726,15 +2726,6 @@ type StartBuildSandboxUnavailableResponseBody struct {
 	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
 }
 
-// StartBuildGoToolsMissingResponseBody is the type of the "surla" service
-// "start_build" endpoint HTTP response body for the "go_tools_missing" error.
-type StartBuildGoToolsMissingResponseBody struct {
-	// Declared refusal name.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
-}
-
 // StartBuildUnavailableResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "unavailable" error.
 type StartBuildUnavailableResponseBody struct {
@@ -3566,6 +3557,8 @@ type BuildCopyAtProjectCommitResponseBody struct {
 type BuildCopyNotContainedResponseBody struct {
 	// The retained working-copy commit.
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
+	// Merge the tests branch into the project's branch, then build again.
+	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
 }
 
 // BuildCopyDirtyResponseBody is used to define fields on response body types.
@@ -7845,17 +7838,6 @@ func NewStartBuildSandboxUnavailable(body *StartBuildSandboxUnavailableResponseB
 	return v
 }
 
-// NewStartBuildGoToolsMissing builds a surla service start_build endpoint
-// go_tools_missing error.
-func NewStartBuildGoToolsMissing(body *StartBuildGoToolsMissingResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
-	}
-
-	return v
-}
-
 // NewStartBuildUnavailable builds a surla service start_build endpoint
 // unavailable error.
 func NewStartBuildUnavailable(body *StartBuildUnavailableResponseBody) *goa.ServiceError {
@@ -11837,26 +11819,6 @@ func ValidateStartBuildSandboxUnavailableResponseBody(body *StartBuildSandboxUna
 	return
 }
 
-// ValidateStartBuildGoToolsMissingResponseBody runs the validations defined on
-// StartBuildGoToolsMissingResponseBody
-func ValidateStartBuildGoToolsMissingResponseBody(body *StartBuildGoToolsMissingResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
-	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
-	}
-	return
-}
-
 // ValidateStartBuildUnavailableResponseBody runs the validations defined on
 // StartBuildUnavailableResponseBody
 func ValidateStartBuildUnavailableResponseBody(body *StartBuildUnavailableResponseBody) (err error) {
@@ -14268,8 +14230,19 @@ func ValidateBuildCopyNotContainedResponseBody(body *BuildCopyNotContainedRespon
 	if body.Commit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
 	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
+		}
 	}
 	return
 }
@@ -14280,8 +14253,19 @@ func validateBuildCopyNotContainedResponseBody(body *BuildCopyNotContainedRespon
 	if body.Commit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("commit", path))
 	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", path))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern(path+".commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
+		}
 	}
 	return
 }
