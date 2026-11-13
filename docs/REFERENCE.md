@@ -639,12 +639,13 @@ The full suite runs nightly at 07:17 UTC and on a manual **Run workflow** reques
 │   ├── procgroup/                # Process-group lifecycle management for sandboxed child processes
 │   ├── project/                  # One project's private state, owner identity, caller credentials, and browser sessions
 │   ├── scaffold/                 # Starter project scaffolder (`surla init`) & embedded templates
+│   ├── testwriter/               # The test writer's linked working copy, the sandboxed check of its tests against a Story, and the commit that records them
 │   ├── verify/                   # Worktree verifier (`surla verify`), holdout redactor, and promotion check (`surla approve`)
 │   └── verifyrun/                # Detached supervised process-group runner and run-directory store for CP4 verifications
 ├── ui/
 │   └── checkpoint/               # React + OpenUI views page source; build.mjs writes checkpoint.html, its script digest, decision_catalog.md, and generated types
 ├── verify/
-│   ├── candidate/                # macOS Seatbelt (`sandbox-exec`) build & runtime isolation jail (`Build`, `BuildTest`, `Pin`, `Exec`)
+│   ├── candidate/                # macOS Seatbelt (`sandbox-exec`) build & runtime isolation jail (`Build`, `BuildTest`, `Pin`, `Exec`, `Output`)
 │   └── suite/                    # Evaluator suite command runner (`suite.Main`, `suite.Command`, `suite.Declaration`)
 ├── examples/
 │   ├── orders/                   # Reference Goa + Goa-AI + Temporal + SQLite order-refund platform

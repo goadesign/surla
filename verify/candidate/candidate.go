@@ -3,8 +3,10 @@
 // sees only its explicit environment, reads and writes only its own state
 // directory (plus the system libraries needed to load), connects only to the
 // loopback ports it was assigned, listens only on its assigned port, and cannot
-// create child processes. When the platform cannot enforce that sandbox, Exec
-// fails with ErrIsolationUnavailable and never runs the candidate unsandboxed.
+// create child processes. Output runs one such process to completion and
+// returns its standard output apart from its diagnostics. When the platform
+// cannot enforce that sandbox, Exec and Output fail with
+// ErrIsolationUnavailable and never run the candidate unsandboxed.
 //
 // Callers such as an evaluator suite keep their own process lifecycle (start,
 // kill, restart); the sandbox applies only to the started process, never to the
@@ -12,6 +14,7 @@
 package candidate
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -56,9 +59,10 @@ type (
 		// ListenPort is the loopback TCP port the process may listen on, or
 		// zero when it must not listen.
 		ListenPort int
-		// LogFile receives the process's combined stdout and stderr. It is
-		// owned by the caller and must lie outside StateDir so the candidate
-		// cannot rewrite its own diagnostics. Exec creates or truncates it.
+		// LogFile receives the process's diagnostics: its combined stdout and
+		// stderr under Exec, only its stderr under Output. It is owned by the
+		// caller and must lie outside StateDir so the candidate cannot rewrite
+		// its own diagnostics. Exec and Output create or truncate it.
 		LogFile string
 	}
 
@@ -74,6 +78,18 @@ type (
 		// waitErr is the process's exit error, valid after done is closed.
 		waitErr error
 	}
+
+	// limitedBuffer keeps a candidate's standard output for Output, up to a
+	// fixed size. Only the copy into it writes; Output reads it after the
+	// process and that copy have finished.
+	limitedBuffer struct {
+		// buf holds the bytes written so far.
+		buf bytes.Buffer
+		// limit is the most bytes buf may hold.
+		limit int
+		// overflow is set once a write would have exceeded limit.
+		overflow bool
+	}
 )
 
 // sandboxExec is the macOS sandbox launcher. It applies the profile and then
@@ -86,6 +102,10 @@ var ErrIsolationUnavailable = errors.New("candidate isolation is unavailable on 
 
 // ErrDigestMismatch reports that the binary on disk is not the pinned artifact.
 var ErrDigestMismatch = errors.New("candidate binary does not match its pinned digest")
+
+// ErrOutputTooLarge reports a candidate whose standard output exceeded the
+// limit its Output caller set; the output read so far is discarded.
+var ErrOutputTooLarge = errors.New("candidate standard output exceeds its limit")
 
 // Pin copies the binary at src into store, the verifier's own artifact
 // directory, as <store>/<sha256>/<name> with read-only permissions, and returns
@@ -182,6 +202,38 @@ func (a Artifact) Evidence(name string) eval.Artifact {
 // spec. Relative paths resolve from the caller's working directory before the
 // candidate changes into its state directory. The process is killed when ctx ends.
 func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
+	return start(ctx, a, spec, nil)
+}
+
+// Output runs the artifact to completion in the same sandbox as Exec and
+// returns what it printed on standard output, so the caller reads a program's
+// answer exactly instead of picking it out of a log: spec.LogFile receives
+// only standard error. Standard output may hold at most maxBytes; one byte
+// more stops the read and fails with ErrOutputTooLarge, which the candidate
+// sees as a closed pipe. A candidate that exits unsuccessfully returns its
+// standard output with the exit error, an *exec.ExitError. Every Exec
+// admission error, including ErrIsolationUnavailable, is returned before the
+// candidate starts. The process is killed when ctx ends.
+//
+// Output suits short programs whose answer fits in memory, such as an
+// evaluator suite's --describe.
+func Output(ctx context.Context, a Artifact, spec Spec, maxBytes int) ([]byte, error) {
+	out := &limitedBuffer{limit: maxBytes}
+	p, err := start(ctx, a, spec, out)
+	if err != nil {
+		return nil, err
+	}
+	waitErr := p.Wait()
+	if out.overflow {
+		return nil, fmt.Errorf("%w of %d bytes", ErrOutputTooLarge, maxBytes)
+	}
+	return out.buf.Bytes(), waitErr
+}
+
+// start verifies the artifact and starts it in the sandbox described by spec.
+// stdout receives standard output when non-nil; otherwise standard output joins
+// standard error in spec.LogFile.
+func start(ctx context.Context, a Artifact, spec Spec, stdout io.Writer) (*Process, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, ErrIsolationUnavailable
 	}
@@ -223,6 +275,9 @@ func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 	cmd.Env = append([]string{"HOME=" + stateDir, "TMPDIR=" + stateDir}, spec.Env...)
 	cmd.Dir = stateDir
 	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if stdout != nil {
+		cmd.Stdout = stdout
+	}
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		return nil, fmt.Errorf("start candidate %s: %w", binary, err)
@@ -473,6 +528,16 @@ func (p *Process) Excerpt(maxBytes int64) (string, bool, error) {
 		return "", false, fmt.Errorf("read log file: %w", err)
 	}
 	return string(b), start > 0, nil
+}
+
+// Write keeps p, or fails without keeping any of it when buf would then exceed
+// limit. The failure stops the copy from the candidate's standard output.
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.buf.Len()+len(p) > b.limit {
+		b.overflow = true
+		return 0, ErrOutputTooLarge
+	}
+	return b.buf.Write(p)
 }
 
 // fileDigest returns the lowercase hex SHA-256 of the file's bytes.
