@@ -631,6 +631,11 @@ func runSandboxed(
 	phase = phaseLoadModules
 	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, logDir, target, evalMod, program)
 	if err != nil {
+		// A load that was canceled or timed out says nothing about the
+		// module's requirements.
+		if ctx.Err() == nil {
+			err = withStoryRequirementStep(err, files, target, evalMod)
+		}
 		return listedModule{}, err
 	}
 	// The dependency loader owns creation of a missing module cache. Resolve
