@@ -216,9 +216,10 @@ type Service interface {
 	// recorded separately. Reads by the user's views page that succeed or are
 	// refused (sent with GET and repeated whenever the project changes) are
 	// exported but not added to this private history; such a read that ends with
-	// an error status is added, waiting reads never are, and agent calls and
-	// operations that change something are added. Requests rejected before
-	// authentication or decoding and separate verification processes are absent.
+	// an error status or a panic is added, waiting reads never are, and agent
+	// calls and operations that change something are added. Requests rejected
+	// before authentication or decoding and separate verification processes are
+	// absent.
 	ListTraces(context.Context, *ListTracesPayload) (res *TraceList, err error)
 	// Read the bound workspace's Go module snapshot, compute its canonical
 	// snapshot_digest, and start or reuse the project owner's in-memory Story
