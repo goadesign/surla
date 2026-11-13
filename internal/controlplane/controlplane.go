@@ -356,6 +356,15 @@ type (
 		liveState
 		// buildTeam is Options.BuildTeam, or nil when none is bound.
 		buildTeam BuildTeam
+		// workingCopyTurn is the one lock on the project's test working copy,
+		// a channel with room for one value: a sender takes the turn, a
+		// receive releases it, and a waiter can give up when its context
+		// ends. Whoever holds the turn is the only one opening the copy,
+		// writing the required tests into it, checking it or recording its
+		// accepted tests, for the whole of that step. Take it before mu and
+		// never while holding mu: those steps run for minutes, and mu guards
+		// every card and build read. Nothing takes it yet.
+		workingCopyTurn chan struct{}
 	}
 )
 
@@ -465,6 +474,7 @@ func New(opts Options) (*ControlPlane, error) {
 		surlaVersion:           surlaVersion,
 		liveState:              newLiveState(opts.Live, cards.dir),
 		buildTeam:              opts.BuildTeam,
+		workingCopyTurn:        make(chan struct{}, 1),
 	}
 	if err := cp.restoreWorkspace(); err != nil {
 		return nil, errors.Join(err, cp.Close())
