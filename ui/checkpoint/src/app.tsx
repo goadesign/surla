@@ -7,6 +7,9 @@
 // and #surla-result-view), the change list, and synchronous React 19
 // rendering.
 
+// zod-jitless stays the first import: it configures zod before any imported
+// module builds a schema.
+import "./zod-jitless";
 import React from "react";
 import { flushSync } from "react-dom";
 import { createRoot, Root } from "react-dom/client";
