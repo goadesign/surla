@@ -251,8 +251,9 @@ keeps its number. Builds found reported when the checker starts are judged
 then, and a build whose verdict could not be saved is judged again a minute
 later. Findings and reasons contain no absolute path. A saved build has report
 number 0 while its tests are assigned and at least 1 while they are reported.
-The project server does not start the report checker yet, so a report stays
-`reported`.
+The report checker runs for as long as the project server does; stopping the
+server ends a judgment in progress without saving it, and the next server
+judges the build again.
 
 - **`get_build`** (`GET /changes/{change_id}/build`; user, guide, builder, test writer)
   - **Input:** `change_id` → **Output:** `ChangeBuild` (`change_id`, `build`).
@@ -271,7 +272,7 @@ The project server does not start the report checker yet, so a report stays
   - `required_tests` holds one entry per finished flow (`story`, `flow_key`, `scenario`, `hook`): flow `refund-over-limit` requires scenario `refund_over_limit` and method `RefundOverLimit`. Unfinished flows require none; the test program must still build when the list is empty. Reading an assignment marks it read; listing changes nothing. No successful full assignment returns an empty working folder.
 - **`report_tests_finished`** (`POST /assignments/test-writer/{change_id}/finished`; test writer only)
   - **Input:** `change_id`, `request_revision` → **Output:** `TestWriterAssignmentItem`.
-  - Records `reported` for that assignment's revision from any state, raises `report` by one even when the tests are already `reported`, and clears an earlier verdict. It returns at once and wakes the report checker, whose verdict replaces `reported` (see **Judging reports** above; the project server does not start the checker yet). Returns `conflict` (409) for another revision and in a project that now verifies with its stored evaluator, where no test writer is used, and `not_found` when no usable test-writer assignment exists; a refused report changes nothing.
+  - Records `reported` for that assignment's revision from any state, raises `report` by one even when the tests are already `reported`, and clears an earlier verdict. It returns at once and wakes the report checker, whose verdict replaces `reported` (see **Judging reports** above). Returns `conflict` (409) for another revision and in a project that now verifies with its stored evaluator, where no test writer is used, and `not_found` when no usable test-writer assignment exists; a refused report changes nothing.
 
 ### Live target prompt contract
 

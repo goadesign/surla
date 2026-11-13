@@ -1,8 +1,10 @@
-// This file tests the report checker with stand-ins for the test writer
-// library: a verdict follows each report without another call, a newer
-// report or a stop saves nothing for the check in progress, a report waits
-// for the last step of a check, each limit and cause of a check that cannot
-// run, who reads the findings' text, and what supervision sees of verdicts.
+// This file tests the report checker that a control plane with a bound team
+// runs, with a stand-in for the test writer's working copy: a verdict follows
+// each report without another call, a newer report or a stop saves nothing
+// for the check in progress, a restarted server judges what is reported, a
+// report waits for the last step of a check, each limit and cause of a check
+// that cannot run, who reads the findings' text, and what supervision sees
+// of verdicts.
 package controlplane
 
 import (
@@ -12,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,18 +30,21 @@ import (
 	genclient "github.com/goadesign/surla/gen/http/surla/client"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/testwriter"
 	"github.com/goadesign/surla/verify/candidate"
 )
 
-// standInTests is a testsLibrary stand-in. Prepare returns prepareErr; each
-// Check and Record call is answered by check and record with its call
-// number, starting at 1, and Record also keeps its message.
-type standInTests struct {
+// standInCopy is a stand-in for the test writer's working copy that the
+// report checker opens. Prepare returns prepareErr; each Check and Record call
+// is answered by check and record with its call number, starting at 1, and
+// Record also keeps its message. Without check, a check waits until its
+// context ends, so a report stays reported.
+type standInCopy struct {
 	mu sync.Mutex
 	// prepareErr is what Prepare returns.
 	prepareErr error
-	// check answers Check calls; nil accepts the copy.
+	// check answers Check calls.
 	check func(ctx context.Context, call int) (testwriter.Verdict, error)
 	// record answers Record calls; nil returns standInCommit.
 	record func(ctx context.Context, call int) (string, error)
@@ -51,30 +57,35 @@ type standInTests struct {
 // standInCommit is the commit the stand-in Record returns by default.
 var standInCommit = strings.Repeat("a", 40)
 
-// Prepare returns prepareErr.
-func (s *standInTests) Prepare(
-	context.Context, testwriter.WorkingCopy, testwriter.Suite, []designeval.StorySummary,
-) ([]designeval.StoryScenario, error) {
-	return nil, s.prepareErr
+// Project returns a folder no check reads.
+func (s *standInCopy) Project() string { return "/nonexistent/stand-in" }
+
+// Refresh reports the copy at the project's commit.
+func (s *standInCopy) Refresh(context.Context) (testwriter.RefreshResult, error) {
+	return testwriter.RefreshResult{State: testwriter.RefreshAtProjectCommit, Commit: strings.Repeat("c", 40)}, nil
 }
 
-// Check answers with check, or accepts the copy when check is nil.
-func (s *standInTests) Check(
-	ctx context.Context, _ testwriter.WorkingCopy, _ testwriter.Suite, _ []designeval.StorySummary,
-) (testwriter.Verdict, error) {
+// Prepare returns prepareErr.
+func (s *standInCopy) Prepare(context.Context, []designeval.StorySummary) error {
+	return s.prepareErr
+}
+
+// Check answers with check, or waits until ctx ends when check is nil.
+func (s *standInCopy) Check(ctx context.Context, _ []designeval.StorySummary) (testwriter.Verdict, error) {
 	s.mu.Lock()
 	s.checks++
 	call := s.checks
 	s.mu.Unlock()
 	if s.check == nil {
-		return testwriter.Verdict{}, nil
+		<-ctx.Done()
+		return testwriter.Verdict{}, ctx.Err()
 	}
 	return s.check(ctx, call)
 }
 
 // Record keeps message and answers with record, or standInCommit when record
 // is nil.
-func (s *standInTests) Record(ctx context.Context, _ testwriter.Verdict, message string) (string, error) {
+func (s *standInCopy) Record(ctx context.Context, _ testwriter.Verdict, message string) (string, error) {
 	s.mu.Lock()
 	s.records++
 	call := s.records
@@ -86,6 +97,16 @@ func (s *standInTests) Record(ctx context.Context, _ testwriter.Verdict, message
 	return s.record(ctx, call)
 }
 
+// recorded returns Record's commit messages so far.
+func (s *standInCopy) recorded() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.messages)
+}
+
+// accepting is a stand-in check that accepts the copy.
+func accepting(context.Context, int) (testwriter.Verdict, error) { return testwriter.Verdict{}, nil }
+
 // TestAReportIsJudgedWithoutAnotherCall runs the checker and reports twice. A
 // report returns reported with its number at once, while the check it wakes
 // is still running; its verdict follows with no other call. Findings make the
@@ -94,7 +115,7 @@ func (s *standInTests) Record(ctx context.Context, _ testwriter.Verdict, message
 // makes both assignments unread.
 func TestAReportIsJudgedWithoutAnotherCall(t *testing.T) {
 	checking, release := make(chan int, 2), make(chan struct{})
-	tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+	tests := &standInCopy{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
 		checking <- call
 		<-release
 		if call == 1 {
@@ -102,8 +123,7 @@ func TestAReportIsJudgedWithoutAnotherCall(t *testing.T) {
 		}
 		return testwriter.Verdict{}, nil
 	}}
-	cp, r, revision := newReportFixture(t, Options{}, tests)
-	runChecker(t, r)
+	cp, revision := newReportFixture(t, Options{}, tests)
 	readBothAssignments(t, cp)
 
 	first := reportTests(t, cp, revision)
@@ -129,7 +149,7 @@ func TestAReportIsJudgedWithoutAnotherCall(t *testing.T) {
 	assert.Equal(t, testsNotJudged, accepted.NotJudged)
 	assert.False(t, build.TestWriter.Read)
 	assert.False(t, build.Builder.Read, "an acceptance marks the builder's assignment unread too")
-	assert.Equal(t, []string{"Add the tests Surla accepted for change chg, report 2"}, tests.messages)
+	assert.Equal(t, []string{"Add the tests Surla accepted for change chg, report 2"}, tests.recorded())
 }
 
 // TestASecondReportDuringACheckIsJudgedAfterIt reports again while the first
@@ -141,7 +161,7 @@ func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
 	for _, accept := range []bool{false, true} {
 		t.Run(map[bool]string{false: "findings", true: "accepted"}[accept], func(t *testing.T) {
 			checking, release := make(chan int, 2), make(chan struct{}, 2)
-			tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+			tests := &standInCopy{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
 				checking <- call
 				<-release
 				if accept {
@@ -149,8 +169,7 @@ func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
 				}
 				return needsChanges(fmt.Sprintf("finding of check %d", call)), nil
 			}}
-			cp, r, revision := newReportFixture(t, Options{}, tests)
-			runChecker(t, r)
+			cp, revision := newReportFixture(t, Options{}, tests)
 
 			reportTests(t, cp, revision)
 			require.Equal(t, 1, receive(t, checking))
@@ -160,12 +179,12 @@ func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
 			build := mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg")
 			assert.Equal(t, gensurla.TestsKindReported, build.TestWriter.Tests.Kind(), "nothing was saved for the first report")
 			assert.Equal(t, 2, build.TestWriter.Report)
-			assert.Empty(t, tests.messages, "nothing was recorded for the first report")
+			assert.Empty(t, tests.recorded(), "nothing was recorded for the first report")
 			release <- struct{}{}
 			if accept {
 				build = waitForTests(t, cp, gensurla.TestsKindAccepted)
 				assert.Equal(t, 2, build.TestWriter.Report)
-				assert.Equal(t, []string{"Add the tests Surla accepted for change chg, report 2"}, tests.messages,
+				assert.Equal(t, []string{"Add the tests Surla accepted for change chg, report 2"}, tests.recorded(),
 					"only the second report's tests are recorded")
 				return
 			}
@@ -183,15 +202,14 @@ func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
 // then counts as report 2, which is judged next.
 func TestAReportDuringRecordWaitsAndKeepsItsNumber(t *testing.T) {
 	recording, release := make(chan int, 2), make(chan struct{})
-	tests := &standInTests{record: func(_ context.Context, call int) (string, error) {
+	tests := &standInCopy{check: accepting, record: func(_ context.Context, call int) (string, error) {
 		recording <- call
 		if call == 1 {
 			<-release
 		}
 		return standInCommit, nil
 	}}
-	cp, r, revision := newReportFixture(t, Options{}, tests)
-	runChecker(t, r)
+	cp, revision := newReportFixture(t, Options{}, tests)
 
 	reportTests(t, cp, revision)
 	require.Equal(t, 1, receive(t, recording))
@@ -218,28 +236,25 @@ func TestAReportDuringRecordWaitsAndKeepsItsNumber(t *testing.T) {
 	assert.Equal(t, []string{
 		"Add the tests Surla accepted for change chg, report 1",
 		"Add the tests Surla accepted for change chg, report 2",
-	}, tests.messages)
+	}, tests.recorded())
 }
 
 // TestAVerdictThatCannotBeSavedIsJudgedAgain makes the save of a verdict
 // fail once, by putting a folder where the card store writes its staging
 // file: the build stays reported, and the checker judges it again by itself
-// after its retry delay, with no other report, and saves that verdict.
+// after its retry delay, with no other report, and saves that verdict. The
+// report's own wake is spent on the first judgment, so only the retry can
+// wake the checker again.
 func TestAVerdictThatCannotBeSavedIsJudgedAgain(t *testing.T) {
 	checking, release := make(chan int, 2), make(chan struct{}, 2)
-	tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+	tests := &standInCopy{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
 		checking <- call
 		<-release
 		return testwriter.Verdict{}, nil
 	}}
-	cp, r, revision := newReportFixture(t, Options{}, tests)
-	r.retry = 200 * time.Millisecond
-	// The report is made before the checker starts and its wake is drained,
-	// so the checker's first scan judges it and only the retry can wake it
-	// again.
+	cp, revision := newReportFixture(t, Options{}, tests)
+	cp.reports.retry = 200 * time.Millisecond
 	reportTests(t, cp, revision)
-	<-cp.reportWake
-	runChecker(t, r)
 	require.Equal(t, 1, receive(t, checking))
 	staging := filepath.Join(cp.cards.dir, buildStagingFile)
 	require.NoError(t, os.Mkdir(staging, 0o700))
@@ -253,67 +268,67 @@ func TestAVerdictThatCannotBeSavedIsJudgedAgain(t *testing.T) {
 	assert.Equal(t, 1, build.TestWriter.Report, "no other report was needed")
 }
 
-// TestABuildStartCannotTakeTheTurnDuringACheck holds a check open: a start's
-// take of the working-copy turn without waiting fails until the check ends.
-func TestABuildStartCannotTakeTheTurnDuringACheck(t *testing.T) {
+// TestABuildStartIsRefusedDuringACheck holds a check open: starting the
+// build again is refused as busy, because the check holds the working-copy
+// turn, and succeeds once the check has ended.
+func TestABuildStartIsRefusedDuringACheck(t *testing.T) {
 	checking, release := make(chan int, 1), make(chan struct{})
-	tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+	tests := &standInCopy{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
 		checking <- call
 		<-release
 		return testwriter.Verdict{}, nil
 	}}
-	cp, r, revision := newReportFixture(t, Options{}, tests)
-	runChecker(t, r)
+	cp, revision := newReportFixture(t, Options{}, tests)
+	user := asCaller("alice@example.com", CallerUser)
+	start := &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: revision}
 	reportTests(t, cp, revision)
 	receive(t, checking)
-	select {
-	case cp.workingCopyTurn <- struct{}{}:
-		t.Fatal("the turn was free during a check")
-	default:
-	}
+	_, err := cp.StartBuild(user, start)
+	assertRefused(t, err, "working_copy_busy")
 	close(release)
 	waitForTests(t, cp, gensurla.TestsKindAccepted)
-	select {
-	case cp.workingCopyTurn <- struct{}{}:
-		<-cp.workingCopyTurn
-	case <-time.After(10 * time.Second):
-		t.Fatal("the check did not release the turn")
-	}
+	_, err = cp.StartBuild(user, start)
+	require.NoError(t, err, "the check released the turn")
 }
 
-// TestAReportedBuildIsJudgedWhenTheCheckerStarts reports with no checker
-// running, as before a restart: the checker judges the build when it starts.
-func TestAReportedBuildIsJudgedWhenTheCheckerStarts(t *testing.T) {
-	cp, r, revision := newReportFixture(t, Options{}, &standInTests{})
-	reportTests(t, cp, revision)
-	<-cp.reportWake // The wake does not survive a restart.
-	runChecker(t, r)
-	build := waitForTests(t, cp, gensurla.TestsKindAccepted)
-	assert.Equal(t, 1, build.TestWriter.Report)
-}
-
-// TestStoppingDuringACheckSavesNothing stops the checker while a check runs:
-// the check sees its context end, the checker returns, nothing is saved and
-// the build stays reported.
-func TestStoppingDuringACheckSavesNothing(t *testing.T) {
+// TestAStoppedServerSavesNothingAndARestartedOneJudges stops the server
+// while a check runs: Close waits until the check, which takes a moment to
+// stop, has returned, and nothing is saved, so the build stays reported. A server started again
+// on the same folders judges that build without another report. Its working
+// copy cannot be opened here, as the fixture's project is no git repository,
+// so the verdict is that the check could not run, with the step to build
+// again.
+func TestAStoppedServerSavesNothingAndARestartedOneJudges(t *testing.T) {
 	checking, ended := make(chan int, 1), make(chan struct{})
-	tests := &standInTests{check: func(ctx context.Context, call int) (testwriter.Verdict, error) {
+	tests := &standInCopy{check: func(ctx context.Context, call int) (testwriter.Verdict, error) {
 		checking <- call
 		<-ctx.Done()
+		// A sandboxed step takes a moment to stop; Close waits for it.
+		time.Sleep(300 * time.Millisecond)
 		close(ended)
 		return testwriter.Verdict{}, ctx.Err()
 	}}
-	cp, r, revision := newReportFixture(t, Options{}, tests)
-	before := readBuildFile(t, cp, "chg")
-	stop := runChecker(t, r)
+	opts := Options{CardsDir: t.TempDir(), WorkspaceDir: t.TempDir()}
+	cp, revision := newReportFixture(t, opts, tests)
 	reportTests(t, cp, revision)
-	after := readBuildFile(t, cp, "chg")
-	assert.NotEqual(t, before, after)
 	receive(t, checking)
-	stop()
-	receive(t, ended)
-	assert.Equal(t, after, readBuildFile(t, cp, "chg"), "nothing is saved after the report")
-	assert.Zero(t, tests.records)
+	reported := readBuildFile(t, cp, "chg")
+	require.NoError(t, cp.Close())
+	select {
+	case <-ended:
+	default:
+		t.Fatal("Close returned before the check saw its context end")
+	}
+	assert.Equal(t, reported, readBuildFile(t, cp, "chg"), "nothing is saved after the report")
+	assert.Empty(t, tests.recorded())
+
+	opts.Team = &TeamBinding{Owner: "alice@example.com", Service: &teamServiceFixture{}}
+	restarted := newControlPlane(t, opts)
+	build := waitForTests(t, restarted, gensurla.TestsKindCouldNotRun)
+	assert.Equal(t, 1, build.TestWriter.Report)
+	failed, _ := build.TestWriter.Tests.AsCouldNotRun()
+	assert.Contains(t, failed.Reason, "could not open the test writer's working copy")
+	assert.Equal(t, stepOpenCopy, failed.Step)
 }
 
 // TestTheWholeCheckLimit judges with a shortened limit and stand-in checks
@@ -346,12 +361,10 @@ func TestTheWholeCheckLimit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cp, r, revision := newReportFixture(t, Options{}, &standInTests{check: tc.check})
-			r.limit = limit
+			cp, revision := newReportFixture(t, Options{}, &standInCopy{check: tc.check})
+			cp.reports.limit = limit
 			reportTests(t, cp, revision)
-			r.judge(t.Context(), "chg")
-			build := mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg")
-			require.Equal(t, tc.want, build.TestWriter.Tests.Kind())
+			build := waitForTests(t, cp, tc.want)
 			if failed, ok := build.TestWriter.Tests.AsCouldNotRun(); ok {
 				assert.Contains(t, failed.Reason, "did not finish within 500ms")
 				assert.Equal(t, stepLimit, failed.Step)
@@ -371,26 +384,26 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 	cases := []struct {
 		name       string
 		copyErr    error
-		tests      *standInTests
+		tests      *standInCopy
 		wantKind   gensurla.TestsKind
 		wantReason []string
 		wantStep   string
 	}{
 		{name: "the working copy cannot be opened", copyErr: errors.New("open /Users/someone/shop/.surla-tests: permission denied"),
-			tests: &standInTests{}, wantKind: gensurla.TestsKindCouldNotRun,
+			tests: &standInCopy{check: accepting}, wantKind: gensurla.TestsKindCouldNotRun,
 			wantReason: []string{"could not open the test writer's working copy", "open <absolute path>: permission denied"}, wantStep: stepOpenCopy},
-		{name: "the sandbox does not start", tests: &standInTests{prepareErr: fmt.Errorf("%w: sandbox-exec: sandbox_apply: Operation not permitted", candidate.ErrIsolationUnavailable)},
+		{name: "the sandbox does not start", tests: &standInCopy{prepareErr: fmt.Errorf("%w: sandbox-exec: sandbox_apply: Operation not permitted", candidate.ErrIsolationUnavailable)},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"sandbox could not start", "Operation not permitted"}, wantStep: stepSandbox},
-		{name: "the history was replaced", tests: &standInTests{check: failing(fmt.Errorf("measure the copy's changes: %w", testwriter.ErrNoCommonBase))},
+		{name: "the history was replaced", tests: &standInCopy{check: failing(fmt.Errorf("measure the copy's changes: %w", testwriter.ErrNoCommonBase))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"share no history"}, wantStep: stepNoCommonBase},
-		{name: "git fails", tests: &standInTests{check: failing(errors.New("git write-tree in /private/var/folders/x/check: exit status 128"))},
+		{name: "git fails", tests: &standInCopy{check: failing(errors.New("git write-tree in /private/var/folders/x/check: exit status 128"))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"check could not run", "git write-tree in <absolute path>: exit status 128"}, wantStep: stepFailure},
-		{name: "recording fails", tests: &standInTests{record: func(context.Context, int) (string, error) {
+		{name: "recording fails", tests: &standInCopy{check: accepting, record: func(context.Context, int) (string, error) {
 			return "", errors.New("git commit-tree: exit status 1")
 		}}, wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"could not record the accepted tests", "exit status 1"}, wantStep: stepFailure},
-		{name: "a long failure", tests: &standInTests{check: failing(errors.New(strings.Repeat("é", 2*maxCheckReason)))},
+		{name: "a long failure", tests: &standInCopy{check: failing(errors.New(strings.Repeat("é", 2*maxCheckReason)))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"…"}, wantStep: stepFailure},
-		{name: "the author's design does not compile", tests: &standInTests{prepareErr: &testwriter.AuthorError{Finding: testwriter.Finding{
+		{name: "the author's design does not compile", tests: &standInCopy{prepareErr: &testwriter.AuthorError{Finding: testwriter.Finding{
 			Kind: testwriter.FindingGeneration, Message: "Code generation failed while compiling the design.",
 		}}}, wantKind: gensurla.TestsKindNeedsChanges},
 	}
@@ -399,21 +412,17 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 			exporter := tracetest.NewInMemoryExporter()
 			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-			cp, r, revision := newReportFixture(t, Options{TracerProvider: provider}, tc.tests)
+			cp, revision := newReportFixture(t, Options{TracerProvider: provider}, tc.tests)
 			if tc.copyErr != nil {
-				r.copyFor = func(context.Context) (testwriter.WorkingCopy, testwriter.Suite, error) {
-					return testwriter.WorkingCopy{}, testwriter.Suite{}, tc.copyErr
-				}
+				cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return nil, tc.copyErr }
 			}
 			readBothAssignments(t, cp)
 			reportTests(t, cp, revision)
-			r.judge(t.Context(), "chg")
 
-			build := mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg")
-			require.Equal(t, tc.wantKind, build.TestWriter.Tests.Kind())
+			build := waitForTests(t, cp, tc.wantKind)
 			assert.False(t, build.TestWriter.Read)
 			assert.True(t, build.Builder.Read)
-			span := lastSpan(t, exporter, "surla.controlplane.check_reported_tests")
+			span := waitForSpan(t, exporter, "surla.controlplane.check_reported_tests")
 			failed, ok := build.TestWriter.Tests.AsCouldNotRun()
 			if !ok {
 				assert.Equal(t, codes.Unset, span.Status.Code, "findings are not a failure")
@@ -440,7 +449,7 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 // saying why, the findings read is refused, and the build, saved as
 // reported, is never judged.
 func TestStoredEvaluatorProjectsNeverJudge(t *testing.T) {
-	cp, r, revision := newReportFixture(t, Options{Verification: &VerificationConfig{RunsDir: t.TempDir()}}, &standInTests{})
+	cp, revision := newReportFixture(t, Options{Verification: &VerificationConfig{RunsDir: t.TempDir()}}, &standInCopy{})
 	tests := asCaller("alice@example.com", CallerTestWriter)
 	report := &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: revision}
 	before := readBuildFile(t, cp, "chg")
@@ -459,7 +468,7 @@ func TestStoredEvaluatorProjectsNeverJudge(t *testing.T) {
 	assert.ErrorContains(t, err, "no test writer is used: this project verifies with its stored evaluator")
 	assert.Equal(t, before, readBuildFile(t, cp, "chg"), "a refused report changes nothing")
 	editBuildFile(t, cp, "chg", savedTestWriter(map[string]any{"state": testsReported}))
-	assert.Empty(t, r.reported(t.Context()), "no build is judged")
+	assert.Empty(t, cp.reports.reported(t.Context()), "no build is judged")
 	_, err = cp.GetTestFindings(asCaller("alice@example.com", CallerUser), &gensurla.GetTestFindingsPayload{ChangeID: "chg"})
 	assertRefused(t, err, "conflict")
 }
@@ -472,7 +481,7 @@ func TestStoredEvaluatorProjectsNeverJudge(t *testing.T) {
 // findings read is refused.
 func TestOnlyTheTestWriterAndTheUserReadFindings(t *testing.T) {
 	const finding = "RefundOverLimit is not implemented"
-	cp, _, revision := newReportFixture(t, Options{}, &standInTests{})
+	cp, revision := newReportFixture(t, Options{}, &standInCopy{})
 	srv := roleServer(t, cp)
 	at := "2026-11-13T09:30:00Z"
 	editBuildFile(t, cp, "chg", savedTestWriter(map[string]any{"state": testsNeedChanges, "findings": []string{finding}, "checked_at": at}))
@@ -539,8 +548,8 @@ func TestAcceptedTestsCarryTheContractsSentence(t *testing.T) {
 // generation it never had.
 func TestVerdictsGiveSupervisionNewGenerations(t *testing.T) {
 	answers := []testwriter.Verdict{needsChanges("RefundOverLimit is not implemented"), {}}
-	tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) { return answers[call-1], nil }}
-	cp, r, revision := newReportFixture(t, Options{Team: &TeamBinding{Owner: "alice@example.com", Service: &teamServiceFixture{}}}, tests)
+	tests := &standInCopy{check: func(_ context.Context, call int) (testwriter.Verdict, error) { return answers[call-1], nil }}
+	cp, revision := newReportFixture(t, Options{}, tests)
 	unread, err := cp.assignmentGenerations(t.Context())
 	require.NoError(t, err)
 	require.Len(t, unread, 2)
@@ -550,7 +559,7 @@ func TestVerdictsGiveSupervisionNewGenerations(t *testing.T) {
 	assert.Empty(t, owed)
 
 	reportTests(t, cp, revision)
-	r.judge(t.Context(), "chg")
+	waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
 	afterFindings, err := cp.assignmentGenerations(t.Context())
 	require.NoError(t, err)
 	require.Len(t, afterFindings, 1)
@@ -559,7 +568,7 @@ func TestVerdictsGiveSupervisionNewGenerations(t *testing.T) {
 
 	readBothAssignments(t, cp)
 	reportTests(t, cp, revision)
-	r.judge(t.Context(), "chg")
+	waitForTests(t, cp, gensurla.TestsKindAccepted)
 	afterAcceptance, err := cp.assignmentGenerations(t.Context())
 	require.NoError(t, err)
 	require.Len(t, afterAcceptance, 2)
@@ -570,45 +579,20 @@ func TestVerdictsGiveSupervisionNewGenerations(t *testing.T) {
 	assert.NotEqual(t, afterFindings[0].Generation, afterAcceptance[1].Generation)
 }
 
-// newReportFixture returns a control plane with options opts in which alice's
-// change "chg" is confirmed and built, the report checker of that control
-// plane judging with tests in a stand-in working copy, and the built
-// revision.
-func newReportFixture(t *testing.T, opts Options, tests *standInTests) (*ControlPlane, *reportChecker, string) {
+// newReportFixture returns a control plane with options opts and a bound
+// team, so it runs its report checker, in which alice's change "chg" is
+// confirmed and built, and the built revision. After the start, the checker
+// opens copy as the test writer's working copy: the start itself wrote the
+// required tests into the fixture's own copy, and the checker reads the
+// factory only once a report wakes it.
+func newReportFixture(t *testing.T, opts Options, copy *standInCopy) (*ControlPlane, string) {
 	t.Helper()
 	cp := newBuildControlPlane(t, opts)
 	card := confirmedChange(t, cp, "chg")
 	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	require.NoError(t, err)
-	r := newReportChecker(cp, tests, func(context.Context) (testwriter.WorkingCopy, testwriter.Suite, error) {
-		return testwriter.WorkingCopy{}, testwriter.Suite{}, nil
-	})
-	return cp, r, card.RequestRevision
-}
-
-// runChecker runs r until the returned stop is called or the test ends; stop
-// waits for it to return, at most ten seconds.
-func runChecker(t *testing.T, r *reportChecker) (stop func()) {
-	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		r.run(ctx)
-	}()
-	var once sync.Once
-	stop = func() {
-		once.Do(func() {
-			cancel()
-			select {
-			case <-done:
-			case <-time.After(10 * time.Second):
-				t.Error("the report checker did not stop within ten seconds")
-			}
-		})
-	}
-	t.Cleanup(stop)
-	return stop
+	cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return copy, nil }
+	return cp, card.RequestRevision
 }
 
 // reportTests reports alice's change "chg" finished at revision as its test
@@ -677,15 +661,21 @@ func failing(err error) func(context.Context, int) (testwriter.Verdict, error) {
 	return func(context.Context, int) (testwriter.Verdict, error) { return testwriter.Verdict{}, err }
 }
 
-// lastSpan returns the last ended span named name.
-func lastSpan(t *testing.T, exporter *tracetest.InMemoryExporter, name string) tracetest.SpanStub {
+// waitForSpan returns the last ended span named name, waiting for one for at
+// most ten seconds: a judgment ends its span just after it saves its verdict.
+func waitForSpan(t *testing.T, exporter *tracetest.InMemoryExporter, name string) tracetest.SpanStub {
 	t.Helper()
-	spans := exporter.GetSpans()
-	for i := len(spans) - 1; i >= 0; i-- {
-		if spans[i].Name == name {
-			return spans[i]
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		spans := exporter.GetSpans()
+		for i := len(spans) - 1; i >= 0; i-- {
+			if spans[i].Name == name {
+				return spans[i]
+			}
 		}
+		if time.Now().After(deadline) {
+			require.FailNow(t, "no span named "+name+" after ten seconds")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	require.FailNow(t, "no span named "+name)
-	return tracetest.SpanStub{}
 }

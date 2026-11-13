@@ -107,7 +107,10 @@ folder. The project owner's separate record maps stable handles to role and
 folder, with credentials in private files. Neither store owns the other's data.
 
 The control plane also owns the report checker, the one worker per project
-that judges the test writer's reports through `internal/testwriter`. It holds
+that judges the test writer's reports through `internal/testwriter`. The
+control plane starts it on the server's context when a team is bound and
+drains it on Close before the stores close. It opens the working copy as a
+build start does, and holds
 the project's working-copy turn for each judgment, so a build start, which
 takes the turn without waiting, is refused while one runs. Its last step
 (confirm that the build still answers to the report checked, commit accepted
@@ -115,8 +118,7 @@ tests, save the verdict) holds a lock that `report_tests_finished` also takes.
 Locks are taken in the order turn, report lock, card lock. Git and the sandbox
 never run under the card lock. A verdict changes the generations the
 supervision callback returns: the test writer's carries the report number and
-verdict time, the builder's the accepted commit. The project server does not
-start the report checker yet.
+verdict time, the builder's the accepted commit.
 
 Herdr streams and reads are filtered by registered handle, project root and saved
 space. Typed adapters retain only terminal state, block kind, foreground arguments

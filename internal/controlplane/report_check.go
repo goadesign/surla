@@ -22,45 +22,22 @@ import (
 )
 
 type (
-	// testsLibrary is what the report checker uses of internal/testwriter: a
-	// Checker's Prepare and Check, and Record. testwriterLibrary binds the
-	// real one; tests bind stand-ins.
-	testsLibrary interface {
-		// Prepare writes the required tests for stories into the copy.
-		Prepare(
-			ctx context.Context, wc testwriter.WorkingCopy, s testwriter.Suite, stories []designeval.StorySummary,
-		) ([]designeval.StoryScenario, error)
-		// Check judges the copy against stories.
-		Check(
-			ctx context.Context, wc testwriter.WorkingCopy, s testwriter.Suite, stories []designeval.StorySummary,
-		) (testwriter.Verdict, error)
-		// Record commits an accepted verdict on the tests branch and returns
-		// the commit.
-		Record(ctx context.Context, v testwriter.Verdict, message string) (string, error)
-	}
-
-	// testwriterLibrary is the testsLibrary of internal/testwriter.
-	testwriterLibrary struct {
-		*testwriter.Checker
-	}
-
 	// reportChecker is the one worker per project that judges the test
-	// writer's reports. run judges every build found reported when it
-	// starts, then those each report wakes it for. Each judgment runs in the
-	// project's working-copy turn and is bounded by limit. Its last step
-	// (confirm that the build still answers to the report checked, record
-	// accepted tests, save the verdict) holds reportMu, so a report cannot
-	// fall between the confirmation and the commit. When ctx ends, the
-	// sandboxed steps end with it and nothing is saved: the build stays
-	// reported, and the next run judges it.
+	// writer's reports. New starts its run on the server's context for a
+	// project with a bound team, the only kind whose builds have a test
+	// writer, and Close ends it before the stores close. run judges every
+	// build found reported when it starts, then those each report wakes it
+	// for. Each judgment opens the test writer's working copy as a build
+	// start does (openReportCopy), runs in the project's working-copy turn
+	// and is bounded by limit. Its last step (confirm that the build still
+	// answers to the report checked, record accepted tests, save the
+	// verdict) holds reportMu, so a report cannot fall between the
+	// confirmation and the commit. When ctx ends, the sandboxed steps end
+	// with it and nothing is saved: the build stays reported, and the next
+	// run judges it.
 	reportChecker struct {
-		// cp owns the builds, the turn, reportMu and reportWake.
+		// cp owns the builds, the turn, reportMu, reportWake and the copy.
 		cp *ControlPlane
-		// tests prepares, checks and records the working copy.
-		tests testsLibrary
-		// copyFor opens the project's test working copy and locates its
-		// test module and program.
-		copyFor func(ctx context.Context) (testwriter.WorkingCopy, testwriter.Suite, error)
 		// limit bounds one report's judgment; checkLimit outside tests.
 		limit time.Duration
 		// retry is how long after a failed last step the checker wakes to
@@ -86,7 +63,7 @@ type (
 
 	// openCopyError is a failure to open the test writer's working copy.
 	openCopyError struct {
-		// err is copyFor's error.
+		// err is openReportCopy's error.
 		err error
 	}
 )
@@ -127,32 +104,30 @@ const (
 	replacedEvent = "a newer report or build replaced the one checked; nothing saved"
 )
 
-// testwriterLibrary is the production testsLibrary.
-var _ testsLibrary = testwriterLibrary{}
-
-// Record commits v with testwriter.Record.
-func (testwriterLibrary) Record(ctx context.Context, v testwriter.Verdict, message string) (string, error) {
-	return testwriter.Record(ctx, v, message)
-}
-
 // Error returns the failure's text.
 func (e *openCopyError) Error() string {
 	return e.err.Error()
 }
 
-// Unwrap returns copyFor's error.
+// Unwrap returns openReportCopy's error.
 func (e *openCopyError) Unwrap() error {
 	return e.err
 }
 
-// newReportChecker returns the report checker of cp, judging with tests in
-// the working copy copyFor opens, within checkLimit.
-func newReportChecker(
-	cp *ControlPlane,
-	tests testsLibrary,
-	copyFor func(context.Context) (testwriter.WorkingCopy, testwriter.Suite, error),
-) *reportChecker {
-	return &reportChecker{cp: cp, tests: tests, copyFor: copyFor, limit: checkLimit, retry: retryAfterFailure, now: time.Now}
+// startReportChecker starts the report checker on the server's context for a
+// project with a bound team; Close ends it before the stores close.
+func (c *ControlPlane) startReportChecker() {
+	if c.team == nil {
+		return
+	}
+	c.reports = newReportChecker(c)
+	c.reportWorker.Go(func() { c.reports.run(c.serverCtx) })
+}
+
+// newReportChecker returns the report checker of cp, judging within
+// checkLimit and judging again retryAfterFailure after a failed last step.
+func newReportChecker(cp *ControlPlane) *reportChecker {
+	return &reportChecker{cp: cp, limit: checkLimit, retry: retryAfterFailure, now: time.Now}
 }
 
 // run judges reported builds until ctx ends: first every build found reported
@@ -257,7 +232,7 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 	deadline := time.Now().Add(r.limit)
 	checkCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	v, err := r.check(checkCtx, saved.Stories)
+	copy, v, err := r.check(checkCtx, saved.Stories)
 	if ctx.Err() != nil {
 		span.AddEvent("stopped before a verdict; the build stays reported")
 		return
@@ -279,7 +254,7 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 			return
 		}
 		message := fmt.Sprintf("Add the tests Surla accepted for change %s, report %d", id.changeID, id.report)
-		commit, err := r.tests.Record(checkCtx, v, message)
+		commit, err := copy.Record(checkCtx, v, message)
 		switch {
 		case ctx.Err() != nil:
 			span.AddEvent("stopped before the tests were recorded; the build stays reported")
@@ -308,18 +283,36 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 }
 
 // check opens the working copy, writes the required tests for stories into
-// it, and checks it. An error from Prepare that the author caused is an
-// *testwriter.AuthorError; any other error says nothing about the author's
-// work.
-func (r *reportChecker) check(ctx context.Context, stories []designeval.StorySummary) (testwriter.Verdict, error) {
-	wc, s, err := r.copyFor(ctx)
+// it, and checks it, returning the copy, which records an accepted verdict.
+// A failure to open the copy is an *openCopyError, and an error from Prepare
+// that the author caused an *testwriter.AuthorError; any other error says
+// nothing about the author's work.
+func (r *reportChecker) check(
+	ctx context.Context, stories []designeval.StorySummary,
+) (buildCopy, testwriter.Verdict, error) {
+	copy, err := r.cp.openReportCopy(ctx)
 	if err != nil {
-		return testwriter.Verdict{}, &openCopyError{err: err}
+		return nil, testwriter.Verdict{}, &openCopyError{err: err}
 	}
-	if _, err := r.tests.Prepare(ctx, wc, s, stories); err != nil {
-		return testwriter.Verdict{}, err
+	if err := copy.Prepare(ctx, stories); err != nil {
+		return nil, testwriter.Verdict{}, err
 	}
-	return r.tests.Check(ctx, wc, s, stories)
+	v, err := copy.Check(ctx, stories)
+	return copy, v, err
+}
+
+// openReportCopy opens the test writer's working copy of the bound project
+// as a build start does: the project must still have Surla's test layout,
+// whose suite module and generated program the check uses.
+func (c *ControlPlane) openReportCopy(ctx context.Context) (buildCopy, error) {
+	source, layout, workspace, err := c.projectTestLayout(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if source != testSourceStarterLayout || workspace == "" {
+		return nil, errors.New("the project no longer has Surla's test layout")
+	}
+	return c.openBuildCopy(ctx, workspace, layout)
 }
 
 // answersTo reports whether id's build still answers to id, before accepted

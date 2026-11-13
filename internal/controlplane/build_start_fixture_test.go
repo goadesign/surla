@@ -16,11 +16,16 @@ import (
 )
 
 // buildCopyFixture performs no Git or candidate execution. Hooks model the
-// owner's refresh/preparation boundary, including concurrent request effects.
+// owner's refresh/preparation boundary, including concurrent request effects,
+// and the report checker's check and record. Without a check hook, a check
+// waits until its context ends, as one that never finishes would, so a
+// report stays reported in tests that do not judge it.
 type buildCopyFixture struct {
 	folder  string
 	refresh func(context.Context) (testwriter.RefreshResult, error)
 	prepare func(context.Context, []designeval.StorySummary) error
+	check   func(context.Context, []designeval.StorySummary) (testwriter.Verdict, error)
+	record  func(context.Context, testwriter.Verdict, string) (string, error)
 }
 
 // Project is the test writer's independently assigned project folder.
@@ -40,6 +45,23 @@ func (f *buildCopyFixture) Prepare(ctx context.Context, stories []designeval.Sto
 		return f.prepare(ctx, stories)
 	}
 	return nil
+}
+
+// Check runs the check hook, or waits until ctx ends.
+func (f *buildCopyFixture) Check(ctx context.Context, stories []designeval.StorySummary) (testwriter.Verdict, error) {
+	if f.check != nil {
+		return f.check(ctx, stories)
+	}
+	<-ctx.Done()
+	return testwriter.Verdict{}, ctx.Err()
+}
+
+// Record runs the record hook, or returns a fixed commit.
+func (f *buildCopyFixture) Record(ctx context.Context, v testwriter.Verdict, message string) (string, error) {
+	if f.record != nil {
+		return f.record(ctx, v, message)
+	}
+	return strings.Repeat("a", 40), nil
 }
 
 // newBuildControlPlane binds the explicitly simulated team, platform checks and

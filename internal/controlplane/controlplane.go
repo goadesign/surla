@@ -401,6 +401,10 @@ type (
 		// It has room for one value; report_tests_finished sends without
 		// waiting, and a full channel already says the same.
 		reportWake chan struct{}
+		// reports is the project's report checker, nil without a bound team;
+		// reportWorker runs it and drains before stores close.
+		reports      *reportChecker
+		reportWorker sync.WaitGroup
 		// buildStartOps counts accepted starts, admitted through workspaceMu's
 		// existing shutdown barrier and drained before stores and evaluators close.
 		buildStartOps sync.WaitGroup
@@ -554,6 +558,7 @@ func New(opts Options) (*ControlPlane, error) {
 		return nil, errors.Join(errors.New("team binding requires its owner and service"), cp.Close())
 	}
 	cp.startTeamSupervisor()
+	cp.startReportChecker()
 	return cp, nil
 }
 
@@ -748,6 +753,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
 	c.teamWorker.Wait()
+	c.reportWorker.Wait()
 	// Wait out any check admission in progress: an operation admitted under
 	// workspaceMu before this point is already registered, and every later
 	// one sees the server context ended and is refused (see

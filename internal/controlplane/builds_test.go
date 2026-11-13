@@ -126,11 +126,21 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	assert.False(t, build.TestWriter.Read, "the builder's read is not the test writer's")
 	_, err = cp.GetTestWriterAssignment(tests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
+	// The report wakes the report checker; its check waits until released,
+	// and a build start waits for no check (it is refused as busy).
+	release := make(chan struct{})
+	checked := &buildCopyFixture{folder: t.TempDir(), check: func(context.Context, []designeval.StorySummary) (testwriter.Verdict, error) {
+		<-release
+		return testwriter.Verdict{Findings: []testwriter.Finding{{Kind: testwriter.FindingBuild, Message: "RefundOverLimit is not implemented"}}}, nil
+	}}
+	cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return checked, nil }
 	_, err = cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
 	require.NoError(t, err)
 	build = mustStartedBuild(t, cp, user, "chg")
 	assert.True(t, build.TestWriter.Read)
 	assert.Equal(t, gensurla.TestsKindReported, build.TestWriter.Tests.Kind())
+	close(release)
+	waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
 
 	second, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
 		ChangeID: "chg", RequestRevision: first.RequestRevision, Answers: map[string]string{},
