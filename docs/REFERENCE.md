@@ -506,7 +506,12 @@ Surla keeps one private state folder outside the workspace and enclosing working
 tree, under `<UserConfigDir>/surla/operator/`. It contains the immutable operating
 system account owner, one saved numeric `127.0.0.1` port, changes, runs, reports,
 agent credentials, settings, and the running-server record. There are no
-caller-selected identity, address, token, or storage paths.
+caller-selected identity, address, token, or storage paths. `surla` finds the
+folder from the configuration folder of the shell where it runs and starts the
+server with that folder. The server never looks the folder up itself: Herdr
+starts it with the environment of Herdr's core, not the environment of your
+shell, so a lookup there could find another folder. The server refuses a folder
+that is not private to your account or that holds no project created by `surla`.
 
 Port selection briefly binds and releases an available port; that check is a snapshot, and another process can take the port before the server binds it. If that happens, startup fails and retains the saved port and credentials.
 
