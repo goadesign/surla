@@ -25,6 +25,7 @@ type (
 		reads    []string
 		sends    []TeamReminder
 		outcome  string
+		sendErr  error
 		follow   func(context.Context, TeamSelection, func(TeamEvent)) error
 		watch    func(context.Context) error
 	}
@@ -62,7 +63,7 @@ func (f *supervisionFixture) ReadWatchers(ctx context.Context, _, _ string, _ []
 // Send records exact harmless text and never changes a terminal.
 func (f *supervisionFixture) Send(_ context.Context, reminder TeamReminder) (string, error) {
 	f.sends = append(f.sends, reminder)
-	return f.outcome, nil
+	return f.outcome, f.sendErr
 }
 
 // newSupervisionFixture returns one live waiting builder with all effects recorded.
@@ -78,6 +79,7 @@ func newSupervisionFixture(t *testing.T) (*teamSupervisor, *supervisionFixture, 
 	s, err := NewServer(state, func() {}, deps)
 	require.NoError(t, err)
 	now := time.Unix(1000, 0)
+	s.now = func() time.Time { return now }
 	o := &teamSupervisor{server: s, roles: map[string]*supervisedRole{}, started: now.Add(-teamWatcherGrace)}
 	o.syncSelection(s.teamSelection())
 	o.event(t.Context(), TeamEvent{Kind: "snapshot", Role: "builder", Sequence: 10, Terminals: []TeamTerminal{f.terminal}}, now)
@@ -289,13 +291,20 @@ func TestTeamWatcherAbsences(t *testing.T) {
 	o.publish(t.Context(), now, false)
 	assert.Equal(t, "unknown", o.roles["builder"].public.Watcher)
 	o.watchers(view, nil, now)
-	o.publish(t.Context(), now.Add(teamWatcherGrace), false)
-	o.remind(t.Context(), now.Add(teamWatcherGrace))
+	for elapsed := 15 * time.Second; elapsed <= teamWatcherGrace; elapsed += 15 * time.Second {
+		o.event(t.Context(), TeamEvent{Kind: "heartbeat", Role: "builder"}, now.Add(elapsed))
+	}
+	recovered := now.Add(teamWatcherGrace)
+	o.publish(t.Context(), recovered, false)
+	o.remind(t.Context(), recovered)
 	assert.Len(t, f.sends, 1)
-	o.watchers(TeamWatcherView{Held: map[string]bool{"builder-example": true}}, nil, now)
-	o.watchers(view, nil, now)
-	o.publish(t.Context(), now.Add(teamWatcherGrace), false)
-	o.remind(t.Context(), now.Add(teamWatcherGrace))
+	o.watchers(TeamWatcherView{Held: map[string]bool{"builder-example": true}}, nil, recovered)
+	o.watchers(view, nil, recovered)
+	for elapsed := 15 * time.Second; elapsed <= teamWatcherGrace; elapsed += 15 * time.Second {
+		o.event(t.Context(), TeamEvent{Kind: "heartbeat", Role: "builder"}, recovered.Add(elapsed))
+	}
+	o.publish(t.Context(), recovered.Add(teamWatcherGrace), false)
+	o.remind(t.Context(), recovered.Add(teamWatcherGrace))
 	assert.Len(t, f.sends, 2)
 }
 

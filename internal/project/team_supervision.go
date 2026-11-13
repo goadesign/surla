@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type (
@@ -65,13 +66,15 @@ type (
 	// supervisedRole keeps only current terminals and current owed generations.
 	// Unknown reads preserve latches; only a known clear removes a generation.
 	supervisedRole struct {
-		role             TeamRole
-		terminals        map[string]TeamTerminal
-		sequence         uint64
-		ready            bool
-		fresh            bool
-		seen             bool
-		firstSeen        time.Time
+		role      TeamRole
+		terminals map[string]TeamTerminal
+		sequence  uint64
+		ready     bool
+		fresh     bool
+		seen      bool
+		firstSeen time.Time
+		// lastEvent bounds one handle's stream, independently of other active roles.
+		lastEvent        time.Time
 		owed             map[string]bool
 		assignmentKnown  bool
 		watchKnown, held bool
@@ -86,6 +89,8 @@ type (
 		selection TeamSelection
 		roles     map[string]*supervisedRole
 		started   time.Time
+		// restartReaders latches a stale stream until the driver resubscribes.
+		restartReaders bool
 	}
 )
 
@@ -98,6 +103,9 @@ const (
 	teamObservationInterval = 30 * time.Second
 	// teamReaderRetry prevents reconnect failures from spinning or starting outside services.
 	teamReaderRetry = 2 * time.Second
+	// teamStreamStallBound allows three expected 15-second Herdr heartbeats.
+	// Missing all three invalidates every role until new snapshots establish the stream.
+	teamStreamStallBound = 3 * 15 * time.Second
 )
 
 // Supervise owns one blocking lifetime, ending on either owner context. Its driver
@@ -132,12 +140,14 @@ func (o *teamSupervisor) syncSelection(selection TeamSelection) bool {
 			current = &supervisedRole{role: role, owed: map[string]bool{}}
 		}
 		current.ready = false
+		current.lastEvent = o.server.now()
 		current.terminals = map[string]TeamTerminal{}
 		current.watchKnown = false
 		current.absentSince = time.Time{}
 		next[role.Role] = current
 	}
 	o.selection, o.roles = selection, next
+	o.restartReaders = false
 	return true
 }
 
@@ -164,10 +174,12 @@ func (o *teamSupervisor) assignments(ctx context.Context, read controlplane.Assi
 func (o *teamSupervisor) event(ctx context.Context, event TeamEvent, now time.Time) {
 	if event.Kind == "recovering" || event.Kind == "failed" {
 		for _, role := range o.roles {
-			role.ready = false
+			role.ready, role.fresh = false, false
+			role.lastEvent = now
 		}
 		return
 	}
+	o.expireStream(now)
 	role := o.roles[event.Role]
 	if role == nil {
 		return
@@ -186,12 +198,14 @@ func (o *teamSupervisor) event(ctx context.Context, event TeamEvent, now time.Ti
 		}
 		role.sequence, role.ready, role.fresh = event.Sequence, true, true
 		role.firstSeen = now
+		role.lastEvent = now
 		return
 	}
 	if !role.ready {
 		return
 	}
 	if event.Kind == "heartbeat" {
+		role.lastEvent = now
 		o.refresh(ctx, role)
 		return
 	}
@@ -199,6 +213,7 @@ func (o *teamSupervisor) event(ctx context.Context, event TeamEvent, now time.Ti
 		return
 	}
 	role.sequence = event.Sequence
+	role.lastEvent = now
 	terminal, found := role.terminals[event.Terminal]
 	switch event.Type {
 	case "created", "restarted", "labels":
@@ -270,8 +285,11 @@ func (o *teamSupervisor) watchers(view TeamWatcherView, err error, now time.Time
 	}
 }
 
-// publish derives only declared values, records transitions and optionally fixed continuity spans.
-func (o *teamSupervisor) publish(ctx context.Context, now time.Time, periodic bool) {
+// publish derives declared values and reports whether readers need fresh subscriptions.
+// A stale role invalidates all roles, including those with continuing heartbeats.
+func (o *teamSupervisor) publish(ctx context.Context, now time.Time, periodic bool) bool {
+	o.expireStream(now)
+	stalled := o.restartReaders
 	allReady := true
 	for _, role := range o.roles {
 		allReady = allReady && role.ready && role.fresh
@@ -283,10 +301,10 @@ func (o *teamSupervisor) publish(ctx context.Context, now time.Time, periodic bo
 			role.refusedState = ""
 		}
 		if value != role.public {
-			teamStateSpan(ctx, "surla.team.changed", value, "", "observed")
+			teamStateSpan(ctx, "surla.team.changed", value, "", "observed").End()
 		}
 		if periodic {
-			teamStateSpan(ctx, "surla.team.observed", value, "", "observed")
+			teamStateSpan(ctx, "surla.team.observed", value, "", "observed").End()
 		}
 		role.public = value
 		observed[role.role.Role] = roleObservation{handle: role.role.Handle, space: o.selection.Space, public: value}
@@ -294,6 +312,25 @@ func (o *teamSupervisor) publish(ctx context.Context, now time.Time, periodic bo
 	o.server.team.observationMu.Lock()
 	o.server.team.observed = observed
 	o.server.team.observationMu.Unlock()
+	return stalled
+}
+
+// expireStream latches unknown for every subscription, so an ordinary heartbeat
+// cannot revive a timed-out stream. Only a fresh snapshot sets ready again.
+func (o *teamSupervisor) expireStream(now time.Time) bool {
+	stalled := false
+	for _, role := range o.roles {
+		stalled = stalled || now.Sub(role.lastEvent) >= teamStreamStallBound
+	}
+	if !stalled {
+		return false
+	}
+	o.restartReaders = true
+	for _, role := range o.roles {
+		role.ready, role.fresh = false, false
+		role.lastEvent = now
+	}
+	return true
 }
 
 // value keeps terminal availability, watcher availability and assignment availability independent.
@@ -382,6 +419,10 @@ func (role *supervisedRole) value(now time.Time, allReady bool, shell string) ge
 // remind acts only on a waiting role with a positively identified foreground
 // from a fresh read. One physical reminder covers the currently owed generation set.
 func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
+	if o.expireStream(now) {
+		o.publish(ctx, now, false)
+		return
+	}
 	if now.Sub(o.started) < teamWatcherGrace {
 		return
 	}
@@ -422,6 +463,10 @@ func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
 			if !terminal.Reported || terminal.Status == nil || terminal.Status.State != "idle" && terminal.Status.State != "done" {
 				continue
 			}
+			if o.expireStream(o.server.now()) {
+				o.publish(ctx, o.server.now(), false)
+				return
+			}
 			condition := ""
 			if terminal.Status.State == "idle" {
 				condition = "idle"
@@ -432,15 +477,21 @@ func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
 				outcome, err = o.server.team.dependencies.Sender.Send(sendCtx, TeamReminder{Terminal: address, Text: text, Condition: condition})
 				cancel()
 			}
-			if err != nil {
-				outcome = "unavailable"
-			}
+			failed := err != nil
 			switch outcome {
 			case "sent", "blocked", "status_changed", "finished", "unavailable":
 			default:
-				outcome = "unavailable"
+				failed = true
 			}
-			teamStateSpan(ctx, "surla.team.reminder", role.public, reason, outcome)
+			if failed {
+				outcome = "failed"
+			}
+			span := teamStateSpan(ctx, "surla.team.reminder", role.public, reason, outcome)
+			if failed {
+				span.RecordError(errors.New("team reminder delivery failed"))
+				span.SetStatus(codes.Error, "team reminder delivery failed")
+			}
+			span.End()
 			if outcome != "sent" {
 				role.refusedState = role.public.State
 				continue
@@ -473,11 +524,12 @@ func assignmentReminder(role string) string {
 }
 
 // teamStateSpan exports bounded facts through the project tracer, outside the
-// control plane's principal-scoped bounded diagnostics recorder.
-func teamStateSpan(ctx context.Context, name string, value gensurla.TeamRoleState, reason, outcome string) {
+// control plane's principal-scoped recorder. The caller ends the span after
+// recording an operation failure, if any, with a fixed bounded error.
+func teamStateSpan(ctx context.Context, name string, value gensurla.TeamRoleState, reason, outcome string) trace.Span {
 	_, span := otel.Tracer("surla/project").Start(ctx, name)
 	span.SetAttributes(attribute.String("team.role", value.Role), attribute.String("team.state", value.State), attribute.String("team.kind", value.Attention), attribute.String("team.watcher", value.Watcher), attribute.String("team.assignment", value.Assignment), attribute.String("team.reason", reason), attribute.String("team.outcome", outcome))
-	span.End()
+	return span
 }
 
 // teamReaderFailure records a start/stream failure without retaining external command output.

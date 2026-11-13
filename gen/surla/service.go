@@ -643,10 +643,8 @@ type ChangeCardResult struct {
 type ChangeList struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*ChangeListItem
-	// Opaque value identifying this exact list and the owner's current Story
-	// evaluation and public team snapshot; it changes whenever any listed value or
-	// team fact changes, and when a Story evaluation (get_story_refresh) starts,
-	// finishes or is replaced.
+	// Opaque value for change detection. Compare it only for equality; the
+	// returned fields contain the facts this operation makes readable.
 	Version string
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its
@@ -2816,10 +2814,8 @@ func validatejsonChangeListItemTransport(value *jsonChangeListItemTransport) (er
 type jsonChangeListTransport struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*jsonChangeListItemTransport `json:"changes"`
-	// Opaque value identifying this exact list and the owner's current Story
-	// evaluation and public team snapshot; it changes whenever any listed value or
-	// team fact changes, and when a Story evaluation (get_story_refresh) starts,
-	// finishes or is replaced.
+	// Opaque value for change detection. Compare it only for equality; the
+	// returned fields contain the facts this operation makes readable.
 	Version *string `json:"version"`
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its
@@ -21592,7 +21588,7 @@ func validateChangeListJSONValue(path string, value any, description string) err
 		case "version":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Opaque value identifying this exact list and the owner's current Story evaluation and public team snapshot; it changes whenever any listed value or team fact changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
+				typed[key], "Opaque value for change detection. Compare it only for equality; the returned fields contain the facts this operation makes readable.",
 			); err != nil {
 				return err
 			}

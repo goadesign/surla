@@ -16,6 +16,12 @@ import (
 	"github.com/goadesign/surla/internal/project"
 )
 
+// teamViewPrefixMaxBytes bounds the temporary parsing/agent allocation for one
+// watcher prefix. The generated Chorus response orders swarm then agents before
+// conversation data; 256 KiB allows ample agent metadata without consuming messages.
+// An oversized or incomplete prefix is unknown, never an empty watcher set.
+const teamViewPrefixMaxBytes = 256 << 10
+
 type (
 	// teamObservations keeps only clients and program bindings, never outside snapshots.
 	teamObservations struct {
@@ -215,28 +221,71 @@ func (o teamObservations) ReadWatchers(ctx context.Context, team, version string
 	if response.StatusCode != http.StatusOK {
 		return project.TeamWatcherView{}, errors.New("Chorus view was refused")
 	}
-	var body struct {
-		Agents *[]struct {
+	held, err := readTeamWatcherPrefix(response.Body, team, roles)
+	version = response.Header.Get("ETag")
+	if err != nil || version == "" {
+		return project.TeamWatcherView{}, errors.New("Chorus view returned an unavailable watcher prefix")
+	}
+	return project.TeamWatcherView{Version: version, Held: held}, nil
+}
+
+// watcherPrefixReader prevents json.Decoder's read-ahead from consuming even
+// the first byte after the agents array. HTTP transport buffering is not retained.
+type watcherPrefixReader struct{ source io.Reader }
+
+// Read gives the JSON tokenizer one byte at a time, within the prefix byte bound.
+func (r watcherPrefixReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return r.source.Read(p[:1])
+}
+
+// readTeamWatcherPrefix consumes only the owning generated response's ordered
+// swarm/agents prefix, closes before channels/inboxes, and retains registered
+// watcher facts only. A changed key order is unavailable evidence, not absence.
+func readTeamWatcherPrefix(reader io.Reader, team string, roles []project.TeamRole) (map[string]bool, error) {
+	decoder := json.NewDecoder(watcherPrefixReader{source: io.LimitReader(reader, teamViewPrefixMaxBytes)})
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("invalid Chorus watcher prefix")
+	}
+	token, err = decoder.Token()
+	if err != nil || token != "swarm" {
+		return nil, errors.New("invalid Chorus watcher prefix order")
+	}
+	var swarm string
+	if err := decoder.Decode(&swarm); err != nil || swarm != team {
+		return nil, errors.New("invalid Chorus watcher prefix owner")
+	}
+	token, err = decoder.Token()
+	if err != nil || token != "agents" {
+		return nil, errors.New("invalid Chorus watcher prefix order")
+	}
+	token, err = decoder.Token()
+	if err != nil || token != json.Delim('[') {
+		return nil, errors.New("invalid Chorus watcher agents")
+	}
+	held := make(map[string]bool, len(roles))
+	for decoder.More() {
+		var agent struct {
 			Handle   *string `json:"handle"`
 			Watching *bool   `json:"watching_on_this_server"`
-		} `json:"agents"`
-		Version string `json:"etag"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil || body.Agents == nil || body.Version == "" {
-		return project.TeamWatcherView{}, errors.New("Chorus view returned invalid facts")
-	}
-	view := project.TeamWatcherView{Version: body.Version, Held: map[string]bool{}}
-	for _, agent := range *body.Agents {
-		if agent.Handle == nil || agent.Watching == nil {
-			return project.TeamWatcherView{}, errors.New("Chorus view omitted a watcher fact")
+		}
+		if err := decoder.Decode(&agent); err != nil || agent.Handle == nil || agent.Watching == nil {
+			return nil, errors.New("incomplete Chorus watcher agents")
 		}
 		for _, role := range roles {
 			if *agent.Handle == role.Handle {
-				view.Held[role.Handle] = *agent.Watching
+				held[role.Handle] = *agent.Watching
 			}
 		}
 	}
-	return view, nil
+	token, err = decoder.Token()
+	if err != nil || token != json.Delim(']') {
+		return nil, errors.New("incomplete Chorus watcher prefix")
+	}
+	return held, nil
 }
 
 // Send implements the recorded adapter contract. It is intentionally not bound

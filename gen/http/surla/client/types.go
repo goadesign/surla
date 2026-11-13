@@ -735,10 +735,8 @@ type StartTeamAgentsResponseBody struct {
 type ListChangesResponseBody struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*ChangeListItemResponseBody `form:"changes,omitempty" json:"changes,omitempty" xml:"changes,omitempty"`
-	// Opaque value identifying this exact list and the owner's current Story
-	// evaluation and public team snapshot; it changes whenever any listed value or
-	// team fact changes, and when a Story evaluation (get_story_refresh) starts,
-	// finishes or is replaced.
+	// Opaque value for change detection. Compare it only for equality; the
+	// returned fields contain the facts this operation makes readable.
 	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its

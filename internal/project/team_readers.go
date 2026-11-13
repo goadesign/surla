@@ -51,25 +51,60 @@ func (o *teamSupervisor) run(ctx context.Context, assignments controlplane.Assig
 			}
 			// Drop queued observations from the previous selection after joining its producers.
 			drainTeamObservations(events, watchers)
+			// One owner read scans all cards and their build files; do it when
+			// selection changes, never on the one-second display/registry tick.
+			o.assignments(ctx, assignments)
 			if o.selection.Space != "" && len(o.selection.Roles) > 0 && o.server.team.dependencies.Observer != nil {
 				readers = o.startReaders(ctx, events, watchers)
 			}
 		}
-		o.assignments(ctx, assignments)
 		now := o.server.now()
-		o.publish(ctx, now, false)
+		if o.publish(ctx, now, false) {
+			o.restartReaders = false
+			// A stalled handle makes every role unknown before draining readers.
+			// Restart all subscriptions after the same bounded failure delay;
+			// heartbeats cannot restore ready before their fresh snapshots.
+			if readers != nil {
+				readers.close()
+				readers = nil
+			}
+			drainTeamObservations(events, watchers)
+			if !waitTeamReader(ctx) {
+				return nil
+			}
+			if o.selection.Space != "" && len(o.selection.Roles) > 0 && o.server.team.dependencies.Observer != nil {
+				readers = o.startReaders(ctx, events, watchers)
+			}
+			continue
+		}
 		o.remind(ctx, now)
 		select {
 		case <-ctx.Done():
 			return nil
 		case event := <-events:
-			o.event(ctx, event, o.server.now())
+			o.observeEvent(ctx, event, o.server.now(), assignments)
 		case observation := <-watchers:
 			o.watchers(observation.view, observation.err, o.server.now())
 		case <-ticker.C:
 		case <-observations.C:
 			o.publish(ctx, o.server.now(), true)
 		}
+	}
+}
+
+// observeEvent refreshes assignment facts only with a new terminal observation.
+// Each callback scans all owner cards/build files; watcher updates, periodic spans
+// and the one-second waiting tick must not repeat that filesystem walk.
+func (o *teamSupervisor) observeEvent(
+	ctx context.Context,
+	event TeamEvent,
+	now time.Time,
+	assignments controlplane.AssignmentReader,
+) {
+	o.event(ctx, event, now)
+	if event.Kind == "snapshot" || event.Kind == "heartbeat" ||
+		event.Kind == "event" && (event.Type == "status" || event.Type == "turn") {
+		o.assignments(ctx, assignments)
 	}
 }
 

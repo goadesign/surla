@@ -101,6 +101,34 @@ func TestTeamUserTransport(t *testing.T) {
 	}
 }
 
+// TestTeamAgentChangeListDescription exposes only readable facts to an agent;
+// its opaque version must not instruct the agent to read the user-only team API.
+func TestTeamAgentChangeListDescription(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	server := httptest.NewServer(NewHTTPHandler(cp, fixtureCredentials(map[string]Principal{"builder": {ID: "owner", Kind: CallerBuilder}})))
+	defer server.Close()
+	raw := mcpRequest(t, server.URL, "builder", "tools/list", "", `{}`)
+	var catalog struct {
+		Tools []struct {
+			Name         string          `json:"name"`
+			Description  string          `json:"description"`
+			OutputSchema json.RawMessage `json:"outputSchema"`
+		} `json:"tools"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &catalog))
+	found := false
+	for _, tool := range catalog.Tools {
+		assert.NotContains(t, []string{"get_team", "show_team_pane", "start_team_agents"}, tool.Name)
+		if tool.Name == "list_changes" {
+			found = true
+			assert.NotContains(t, tool.Description, "get_team")
+			assert.NotContains(t, string(tool.OutputSchema), "team snapshot")
+			assert.Contains(t, string(tool.OutputSchema), "Compare it only for equality")
+		}
+	}
+	assert.True(t, found)
+}
+
 // TestTeamUserResourceOwner refuses another user principal before the single
 // bound project owner sees any read or action, independently of caller purpose.
 func TestTeamUserResourceOwner(t *testing.T) {

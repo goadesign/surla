@@ -121,12 +121,13 @@ func TestTeamWatcherHTTP(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+		w.Header().Set("ETag", "version")
 		assert.Equal(t, "/swarms/team/view", r.URL.Path)
 		assert.Equal(t, "60", r.URL.Query().Get("wait"))
 		assert.Equal(t, http.MethodGet, r.Method)
 		switch calls {
 		case 1:
-			_, err := io.WriteString(w, `{"etag":"version","agents":[{"handle":"guide","watching_on_this_server":true},{"handle":"other","watching_on_this_server":false}],"inboxes":[{"messages":[{"text":"PRIVATE"}]}]}`)
+			_, err := io.WriteString(w, `{"swarm":"team","agents":[{"handle":"guide","watching_on_this_server":true},{"handle":"other","watching_on_this_server":false}],"inboxes":[{"messages":[{"text":"PRIVATE"}]}]}`)
 			assert.NoError(t, err)
 		case 2:
 			assert.Equal(t, "version", r.Header.Get("If-None-Match"))
@@ -134,7 +135,7 @@ func TestTeamWatcherHTTP(t *testing.T) {
 		case 3:
 			w.WriteHeader(503)
 		case 4:
-			_, err := io.WriteString(w, `{"etag":"version","agents":[{"handle":"guide"}]}`)
+			_, err := io.WriteString(w, `{"swarm":"team","agents":[{"handle":"guide"}]}`)
 			assert.NoError(t, err)
 		}
 	}))

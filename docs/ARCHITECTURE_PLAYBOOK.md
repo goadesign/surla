@@ -75,7 +75,17 @@ Herdr streams and reads are filtered by registered handle, project root and save
 space. Typed adapters retain only terminal state, block kind, foreground arguments
 and watcher facts; screen text, status messages, titles and Chorus messages have no
 representation in supervision state. Every external effect is injected at the
-executable boundary. The executable binds readers and leaves the sender explicitly
+executable boundary. A stalled role invalidates all roles after three missing
+15-second heartbeats; the owner cancels and drains readers, waits, then requests
+fresh snapshots. Assignment reads scan owner cards/builds on initial selection,
+snapshots, heartbeats and status changes, never on the display tick.
+
+The Chorus adapter parses only the generated response's ordered `swarm`, `agents`
+prefix, bounded to 256 KiB, then closes before channels or inboxes. A one-byte
+reader prevents JSON decoder read-ahead into conversation data. An oversized,
+incomplete or reordered prefix yields an unknown watcher; a large conversation
+after a valid prefix remains usable. Conditional reads use the response's ETag
+header. The executable binds readers and leaves the sender explicitly
 unavailable pending receiver verification. Project observation spans bypass the
 control plane's principal-scoped history, keeping periodic team observations out of
 bounded user diagnostics. See [Team supervision](REFERENCE.md#team-supervision) for

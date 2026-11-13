@@ -381,15 +381,17 @@ Each role has required `role`, `handle`, `state`, `attention`, `watcher` and
 `needs_you`, `working`, `waiting`, `error` or `unknown`. Attention is `none`,
 `permission`, `question`, `auth`, `silent` or `unknown`. A running agent that
 reports nothing for 60 seconds needs the user; this changes display state only.
-Watcher state is `held`, `gone` after 90 seconds of known absence, or `unknown`.
+A missing Herdr heartbeat or event for 45 seconds makes every role unknown
+until fresh snapshots arrive. Watcher state is `held`, `gone` after 90 seconds
+of known absence, or `unknown`.
 Assignment state is `unread`, `nothing_owed` or `unknown`; the guide has none.
 Failed assignment reads never imply that nothing is owed. A stale revision alone does not clear unread
 assignments. The existing `wait_for_changes` version
 also covers every public team fact, so no second waiting request is needed.
 The views page does not draw these facts yet.
 
-The executable currently leaves reminder delivery unavailable until exact text
-delivery to a status-reporting agent is verified. The reminder policy permits
+The executable currently leaves reminder delivery unavailable until positive
+identification of the agent's own foreground program and exact text delivery to a status-reporting agent are verified. The reminder policy permits
 only fixed text to an idle/done agent with positively reported foreground
 arguments, a fresh ownership check and an unread assignment or a watcher gone
 past the grace period. No reminder is eligible in the first 90 seconds after
