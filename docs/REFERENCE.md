@@ -105,6 +105,13 @@ Surla cannot judge whether an analysis is complete or correct; the requester doe
 - **`list_changes`** (`GET /changes`)
   - **Input:** none → **Output:** `ChangeList` (`changes`, `version`, `approval_available`)
   - Lists the project owner's saved Change Cards for this project, most recently saved first (ties by `change_id`). Each item carries `change_id`, `summary`, `status`, the `request_revision` in force, `proposed_revision` (the waiting proposal's `request_revision`, while one waits beside a confirmed change), `saved_at` (when the card was last saved; not part of `request_revision`), and `latest_verification` (`run_id` and `state` of the most recently accepted run: `running`, `passed`, `failed`, or `not_completed`), which is absent when no run was started. `approval_available` says whether `approve_merge` can record approvals on this server: it is `false` when no promotion target is configured (store the promotion settings with `surla promotion set`, then restart Surla) or when the server could not resolve its promotion target. The list still answers, and the resolver's error is recorded on the span of the read that resolved it: `surla.controlplane.list_changes`, or `surla.controlplane.wait_for_changes` on each of its polls. It names no setting or path. `version` changes whenever any listed value changes, including `approval_available`, and when the canonical `get_build` rendering, the bound owner's Team snapshot, the owner's Story evaluation (`get_story_refresh`), or the live target changes; the [views page](#views-page) waits on it. Read one card with `get_change`. A card, build or run record that cannot be read fails the call instead of being left out.
+  `latest_verification.inputs_current` says whether that recorded run's agreed
+  revision and selected tests match the selection now. For written tests, the
+  current build must be in force and its accepted tests commit must match the
+  run; a new report or a different accepted commit makes the fact false. For
+  stored verification settings, the recorded evaluator selection must match
+  the current stored suite. The newest run remains readable as history either
+  way. This fact does not verify a working tree, deployment or approval.
 - **`get_change`** (`GET /changes/{change_id}`)
   - **Input:** `change_id` → **Output:** `ChangeCardResult`
   - Reads the saved `ChangeCardResult` (including `stories` when present) for `change_id` from `Options.CardsDir` (verifying the canonical `request_revision` digest of the revision in force and of any waiting proposal on load, and refusing a file with a proposal beside an unconfirmed revision) without mutating saved state. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in `proposed_revision` (its `prompt`, `summary`, `ambiguities`, `examples`, `preserved_behaviors`, `stories`, `request_revision`, `ui_composition`, and `changed_design_files`: the `design/*.go` paths whose content differs from the files the confirmed revision was made from) while it waits (restricted to the owning principal) so a stale editor can fetch the latest saved card after a `request_revision` conflict. On a `confirmed` card, `answers` holds the owner's confirmed ambiguity resolutions (empty when the card had no ambiguity questions) and takes precedence over open phrasing in `summary`. When the saved card has a recorded `approval`, `get_change` evaluates it on a shallow response copy: it includes `approval` only when `PromotionTarget` is bound and `PromotionTarget.CurrentInputs(ctx, approval.CandidateCommit)` still matches `suite_id`, `suite_commit`, `environment`, and `artifacts`; omits both `approval` and `unverified_approval` when `CurrentInputs` succeeds with different inputs; and omits `approval` while returning `unverified_approval` (`UnverifiedApprovalItem` with a path-free operator recovery `reason`) when `PromotionTarget` is nil or `CurrentInputs` returns an error (recording the raw `CurrentInputs` error on the `controlplane.check_approval` span).
@@ -315,6 +322,18 @@ A waiting proposal and unsaved edits keep their own decision controls primary;
 building still uses the agreed saved revision. A known newer revision prevents
 starting from an older editor. Starts can take a few minutes and continue after
 the page closes.
+
+Before **Refine** or **Adopt**, the page explains how a changed agreed revision
+leaves its build on the earlier revision. Starting the replacement build resets
+its assignments and any test-writer report and verdict; written tests must be
+accepted again before verification. Stored verification settings keep their
+own test source. An unchanged confirmation keeps the revision and build.
+
+The change list distinguishes the latest saved run from whether its revision
+and selected tests still match. **Proof** shows each run's recorded candidate
+and test commit. Runs using written tests carry the server's notice that the
+tests were written by a separate agent on this machine and are not isolated
+from the builder; operator evaluator runs retain their evaluator labels.
 
 The section shows saved assignment reads, test-writer progress and the required
 Story test count, including zero. An accepted test-writer result does not mean
