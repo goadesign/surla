@@ -555,6 +555,7 @@ export function bootstrapViewsPage() {
   let buildChangeId: string | null = null;
   let buildSnapshot: ChangeBuild["build"] | null = null;
   let buildReadError: string | null = null;
+  let buildStartError: string | null = null;
   let buildReadAgain = false;
   let buildGeneration = 0;
   let buildStartReceipt: BuildStartReceipt | null = null;
@@ -780,6 +781,7 @@ export function bootstrapViewsPage() {
     session = null;
     sessionState = "ended";
     buildStartReceipt = null;
+    buildStartError = null;
     teamStartReceipt = null;
     buildGeneration++;
     rootEl.dataset.session = "ended";
@@ -1327,6 +1329,7 @@ export function bootstrapViewsPage() {
       buildSnapshot = null;
       buildReadError = null;
       buildStartReceipt = null;
+      buildStartError = null;
       buildGeneration++;
     }
     if (hasPending("get_build", changeId)) {
@@ -1350,9 +1353,12 @@ export function bootstrapViewsPage() {
             const before = buildSnapshot;
             buildSnapshot = result.build;
             buildReadError = null;
-            if (before?.state === "started" && (result.build.state !== "started" ||
-                before.started_at !== result.build.started_at)) {
+            const replaced = before?.state === "started"
+              ? result.build.state !== "started" || before.started_at !== result.build.started_at
+              : result.build.state === "started";
+            if (replaced) {
               buildStartReceipt = null;
+              buildStartError = null;
             }
           }
         }
@@ -1380,13 +1386,15 @@ export function bootstrapViewsPage() {
     const begun = new Date().toISOString();
     buildGeneration++;
     buildStartReceipt = null;
+    buildStartError = null;
     callServer(
       "start_build", { change_id: changeId, request_revision: revision }, changeId,
       (result) => {
         if (sessionState !== "active" || activeEditor?.card.change_id !== changeId ||
             activeEditor.card.request_revision !== revision) return;
         if (result.build.request_revision !== revision) {
-          statusEl.textContent = "The server returned a build for a different revision. Refresh the saved build.";
+          buildStartError = "The server returned a build for a different revision. Refresh the saved build.";
+          statusEl.textContent = buildStartError;
           readBuild(changeId);
           return;
         }
@@ -1397,9 +1405,11 @@ export function bootstrapViewsPage() {
         readBuild(changeId);
         readTeam();
       },
-      (message) => {
+      (message, failure) => {
         if (sessionState === "active" && activeEditor?.card.change_id === changeId) {
-          statusEl.textContent = "Could not start the build. " + message;
+          buildStartError = (failure.kind === "server"
+            ? "Build did not start. " : "Could not confirm whether the build started. ") + message;
+          statusEl.textContent = buildStartError;
           readBuild(changeId);
         }
       }
@@ -1907,6 +1917,7 @@ export function bootstrapViewsPage() {
               build={buildChangeId === ed.card.change_id ? buildSnapshot : null}
               loading={hasPending("get_build", ed.card.change_id)}
               error={buildReadError}
+              actionError={buildStartError}
               starting={hasPending("start_build", ed.card.change_id)}
               disabled={sessionState !== "active" || editorBusy}
               dirty={isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)}

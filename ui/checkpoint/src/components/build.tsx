@@ -21,6 +21,8 @@ export interface BuildSectionProps {
   build: ChangeBuild["build"] | null;
   loading: boolean;
   error: string | null;
+  // actionError retains a failed start separately from saved-build read errors.
+  actionError: string | null;
   starting: boolean;
   disabled: boolean;
   dirty: boolean;
@@ -45,6 +47,7 @@ export function BuildSectionView({
   build,
   loading,
   error,
+  actionError,
   starting,
   disabled,
   dirty,
@@ -179,6 +182,9 @@ export function BuildSectionView({
         <p>This change’s build has not been read.</p>
       ) : null}
       {build !== null && error !== null ? <p>Last-read build facts; they could not be refreshed.</p> : null}
+      {actionError !== null ? (
+        <Alert id="surla-build-action-error" variant="destructive" role="alert">{actionError}</Alert>
+      ) : null}
       {build?.state === "not_started" ? <p>No build is ready for this change.</p> : null}
       {saved !== null ? (
         <>

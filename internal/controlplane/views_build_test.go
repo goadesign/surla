@@ -66,3 +66,39 @@ expect(page.sent("POST", path).length === 2, "one confirmed rebuild submitted tw
 page.close();
 `)
 }
+
+// TestViewsPageBuildRetainsARefusalBesideItsSavedFacts keeps the owner's step
+// visible after a successful recovery read and another Team status update.
+func TestViewsPageBuildRetainsARefusalBesideItsSavedFacts(t *testing.T) {
+	f := &teamServiceFixture{snapshot: pageTeamSnapshot("working")}
+	cp := newBuildControlPlane(t, Options{Team: &TeamBinding{Owner: pageOwner, Service: f}})
+	cp.changesWait = 400 * time.Millisecond
+	cp.changesPoll = 20 * time.Millisecond
+	confirmedChange(t, cp, "chg")
+	ps := startPageServer(t, cp)
+	ps.act("new-attention", func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.snapshot = pageTeamSnapshot("needs_you")
+	})
+	runPageScript(t, ps, nil, `
+const path = "/changes/chg/build";
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").disabled, "Build was not ready");
+await control(origin, "reply", { key: "POST " + path, status: 409, body: { name: "working_copy_busy", id: "busy-start", message: "The current test check holds the working copy. Start the build after it ends.", fault: false, temporary: true, timeout: false } });
+const reads = page.sent("GET", path).length;
+page.$("#surla-build-start").click();
+await until(() => page.$("#surla-build-action-error") && page.sent("GET", path).length > reads && !page.$("#surla-build-start").disabled, "the refusal and recovery read did not complete");
+expect(page.text("#surla-build-action-error").includes("Build did not start.") && page.text("#surla-build-action-error").includes("Start the build after it ends."), "the refused action lost the owner's step");
+expect(page.$("#surla-build-section").dataset.state === "not_started", "refusal invented a saved build");
+await control(origin, "act", { key: "new-attention" });
+await until(() => page.$("#surla-team-attention-builder"), "the independent Team update did not arrive");
+expect(page.text("#surla-build-action-error").includes("Start the build after it ends."), "a later status update hid the refusal");
+expect(page.sent("POST", path).length === 1, "a recovery read or Team update retried the effect");
+page.$("#surla-build-start").click();
+await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "an explicit retry did not build");
+expect(!page.$("#surla-build-action-error"), "an explicit successful retry retained the refusal");
+expect(page.sent("POST", path).length === 2, "explicit retry sent more than one start");
+page.close();
+`)
+}
