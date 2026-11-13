@@ -552,7 +552,8 @@ export function bootstrapViewsPage() {
   let teamStartReceipt: TeamStageProps["startReceipt"] = null;
   let teamActionError: string | null = null;
   // buildChangeId identifies the single retained build read. The generation
-  // rejects replies begun before a new start or a change of selected card.
+  // rejects replies begun before a start, its successful answer, or a change
+  // of selected card.
   let buildChangeId: string | null = null;
   let buildSnapshot: ChangeBuild["build"] | null = null;
   let buildReadError: string | null = null;
@@ -1483,6 +1484,9 @@ export function bootstrapViewsPage() {
       (result) => {
         if (sessionState !== "active" || activeEditor?.card.change_id !== changeId ||
             activeEditor.card.request_revision !== revision) return;
+        // A read begun during the start may still describe its predecessor.
+        // The successful answer supersedes it, including transient receipts.
+        buildGeneration++;
         if (result.build.request_revision !== revision) {
           buildStartError = "The server returned a build for a different revision. Refresh the saved build.";
           statusEl.textContent = buildStartError;
