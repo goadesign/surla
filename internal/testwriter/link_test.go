@@ -18,8 +18,10 @@ import (
 // relative, at each folder on the suite module's path in the working copy of
 // a project at services/shop, pointing at the matching folder of the
 // repository, so that following it would reach the project's own suite
-// module. Prepare refuses with ErrLinkedFolder and Check returns one finding,
-// each naming the link, and the project is byte-identical afterwards.
+// module. Prepare refuses with ErrLinkedFolder, naming the link. Check names
+// the link too: as a change outside the test module for a folder above it,
+// and as a link on the module's path for the module's own folder. The project
+// is byte-identical afterwards.
 func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 	t.Parallel()
 	module := testmodule.Module(t, "example.com/shop/eval", "", map[string]string{"design/design.go": fixtureDesign})
@@ -79,6 +81,12 @@ func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 					v, err := testChecker.Check(t.Context(), wc, suite, refundStories)
 					assert.Equal(t, before, projectFiles(t, repo), "the project is byte-identical")
 					require.NoError(t, err)
+					require.NotEmpty(t, v.Findings)
+					if named != "services/shop/eval" {
+						assert.Equal(t, FindingOutsideModule, v.Findings[0].Kind)
+						assert.Contains(t, v.Findings[0].Message, named+" is changed outside the test module services/shop/eval")
+						return
+					}
 					require.Len(t, v.Findings, 1)
 					assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
 					assert.Contains(t, v.Findings[0].Message, ErrLinkedFolder.Error())

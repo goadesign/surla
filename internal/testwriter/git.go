@@ -97,6 +97,51 @@ func stageCopy(ctx context.Context, wc WorkingCopy, index, dst string) error {
 	return nil
 }
 
+// copyBase returns the commit a copy's changes are measured from: the merge
+// base of Branch and the project's HEAD. The tests branch is read through the
+// administrative folder the project's repository keeps for the copy and the
+// HEAD through the project folder, never through the copy's own .git. Before
+// the user merges the tests branch it is the commit the branch started from;
+// after the merge it is the branch's latest commit, which the project
+// contains. When the two share no history, for example after the project's
+// history was rewritten from its first commit, it fails with
+// ErrNoCommonBase.
+func copyBase(ctx context.Context, wc WorkingCopy) (string, error) {
+	head, err := git(ctx, filepath.Dir(wc.dir), nil, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("read the project's commit: %w", err)
+	}
+	base, err := wc.git(ctx, wc.dir, nil, "merge-base", "refs/heads/"+Branch, head)
+	if exitCode(err) == 1 {
+		return "", fmt.Errorf("%w: %s and the project's commit %s", ErrNoCommonBase, Branch, head)
+	}
+	if err != nil {
+		return "", fmt.Errorf("find the working copy's base: %w", err)
+	}
+	return base, nil
+}
+
+// changedSince returns the paths, relative to the copy's root and in git's
+// order, that the snapshot recorded in the private index file index adds,
+// changes or deletes compared with the commit base.
+func changedSince(ctx context.Context, wc WorkingCopy, index, base string) ([]string, error) {
+	tree, err := wc.git(ctx, wc.dir, []string{"GIT_INDEX_FILE=" + index}, "write-tree")
+	if err != nil {
+		return nil, fmt.Errorf("record the working copy's files: %w", err)
+	}
+	out, err := wc.git(ctx, wc.dir, nil, "diff-tree", "-r", "-z", "--name-only", "--no-renames", base, tree)
+	if err != nil {
+		return nil, fmt.Errorf("compare the working copy with its base: %w", err)
+	}
+	var paths []string
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
 // writeTree records every file under src, the snapshot stageCopy wrote and
 // the check then changed and compiled, in the private index, and writes that
 // index as a tree into the working copy's repository. It returns the tree's

@@ -1,5 +1,18 @@
 // This file prepares the required tests in a working copy, judges the copy
 // against a Story, and records an accepted copy as a commit.
+//
+// Only files inside the test module may change. A check measures the copy's
+// changes from its base, the merge base of the surla/tests branch and the
+// project's HEAD (copyBase), so the test writer's own commits on the branch
+// count as changes too. Both refs are read through the project's repository,
+// though they are not a trust boundary: any program of the same user can
+// move a branch, so this is a separation of duties, not isolation. When the
+// project's history is rewritten (rebased, squashed or replaced), the merge
+// base moves back to an older commit, or disappears, and the check names
+// files outside the test module the test writer never touched, or stops with
+// ErrNoCommonBase. The user's step is then to delete the project's
+// .surla-tests folder and its surla/tests branch and build again, which
+// starts a new working copy at the project's commit.
 package testwriter
 
 import (
@@ -14,6 +27,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -52,6 +66,13 @@ type (
 		// holds each check's temporary folder and the build cache checks
 		// share. The owner removes it.
 		workDir string
+		// build and list run a check's two sandboxed steps: candidate.Build
+		// and candidate.Output. Tests wrap them with stand-ins that sleep.
+		build func(context.Context, candidate.BuildSpec, func(*exec.Cmd) error) error
+		list  func(context.Context, candidate.Artifact, candidate.Spec, int) ([]byte, error)
+		// buildLimit and listLimit bound those two steps: buildProgramLimit
+		// and listTestsLimit, which tests shorten.
+		buildLimit, listLimit time.Duration
 	}
 
 	// Verdict is Check's judgment of one working copy against a Story.
@@ -125,6 +146,29 @@ const (
 	// scenario the Story requires. The message names the scenario, its flow
 	// and its hook method.
 	FindingMissingScenario FindingKind = "missing_scenario"
+	// FindingOutsideModule means a file outside the test module differs
+	// from the copy's base. The message names the file.
+	FindingOutsideModule FindingKind = "outside_module"
+	// FindingHiddenTag means a declared scenario is tagged holdout. Tests in
+	// files the builder can read are not hidden.
+	FindingHiddenTag FindingKind = "hidden_tag"
+
+	// buildProgramLimit bounds one sandboxed build of the test program. It
+	// compiles the test module and its dependencies with an empty or warm
+	// build cache, which takes a few minutes at most for a starter's
+	// dependencies; ten leaves room for a slower machine while still
+	// leaving the whole check room to finish.
+	buildProgramLimit = 10 * time.Minute
+	// listTestsLimit bounds one run of the test program's --describe, which
+	// declares the scenarios without running any: it should take well under
+	// a second, so sixty seconds is reached only by a program that waits on
+	// something while starting.
+	listTestsLimit = 60 * time.Second
+	// maxOutsideFindings bounds how many changed files outside the test
+	// module a verdict names one by one; one more finding counts the rest.
+	maxOutsideFindings = 20
+	// holdoutTag is the scenario tag that marks a hidden test.
+	holdoutTag = "holdout"
 
 	// maxFindingBytes bounds one finding's message.
 	maxFindingBytes = 8 << 10
@@ -134,6 +178,22 @@ const (
 	// long its process group may take to empty.
 	buildStopGrace = 10 * time.Second
 )
+
+// ErrNoCommonBase reports a check that cannot measure the copy's changes: the
+// tests branch and the project's commit share no history, for example because
+// the project's history was rewritten from its first commit. The user's step
+// is to delete the .surla-tests folder and the surla/tests branch, then build
+// again.
+var ErrNoCommonBase = errors.New("the tests branch and the project share no history")
+
+// absolutePath matches an absolute file path where a word starts: a slash at
+// the start of a line or after a space, a quote, a parenthesis, a bracket, an
+// equals sign or a comma, followed by a name character, up to the next
+// space, quote, parenthesis, bracket, comma or colon (so a compiler's
+// file.go:12:3 keeps its line and column). A URL's slashes follow a colon or
+// another slash, an import path starts with a name, and a relative path with
+// a name or a dot, so none of them matches.
+var absolutePath = regexp.MustCompile(`(?m)(^|[\s"'(\[=,])/[A-Za-z0-9_.~+@-][^\s"'()\[\],:]*`)
 
 // ErrLinkedFolder refuses a suite module reached through a symbolic link.
 // Prepare and Check read and write the module only through real folders from
@@ -146,7 +206,14 @@ var ErrLinkedFolder = errors.New("the suite module must be reached through real 
 // removes after the Checker's last call. Nothing is created until a call
 // needs it.
 func NewChecker(evaluator *designeval.Evaluator, workDir string) *Checker {
-	return &Checker{evaluator: evaluator, workDir: workDir}
+	return &Checker{
+		evaluator:  evaluator,
+		workDir:    workDir,
+		build:      candidate.Build,
+		list:       candidate.Output,
+		buildLimit: buildProgramLimit,
+		listLimit:  listTestsLimit,
+	}
 }
 
 // Record commits an accepted verdict's tree, exactly the files Check built
@@ -168,6 +235,15 @@ func Record(ctx context.Context, v Verdict, message string) (string, error) {
 		return "", errors.New("record: the commit message is empty")
 	}
 	return commitTree(ctx, v.copy, v.tree, message)
+}
+
+// WithoutAbsolutePaths replaces every absolute file path in text with
+// <absolute path>, leaving URLs, import paths and relative paths such as
+// ./gen/cmd/shop-evals as they are. Every finding and every reason a check
+// gives passes through it, so no path of Surla's folders or of the user's
+// machine reaches the test writer, the builder or the page.
+func WithoutAbsolutePaths(text string) string {
+	return absolutePath.ReplaceAllString(text, "${1}<absolute path>")
 }
 
 // Prepare writes the required tests for stories into the working copy: it
@@ -197,7 +273,7 @@ func (c *Checker) Prepare(
 	if err != nil {
 		return nil, err
 	}
-	return c.generate(ctx, filepath.Dir(wc.dir), filepath.Base(wc.dir), path.Join(filepath.ToSlash(rel), s.Module), stories)
+	return c.generate(ctx, filepath.Dir(wc.dir), filepath.Base(wc.dir), path.Join(filepath.ToSlash(rel), s.Module), s, stories)
 }
 
 // Check judges the working copy against stories without trusting its author.
@@ -256,7 +332,18 @@ func (c *Checker) Check(
 	}
 	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
 	moduleDir := filepath.Join(src, filepath.FromSlash(modulePath))
-	required, err := c.generate(ctx, src, ".", modulePath, stories)
+	base, err := copyBase(ctx, wc)
+	if err != nil {
+		return Verdict{}, err
+	}
+	changed, err := changedSince(ctx, wc, index, base)
+	if err != nil {
+		return Verdict{}, err
+	}
+	if findings := outsideModule(changed, modulePath); len(findings) > 0 {
+		return Verdict{Findings: findings, copy: wc}, nil
+	}
+	required, err := c.generate(ctx, src, ".", modulePath, s, stories)
 	if author := (*AuthorError)(nil); errors.As(err, &author) {
 		return Verdict{Findings: []Finding{author.Finding}, copy: wc}, nil
 	}
@@ -274,8 +361,17 @@ func (c *Checker) Check(
 	if len(findings) > 0 {
 		return Verdict{Findings: findings, copy: wc}, nil
 	}
+	ids := make([]string, 0, len(declared))
+	for _, sc := range declared {
+		ids = append(ids, sc.ID)
+		if slices.Contains(sc.Tags, holdoutTag) {
+			findings = append(findings, Finding{Kind: FindingHiddenTag, Message: fmt.Sprintf(
+				"Scenario %q is tagged %s. Tests in files the builder can read are not hidden: "+
+					"remove the tag from the test module's design, then report again.", sc.ID, holdoutTag)})
+		}
+	}
 	for _, r := range required {
-		if !slices.Contains(declared, r.Scenario) {
+		if !slices.Contains(ids, r.Scenario) {
 			findings = append(findings, Finding{Kind: FindingMissingScenario, Message: fmt.Sprintf(
 				"The suite command does not declare scenario %q, which the Story requires for flow %q of story %q: "+
 					"its --describe must list every scenario of the generated suite, whose hook %s runs it.",
@@ -353,7 +449,7 @@ func goEnv() []string {
 // the working copy, and it is cut to at most maxFindingBytes on a character
 // boundary, saying how much was left out.
 func forAuthor(message, src string) string {
-	s := strings.TrimSpace(strings.ReplaceAll(message, src+string(filepath.Separator), ""))
+	s := WithoutAbsolutePaths(strings.TrimSpace(strings.ReplaceAll(message, src+string(filepath.Separator), "")))
 	if len(s) <= maxFindingBytes {
 		return s
 	}
@@ -383,6 +479,72 @@ func logFinding(kind FindingKind, head, path, src string) ([]Finding, error) {
 		out = leftOut + out
 	}
 	return []Finding{{Kind: kind, Message: forAuthor(head+out, src)}}, nil
+}
+
+// withinLimit runs step under ctx with its own deadline limit from now and
+// reports whether the limit was reached: the deadline had passed when step
+// returned, whatever step returned, while ctx itself had not ended. A step
+// that returns exactly at the deadline has reached it, so a test can place a
+// stand-in just below, at and just above the limit and get the same answer
+// each time. The caller's own deadline ending is never the limit.
+func withinLimit(ctx context.Context, limit time.Duration, step func(context.Context) error) (bool, error) {
+	deadline := time.Now().Add(limit)
+	stepCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	err := step(stepCtx)
+	return ctx.Err() == nil && !time.Now().Before(deadline), err
+}
+
+// limitText words a limit for a finding: two or more whole minutes as
+// minutes, other whole seconds as seconds, anything else as Go prints a
+// duration. For example, 10 minutes, 60 seconds, 500ms.
+func limitText(d time.Duration) string {
+	switch {
+	case d >= 2*time.Minute && d%time.Minute == 0:
+		return fmt.Sprintf("%d minutes", d/time.Minute)
+	case d%time.Second == 0:
+		return fmt.Sprintf("%d seconds", d/time.Second)
+	default:
+		return d.String()
+	}
+}
+
+// outsideModule returns one finding per changed path, relative to the copy's
+// root, that lies outside the test module at modulePath, naming at most
+// maxOutsideFindings and counting the rest in one more finding. The module's
+// own folder counts as inside: a link put in its place is refused when the
+// module is opened, with its own finding.
+func outsideModule(changed []string, modulePath string) []Finding {
+	var outside []string
+	for _, p := range changed {
+		if p != modulePath && !strings.HasPrefix(p, modulePath+"/") {
+			outside = append(outside, p)
+		}
+	}
+	var findings []Finding
+	for i, p := range outside {
+		if i == maxOutsideFindings {
+			findings = append(findings, Finding{Kind: FindingOutsideModule, Message: fmt.Sprintf(
+				"%d more files outside the test module %s differ from the working copy's base.", len(outside)-i, modulePath)})
+			break
+		}
+		findings = append(findings, Finding{Kind: FindingOutsideModule, Message: WithoutAbsolutePaths(fmt.Sprintf(
+			"%s is changed outside the test module %s. Only files inside the test module may change: "+
+				"restore it as it is in the working copy's base, then report again.", p, modulePath))})
+	}
+	return findings
+}
+
+// generatedSuites counts the evaluation suites whose packages a generation
+// wrote: the files gen/evals/<suite>/suite.go.
+func generatedSuites(files map[string][]byte) int {
+	n := 0
+	for p := range files {
+		if path.Base(p) == "suite.go" && path.Dir(path.Dir(p)) == "gen/evals" {
+			n++
+		}
+	}
+	return n
 }
 
 // isFailure reports whether err from generating, building or running the
@@ -494,10 +656,12 @@ func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
 // snapshot (top is the snapshot and copyDir is "."). A cause the module's
 // author can fix is an *AuthorError whose finding gives paths relative to the
 // copy's root, in Prepare as in Check: the module cannot be opened, including
-// through a symbolic link, or read, or its generation failed while working on
-// the module's own files. Any other failure is returned as it is.
+// through a symbolic link, or read; its generation failed while working on
+// the module's own files; its design does not declare exactly one evaluation
+// suite; or no program was generated at s.Command. Any other failure is
+// returned as it is.
 func (c *Checker) generate(
-	ctx context.Context, top, copyDir, modulePath string, stories []designeval.StorySummary,
+	ctx context.Context, top, copyDir, modulePath string, s Suite, stories []designeval.StorySummary,
 ) (_ []designeval.StoryScenario, err error) {
 	copyRoot := filepath.Join(top, filepath.FromSlash(copyDir))
 	author := func(cause error, message string) error {
@@ -522,6 +686,15 @@ func (c *Checker) generate(
 		}
 		return nil, author(err, designeval.GenerationDiagnostic(err))
 	}
+	if suites := generatedSuites(gen.Files); suites != 1 {
+		return nil, author(nil, fmt.Sprintf("The test module must declare exactly one evaluation suite, but its design "+
+			"declares %d: keep exactly one Suite(...) in %s/design, then report again.", suites, modulePath))
+	}
+	program := path.Join(strings.TrimPrefix(s.Command, "./"), "main.go")
+	if _, ok := gen.Files[program]; !ok {
+		return nil, author(nil, fmt.Sprintf("Surla generated no test program at %s: the test module's go.mod must "+
+			"declare the module path <service module>/%s, as surla init writes it.", s.Command, designeval.TestModuleDir))
+	}
 	if err := publish(ctx, root, gen.Files); err != nil {
 		return nil, err
 	}
@@ -529,14 +702,15 @@ func (c *Checker) generate(
 }
 
 // listScenarios builds the suite command of the snapshot module at moduleDir in
-// the build sandbox, with src as the only source it may read, runs its
-// --describe in the candidate sandbox, and returns the scenario IDs it
-// declares, or findings when the module's dependencies, its build or its
-// listing fail. tmp is the check's private folder; keep is set when build
-// processes may still use it.
+// the build sandbox, with src as the only source it may read, within
+// c.buildLimit, runs its --describe in the candidate sandbox within
+// c.listLimit, and returns the scenarios it declares, or findings when the
+// module's dependencies, its build or its listing fail or reach their limit.
+// tmp is the check's private folder; keep is set when build processes may
+// still use it.
 func (c *Checker) listScenarios(
 	ctx context.Context, tmp, src, moduleDir, command string, keep *bool,
-) ([]string, []Finding, error) {
+) ([]suite.DeclaredScenario, []Finding, error) {
 	finding := func(kind FindingKind, message string) []Finding {
 		return []Finding{{Kind: kind, Message: forAuthor(message, src)}}
 	}
@@ -568,10 +742,17 @@ func (c *Checker) listScenarios(
 		}
 	}
 	bin, buildLog := filepath.Join(binDir, "suite"), filepath.Join(tmp, "build.log")
-	err = candidate.Build(ctx, candidate.BuildSpec{
-		SourceDir: src, ModuleDir: moduleDir, Package: command, Out: bin,
-		GOROOT: tc.goroot, ModCache: modCache, WorkDir: buildHome, LogFile: buildLog,
-	}, runBuild(keep))
+	reached, err := withinLimit(ctx, c.buildLimit, func(ctx context.Context) error {
+		return c.build(ctx, candidate.BuildSpec{
+			SourceDir: src, ModuleDir: moduleDir, Package: command, Out: bin,
+			GOROOT: tc.goroot, ModCache: modCache, WorkDir: buildHome, LogFile: buildLog,
+		}, runBuild(keep))
+	})
+	if reached && !*keep {
+		return nil, finding(FindingBuild, fmt.Sprintf("The test program did not finish building within %s. "+
+			"Make the test module build faster, for example with fewer or smaller dependencies, then report again.",
+			limitText(c.buildLimit))), nil
+	}
 	if err != nil {
 		if *keep || isFailure(ctx, err) {
 			return nil, nil, fmt.Errorf("build the suite command: %w", err)
@@ -587,9 +768,19 @@ func (c *Checker) listScenarios(
 		return nil, nil, fmt.Errorf("pin the suite command: %w", err)
 	}
 	stderrLog := filepath.Join(tmp, "describe.log")
-	out, err := candidate.Output(ctx, art, candidate.Spec{
-		Args: []string{"--describe"}, StateDir: filepath.Join(tmp, "state"), LogFile: stderrLog,
-	}, maxDeclarationBytes)
+	var out []byte
+	reached, err = withinLimit(ctx, c.listLimit, func(ctx context.Context) error {
+		var err error
+		out, err = c.list(ctx, art, candidate.Spec{
+			Args: []string{"--describe"}, StateDir: filepath.Join(tmp, "state"), LogFile: stderrLog,
+		}, maxDeclarationBytes)
+		return err
+	})
+	if reached {
+		return nil, finding(FindingListing, fmt.Sprintf("Listing the tests (--describe) did not finish within %s. "+
+			"Listing must not wait: the test module's package initialization (init functions and package-level "+
+			"variables) and a zero Hooks must not need the program under test.", limitText(c.listLimit))), nil
+	}
 	var exitErr *exec.ExitError
 	switch {
 	case err == nil:
@@ -613,11 +804,7 @@ func (c *Checker) listScenarios(
 		return nil, finding(FindingListing, "The suite command's --describe did not print one suite declaration "+
 			"on standard output: "+err.Error()), nil
 	}
-	ids := make([]string, 0, len(d.Scenarios))
-	for _, sc := range d.Scenarios {
-		ids = append(ids, sc.ID)
-	}
-	return ids, nil, nil
+	return d.Scenarios, nil, nil
 }
 
 // validate requires a local module path and a single-package command path.
