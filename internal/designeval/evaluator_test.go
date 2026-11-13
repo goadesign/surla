@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/internal/testmodule"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -235,6 +236,44 @@ func TestCloseCancelsARunningEvaluationAndAFailureIsNotRemembered(t *testing.T) 
 	_, err := ev2.Evaluate(t.Context(), validSnapshotStub())
 	require.ErrorContains(t, err, "resolve go env")
 	require.NoError(t, ev2.Close())
+}
+
+// TestCloseDuringAModulePhaseIsNotAFailureOfTheModule closes the evaluator
+// while an evaluation waits on the toolchain's go in a phase that works on
+// the module's own files. The command Close ends fails with an error that
+// does not mention Close and carries that phase; the evaluation's error says
+// the evaluator was closed, so FailedOnModule does not report it as the
+// module's failure.
+func TestCloseDuringAModulePhaseIsNotAFailureOfTheModule(t *testing.T) {
+	isolatedTempDir(t)
+	goroot, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	reached := filepath.Join(goroot, "reached")
+	require.NoError(t, os.Mkdir(filepath.Join(goroot, "bin"), 0o700))
+	// The toolchain's go records that it was started and then hangs, as a
+	// slow download of the module's dependencies would, until it is killed.
+	require.NoError(t, os.WriteFile(filepath.Join(goroot, "bin", "go"),
+		[]byte("#!/bin/sh\n: > "+shquote.Quote(reached)+"\nexec sleep 600\n"), 0o700))
+	// The go on PATH answers go env GOROOT GOMODCACHE with that toolchain.
+	fakeGo(t, "#!/bin/sh\nprintf '%s\\n' "+shquote.Quote(goroot)+" "+shquote.Quote(filepath.Join(goroot, "modcache"))+"\n")
+
+	ev := NewEvaluator()
+	done := make(chan error, 1)
+	go func() {
+		_, err := ev.Evaluate(context.Background(), validSnapshotStub())
+		done <- err
+	}()
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(reached)
+		return err == nil
+	}, 20*time.Second, 10*time.Millisecond, "the evaluation reaches the toolchain's go")
+	require.NoError(t, ev.Close())
+	err = <-done
+	require.ErrorIs(t, err, errEvaluatorClosed, "the error says the evaluator was closed")
+	var operation *phaseError
+	require.ErrorAs(t, err, &operation)
+	assert.Contains(t, modulePhases, operation.phase, "the evaluation was in a phase that works on the module's files")
+	assert.False(t, FailedOnModule(err), "an evaluation that Close ended is not the module's failure")
 }
 
 func TestACanceledEvaluationDoesNotAffectTheNext(t *testing.T) {

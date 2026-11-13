@@ -109,10 +109,16 @@ func GenerationDiagnostic(err error) string {
 // compiling its design, or evaluating it. Such a failure is first the
 // module's author's to look at. A failure while preparing or removing the
 // compiler's own files, while starting the sandboxed generator or reading its
-// output, or because the evaluator was closed, is not. Like
+// output, is not; nor is any failure of an evaluation that Close ended or
+// whose build processes would not stop, whatever phase it had reached. Like
 // GenerationDiagnostic it makes no verdict that the module is wrong: a full
 // disk while the design compiles still fails in a module phase.
 func FailedOnModule(err error) bool {
+	// An evaluation that Close ended, or whose build would not stop, failed
+	// for a reason outside the module, whatever phase it had reached.
+	if stuck := (*stuckBuildError)(nil); errors.Is(err, errEvaluatorClosed) || errors.As(err, &stuck) {
+		return false
+	}
 	if validation := (*snapshotValidationError)(nil); errors.As(err, &validation) {
 		return true
 	}

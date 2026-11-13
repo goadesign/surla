@@ -37,6 +37,14 @@ func TestFailedOnModuleNamesTheModulePhases(t *testing.T) {
 		{name: "reading the generated output", err: &phaseError{phase: "reading the generated output", err: cause}},
 		{name: "removing the temporary files", err: &phaseError{phase: "removing the temporary compiler files", err: cause}},
 		{name: "a closed evaluator", err: errEvaluatorClosed},
+		{
+			name: "closed while loading the module's dependencies",
+			err:  fmt.Errorf("%w: %w", errEvaluatorClosed, &phaseError{phase: phaseLoadModules, err: cause}),
+		},
+		{
+			name: "a build that would not stop while compiling the design",
+			err:  errors.Join(&stuckBuildError{err: cause}, &phaseError{phase: phaseCompile, err: cause}),
+		},
 		{name: "wrapped by a caller", err: fmt.Errorf("generate: %w", &phaseError{phase: phaseCompile, err: cause}), want: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

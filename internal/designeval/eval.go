@@ -779,6 +779,12 @@ func (e *Evaluator) admitted(ctx context.Context, op func(ctx context.Context, w
 	// and marks the evaluation finished only after everything it started has
 	// been released.
 	defer func() {
+		// A command that Close ended fails in whatever phase it was in, with
+		// an error that does not mention Close. The evaluation failed because
+		// the evaluator stopped, so say so: FailedOnModule relies on it.
+		if err != nil && errors.Is(context.Cause(ctx), errEvaluatorClosed) && !errors.Is(err, errEvaluatorClosed) {
+			err = fmt.Errorf("%w: %w", errEvaluatorClosed, err)
+		}
 		stop()
 		cancel(nil)
 		e.finish(err)
