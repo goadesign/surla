@@ -86,8 +86,8 @@ func TestPublishCancellationLeavesGenUntouched(t *testing.T) {
 func TestPublishExchangeFailureLeavesGenUntouched(t *testing.T) {
 	dir, root := moduleRoot(t)
 	layout(t, dir, map[string]string{"gen/orders/service.go": "old\n"})
-	renameatx = func(int, string, int, string, uint32) error { return syscall.EIO }
-	t.Cleanup(func() { renameatx = defaultRenameatx })
+	exchangeNames = func(int, string, int, string) error { return syscall.EIO }
+	t.Cleanup(func() { exchangeNames = defaultExchangeNames })
 	result, err := Publish(t.Context(), root, generatedFiles)
 	require.ErrorIs(t, err, syscall.EIO)
 	assert.Empty(t, result.WrittenFiles)
@@ -117,8 +117,8 @@ func TestPublishGuideFailureIsAWarning(t *testing.T) {
 func TestPublishCleanupFailureIsAWarning(t *testing.T) {
 	dir, root := moduleRoot(t)
 	layout(t, dir, map[string]string{"gen/orders/service.go": "old\n"})
-	renameatx = func(fromfd int, from string, tofd int, to string, flags uint32) error {
-		if err := defaultRenameatx(fromfd, from, tofd, to, flags); err != nil {
+	exchangeNames = func(fromfd int, from string, tofd int, to string) error {
+		if err := defaultExchangeNames(fromfd, from, tofd, to); err != nil {
 			return err
 		}
 		stages := leftoverStages(root)
@@ -127,7 +127,7 @@ func TestPublishCleanupFailureIsAWarning(t *testing.T) {
 		layout(t, dir, map[string]string{stages[0] + "/keep.txt": "theirs\n"})
 		return nil
 	}
-	t.Cleanup(func() { renameatx = defaultRenameatx })
+	t.Cleanup(func() { exchangeNames = defaultExchangeNames })
 	result, err := Publish(t.Context(), root, generatedFiles)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gen/goa.json", "gen/orders/service.go"}, result.WrittenFiles)
@@ -146,8 +146,8 @@ func TestPublishCleanupFailureIsAWarning(t *testing.T) {
 // close error after the exchange cannot make a successful publication fail.
 func TestPublishExchangeHandleCloseFailureIsAWarning(t *testing.T) {
 	dir, root := moduleRoot(t)
-	renameatx = func(fromfd int, from string, tofd int, to string, flags uint32) error {
-		if err := defaultRenameatx(fromfd, from, tofd, to, flags); err != nil {
+	noReplace = func(fromfd int, from string, tofd int, to string) error {
+		if err := defaultNoReplace(fromfd, from, tofd, to); err != nil {
 			return err
 		}
 		// Close the exchange's temporary handle before exchange closes it.
@@ -155,7 +155,7 @@ func TestPublishExchangeHandleCloseFailureIsAWarning(t *testing.T) {
 		require.NoError(t, unix.Close(fromfd))
 		return nil
 	}
-	t.Cleanup(func() { renameatx = defaultRenameatx })
+	t.Cleanup(func() { noReplace = defaultNoReplace })
 	result, err := Publish(t.Context(), root, generatedFiles)
 	require.NoError(t, err)
 	require.Len(t, result.Warnings, 1)

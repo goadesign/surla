@@ -12,8 +12,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-
-	"golang.org/x/sys/unix"
 )
 
 // genStage is the .surla-gen-<random> directory Publish creates in the module
@@ -221,19 +219,16 @@ func (s *genStage) write(root *os.Root, generated map[string][]byte) error {
 
 // exchange publishes the staged gen/ in one call on the two held directory
 // handles, with bare names only: it swaps it with the module's gen/
-// (RENAME_SWAP), or moves it in when there is none (RENAME_EXCL, which fails
-// if gen/ appeared meanwhile). Afterwards the staging directory holds the
-// old tree, if there was one. A true result means publication succeeded; any
-// accompanying error only reports handles that could not be closed. A false
-// result means the exchange did not happen and its error is a failure.
+// (renameat.Exchange), or moves it in when there is none (renameat.NoReplace,
+// which fails if gen/ appeared meanwhile). Afterwards the staging directory
+// holds the old tree, if there was one. A true result means publication
+// succeeded; any accompanying error only reports handles that could not be
+// closed. A false result means the exchange did not happen and its error is a
+// failure.
 func (s *genStage) exchange(root *os.Root) (bool, error) {
 	current, err := currentGenDir(root)
 	if err != nil {
 		return false, err
-	}
-	flag := uint32(unix.RENAME_EXCL)
-	if current {
-		flag = unix.RENAME_SWAP
 	}
 	module, err := root.Open(".")
 	if err != nil {
@@ -243,7 +238,12 @@ func (s *genStage) exchange(root *os.Root) (bool, error) {
 	if err != nil {
 		return false, errors.Join(fmt.Errorf("open staging directory: %w", err), module.Close())
 	}
-	exchangeErr := renameatx(int(staged.Fd()), "gen", int(module.Fd()), "gen", flag)
+	var exchangeErr error
+	if current {
+		exchangeErr = exchangeNames(int(staged.Fd()), "gen", int(module.Fd()), "gen")
+	} else {
+		exchangeErr = noReplace(int(staged.Fd()), "gen", int(module.Fd()), "gen")
+	}
 	closeErr := errors.Join(staged.Close(), module.Close())
 	if exchangeErr != nil {
 		return false, errors.Join(fmt.Errorf("replace gen/: %w", exchangeErr), closeErr)

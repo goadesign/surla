@@ -24,13 +24,14 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/renameat"
 	"github.com/goadesign/surla/internal/verify"
 )
 
 type (
 	// workspaceFile is the persisted JSON schema of `<cards_dir>/workspace.json`.
 	// During `init_project`, the uncommitted write-ahead record sets `StageDir`,
-	// `Staging`, `Dev`, `Ino`, and `SuiteCommit` before `RenameatxNp`; the
+	// `Staging`, `Dev`, `Ino`, and `SuiteCommit` before `renameat.NoReplace`; the
 	// finalized record clears `StageDir` and `Staging` once the renamed target
 	// directory's `(Dev, Ino)` is verified and synced.
 	workspaceFile struct {
@@ -289,7 +290,7 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 		}
 		var openStat unix.Stat_t
 		statErr := unix.Fstat(stageFD, &openStat)
-		gotStagePath, pathErr := fdPath(stageFD)
+		gotStagePath, pathErr := abspath.FDPath(stageFD)
 		closeStageErr := unix.Close(stageFD)
 		if err := errors.Join(statErr, closeStageErr); err != nil {
 			return err
@@ -298,7 +299,7 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 			uint64(openStat.Dev) != wf.Dev || openStat.Ino != wf.Ino {
 			return c.removeWorkspaceRecord()
 		}
-		if err := unix.RenameatxNp(stageParentFD, wf.Staging, workspaceFD, wf.Dir, unix.RENAME_EXCL); err != nil {
+		if err := renameat.NoReplace(stageParentFD, wf.Staging, workspaceFD, wf.Dir); err != nil {
 			return fmt.Errorf("recover staged workspace into %s: %w", targetPath, err)
 		}
 		syncErr := errors.Join(unix.Fsync(workspaceFD), unix.Fsync(stageParentFD))

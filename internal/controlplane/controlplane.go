@@ -351,8 +351,8 @@ type (
 		// InitProject.
 		surlaVersion string
 		// initStepHook is an optional test hook invoked in InitProject at
-		// "after_wal" (after Step 1 writeWorkspaceRecord before RenameatxNp)
-		// and "after_rename" (after RenameatxNp and Fsync before verifyPublishedTarget).
+		// "after_wal" (after Step 1 writeWorkspaceRecord before renameat.NoReplace)
+		// and "after_rename" (after renameat.NoReplace and Fsync before verifyPublishedTarget).
 		initStepHook func(step string)
 		// liveState holds the live CP3 target state.
 		liveState

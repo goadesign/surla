@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/sys/unix"
+	"github.com/goadesign/surla/internal/renameat"
 )
 
 // Result records what Publish wrote and the file changes it could observe.
@@ -36,8 +36,12 @@ type Result struct {
 // quickstartGuide is the only generated file allowed outside gen/.
 const quickstartGuide = "AGENTS_QUICKSTART.md"
 
-// renameatx is replaced by package tests to exercise exchange failures.
-var renameatx = unix.RenameatxNp
+// noReplace and exchangeNames are replaced by package tests to exercise
+// publication failures and races.
+var (
+	noReplace     = renameat.NoReplace
+	exchangeNames = renameat.Exchange
+)
 
 // Publish writes generated files into a new staging directory inside root and
 // replaces gen/ in one atomic exchange. Only clean paths inside gen/ and the

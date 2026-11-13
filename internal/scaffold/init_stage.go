@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/goadesign/surla/internal/abspath"
+	"github.com/goadesign/surla/internal/renameat"
 )
 
 // initStage keeps the one build tree and its separate logs under the protected
@@ -71,7 +72,7 @@ func newInitStage(target, workDir string) (*initStage, error) {
 // publish moves the completed tree without replacing any existing target.
 // Rename is the final fallible step: an error leaves the target unchanged.
 func (s *initStage) publish() error {
-	if err := unix.RenamexNp(s.path, s.target, unix.RENAME_EXCL); err != nil {
+	if err := renameat.NoReplace(unix.AT_FDCWD, s.path, unix.AT_FDCWD, s.target); err != nil {
 		return fmt.Errorf("move project into %s: %w", s.target, err)
 	}
 	return nil

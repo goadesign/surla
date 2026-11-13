@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/verify/candidate"
 )
 
@@ -642,15 +643,15 @@ func (op *checkOperation) openLive(wsRoot *os.Root, accepted []string) error {
 	if err := unix.Fstat(op.workspaceFD, &st); err != nil {
 		return fmt.Errorf("hold the workspace: %w", err)
 	}
-	op.workspaceID = fileID{dev: st.Dev, ino: st.Ino}
+	op.workspaceID = fileID{dev: uint64(st.Dev), ino: st.Ino}
 	accepted0 := outermost(accepted)
 	if op.grantFD, err = unix.Open(accepted0, openDirFlags, 0); err != nil {
 		return fmt.Errorf("open the source directory %s: %w", accepted0, err)
 	}
-	if op.grantRoot, err = fdPath(op.grantFD); err != nil {
+	if op.grantRoot, err = abspath.FDPath(op.grantFD); err != nil {
 		return fmt.Errorf("resolve the source directory %s: %w", accepted0, err)
 	}
-	wsPath, err := fdPath(op.workspaceFD)
+	wsPath, err := abspath.FDPath(op.workspaceFD)
 	if err != nil {
 		return fmt.Errorf("resolve the workspace: %w", err)
 	}
