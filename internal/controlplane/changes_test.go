@@ -18,6 +18,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
@@ -204,11 +205,53 @@ func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
 		{"builder", http.StatusOK, http.StatusForbidden},
 		{"tests", http.StatusForbidden, http.StatusForbidden},
 	}
+	listTools := func(token string) map[string]bool {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/mcp",
+			strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{`+
+				`"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`))
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/list")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, resp.Body.Close()) }()
+		var body struct {
+			Result struct {
+				Tools []struct {
+					Name string `json:"name"`
+				} `json:"tools"`
+			} `json:"result"`
+		}
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		names := map[string]bool{}
+		for _, tool := range body.Result.Tools {
+			names[tool.Name] = true
+		}
+		return names
+	}
 	for _, c := range cases {
 		t.Run(c.token, func(t *testing.T) {
 			assert.Equal(t, c.list, call(c.token, "/changes"))
 			assert.Equal(t, c.wait, call(c.token, "/change-updates?since=x"))
+			tools := listTools(c.token)
+			assert.Equal(t, c.list == http.StatusOK, tools["list_changes"], "list_changes is a tool exactly for the callers allowed to list")
+			assert.False(t, tools["wait_for_changes"], "the waiting read is never offered as a tool")
 		})
+	}
+	all, err := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil).ToolsList(t.Context(), &genmcpadapter.ToolsListPayload{})
+	require.NoError(t, err)
+	declared := map[string]bool{}
+	for _, tool := range all.Tools {
+		declared[tool.Name] = true
+	}
+	assert.True(t, declared["list_changes"])
+	assert.False(t, declared["wait_for_changes"], "the waiting read is HTTP-only: no MCP tool exists for it")
+	for _, kind := range []CallerKind{CallerGuide, CallerBuilder, CallerTestWriter, CallerManagement} {
+		assert.False(t, OperationAllowed(kind, "wait_for_changes"), "only the user's browser session may wait: %s", kind)
 	}
 }
 
