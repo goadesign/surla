@@ -9,14 +9,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
 
-// renameExcl is RENAME_EXCL, for the race test.
-const renameExcl = unix.RENAME_EXCL
-
-// defaultRenameatx is the production exchange the tests restore.
-var defaultRenameatx = renameatx
+// defaultNoReplace and defaultExchangeNames are the production rename calls
+// the tests restore.
+var (
+	defaultNoReplace     = noReplace
+	defaultExchangeNames = exchangeNames
+)
 
 // generatedFiles is a small generated set: one service package file and the
 // version file.
@@ -75,8 +75,8 @@ func TestStageFailureBeforeTheExchangeLeavesGenUntouched(t *testing.T) {
 	stage, err := newStage(root)
 	require.NoError(t, err)
 	require.NoError(t, stage.write(root, generatedFiles))
-	renameatx = func(int, string, int, string, uint32) error { return syscall.EIO }
-	t.Cleanup(func() { renameatx = defaultRenameatx })
+	exchangeNames = func(int, string, int, string) error { return syscall.EIO }
+	t.Cleanup(func() { exchangeNames = defaultExchangeNames })
 
 	published, err := stage.exchange(root)
 	require.False(t, published)
@@ -92,11 +92,11 @@ func TestStageExclusiveExchangeLosesARaceWithoutTouchingGen(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, stage.write(root, generatedFiles))
 	// gen/ appears after staging decided there was none.
-	renameatx = func(fromfd int, from string, tofd int, to string, _ uint32) error {
+	noReplace = func(fromfd int, from string, tofd int, to string) error {
 		layout(t, dir, map[string]string{"gen/theirs.go": "theirs\n"})
-		return defaultRenameatx(fromfd, from, tofd, to, renameExcl)
+		return defaultNoReplace(fromfd, from, tofd, to)
 	}
-	t.Cleanup(func() { renameatx = defaultRenameatx })
+	t.Cleanup(func() { noReplace = defaultNoReplace })
 
 	published, err := stage.exchange(root)
 	require.False(t, published)

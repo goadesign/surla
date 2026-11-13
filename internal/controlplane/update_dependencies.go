@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/renameat"
 )
 
 // maxCleanupWarningBytes bounds the post-write failure text in an
@@ -384,7 +385,7 @@ func writeAtomic(dirFD int, name string, data []byte, create bool) (bool, error)
 		return false, errors.Join(fmt.Errorf("write %s: %w", name, err), unix.Unlinkat(dirFD, tmp, 0))
 	}
 	if create {
-		err = unix.RenameatxNp(dirFD, tmp, dirFD, name, unix.RENAME_EXCL)
+		err = renameat.NoReplace(dirFD, tmp, dirFD, name)
 		if errors.Is(err, unix.EEXIST) {
 			return false, errors.Join(fmt.Errorf("%w: %s was created concurrently; call again", errManifestConflict, name), unix.Unlinkat(dirFD, tmp, 0))
 		}

@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/goadesign/surla/internal/abspath"
 )
 
 type (
@@ -66,7 +68,7 @@ type (
 	// fileID is a file's device and inode.
 	fileID struct {
 		// dev is the device number.
-		dev int32
+		dev uint64
 		// ino is the inode number.
 		ino uint64
 	}
@@ -83,10 +85,6 @@ type (
 
 // openDirFlags open a directory the walk holds without following a link.
 const openDirFlags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
-
-// openEntryFlags open any entry itself: a symlink is opened, not followed,
-// and a FIFO never blocks.
-const openEntryFlags = unix.O_RDONLY | unix.O_SYMLINK | unix.O_NONBLOCK | unix.O_CLOEXEC
 
 // copyGrant copies the grant held open as rootFD into dst, which must exist
 // and be empty. workspaceRel is the active workspace's slash path inside the
@@ -158,7 +156,7 @@ func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string) error {
 	if err := c.ctx.Err(); err != nil {
 		return err
 	}
-	fd, err := unix.Openat(dirFD, name, openEntryFlags, 0)
+	fd, err := openEntry(dirFD, name)
 	if err != nil {
 		return &errSourceChanged{rel: rel, err: err}
 	}
@@ -240,7 +238,7 @@ func (c *grantCopier) requireWorkspace(fd int, rel string) error {
 	if err := unix.Fstat(fd, &st); err != nil {
 		return &errSourceChanged{rel: rel, err: err}
 	}
-	if (fileID{dev: st.Dev, ino: st.Ino}) != c.workspaceID {
+	if (fileID{dev: uint64(st.Dev), ino: st.Ino}) != c.workspaceID {
 		return &errSourceChanged{rel: rel, err: errors.New("the workspace directory was replaced")}
 	}
 	return nil
@@ -265,7 +263,7 @@ func isProtectedEntry(dirFD, entryFD int) (bool, error) {
 		return false, err
 	}
 	for _, name := range protectedNames {
-		rfd, err := unix.Openat(dirFD, name, openEntryFlags, 0)
+		rfd, err := openEntry(dirFD, name)
 		if errors.Is(err, unix.ENOENT) {
 			continue
 		}
@@ -291,11 +289,11 @@ func sameEntry(a, b int, aStat unix.Stat_t) (bool, error) {
 	if aStat.Dev == bStat.Dev && aStat.Ino == bStat.Ino {
 		return true, nil
 	}
-	aPath, err := fdPath(a)
+	aPath, err := abspath.FDPath(a)
 	if err != nil {
 		return false, err
 	}
-	bPath, err := fdPath(b)
+	bPath, err := abspath.FDPath(b)
 	if err != nil {
 		return false, err
 	}

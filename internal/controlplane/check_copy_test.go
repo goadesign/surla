@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
+
+	"github.com/goadesign/surla/internal/abspath"
 )
 
 // realTempDir returns a symlink-free temporary directory.
@@ -50,7 +54,7 @@ func identityOf(t *testing.T, p string) fileID {
 	t.Helper()
 	var st syscall.Stat_t
 	require.NoError(t, syscall.Stat(p, &st))
-	return fileID{dev: st.Dev, ino: st.Ino}
+	return fileID{dev: uint64(st.Dev), ino: st.Ino}
 }
 
 // copiedFiles lists the slash paths of every non-directory entry under root.
@@ -300,4 +304,73 @@ func TestCopyGrantTreatsSymlinkedGoModAsAModule(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "../manifests/eval.mod", link, "the link is copied raw")
 	assert.NotContains(t, got.manifests, "eval/go.mod", "a linked manifest is never published")
+}
+
+// TestOpenEntryHandlesRegularFileDirectorySymlinkAndFIFO verifies that
+// openEntry opens regular files and directories for reading, opens symbolic
+// links without following them, and opens FIFOs without blocking.
+func TestOpenEntryHandlesRegularFileDirectorySymlinkAndFIFO(t *testing.T) {
+	dir := realTempDir(t)
+	writeTree(t, dir, map[string]string{
+		"go.mod":        "module example.com/shop\n",
+		"sub/hello.txt": "hello\n",
+	})
+	require.NoError(t, os.Symlink("sub/hello.txt", filepath.Join(dir, "hello-link")))
+	require.NoError(t, os.Symlink("missing-target", filepath.Join(dir, "dangling-link")))
+	require.NoError(t, unix.Mkfifo(filepath.Join(dir, "pipe.fifo"), 0o600))
+
+	dirFD, err := unix.Open(dir, openDirFlags, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, unix.Close(dirFD)) })
+
+	// 1. Regular file is readable and reports its stored path.
+	regFD, err := openEntry(dirFD, "go.mod")
+	require.NoError(t, err)
+	regFile := os.NewFile(uintptr(regFD), "go.mod")
+	regPath, err := abspath.FDPath(regFD)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "go.mod"), regPath)
+	regBytes, err := io.ReadAll(regFile)
+	require.NoError(t, err)
+	assert.Equal(t, "module example.com/shop\n", string(regBytes))
+	require.NoError(t, regFile.Close())
+
+	// 2. Directory supports readDirNames and reports its stored path.
+	subFD, err := openEntry(dirFD, "sub")
+	require.NoError(t, err)
+	subPath, err := abspath.FDPath(subFD)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "sub"), subPath)
+	names, err := readDirNames(subFD)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"hello.txt"}, names)
+	require.NoError(t, unix.Close(subFD))
+
+	// 3. Both valid and dangling symlinks open as symlinks without following targets.
+	for _, linkName := range []string{"hello-link", "dangling-link"} {
+		linkFD, err := openEntry(dirFD, linkName)
+		require.NoError(t, err)
+		linkFile := os.NewFile(uintptr(linkFD), linkName)
+		info, err := linkFile.Stat()
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&fs.ModeSymlink, linkName)
+		gotLinkPath, err := abspath.FDPath(linkFD)
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(dir, linkName), gotLinkPath)
+		require.NoError(t, linkFile.Close())
+	}
+
+	// 4. FIFO opens without blocking and copyGrant skips it cleanly.
+	fifoFD, err := openEntry(dirFD, "pipe.fifo")
+	require.NoError(t, err)
+	fifoFile := os.NewFile(uintptr(fifoFD), "pipe.fifo")
+	fifoInfo, err := fifoFile.Stat()
+	require.NoError(t, err)
+	assert.NotZero(t, fifoInfo.Mode()&fs.ModeNamedPipe)
+	require.NoError(t, fifoFile.Close())
+
+	dst := realTempDir(t)
+	got, err := copyGrantPath(t, context.Background(), dir, dir, dst)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"pipe.fifo"}, got.skipped)
 }

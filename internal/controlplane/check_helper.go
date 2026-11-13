@@ -41,6 +41,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/verify/candidate"
 )
 
@@ -69,7 +70,7 @@ type (
 		// WorkspaceRel is the workspace's slash path inside the grant.
 		WorkspaceRel string `json:"workspace_rel"`
 		// WorkspaceDev and WorkspaceIno identify the workspace, descriptor 5.
-		WorkspaceDev int32  `json:"workspace_dev"`
+		WorkspaceDev uint64 `json:"workspace_dev"`
 		WorkspaceIno uint64 `json:"workspace_ino"`
 		// GoProxyEnv is the operator's module proxy settings.
 		GoProxyEnv []string `json:"go_proxy_env"`
@@ -246,7 +247,7 @@ func openCheckHelperOperation(spec checkHelperSpec, runner *candidate.ContainerR
 	if err := errors.Join(unix.Fstat(checkHelperDirFD, &held), unix.Lstat(spec.Dir, &named), unix.Fstat(checkHelperWorkspaceFD, &ws)); err != nil {
 		return nil, nil, fmt.Errorf("inspect the check helper's descriptors: %w", err)
 	}
-	grantRoot, err := fdPath(checkHelperGrantFD)
+	grantRoot, err := abspath.FDPath(checkHelperGrantFD)
 	switch {
 	case err != nil:
 		return nil, nil, fmt.Errorf("resolve the check helper's grant descriptor: %w", err)
@@ -254,7 +255,7 @@ func openCheckHelperOperation(spec checkHelperSpec, runner *candidate.ContainerR
 		return nil, nil, fmt.Errorf("descriptor %d is not the operation directory %s", checkHelperDirFD, spec.Dir)
 	case grantRoot != spec.GrantRoot:
 		return nil, nil, fmt.Errorf("descriptor %d is %s, not the grant %s", checkHelperGrantFD, grantRoot, spec.GrantRoot)
-	case ws.Dev != spec.WorkspaceDev || ws.Ino != spec.WorkspaceIno:
+	case uint64(ws.Dev) != spec.WorkspaceDev || ws.Ino != spec.WorkspaceIno:
 		return nil, nil, fmt.Errorf("descriptor %d is not the verified workspace", checkHelperWorkspaceFD)
 	}
 	op := &checkOperation{
