@@ -550,8 +550,9 @@ func TestWaitingReadBoundaryExportsWithoutRecording(t *testing.T) {
 
 // TestHistoryLeavesOutOnlyTheUsersSuccessfulReads sends one call through the
 // real HTTP handler or MCP server and compares the records the history gains.
-// A read the user's session sends with GET and that succeeds adds none,
-// including reading the history itself. A read by the user that fails, a
+// A read the user's session sends with GET adds none when it succeeds,
+// including reading the history itself, or is refused (not found, forbidden),
+// an expected answer without error status. A read by the user that faults, a
 // change by the user, and a read by an agent over HTTP or MCP are recorded.
 // The waiting read stays out even when it ends with an error. Every call
 // keeps its exported spans and their status.
@@ -596,7 +597,17 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 			exported: map[string]codes.Code{"surla.request.list_traces": codes.Unset, "surla.controlplane.list_traces": codes.Unset},
 		},
 		{
-			name: "user read fails",
+			name: "user read is refused as not found", call: get("/changes/chg-missing", user), wantStatus: http.StatusNotFound,
+			saved:    []string{},
+			exported: map[string]codes.Code{"surla.request.get_change": codes.Unset},
+		},
+		{
+			name: "user read is refused as forbidden", call: get("/assignments/builder", user), wantStatus: http.StatusForbidden,
+			saved:    []string{},
+			exported: map[string]codes.Code{"surla.request.list_builder_assignments": codes.Unset},
+		},
+		{
+			name: "user read faults",
 			call: func(t *testing.T, cp *ControlPlane, srv *httptest.Server, _ *gensurla.ChangeCardResult) int {
 				require.NoError(t, os.WriteFile(cp.cards.path("chg-broken"), []byte("{"), 0o600))
 				return sendHistoryRequest(t, t.Context(), srv, http.MethodGet, "/changes/chg-broken", user, nil)

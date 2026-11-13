@@ -551,7 +551,7 @@ func New(opts Options) (*ControlPlane, error) {
 // tool codecs already refuse undeclared argument fields.
 // auth is required and is supplied by the project credential owner. A request
 // sent with GET carries a private mark the diagnostics history uses to leave
-// out the user's successful reads.
+// out the user's reads that succeed or are refused.
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)

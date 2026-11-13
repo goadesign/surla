@@ -37,10 +37,12 @@ type (
 		// callerID and callerKind are private attribution and never added to SDK spans.
 		callerID   string
 		callerKind string
-		// failuresOnly appends the span only when it ends with error status. It
-		// is set for the user's reads: the views page reads again whenever its
-		// waiting read reports a change, so saving successful reads would fill
-		// the history with the page's observation instead of what was done.
+		// failuresOnly appends the span only when it ends with error status, an
+		// actual failure. It is set for the user's reads: the views page reads
+		// again whenever its waiting read reports a change, so saving reads that
+		// succeed or are refused (an expected answer without error status, such
+		// as a change that is gone) would fill the history with the page's
+		// observation instead of what was done.
 		failuresOnly bool
 		// ended lets only the first End export and append this operation.
 		ended atomic.Bool
@@ -85,7 +87,8 @@ func (c *ControlPlane) ListTraces(
 // Start returns the SDK's unchanged context so parent-child accounting keeps
 // seeing its concrete SDK parent span. Only the separately returned local span
 // owns recording the authenticated operation when its caller ends it. Spans
-// of a GET request by the user's session are appended only when they fail.
+// of a GET request by the user's session are appended only when they end with
+// error status.
 func (t diagnosticTracer) Start(
 	ctx context.Context,
 	name string,
@@ -141,8 +144,9 @@ func (c *ControlPlane) tracer(scope string) trace.Tracer {
 }
 
 // recordCompleted saves the ended SDK span even while its End resumes a panic,
-// unless it is a user's read that ended without error status. It holds no
-// span history and reports only actual storage failures to the host.
+// unless it is a user's read that succeeded or was refused, so it ended
+// without error status. It holds no span history and reports only actual
+// storage failures to the host.
 func (s *diagnosticSpan) recordCompleted() {
 	if s.failuresOnly && s.ReadWriteSpan.Status().Code != codes.Error {
 		return

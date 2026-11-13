@@ -133,10 +133,12 @@ binds the project server's SDK provider to that instance's operations at constru
 Without a provider, `list_traces` returns `not_implemented` with setup instructions.
 Each recorded operation saves its
 bounded safe view through `internal/traceview` when its own span ends.
-`NewHTTPHandler` marks the context of each request sent with `GET`, a method
-whose routes only read; a span of the user's browser session under that mark is
-saved only when it ends with an error status, so the views page's repeated
-reads do not fill the history. Identity
+Reads by the user's page that succeed or are refused are not saved, so the
+views page's repeated reads do not fill the history: `NewHTTPHandler` marks the
+context of each request sent with `GET`, a method whose routes only read, and a
+span of the user's browser session under that mark is saved only when it ends
+with an error status. A refusal such as `not_found` is an expected answer
+without error status. Identity
 stays with that local write; it is not attached to the exported span or chosen
 by a provider-wide processor.
 `ControlPlane.ListTraces` reads the project owner's pages from that file, and
