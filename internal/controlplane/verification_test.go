@@ -20,8 +20,8 @@ import (
 )
 
 func TestVerifyChangeAcceptsOnlyTheOwnersCurrentConfirmedRevision(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	commit := strings.Repeat("a", 40)
 	cp, card, cfg := verificationSetup(t)
 
@@ -77,7 +77,7 @@ func TestVerifyChangeAcceptsOnlyTheOwnersCurrentConfirmedRevision(t *testing.T) 
 }
 
 func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp, card, cfg := verificationSetup(t)
 	commit := strings.Repeat("a", 40)
 	inputs := PromotionInputs{SuiteID: "orders_acceptance", SuiteCommit: cfg.Plan.SuiteCommit, Environment: "sim",
@@ -166,7 +166,7 @@ func TestGetVerificationSafeErrors(t *testing.T) {
 	otel.SetTracerProvider(recorder)
 	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
 
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp, card, cfg := verificationSetup(t)
 	commit := strings.Repeat("a", 40)
 
@@ -251,8 +251,8 @@ func TestListVerifications(t *testing.T) {
 	otel.SetTracerProvider(recorder)
 	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
 
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	cp, card, cfg := verificationSetup(t)
 	commit := strings.Repeat("a", 40)
 	inputs := PromotionInputs{
@@ -393,9 +393,10 @@ func verificationSetup(t *testing.T) (*ControlPlane, *gensurla.ChangeCardResult,
 	cp := newControlPlane(t, Options{
 		Verification: cfg,
 	})
-	card, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}),
+	card, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}),
 		&gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
+	card = mustConfirmNoop(t, cp, WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}), card)
 	require.Equal(t, StatusConfirmed, card.Status)
 	return cp, card, cfg
 }

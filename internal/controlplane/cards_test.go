@@ -20,7 +20,7 @@ import (
 func TestCardsSurviveANewControlPlane(t *testing.T) {
 	dir := t.TempDir()
 	cfg := verificationConfig(t)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	analysis := refundAnalysis("Refunds up to $50 are instant.", &gensurla.CP1AnalysisAmbiguity{
 		Question: "Does the limit include tax?", Options: []string{"with_tax", "without_tax"},
 	})
@@ -44,7 +44,7 @@ func TestCardsSurviveANewControlPlane(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, confirmed, got, "the saved card comes back unchanged")
 
-	_, err = restarted.GetChange(WithPrincipal(context.Background(), Principal{ID: "bob@example.com"}), &gensurla.GetChangePayload{ChangeID: "chg"})
+	_, err = restarted.GetChange(WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser}), &gensurla.GetChangePayload{ChangeID: "chg"})
 	assert.ErrorContains(t, err, "is not the owner", "ownership is saved with the card")
 
 	again, err := restarted.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{
@@ -106,7 +106,7 @@ func TestCardStoreCloseReleasesDuplicatedLock(t *testing.T) {
 // complete, consistent card fails the call instead of being skipped.
 func TestUnreadableCardsAreErrors(t *testing.T) {
 	saved := confirmedCardFile(t)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
 		name    string
 		content string
@@ -153,7 +153,7 @@ func TestRequestsFinishingAfterCloseDoNotWrite(t *testing.T) {
 	card := saveCard(t, cp, nil)
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	target.report = passingReport(t, card.RequestRevision, commit, inputs)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	approved := make(chan error, 1)
 	go func() {
 		_, err := cp.ApproveMerge(alice, &gensurla.ApproveMergePayload{
@@ -181,7 +181,7 @@ func TestRequestsFinishingAfterCloseDoNotWrite(t *testing.T) {
 // errCardsClosed and writes nothing to the directory the new control plane
 // holds: no card for a proposal, and the card unchanged for a revision.
 func TestProposalsAndRevisionsFinishingAfterCloseDoNotWrite(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	// open returns a control plane on a new cards directory whose next span
 	// named held stops at its start until hold is released.
 	open := func(t *testing.T, held string) (*ControlPlane, *spanHold, string) {
@@ -255,7 +255,7 @@ func TestProposalsAndRevisionsFinishingAfterCloseDoNotWrite(t *testing.T) {
 func TestAFailedSaveKeepsThePreviousCard(t *testing.T) {
 	dir := t.TempDir()
 	cp := newControlPlane(t, Options{CardsDir: dir})
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	card := saveCard(t, cp, nil)
 	require.NoError(t, os.Chmod(dir, 0o500))
 	t.Cleanup(func() { assert.NoError(t, os.Chmod(dir, 0o700)) })
@@ -284,12 +284,12 @@ func TestASavedApprovalNeedsAPromotionTarget(t *testing.T) {
 		Artifacts: map[string]string{"orders": strings.Repeat("e", 64)}, ScenarioCount: 5,
 	}
 	approved := saveCard(t, cp, recorded)
-	got, err := cp.GetChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}), &gensurla.GetChangePayload{ChangeID: "chg"})
+	got, err := cp.GetChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}), &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Nil(t, got.Approval)
 	require.NotNil(t, got.UnverifiedApproval)
 	assert.Equal(t, recorded, got.UnverifiedApproval.Approval)
-	assert.Contains(t, got.UnverifiedApproval.Reason, "-promotion-config")
+	assert.Contains(t, got.UnverifiedApproval.Reason, "surla promotion set")
 	saved, ok, err := cp.cards.load("chg")
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -429,7 +429,7 @@ func TestAnUnfinishedSaveIsHarmless(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, stagingFile), []byte(`{"card":`), 0o600))
 
 	next := newControlPlane(t, Options{CardsDir: dir})
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	got, err := next.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Equal(t, card, got, "the saved card is untouched")
@@ -488,7 +488,7 @@ func TestStagingDoesNotFollowLinks(t *testing.T) {
 // could not be found again once saved.
 func TestChangeIDsMustBeValidUTF8(t *testing.T) {
 	cp := newControlPlane(t, Options{})
-	_, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}),
+	_, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}),
 		&gensurla.ProposeChangePayload{ChangeID: "chg\xff", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
 	assertServiceError(t, err, "unprocessable")
 	assert.ErrorContains(t, err, `["change_id"]: invalid UTF-8`)
@@ -499,7 +499,7 @@ func TestChangeIDsMustBeValidUTF8(t *testing.T) {
 // unauthenticated, so no card is saved under an owner it could not match.
 func TestPrincipalIDsMustBeValidUTF8(t *testing.T) {
 	cp := newControlPlane(t, Options{})
-	bad := WithPrincipal(context.Background(), Principal{ID: "alice\xff"})
+	bad := WithPrincipal(context.Background(), Principal{ID: "alice\xff", CallerID: "alice\xff", Kind: CallerUser})
 	_, err := cp.ProposeChange(bad, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
 	assert.ErrorContains(t, err, "authenticated principal is required")
 	_, err = cp.GetChange(bad, &gensurla.GetChangePayload{ChangeID: "chg"})
@@ -515,7 +515,7 @@ func TestPrincipalIDsMustBeValidUTF8(t *testing.T) {
 func TestCloseRemovesTheEvaluatorWorkspace(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	incomplete := &gensurla.DesignSnapshot{Files: map[string]string{"design/design.go": "package design\n"}}
 
 	idle, err := New(Options{CardsDir: t.TempDir()})
@@ -533,4 +533,25 @@ func TestCloseRemovesTheEvaluatorWorkspace(t *testing.T) {
 	_, err = cp.Diff(alice, &gensurla.DiffPayload{Old: incomplete, New: incomplete})
 	require.ErrorContains(t, err, "design evaluator is closed")
 	require.NoError(t, cp.Close(), "closing again repeats the same results")
+}
+
+// TestCloseFinalizesHostRecordBeforeReleasingStore proves the next server cannot lose its running record to an old Close.
+func TestCloseFinalizesHostRecordBeforeReleasingStore(t *testing.T) {
+	dir := t.TempDir()
+	calls := 0
+	cp, err := New(Options{CardsDir: dir, BeforeStoreRelease: func() error {
+		calls++
+		held, err := CardStoreInUse(dir)
+		assert.NoError(t, err)
+		assert.True(t, held, "running record must be removed before writer lock release")
+		return nil
+	}})
+	require.NoError(t, err)
+	require.NoError(t, cp.Close())
+	assert.Equal(t, 1, calls)
+	next, err := New(Options{CardsDir: dir})
+	require.NoError(t, err)
+	require.NoError(t, cp.Close())
+	assert.Equal(t, 1, calls, "a closed owner must never finalize the next server's record")
+	require.NoError(t, next.Close())
 }

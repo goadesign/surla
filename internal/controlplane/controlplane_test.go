@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -38,8 +41,8 @@ type (
 // text verbatim, binds the card to the authenticated owner, and locks
 // confirmation to the current request_revision.
 func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 
 	ambiguousAnalysis := &gensurla.CP1Analysis{
 		Summary: "  Auto-approve refunds under $50 and route larger refunds to manager approval.\n",
@@ -156,12 +159,12 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 	assert.NotEqual(t, proposed.RequestRevision, confirmed.RequestRevision)
 }
 
-// TestProposeChangeAutoConfirmsACardWithoutQuestions verifies that an
+// TestProposeChangeWaitsForUserWithoutQuestions verifies that an
 // analysis with no open questions is saved confirmed by its owner, and that a
 // proposal on a server bound to a workspace records that workspace's
 // design/*.go as the card's design source.
-func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+func TestProposeChangeWaitsForUserWithoutQuestions(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	ws := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(ws, "design"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(ws, "design", "design.go"), []byte("package design // refunds\n"), 0o644))
@@ -173,9 +176,8 @@ func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
 		Analysis: refundAnalysis("Refunds up to $50 are instant."),
 	})
 	require.NoError(t, err)
-	assert.Equal(t, StatusConfirmed, card.Status)
-	require.NotNil(t, card.ConfirmedBy)
-	assert.Equal(t, "alice@example.com", *card.ConfirmedBy)
+	assert.Equal(t, StatusNeedsConfirmation, card.Status)
+	assert.Nil(t, card.ConfirmedBy)
 	assert.Empty(t, card.Ambiguities)
 	assert.Empty(t, card.Answers)
 	assert.Nil(t, card.UIComposition)
@@ -191,7 +193,7 @@ func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
 // design/*.go (so the card does not block init_project), and the bound
 // workspace's design/*.go as a JSON object with HTML characters unescaped.
 func TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	emptyWorkspace := t.TempDir()
 	designWorkspace := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(designWorkspace, "design"), 0o755))
@@ -245,10 +247,10 @@ func TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst(t *testing.T) {
 // before the service runs, and that the service rejects the rules that span
 // fields (repeated options) as unprocessable. No rejected case saves a card.
 func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srv.Close)
 
 	const example = `{"scenario":"Refund at the limit","input_summary":"Order total $50.00","expected_outcome":"Instant store credit","verification_kind":"deterministic"}`
@@ -351,7 +353,7 @@ func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
 // body without it reaches the service, which on this host answers 501.
 func TestHTTPRoutesRefuseUndeclaredJSONFields(t *testing.T) {
 	cp := newControlPlane(t, Options{})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srv.Close)
 
 	status, body := postJSON(t, srv.URL+"/cp1/model", "alice-token", `{"gateway_addr":"127.0.0.1:9090","timeout":"5s"}`)
@@ -374,7 +376,7 @@ func TestHTTPRoutesRefuseUndeclaredJSONFields(t *testing.T) {
 // unknown verification_kind, a missing analysis or a change_id that is not
 // valid UTF-8 is refused as unprocessable and saves nothing.
 func TestGoCallersGetTheDesignRules(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	saved := mustPropose(t, cp, alice, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
 
@@ -428,14 +430,14 @@ func TestGoCallersGetTheDesignRules(t *testing.T) {
 	assert.Equal(t, saved.RequestRevision, current.RequestRevision, "a refused revision leaves the card unchanged")
 }
 
-// TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator verifies
+// TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP verifies
 // CP2 design evaluation, Golden Path MCP resource serving, CP3 prompt overrides,
 // and bearer-token authentication.
-func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *testing.T) {
+func TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	clearAnalysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds with item_subtotal_cents < 5000 auto-approve; >= 5000 require manager approval.",
 		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
@@ -516,9 +518,10 @@ var _ = Service("orders", func() {
 	if err != nil {
 		t.Fatalf("ProposeChange failed: %v", err)
 	}
-	if card.Status != StatusConfirmed {
-		t.Fatalf("expected clear request to be immediately %q, got %q", StatusConfirmed, card.Status)
-	}
+	require.Equal(t, StatusNeedsConfirmation, card.Status)
+	card, err = cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples})
+	require.NoError(t, err)
+	require.Equal(t, StatusConfirmed, card.Status)
 
 	preview, err := cp.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
 		ChangeID:        card.ChangeID,
@@ -556,15 +559,15 @@ var _ = Service("orders", func() {
 	}
 
 	// Verified bearer-token authenticator rejects unauthenticated HTTP requests and accepts valid bearer token.
-	auth := NewTokenAuthenticator(map[string]Principal{
+	auth := workflowAuthenticator(map[string]Principal{
 		"secret-token-alice": {ID: "alice@example.com"},
 	})
 	srv := httptest.NewServer(NewHTTPHandler(cp, auth))
 	defer srv.Close()
 
-	unauthResp, err := http.Get(srv.URL + "/ui/checkpoint")
+	unauthResp, err := http.Get(srv.URL + "/golden-path")
 	if err != nil {
-		t.Fatalf("GET /ui/checkpoint failed: %v", err)
+		t.Fatalf("GET /golden-path failed: %v", err)
 	}
 	if closeErr := unauthResp.Body.Close(); closeErr != nil {
 		t.Fatalf("close unauthResp: %v", closeErr)
@@ -573,14 +576,14 @@ var _ = Service("orders", func() {
 		t.Fatalf("expected 401 Unauthorized without bearer token, got %d", unauthResp.StatusCode)
 	}
 
-	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/ui/checkpoint", nil)
+	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/golden-path", nil)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
 	authReq.Header.Set("Authorization", "Bearer secret-token-alice")
 	authResp, err := http.DefaultClient.Do(authReq)
 	if err != nil {
-		t.Fatalf("authenticated GET /ui/checkpoint failed: %v", err)
+		t.Fatalf("authenticated GET /golden-path failed: %v", err)
 	}
 	if closeErr := authResp.Body.Close(); closeErr != nil {
 		t.Fatalf("close authResp: %v", closeErr)
@@ -604,38 +607,24 @@ var _ = Service("orders", func() {
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
 		"check_project", "update_dependencies", "read_check_output",
-		"list_traces", "refresh_story", "get_story_refresh",
+		"list_traces", "refresh_story", "get_story_refresh", "list_changes",
 	}, toolNames)
-	// Every checkpoint tool, diff included, links the checkpoint viewer so an
-	// MCP Apps host can render its result; configure_model, init_project,
-	// generate_code, check_project, update_dependencies, read_check_output,
-	// refresh_story and get_story_refresh are server/workspace tools without a
-	// checkpoint UI view. list_traces is also a data tool; the viewer reads it
-	// through its separate Traces control.
-	workspaceTools := map[string]bool{
-		"configure_model": true, "init_project": true, "generate_code": true,
-		"check_project": true, "update_dependencies": true, "read_check_output": true,
-		"list_traces": true, "refresh_story": true, "get_story_refresh": true,
-	}
+	// The views page reads the server directly; no tool asks a client to
+	// embed a page for its result.
 	for _, tool := range toolsRes.Tools {
-		if workspaceTools[tool.Name] {
-			if strings.Contains(string(tool.Meta), "resourceUri") {
-				t.Fatalf("tool %q unexpectedly links a UI resource: _meta=%s", tool.Name, tool.Meta)
-			}
-			continue
-		}
-		if !strings.Contains(string(tool.Meta), `"resourceUri":"ui://surla/checkpoint"`) {
-			t.Fatalf("tool %q does not link ui://surla/checkpoint: _meta=%s", tool.Name, tool.Meta)
+		if strings.Contains(string(tool.Meta), "resourceUri") {
+			t.Fatalf("tool %q links a UI resource: _meta=%s", tool.Name, tool.Meta)
 		}
 	}
-	resRead, err := adapter.ResourcesRead(ctx, &genmcpadapter.ResourcesReadPayload{URI: "ui://surla/checkpoint"})
+	resources, err := adapter.ResourcesList(ctx, &genmcpadapter.ResourcesListPayload{})
 	if err != nil {
-		t.Fatalf("ResourcesRead(ui://surla/checkpoint) failed: %v", err)
+		t.Fatalf("ResourcesList: %v", err)
 	}
-	completeRes, ok := resRead.Outcome.AsComplete()
-	if !ok || len(completeRes.Contents) != 1 || completeRes.Contents[0].Text == nil || !strings.Contains(*completeRes.Contents[0].Text, "surla-checkpoint-root") {
-		t.Fatalf("unexpected ResourcesRead content: %+v", resRead)
+	resourceURIs := make([]string, 0, len(resources.Resources))
+	for _, resource := range resources.Resources {
+		resourceURIs = append(resourceURIs, resource.URI)
 	}
+	assert.Equal(t, []string{goldenpath.ResourceURI}, resourceURIs, "the Golden Path is the only MCP resource")
 
 	goldenRes, err := adapter.ResourcesRead(ctx, &genmcpadapter.ResourcesReadPayload{URI: goldenpath.ResourceURI})
 	if err != nil {
@@ -667,8 +656,8 @@ func (u *boundTargetPromptUpdater) ApplyPromptOverride(ctx context.Context, prom
 // it is, and that stale revisions, other principals and previews bound to an
 // earlier revision are refused.
 func TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	ambiguous := refundAnalysis("Refunds up to $50 are instant.", &gensurla.CP1AnalysisAmbiguity{
 		Question: "Is $50.00 itself instant?", Options: []string{"instant", "manager"},
 	})
@@ -738,8 +727,9 @@ func TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards(t *testing.T) {
 		}
 	})
 
-	t.Run("auto-confirmed card is refined later", func(t *testing.T) {
+	t.Run("a user-confirmed card is refined later", func(t *testing.T) {
 		cp, proposed := propose(t, unambiguous)
+		proposed = mustConfirmNoop(t, cp, aliceCtx, proposed)
 		if proposed.Status != StatusConfirmed {
 			t.Fatalf("status = %q, want %q", proposed.Status, StatusConfirmed)
 		}
@@ -771,8 +761,8 @@ func TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards(t *testing.T) {
 // that get_change is owner-only, fails for an unknown change_id, never changes
 // the card, and is served at GET /changes/{change_id}.
 func TestGetChangeLetsAStaleEditorRecover(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	start := mustPropose(t, cp, aliceCtx, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
 	withOutcome := func(card *gensurla.ChangeCardResult, outcome string) []*gensurla.ExampleItem {
@@ -818,7 +808,7 @@ func TestGetChangeLetsAStaleEditorRecover(t *testing.T) {
 		t.Fatalf("unknown GetChange err = %v, want unknown change_id", err)
 	}
 
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	defer srv.Close()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/changes/chg", nil)
 	if err != nil {
@@ -894,7 +884,7 @@ func postJSON(t *testing.T, url, token, body string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, bytes.NewReader([]byte(body)))
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+token)
+	workflowAuthorization(req, token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -919,4 +909,72 @@ func reviseArgs(t *testing.T, p *gensurla.ReviseChangePayload) json.RawMessage {
 	raw, err := gensurla.EncodeReviseChangePayload(p)
 	require.NoError(t, err)
 	return raw
+}
+
+// TestUnchangedConfirmationFromAnotherSessionKeepsRevision preserves approval bindings across memory-only browser sessions.
+func TestUnchangedConfirmationFromAnotherSessionKeepsRevision(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	inputs := PromotionInputs{SuiteID: "suite", SuiteCommit: strings.Repeat("b", 40), Environment: "sim", Artifacts: map[string]string{"app": "artifact"}}
+	target := &promotionTargetStub{inputs: inputs}
+	cp := newControlPlane(t, Options{PromotionTarget: target, TracerProvider: provider})
+	auth := fixtureCredentials(map[string]Principal{
+		"guide":  {ID: "owner", CallerID: "guide", Kind: CallerGuide},
+		"first":  {ID: "owner", CallerID: "session-one", Kind: CallerUser},
+		"second": {ID: "owner", CallerID: "session-two", Kind: CallerUser},
+	})
+	srv := httptest.NewServer(NewHTTPHandler(cp, auth))
+	defer srv.Close()
+	guide := WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "guide", Kind: CallerGuide})
+	card := mustPropose(t, cp, guide, "session-change", "Keep the same rules", refundAnalysis("Keep the same rules"))
+	payload := &gensurla.ConfirmIntentPayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples}
+	raw, err := gensurla.EncodeConfirmIntentPayload(payload)
+	require.NoError(t, err)
+	send := func(token string, raw []byte) *gensurla.ChangeCardResult {
+		request, err := http.NewRequest(http.MethodPost, srv.URL+"/changes/confirm", bytes.NewReader(raw))
+		require.NoError(t, err)
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := srv.Client().Do(request)
+		require.NoError(t, err)
+		defer response.Body.Close()
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		body, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		result, err := gensurla.DecodeChangeCardResult(body)
+		require.NoError(t, err)
+		return result
+	}
+	confirmed := send("first", raw)
+	first := WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "session-one", Kind: CallerUser})
+	target.report = passingReport(t, confirmed.RequestRevision, strings.Repeat("c", 40), inputs)
+	approved, err := cp.ApproveMerge(first, &gensurla.ApproveMergePayload{ChangeID: confirmed.ChangeID, RequestRevision: confirmed.RequestRevision, CandidateCommit: strings.Repeat("c", 40), ReportDigest: target.report.Digest})
+	require.NoError(t, err)
+	require.NotNil(t, approved.Approval)
+	payload.RequestRevision = approved.RequestRevision
+	raw, err = gensurla.EncodeConfirmIntentPayload(payload)
+	require.NoError(t, err)
+	unchanged := send("second", raw)
+	assert.Equal(t, approved.RequestRevision, unchanged.RequestRevision)
+	assert.Equal(t, approved.Approval, unchanged.Approval)
+	require.NotNil(t, unchanged.ConfirmedBy)
+	assert.Equal(t, "owner", *unchanged.ConfirmedBy)
+	second := WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "session-two", Kind: CallerUser})
+	history, err := cp.ListTraces(second, &gensurla.ListTracesPayload{Status: "all", Limit: 100})
+	require.NoError(t, err)
+	callers := map[string]bool{}
+	for _, span := range history.Spans {
+		if span.Name == "surla.request.confirm_intent" {
+			callers[span.Attributes["surla.caller_id"]] = true
+		}
+	}
+	assert.True(t, callers["session-one"])
+	assert.True(t, callers["session-two"])
+	for _, span := range exporter.GetSpans() {
+		for _, attr := range span.Attributes {
+			assert.NotEqual(t, "surla.caller_id", string(attr.Key))
+			assert.NotEqual(t, "surla.caller_kind", string(attr.Key))
+		}
+	}
 }

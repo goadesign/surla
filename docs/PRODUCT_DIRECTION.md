@@ -26,8 +26,10 @@ not.
 4. **Out of scope.** A catalogue or console of cloud services, deploying
    or applying infrastructure, and an application builder for non-technical
    users.
-5. **Delivery.** An MCP App inside the assistant the user already works in,
-   with the same page served by `surla serve` for hosts that cannot show it.
+5. **Delivery.** The coding agents the user already has, working in
+   terminals Surla starts, and a views page the project's Surla server
+   serves to the user's browser, where the user agrees changes and approves
+   results under their own identity.
 
 ## Decisions
 
@@ -243,17 +245,16 @@ Surla validates the Terraform files and compares them with the deployment
 view, reporting an element with no resource and a resource missing from the
 diagram.
 
-### Delivered as an MCP App
+### Delivered as a page in the browser
 
-- **In the conversation,** a small card shows one moment — a proposal, a
-  decision, a verdict — with a small diagram and one action.
-- **Full screen,** the same app is the architecture workspace.
-- **State lives on the Surla server.** A view can then be rebuilt at any
-  time from what the server holds. The MCP Apps specification dated
-  2026-01-26 leaves it to the host how long a view stays mounted and lists
-  state persistence as future work, so Surla does not rely on a view
-  surviving between turns.
-- **Outside an MCP Apps host,** `surla serve` serves the same page.
+- **Served by the project's Surla server.** Running `surla` opens the page
+  with a one-time link; the page keeps its session only while it is open.
+- **The page is the architecture workspace,** and the only place where a
+  person agrees a change or approves a result. No agent holds the user's
+  identity.
+- **State lives on the Surla server.** A view can be rebuilt at any time
+  from what the server holds, so a reload or a restart loses only the
+  session, and the page updates itself when the server's state changes.
 
 ## Open questions
 

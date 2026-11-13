@@ -1,6 +1,5 @@
-// Package components renders C4 Architecture Previews, Structural Design Diffs,
-// Fast Draft Overrides, Live Target views, and Incoming Change Card notifications
-// inside the Surla Architecture Workspace.
+// Package components renders C4 Architecture Previews and Incoming Change Card
+// notifications inside the Surla Architecture Workspace.
 
 import React from "react";
 import {
@@ -8,10 +7,6 @@ import {
   C4ContainerItem,
   C4EdgeItem,
   ChangeCardResult,
-  DiffResult,
-  DraftOverrideResult,
-  LiveTargetResult,
-  StopLiveTargetResult,
 } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
 
@@ -395,133 +390,6 @@ export function ArchitecturePreviewView({
   );
 }
 
-function DiffList({
-  prefix,
-  items,
-  emptyText,
-}: {
-  prefix: string;
-  items: string[];
-  emptyText: string;
-}) {
-  if (items.length === 0) {
-    return <p>{emptyText}</p>;
-  }
-  return (
-    <ul className="surla-compact-list">
-      {items.map((decl, idx) => (
-        <li key={String(idx)}>
-          <Badge>{prefix}</Badge>
-          <code>{decl}</code>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// DiffResultView renders an unbound structural design diff.
-export function DiffResultView({ diff }: { diff: DiffResult }) {
-  return (
-    <>
-      <Card className="surla-meta">
-        <h2>Structural Goa &amp; Goa-AI Design Diff</h2>
-        <p>{diff.summary}</p>
-        <p>
-          Standalone structural comparison (unbound to a Change Card or request_revision).
-        </p>
-        <details className="surla-details">
-          <summary>Details</summary>
-          <p>
-            <Badge>{"has_changes=" + diff.has_changes}</Badge>
-          </p>
-        </details>
-      </Card>
-      <Card className="surla-card">
-        <h3>{"Added Declarations (" + diff.added_declarations.length + ")"}</h3>
-        <DiffList
-          prefix="+"
-          items={diff.added_declarations}
-          emptyText="No added declarations."
-        />
-        <h3>{"Modified Declarations (" + diff.modified_declarations.length + ")"}</h3>
-        <DiffList
-          prefix="~"
-          items={diff.modified_declarations}
-          emptyText="No modified declarations."
-        />
-        <h3>{"Removed Declarations (" + diff.removed_declarations.length + ")"}</h3>
-        <DiffList
-          prefix="-"
-          items={diff.removed_declarations}
-          emptyText="No removed declarations."
-        />
-        <h3>{"Module Version Deltas (" + diff.version_deltas.length + ")"}</h3>
-        <DiffList
-          prefix="go.mod"
-          items={diff.version_deltas}
-          emptyText="No go.mod directive changes."
-        />
-      </Card>
-    </>
-  );
-}
-
-// DraftOverrideView renders a Fast Draft Override result.
-export function DraftOverrideView({ draft }: { draft: DraftOverrideResult }) {
-  return (
-    <Card className="surla-meta">
-      <h2>Fast Draft Update</h2>
-      <p>{draft.message}</p>
-      <details className="surla-details">
-        <summary>Details</summary>
-        <p>
-          <Badge>{"applied_in_store=" + draft.applied_in_store}</Badge>
-          <Badge>{"requires_rebuild=" + draft.requires_rebuild}</Badge>
-          {draft.prompt_version ? (
-            <span>
-              prompt_version: <code>{draft.prompt_version}</code>
-            </span>
-          ) : null}
-        </p>
-      </details>
-    </Card>
-  );
-}
-
-// LiveTargetView renders the live target a start_live_target call started
-// or the outcome of stop_live_target. The commit stays in Details; the
-// heading and message say what the operator can do next.
-export function LiveTargetView({ result }: { result: LiveTargetResult | StopLiveTargetResult }) {
-  if ("url" in result) {
-    return (
-      <Card className="surla-meta">
-        <div className="surla-region-header">
-          <h2>Live Target Running</h2>
-          <Badge variant="success">Running</Badge>
-        </div>
-        <p>{result.message}</p>
-        <p>
-          The target listens at <code>{result.url}</code>, a loopback address on the Surla server&apos;s host. Send prompt text
-          with draft_override. Drafts are not verified, and starting another target discards them: commit the accepted
-          text and run verification.
-        </p>
-        <details className="surla-details">
-          <summary>Details</summary>
-          <p>
-            candidate_commit: <code>{result.candidate_commit}</code>
-          </p>
-        </details>
-      </Card>
-    );
-  }
-  return (
-    <Card className="surla-meta">
-      <h2>{result.stopped ? "Live Target Stopped" : "No Live Target Running"}</h2>
-      <p>{result.message}</p>
-    </Card>
-  );
-}
-
 // IncomingChangeCardView renders a notification banner when a new Change Card
 // arrives while the operator has unsaved draft edits or an in-flight RPC.
 export function IncomingChangeCardView({
@@ -553,38 +421,5 @@ export function IncomingChangeCardView({
         </p>
       </details>
     </Card>
-  );
-}
-
-// ToolInputPartialView renders a live preview of partial tool arguments streamed
-// via ui/notifications/tool-input-partial before the tool completes.
-export function ToolInputPartialView({
-  partialArgs,
-}: {
-  partialArgs: Record<string, unknown>;
-}) {
-  const keys = Object.keys(partialArgs);
-  return (
-    <Alert id="surla-partial-input-preview" role="status">
-      <div className="surla-field-row">
-        <strong>Streaming Tool Input Preview</strong>
-        <Badge variant="accent">tool-input-partial</Badge>
-      </div>
-      {keys.length > 0 ? (
-        <ul>
-          {keys.map((k) => {
-            const val = partialArgs[k];
-            const text = typeof val === "string" ? val : JSON.stringify(val);
-            return (
-              <li key={k}>
-                <code>{k}</code>: {text}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p>Streaming tool arguments...</p>
-      )}
-    </Alert>
   );
 }

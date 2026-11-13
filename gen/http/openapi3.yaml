@@ -7,6 +7,95 @@ servers:
     - url: http://localhost:80
       description: Default server for surla
 paths:
+    /change-updates:
+        get:
+            tags:
+                - surla
+            summary: wait_for_changes surla
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            operationId: surla#wait_for_changes
+            parameters:
+                - name: since
+                  in: query
+                  description: version of the change list the caller last read.
+                  allowEmptyValue: true
+                  required: true
+                  schema:
+                    type: string
+                    description: version of the change list the caller last read.
+                    example: fj8
+                    minLength: 1
+                    maxLength: 128
+                  example: fj8
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ChangeListVersion'
+                            example:
+                                version: Rerum illum facilis doloribus id ea.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+    /changes:
+        get:
+            tags:
+                - surla
+            summary: list_changes surla
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            operationId: surla#list_changes
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ChangeList'
+                            example:
+                                approval_available: true
+                                changes:
+                                    - change_id: Consequatur nemo.
+                                      latest_verification:
+                                        run_id: Voluptas veritatis excepturi fuga enim et.
+                                        state: not_completed
+                                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                                      saved_at: "2015-06-29T05:47:08Z"
+                                      status: needs_confirmation
+                                      summary: Ut saepe incidunt odit.
+                                    - change_id: Consequatur nemo.
+                                      latest_verification:
+                                        run_id: Voluptas veritatis excepturi fuga enim et.
+                                        state: not_completed
+                                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                                      saved_at: "2015-06-29T05:47:08Z"
+                                      status: needs_confirmation
+                                      summary: Ut saepe incidunt odit.
+                                version: Voluptas voluptates.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /changes/{change_id}:
         get:
             tags:
@@ -667,7 +756,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -931,7 +1020,7 @@ paths:
                                             suite_id: Dolorum sed sunt sed.
                                       suite_commit: Nostrum perspiciatis quo.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -973,7 +1062,7 @@ paths:
             tags:
                 - surla
             summary: verify_change surla
-            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.
+            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.
             operationId: surla#verify_change
             parameters:
                 - name: change_id
@@ -1014,7 +1103,7 @@ paths:
                                         started_at: "1984-04-01T02:58:45Z"
                                 suite_commit: Nesciunt dolor in ea.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -1070,7 +1159,7 @@ paths:
             tags:
                 - surla
             summary: approve_merge surla
-            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.
+            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.
             operationId: surla#approve_merge
             requestBody:
                 description: Request body for approve_merge.
@@ -1983,7 +2072,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -2973,7 +3062,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -3158,7 +3247,7 @@ paths:
                                       text_only_args_schema: Facere voluptas rerum consectetur.
                                       toolset: Beatae repudiandae.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -3214,7 +3303,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
+            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
             operationId: surla#propose_change
             requestBody:
                 description: Request body for propose_change.
@@ -3884,6 +3973,19 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "409":
                     description: 'conflict: A Change Card with this change_id already exists; use revise_change or a new change_id.'
                     content:
@@ -4603,7 +4705,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -4659,7 +4761,7 @@ paths:
             tags:
                 - surla
             summary: configure_model surla
-            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider''s API key from surla serve''s environment) or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.'
+            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider''s API key from the project server''s environment) or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.'
             operationId: surla#configure_model
             requestBody:
                 description: Request body for configure_model.
@@ -4683,6 +4785,19 @@ paths:
                                 gateway_addr: "0"
                                 model_name: l
                                 provider: openai
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
                     content:
@@ -4759,6 +4874,19 @@ paths:
                                     - Explicabo cupiditate occaecati consequatur optio molestiae iure.
                                     - Quibusdam soluta quisquam impedit pariatur laboriosam.
                                     - Minus eum corrupti culpa.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /golden-path:
         get:
             tags:
@@ -4775,6 +4903,19 @@ paths:
                                 type: string
                                 example: Maxime nihil veritatis perferendis culpa et.
                             example: Maxime nihil veritatis perferendis culpa et.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /live-target:
         delete:
             tags:
@@ -4792,8 +4933,21 @@ paths:
                             example:
                                 message: Dolor unde.
                                 stopped: true
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "500":
-                    description: 'live_target_stop_failed: The live target''s processes could not be confirmed stopped; restart surla serve.'
+                    description: 'live_target_stop_failed: The live target''s processes could not be confirmed stopped; stop and start Surla.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -4809,7 +4963,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.
             operationId: surla#start_live_target
             requestBody:
                 description: Request body for start_live_target.
@@ -4831,6 +4985,19 @@ paths:
                                 candidate_commit: Esse assumenda.
                                 message: Dolor voluptatem reiciendis non.
                                 url: Ut soluta eligendi labore ipsa dicta.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'live_target_failed: The live target could not be built or started; the message says which step failed.'
                     content:
@@ -4857,12 +5024,365 @@ paths:
                                 name: live_target_unavailable
                                 temporary: false
                                 timeout: false
+    /project/agents:
+        post:
+            tags:
+                - project
+            summary: add_agent project
+            description: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.
+            operationId: project#add_agent
+            requestBody:
+                description: Request body for add_agent.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AddAgentRequestBody'
+                        example:
+                            actor_id: s5
+                            role: builder
+            responses:
+                "201":
+                    description: Created response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectAgent'
+                            example:
+                                actor_id: Dignissimos aut.
+                                credential_file: Molestiae sint.
+                                role: builder
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/agents/{actor_id}:
+        delete:
+            tags:
+                - project
+            summary: remove_agent project
+            description: The CLI revokes an agent and removes its private credential file before returning.
+            operationId: project#remove_agent
+            parameters:
+                - name: actor_id
+                  in: path
+                  description: Agent identifier.
+                  required: true
+                  schema:
+                    type: string
+                    description: Agent identifier.
+                    example: I3
+                    pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
+                  example: I3
+            responses:
+                "204":
+                    description: No Content response.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/browser-link:
+        post:
+            tags:
+                - project
+            summary: browser_link project
+            description: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.
+            operationId: project#browser_link
+            responses:
+                "201":
+                    description: Created response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BrowserLinkResponseBody'
+                            example:
+                                expires_at: "1975-12-27T22:57:38Z"
+                                url: Magni minima iure doloribus sit.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/browser-session:
+        post:
+            tags:
+                - project
+            summary: exchange_browser_link project
+            description: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.
+            operationId: project#exchange_browser_link
+            requestBody:
+                description: Request body for exchange_browser_link.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ExchangeBrowserLinkRequestBody'
+                        example:
+                            link: mn9
+            responses:
+                "201":
+                    description: Created response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ExchangeBrowserLinkResponseBody'
+                            example:
+                                session: Consectetur est quis cum vel quasi.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/identity:
+        get:
+            tags:
+                - project
+            summary: identity project
+            description: The CLI proves the answering server belongs to its project using the management credential.
+            operationId: project#identity
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectIdentity'
+                            example:
+                                directory: Nihil accusamus qui.
+                                owner: Officiis laborum cum quo suscipit ducimus.
+                                project_id: Sunt iure praesentium temporibus aspernatur minus.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/stop:
+        post:
+            tags:
+                - project
+            summary: stop project
+            description: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.
+            operationId: project#stop
+            responses:
+                "202":
+                    description: Accepted response.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
     /sandbox/draft:
         post:
             tags:
                 - surla
             summary: draft_override surla
-            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
+            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
             operationId: surla#draft_override
             requestBody:
                 description: Request body for draft_override.
@@ -4887,6 +5407,19 @@ paths:
                                 message: Mollitia voluptatem error voluptatem molestiae quia.
                                 prompt_version: Pariatur numquam quisquam sunt sequi recusandae adipisci.
                                 requires_rebuild: true
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "404":
                     description: 'prompt_not_found: The live target has no prompt with this ID; nothing changed.'
                     content:
@@ -4944,7 +5477,7 @@ paths:
             tags:
                 - surla
             summary: list_traces surla
-            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.
+            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.
             operationId: surla#list_traces
             parameters:
                 - name: status
@@ -5033,6 +5566,19 @@ paths:
                                       status: ok
                                       summary: Fuga molestiae suscipit.
                                       trace_id: Perferendis omnis ut iste aliquid.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The cursor is invalid; omit it to refresh the history.'
                     content:
@@ -5047,7 +5593,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'not_implemented: Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.'
+                    description: 'not_implemented: Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use the project server for automatic recording.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -5059,22 +5605,6 @@ paths:
                                 name: not_implemented
                                 temporary: false
                                 timeout: false
-    /ui/checkpoint:
-        get:
-            tags:
-                - surla
-            summary: checkpoint_ui surla
-            description: Serve the interactive MCP Apps HTML host for Surla checkpoints.
-            operationId: surla#checkpoint_ui
-            responses:
-                "200":
-                    description: OK response.
-                    content:
-                        application/json:
-                            schema:
-                                type: string
-                                example: Commodi et adipisci ipsa sit.
-                            example: Commodi et adipisci ipsa sit.
     /verifications/{run_id}:
         get:
             tags:
@@ -5171,7 +5701,7 @@ paths:
                                         suite_id: Dolorum sed sunt sed.
                                 suite_commit: Laboriosam architecto minus itaque deleniti.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this verification run.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -5227,6 +5757,19 @@ paths:
                                 message: Quo qui voluptatem qui nisi ullam.
                                 op_id: Voluptatem assumenda earum iste.
                                 passed: false
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The workspace contains no Go module.'
                     content:
@@ -5295,6 +5838,19 @@ paths:
                                 dropped_bytes: 8153869448844237652
                                 next_cursor: Aut occaecati possimus maiores architecto.
                                 text: Esse vel sed aut perspiciatis quibusdam.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "404":
                     description: 'not_found: No output exists for this op_id.'
                     content:
@@ -5341,6 +5897,19 @@ paths:
                                     - Aut qui.
                                 message: Autem facilis est ullam blanditiis.
                                 op_id: Ipsam eveniet repellat quaerat ut.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The workspace contains no Go module.'
                     content:
@@ -5414,6 +5983,19 @@ paths:
                                     - Ut recusandae.
                                     - Fugit officia numquam dolorem voluptas.
                                     - Cum enim quia ut consequatur consequatur quae.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The selected local module is absent, replaced, or invalid; correct its local files and call again.'
                     content:
@@ -5469,6 +6051,19 @@ paths:
                                 dir: Exercitationem mollitia illo incidunt.
                                 module_path: Voluptates soluta.
                                 service_name: Quis aliquam repellendus sit modi.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "409":
                     description: 'conflict: The workspace or target directory is already initialized.'
                     content:
@@ -6617,8 +7212,21 @@ paths:
                                               summary: Nihil sunt ea molestiae voluptate aut.
                                           title: Mollitia rerum nihil consectetur excepturi aspernatur.
                                       name: Et minima.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "501":
-                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
+                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -7194,6 +7802,19 @@ paths:
                                               summary: Nihil sunt ea molestiae voluptate aut.
                                           title: Mollitia rerum nihil consectetur excepturi aspernatur.
                                       name: Et minima.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.'
                     content:
@@ -7208,7 +7829,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
+                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -7235,6 +7856,29 @@ paths:
                                 timeout: false
 components:
     schemas:
+        AddAgentRequestBody:
+            type: object
+            properties:
+                actor_id:
+                    type: string
+                    description: Agent identifier.
+                    example: s5
+                    pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
+                role:
+                    type: string
+                    description: Agent purpose.
+                    example: builder
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+            description: Request body for add_agent.
+            example:
+                actor_id: s5
+                role: builder
+            required:
+                - actor_id
+                - role
         AgentPolicyItem:
             type: object
             properties:
@@ -7334,7 +7978,7 @@ components:
             properties:
                 approved_by:
                     type: string
-                    description: Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.
+                    description: User who approved the result.
                     example: Quia fuga rem fugiat quasi.
                 artifacts:
                     type: object
@@ -7687,6 +8331,24 @@ components:
                 - agent_policies
                 - tools
                 - banner
+        BrowserLinkResponseBody:
+            type: object
+            properties:
+                expires_at:
+                    type: string
+                    description: Time after which exchange is refused.
+                    example: "1975-12-27T22:57:38Z"
+                    format: date-time
+                url:
+                    type: string
+                    description: Same-address views URL carrying the single-use link in its fragment.
+                    example: Magni minima iure doloribus sit.
+            example:
+                expires_at: "1975-12-27T22:57:38Z"
+                url: Magni minima iure doloribus sit.
+            required:
+                - url
+                - expires_at
         BuilderVerificationReport:
             type: object
             properties:
@@ -7944,7 +8606,7 @@ components:
                     pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 ui_composition:
                     type: string
-                    description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.
+                    description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the views page validates and renders it. Omit it when a plain card is clearer.
                     example: In optio et.
             description: Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.
             example:
@@ -8121,7 +8783,7 @@ components:
                     pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 ui_composition:
                     type: string
-                    description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.
+                    description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the views page validates and renders it. Omit it when a plain card is clearer.
                     example: Sed tempora quos nobis odio ab.
             description: 'Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target''s current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.'
             example:
@@ -8256,7 +8918,7 @@ components:
                     example: Molestiae autem quas reprehenderit fugit.
                 confirmed_by:
                     type: string
-                    description: Authenticated principal that confirmed the Change Card.
+                    description: User who confirmed the Change Card.
                     example: Accusamus harum velit earum libero ad.
                 examples:
                     type: array
@@ -9484,6 +10146,121 @@ components:
                 - examples
                 - preserved_behaviors
                 - request_revision
+        ChangeList:
+            type: object
+            properties:
+                approval_available:
+                    type: boolean
+                    description: Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.
+                    example: true
+                changes:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ChangeListItem'
+                    description: Saved Change Cards, most recently saved first.
+                    example:
+                        - change_id: Consequatur nemo.
+                          latest_verification:
+                            run_id: Voluptas veritatis excepturi fuga enim et.
+                            state: not_completed
+                          request_revision: Quas odit et aut consequuntur ullam mollitia.
+                          saved_at: "2015-06-29T05:47:08Z"
+                          status: needs_confirmation
+                          summary: Ut saepe incidunt odit.
+                        - change_id: Consequatur nemo.
+                          latest_verification:
+                            run_id: Voluptas veritatis excepturi fuga enim et.
+                            state: not_completed
+                          request_revision: Quas odit et aut consequuntur ullam mollitia.
+                          saved_at: "2015-06-29T05:47:08Z"
+                          status: needs_confirmation
+                          summary: Ut saepe incidunt odit.
+                version:
+                    type: string
+                    description: Opaque value identifying this exact list; it changes whenever any listed value changes.
+                    example: Voluptas voluptates.
+            description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
+            example:
+                approval_available: true
+                changes:
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+                version: Voluptas voluptates.
+            required:
+                - changes
+                - version
+                - approval_available
+        ChangeListItem:
+            type: object
+            properties:
+                change_id:
+                    type: string
+                    description: Change Card identifier; get_change takes it.
+                    example: Consequatur nemo.
+                latest_verification:
+                    $ref: '#/components/schemas/LatestVerificationItem'
+                request_revision:
+                    type: string
+                    description: Current request_revision of the Change Card.
+                    example: Quas odit et aut consequuntur ullam mollitia.
+                saved_at:
+                    type: string
+                    description: When the Change Card was last saved. It is not part of request_revision.
+                    example: "2015-06-29T05:47:08Z"
+                    format: date-time
+                status:
+                    type: string
+                    description: Checkpoint status of the current revision.
+                    example: needs_confirmation
+                    enum:
+                        - needs_confirmation
+                        - confirmed
+                summary:
+                    type: string
+                    description: Plain-English summary of the current revision.
+                    example: Ut saepe incidunt odit.
+            description: One saved Change Card of the project as list_changes reports it.
+            example:
+                change_id: Consequatur nemo.
+                latest_verification:
+                    run_id: Voluptas veritatis excepturi fuga enim et.
+                    state: not_completed
+                request_revision: Quas odit et aut consequuntur ullam mollitia.
+                saved_at: "2015-06-29T05:47:08Z"
+                status: needs_confirmation
+                summary: Ut saepe incidunt odit.
+            required:
+                - change_id
+                - summary
+                - status
+                - request_revision
+                - saved_at
+        ChangeListVersion:
+            type: object
+            properties:
+                version:
+                    type: string
+                    description: Version of the current change list; it equals since when nothing changed during the wait.
+                    example: Rerum illum facilis doloribus id ea.
+            description: The version of the change list when the wait ended.
+            example:
+                version: Rerum illum facilis doloribus id ea.
+            required:
+                - version
         CheckOutputPage:
             type: object
             properties:
@@ -9803,7 +10580,7 @@ components:
                 fault:
                     type: boolean
                     description: Is the error a server-side fault?
-                    example: true
+                    example: false
                 id:
                     type: string
                     description: ID is a unique identifier for this particular occurrence of the problem.
@@ -9826,7 +10603,7 @@ components:
                     example: true
             description: Error response result type
             example:
-                fault: true
+                fault: false
                 id: 123abc
                 message: parameter 'p' must be an integer
                 name: bad_request
@@ -9878,6 +10655,31 @@ components:
                 - input_summary
                 - expected_outcome
                 - verification_kind
+        ExchangeBrowserLinkRequestBody:
+            type: object
+            properties:
+                link:
+                    type: string
+                    description: Unexpired single-use link value.
+                    example: mn9
+                    minLength: 1
+                    maxLength: 256
+            description: Request body for exchange_browser_link.
+            example:
+                link: mn9
+            required:
+                - link
+        ExchangeBrowserLinkResponseBody:
+            type: object
+            properties:
+                session:
+                    type: string
+                    description: User session kept only in the page's memory.
+                    example: Consectetur est quis cum vel quasi.
+            example:
+                session: Consectetur est quis cum vel quasi.
+            required:
+                - session
         GenerateCodePayload:
             type: object
             properties:
@@ -9987,6 +10789,29 @@ components:
                 - module_path
                 - service_name
                 - commit
+        LatestVerificationItem:
+            type: object
+            properties:
+                run_id:
+                    type: string
+                    description: Verification run identifier; get_verification takes it.
+                    example: Voluptas veritatis excepturi fuga enim et.
+                state:
+                    type: string
+                    description: running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.
+                    example: not_completed
+                    enum:
+                        - running
+                        - passed
+                        - failed
+                        - not_completed
+            description: The most recently accepted Checkpoint 4 verification run of a Change Card.
+            example:
+                run_id: Voluptas veritatis excepturi fuga enim et.
+                state: not_completed
+            required:
+                - run_id
+                - state
         LiveTargetResult:
             type: object
             properties:
@@ -10054,6 +10879,56 @@ components:
             required:
                 - change_id
                 - request_revision
+        ProjectAgent:
+            type: object
+            properties:
+                actor_id:
+                    type: string
+                    description: Agent identity, separate from resource ownership.
+                    example: Dignissimos aut.
+                credential_file:
+                    type: string
+                    description: Private credential file for the launcher; never put its contents in arguments or labels.
+                    example: Molestiae sint.
+                role:
+                    type: string
+                    description: Trusted agent purpose.
+                    example: builder
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+            example:
+                actor_id: Dignissimos aut.
+                credential_file: Molestiae sint.
+                role: builder
+            required:
+                - actor_id
+                - role
+                - credential_file
+        ProjectIdentity:
+            type: object
+            properties:
+                directory:
+                    type: string
+                    description: Physical project folder.
+                    example: Nihil accusamus qui.
+                owner:
+                    type: string
+                    description: Immutable operating-system account identity.
+                    example: Officiis laborum cum quo suscipit ducimus.
+                project_id:
+                    type: string
+                    description: Stable private project identifier.
+                    example: Sunt iure praesentium temporibus aspernatur minus.
+            example:
+                directory: Nihil accusamus qui.
+                owner: Officiis laborum cum quo suscipit ducimus.
+                project_id: Sunt iure praesentium temporibus aspernatur minus.
+            required:
+                - project_id
+                - directory
+                - owner
         ProposeChangePayload:
             type: object
             properties:
@@ -12613,7 +13488,7 @@ components:
             properties:
                 attributes:
                     type: object
-                    description: Selected operation identifiers and results; at most six values of 1024 bytes each.
+                    description: Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.
                     example:
                         Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
                         Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
@@ -12703,7 +13578,7 @@ components:
                     example: Est et sit voluptatibus quibusdam quisquam.
                 program:
                     type: string
-                    description: OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.
+                    description: OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.
                     example: Numquam provident excepturi et deleniti vel sed.
             description: 'Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card''s request_revision.'
             example:
@@ -13567,5 +14442,7 @@ components:
                 - request_revision
                 - candidate_commit
 tags:
+    - name: project
+      description: Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials never authorize application decisions. This service is not exposed as agent tools.
     - name: surla
       description: Surla MCP software factory control plane.

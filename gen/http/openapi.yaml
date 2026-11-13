@@ -13,6 +13,72 @@ produces:
     - application/xml
     - application/gob
 paths:
+    /change-updates:
+        get:
+            tags:
+                - surla
+            summary: wait_for_changes surla
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            operationId: surla#wait_for_changes
+            parameters:
+                - name: since
+                  in: query
+                  description: version of the change list the caller last read.
+                  required: true
+                  type: string
+                  maxLength: 128
+                  minLength: 1
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ChangeListVersion'
+                        required:
+                            - version
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaWaitForChangesForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /changes:
+        get:
+            tags:
+                - surla
+            summary: list_changes surla
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            operationId: surla#list_changes
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ChangeList'
+                        required:
+                            - changes
+                            - version
+                            - approval_available
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaListChangesForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
     /changes/{change_id}:
         get:
             tags:
@@ -40,7 +106,7 @@ paths:
                             - preserved_behaviors
                             - request_revision
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaGetChangeForbiddenResponseBody'
                     examples:
@@ -88,7 +154,7 @@ paths:
                             - change_id
                             - runs
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaListVerificationsForbiddenResponseBody'
                     examples:
@@ -129,7 +195,7 @@ paths:
             tags:
                 - surla
             summary: verify_change surla
-            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.
+            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.
             operationId: surla#verify_change
             parameters:
                 - name: change_id
@@ -159,7 +225,7 @@ paths:
                             - accepted_at
                             - state
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaVerifyChangeForbiddenResponseBody'
                     examples:
@@ -213,7 +279,7 @@ paths:
             tags:
                 - surla
             summary: approve_merge surla
-            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.
+            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.
             operationId: surla#approve_merge
             parameters:
                 - name: approve_merge_request_body
@@ -240,7 +306,7 @@ paths:
                             - preserved_behaviors
                             - request_revision
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaApproveMergeForbiddenResponseBody'
                     examples:
@@ -333,7 +399,7 @@ paths:
                             - preserved_behaviors
                             - request_revision
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaConfirmIntentForbiddenResponseBody'
                     examples:
@@ -414,7 +480,7 @@ paths:
                             - tools
                             - banner
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaPreviewArchitectureForbiddenResponseBody'
                     examples:
@@ -468,7 +534,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
+            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
             operationId: surla#propose_change
             parameters:
                 - name: propose_change_request_body
@@ -493,6 +559,18 @@ paths:
                             - examples
                             - preserved_behaviors
                             - request_revision
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaProposeChangeForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "409":
                     description: 'conflict: A Change Card with this change_id already exists; use revise_change or a new change_id.'
                     schema:
@@ -551,7 +629,7 @@ paths:
                             - preserved_behaviors
                             - request_revision
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaReviseChangeForbiddenResponseBody'
                     examples:
@@ -605,7 +683,7 @@ paths:
             tags:
                 - surla
             summary: configure_model surla
-            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider''s API key from surla serve''s environment) or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.'
+            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider''s API key from the project server''s environment) or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.'
             operationId: surla#configure_model
             parameters:
                 - name: configure_model_request_body
@@ -618,6 +696,18 @@ paths:
                     description: OK response.
                     schema:
                         $ref: '#/definitions/ModelConfigResult'
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaConfigureModelForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
                     schema:
@@ -672,6 +762,18 @@ paths:
                             - modified_declarations
                             - version_deltas
                             - summary
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaDiffForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
             schemes:
                 - http
     /golden-path:
@@ -686,6 +788,18 @@ paths:
                     description: OK response.
                     schema:
                         type: string
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaGoldenPathForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
             schemes:
                 - http
     /live-target:
@@ -693,7 +807,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.
             operationId: surla#start_live_target
             parameters:
                 - name: start_live_target_request_body
@@ -712,6 +826,18 @@ paths:
                             - candidate_commit
                             - url
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaStartLiveTargetForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'live_target_failed: The live target could not be built or started; the message says which step failed.'
                     schema:
@@ -752,8 +878,20 @@ paths:
                         required:
                             - stopped
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaStopLiveTargetForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "500":
-                    description: 'live_target_stop_failed: The live target''s processes could not be confirmed stopped; restart surla serve.'
+                    description: 'live_target_stop_failed: The live target''s processes could not be confirmed stopped; stop and start Surla.'
                     schema:
                         $ref: '#/definitions/SurlaStopLiveTargetLiveTargetStopFailedResponseBody'
                     examples:
@@ -766,12 +904,345 @@ paths:
                             timeout: false
             schemes:
                 - http
+    /project/agents:
+        post:
+            tags:
+                - project
+            summary: add_agent project
+            description: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.
+            operationId: project#add_agent
+            parameters:
+                - name: add_agent_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/ProjectAddAgentRequestBody'
+                    required:
+                        - actor_id
+                        - role
+            responses:
+                "201":
+                    description: Created response.
+                    schema:
+                        $ref: '#/definitions/ProjectAgent'
+                        required:
+                            - actor_id
+                            - role
+                            - credential_file
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    schema:
+                        $ref: '#/definitions/ProjectAddAgentForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    schema:
+                        $ref: '#/definitions/ProjectAddAgentConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    schema:
+                        $ref: '#/definitions/ProjectAddAgentUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /project/agents/{actor_id}:
+        delete:
+            tags:
+                - project
+            summary: remove_agent project
+            description: The CLI revokes an agent and removes its private credential file before returning.
+            operationId: project#remove_agent
+            parameters:
+                - name: actor_id
+                  in: path
+                  description: Agent identifier.
+                  required: true
+                  type: string
+                  pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
+            responses:
+                "204":
+                    description: No Content response.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    schema:
+                        $ref: '#/definitions/ProjectRemoveAgentForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    schema:
+                        $ref: '#/definitions/ProjectRemoveAgentConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    schema:
+                        $ref: '#/definitions/ProjectRemoveAgentUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /project/browser-link:
+        post:
+            tags:
+                - project
+            summary: browser_link project
+            description: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.
+            operationId: project#browser_link
+            responses:
+                "201":
+                    description: Created response.
+                    schema:
+                        $ref: '#/definitions/ProjectBrowserLinkResponseBody'
+                        required:
+                            - url
+                            - expires_at
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    schema:
+                        $ref: '#/definitions/ProjectBrowserLinkForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    schema:
+                        $ref: '#/definitions/ProjectBrowserLinkConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    schema:
+                        $ref: '#/definitions/ProjectBrowserLinkUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /project/browser-session:
+        post:
+            tags:
+                - project
+            summary: exchange_browser_link project
+            description: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.
+            operationId: project#exchange_browser_link
+            parameters:
+                - name: exchange_browser_link_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/ProjectExchangeBrowserLinkRequestBody'
+                    required:
+                        - link
+            responses:
+                "201":
+                    description: Created response.
+                    schema:
+                        $ref: '#/definitions/ProjectExchangeBrowserLinkResponseBody'
+                        required:
+                            - session
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    schema:
+                        $ref: '#/definitions/ProjectExchangeBrowserLinkForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    schema:
+                        $ref: '#/definitions/ProjectExchangeBrowserLinkConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    schema:
+                        $ref: '#/definitions/ProjectExchangeBrowserLinkUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /project/identity:
+        get:
+            tags:
+                - project
+            summary: identity project
+            description: The CLI proves the answering server belongs to its project using the management credential.
+            operationId: project#identity
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ProjectIdentity'
+                        required:
+                            - project_id
+                            - directory
+                            - owner
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    schema:
+                        $ref: '#/definitions/ProjectIdentityForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    schema:
+                        $ref: '#/definitions/ProjectIdentityConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    schema:
+                        $ref: '#/definitions/ProjectIdentityUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /project/stop:
+        post:
+            tags:
+                - project
+            summary: stop project
+            description: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.
+            operationId: project#stop
+            responses:
+                "202":
+                    description: Accepted response.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    schema:
+                        $ref: '#/definitions/ProjectStopForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    schema:
+                        $ref: '#/definitions/ProjectStopConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    schema:
+                        $ref: '#/definitions/ProjectStopUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
     /sandbox/draft:
         post:
             tags:
                 - surla
             summary: draft_override surla
-            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
+            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
             operationId: surla#draft_override
             parameters:
                 - name: draft_override_request_body
@@ -791,6 +1262,18 @@ paths:
                             - applied_in_store
                             - requires_rebuild
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaDraftOverrideForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "404":
                     description: 'prompt_not_found: The live target has no prompt with this ID; nothing changed.'
                     schema:
@@ -846,7 +1329,7 @@ paths:
             tags:
                 - surla
             summary: list_traces surla
-            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.
+            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.
             operationId: surla#list_traces
             parameters:
                 - name: status
@@ -880,6 +1363,18 @@ paths:
                         required:
                             - spans
                             - has_more
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaListTracesForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'unprocessable: The cursor is invalid; omit it to refresh the history.'
                     schema:
@@ -893,7 +1388,7 @@ paths:
                             temporary: false
                             timeout: false
                 "501":
-                    description: 'not_implemented: Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.'
+                    description: 'not_implemented: Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use the project server for automatic recording.'
                     schema:
                         $ref: '#/definitions/SurlaListTracesNotImplementedResponseBody'
                     examples:
@@ -904,20 +1399,6 @@ paths:
                             name: not_implemented
                             temporary: false
                             timeout: false
-            schemes:
-                - http
-    /ui/checkpoint:
-        get:
-            tags:
-                - surla
-            summary: checkpoint_ui surla
-            description: Serve the interactive MCP Apps HTML host for Surla checkpoints.
-            operationId: surla#checkpoint_ui
-            responses:
-                "200":
-                    description: OK response.
-                    schema:
-                        type: string
             schemes:
                 - http
     /verifications/{run_id}:
@@ -947,7 +1428,7 @@ paths:
                             - accepted_at
                             - state
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this verification run.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
                         $ref: '#/definitions/SurlaGetVerificationForbiddenResponseBody'
                     examples:
@@ -1000,6 +1481,18 @@ paths:
                             - op_id
                             - passed
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaCheckProjectForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'unprocessable: The workspace contains no Go module.'
                     schema:
@@ -1062,6 +1555,18 @@ paths:
                             - text
                             - captured_bytes
                             - dropped_bytes
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaReadCheckOutputForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "404":
                     description: 'not_found: No output exists for this op_id.'
                     schema:
@@ -1104,6 +1609,18 @@ paths:
                             - op_id
                             - files_written
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaUpdateDependenciesForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'unprocessable: The workspace contains no Go module.'
                     schema:
@@ -1164,6 +1681,18 @@ paths:
                             - target
                             - files_written
                             - warnings
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaGenerateCodeForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'unprocessable: The selected local module is absent, replaced, or invalid; correct its local files and call again.'
                     schema:
@@ -1215,6 +1744,18 @@ paths:
                             - module_path
                             - service_name
                             - commit
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaInitProjectForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "409":
                     description: 'conflict: The workspace or target directory is already initialized.'
                     schema:
@@ -1269,8 +1810,20 @@ paths:
                             - state
                             - stories
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaGetStoryRefreshForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "501":
-                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
+                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory.'
                     schema:
                         $ref: '#/definitions/SurlaGetStoryRefreshNotImplementedResponseBody'
                     examples:
@@ -1298,6 +1851,18 @@ paths:
                             - state
                             - stories
                             - message
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaRefreshStoryForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
                 "422":
                     description: 'unprocessable: The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.'
                     schema:
@@ -1311,7 +1876,7 @@ paths:
                             temporary: false
                             timeout: false
                 "501":
-                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
+                    description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory.'
                     schema:
                         $ref: '#/definitions/SurlaRefreshStoryNotImplementedResponseBody'
                     examples:
@@ -1439,7 +2004,7 @@ definitions:
         properties:
             approved_by:
                 type: string
-                description: Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.
+                description: User who approved the result.
                 example: Quia fuga rem fugiat quasi.
             artifacts:
                 type: object
@@ -2054,7 +2619,7 @@ definitions:
                 pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
             ui_composition:
                 type: string
-                description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.
+                description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the views page validates and renders it. Omit it when a plain card is clearer.
                 example: In optio et.
         description: Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.
         example:
@@ -2234,7 +2799,7 @@ definitions:
                 pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
             ui_composition:
                 type: string
-                description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.
+                description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the views page validates and renders it. Omit it when a plain card is clearer.
                 example: Sed tempora quos nobis odio ab.
         description: 'Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target''s current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.'
         example:
@@ -2371,7 +2936,7 @@ definitions:
                 example: Molestiae autem quas reprehenderit fugit.
             confirmed_by:
                 type: string
-                description: Authenticated principal that confirmed the Change Card.
+                description: User who confirmed the Change Card.
                 example: Accusamus harum velit earum libero ad.
             examples:
                 type: array
@@ -3599,6 +4164,124 @@ definitions:
             - examples
             - preserved_behaviors
             - request_revision
+    ChangeList:
+        title: ChangeList
+        type: object
+        properties:
+            approval_available:
+                type: boolean
+                description: Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.
+                example: true
+            changes:
+                type: array
+                items:
+                    $ref: '#/definitions/ChangeListItem'
+                description: Saved Change Cards, most recently saved first.
+                example:
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+            version:
+                type: string
+                description: Opaque value identifying this exact list; it changes whenever any listed value changes.
+                example: Voluptas voluptates.
+        description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
+        example:
+            approval_available: true
+            changes:
+                - change_id: Consequatur nemo.
+                  latest_verification:
+                    run_id: Voluptas veritatis excepturi fuga enim et.
+                    state: not_completed
+                  request_revision: Quas odit et aut consequuntur ullam mollitia.
+                  saved_at: "2015-06-29T05:47:08Z"
+                  status: needs_confirmation
+                  summary: Ut saepe incidunt odit.
+                - change_id: Consequatur nemo.
+                  latest_verification:
+                    run_id: Voluptas veritatis excepturi fuga enim et.
+                    state: not_completed
+                  request_revision: Quas odit et aut consequuntur ullam mollitia.
+                  saved_at: "2015-06-29T05:47:08Z"
+                  status: needs_confirmation
+                  summary: Ut saepe incidunt odit.
+            version: Voluptas voluptates.
+        required:
+            - changes
+            - version
+            - approval_available
+    ChangeListItem:
+        title: ChangeListItem
+        type: object
+        properties:
+            change_id:
+                type: string
+                description: Change Card identifier; get_change takes it.
+                example: Consequatur nemo.
+            latest_verification:
+                $ref: '#/definitions/LatestVerificationItem'
+            request_revision:
+                type: string
+                description: Current request_revision of the Change Card.
+                example: Quas odit et aut consequuntur ullam mollitia.
+            saved_at:
+                type: string
+                description: When the Change Card was last saved. It is not part of request_revision.
+                example: "2015-06-29T05:47:08Z"
+                format: date-time
+            status:
+                type: string
+                description: Checkpoint status of the current revision.
+                example: needs_confirmation
+                enum:
+                    - needs_confirmation
+                    - confirmed
+            summary:
+                type: string
+                description: Plain-English summary of the current revision.
+                example: Ut saepe incidunt odit.
+        description: One saved Change Card of the project as list_changes reports it.
+        example:
+            change_id: Consequatur nemo.
+            latest_verification:
+                run_id: Voluptas veritatis excepturi fuga enim et.
+                state: not_completed
+            request_revision: Quas odit et aut consequuntur ullam mollitia.
+            saved_at: "2015-06-29T05:47:08Z"
+            status: needs_confirmation
+            summary: Ut saepe incidunt odit.
+        required:
+            - change_id
+            - summary
+            - status
+            - request_revision
+            - saved_at
+    ChangeListVersion:
+        title: ChangeListVersion
+        type: object
+        properties:
+            version:
+                type: string
+                description: Version of the current change list; it equals since when nothing changed during the wait.
+                example: Rerum illum facilis doloribus id ea.
+        description: The version of the change list when the wait ended.
+        example:
+            version: Rerum illum facilis doloribus id ea.
+        required:
+            - version
     CheckOutputPage:
         title: CheckOutputPage
         type: object
@@ -4068,6 +4751,30 @@ definitions:
             - module_path
             - service_name
             - commit
+    LatestVerificationItem:
+        title: LatestVerificationItem
+        type: object
+        properties:
+            run_id:
+                type: string
+                description: Verification run identifier; get_verification takes it.
+                example: Voluptas veritatis excepturi fuga enim et.
+            state:
+                type: string
+                description: running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.
+                example: not_completed
+                enum:
+                    - running
+                    - passed
+                    - failed
+                    - not_completed
+        description: The most recently accepted Checkpoint 4 verification run of a Change Card.
+        example:
+            run_id: Voluptas veritatis excepturi fuga enim et.
+            state: not_completed
+        required:
+            - run_id
+            - state
     LiveTargetResult:
         title: LiveTargetResult
         type: object
@@ -4137,6 +4844,900 @@ definitions:
         required:
             - change_id
             - request_revision
+    ProjectAddAgentConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectAddAgentForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectAddAgentRequestBody:
+        title: ProjectAddAgentRequestBody
+        type: object
+        properties:
+            actor_id:
+                type: string
+                description: Agent identifier.
+                example: s5
+                pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
+            role:
+                type: string
+                description: Agent purpose.
+                example: builder
+                enum:
+                    - guide
+                    - builder
+                    - test_writer
+        example:
+            actor_id: s5
+            role: builder
+        required:
+            - actor_id
+            - role
+    ProjectAddAgentUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectAgent:
+        title: ProjectAgent
+        type: object
+        properties:
+            actor_id:
+                type: string
+                description: Agent identity, separate from resource ownership.
+                example: Dignissimos aut.
+            credential_file:
+                type: string
+                description: Private credential file for the launcher; never put its contents in arguments or labels.
+                example: Molestiae sint.
+            role:
+                type: string
+                description: Trusted agent purpose.
+                example: builder
+                enum:
+                    - guide
+                    - builder
+                    - test_writer
+        example:
+            actor_id: Dignissimos aut.
+            credential_file: Molestiae sint.
+            role: builder
+        required:
+            - actor_id
+            - role
+            - credential_file
+    ProjectBrowserLinkConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectBrowserLinkForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectBrowserLinkResponseBody:
+        title: ProjectBrowserLinkResponseBody
+        type: object
+        properties:
+            expires_at:
+                type: string
+                description: Time after which exchange is refused.
+                example: "1975-12-27T22:57:38Z"
+                format: date-time
+            url:
+                type: string
+                description: Same-address views URL carrying the single-use link in its fragment.
+                example: Magni minima iure doloribus sit.
+        example:
+            expires_at: "1975-12-27T22:57:38Z"
+            url: Magni minima iure doloribus sit.
+        required:
+            - url
+            - expires_at
+    ProjectBrowserLinkUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectExchangeBrowserLinkConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectExchangeBrowserLinkForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectExchangeBrowserLinkRequestBody:
+        title: ProjectExchangeBrowserLinkRequestBody
+        type: object
+        properties:
+            link:
+                type: string
+                description: Unexpired single-use link value.
+                example: mn9
+                minLength: 1
+                maxLength: 256
+        example:
+            link: mn9
+        required:
+            - link
+    ProjectExchangeBrowserLinkResponseBody:
+        title: ProjectExchangeBrowserLinkResponseBody
+        type: object
+        properties:
+            session:
+                type: string
+                description: User session kept only in the page's memory.
+                example: Consectetur est quis cum vel quasi.
+        example:
+            session: Consectetur est quis cum vel quasi.
+        required:
+            - session
+    ProjectExchangeBrowserLinkUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectIdentity:
+        title: ProjectIdentity
+        type: object
+        properties:
+            directory:
+                type: string
+                description: Physical project folder.
+                example: Nihil accusamus qui.
+            owner:
+                type: string
+                description: Immutable operating-system account identity.
+                example: Officiis laborum cum quo suscipit ducimus.
+            project_id:
+                type: string
+                description: Stable private project identifier.
+                example: Sunt iure praesentium temporibus aspernatur minus.
+        example:
+            directory: Nihil accusamus qui.
+            owner: Officiis laborum cum quo suscipit ducimus.
+            project_id: Sunt iure praesentium temporibus aspernatur minus.
+        required:
+            - project_id
+            - directory
+            - owner
+    ProjectIdentityConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectIdentityForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectIdentityUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectRemoveAgentConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectRemoveAgentForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectRemoveAgentUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectStopConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectStopForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    ProjectStopUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     ProposeChangePayload:
         title: ProposeChangePayload
         type: object
@@ -6678,6 +8279,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaCheckProjectForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaCheckProjectNotImplementedResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -6800,6 +8444,49 @@ definitions:
             name: bad_request
             temporary: true
             timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaConfigureModelForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
         required:
             - name
             - id
@@ -7065,6 +8752,92 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaDiffForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaDraftOverrideForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaDraftOverrideInvalidPromptResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -7280,6 +9053,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaGenerateCodeForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaGenerateCodeNotImplementedResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -7445,6 +9261,49 @@ definitions:
             name: bad_request
             temporary: false
             timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaGetStoryRefreshForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
         required:
             - name
             - id
@@ -7624,7 +9483,93 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaGoldenPathForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaInitProjectConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaInitProjectForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
         properties:
@@ -7746,6 +9691,92 @@ definitions:
             name: bad_request
             temporary: true
             timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaListChangesForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaListTracesForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
         required:
             - name
             - id
@@ -8183,6 +10214,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaProposeChangeForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaProposeChangeUnprocessableResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -8218,6 +10292,49 @@ definitions:
             message: parameter 'p' must be an integer
             name: bad_request
             temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaReadCheckOutputForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
             timeout: true
         required:
             - name
@@ -8305,6 +10422,49 @@ definitions:
             name: bad_request
             temporary: false
             timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaRefreshStoryForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
         required:
             - name
             - id
@@ -8613,6 +10773,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaStartLiveTargetForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaStartLiveTargetLiveTargetFailedResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -8699,6 +10902,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaStopLiveTargetForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaStopLiveTargetLiveTargetStopFailedResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -8735,6 +10981,49 @@ definitions:
             name: bad_request
             temporary: false
             timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaUpdateDependenciesForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
         required:
             - name
             - id
@@ -9043,6 +11332,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaWaitForChangesForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     ToolContractItem:
         title: ToolContractItem
         type: object
@@ -9287,7 +11619,7 @@ definitions:
         properties:
             attributes:
                 type: object
-                description: Selected operation identifiers and results; at most six values of 1024 bytes each.
+                description: Selected operation identifiers, results, and private caller attribution; at most seven values of 1024 bytes each.
                 example:
                     Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
                     Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
@@ -9378,7 +11710,7 @@ definitions:
                 example: Est et sit voluptatibus quibusdam quisquam.
             program:
                 type: string
-                description: OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.
+                description: OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.
                 example: Numquam provident excepturi et deleniti vel sed.
         description: 'Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card''s request_revision.'
         example:

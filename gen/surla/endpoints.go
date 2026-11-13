@@ -15,7 +15,6 @@ import (
 
 // Endpoints wraps the "surla" service endpoints.
 type Endpoints struct {
-	CheckpointUI        goa.Endpoint
 	GoldenPath          goa.Endpoint
 	ProposeChange       goa.Endpoint
 	ReviseChange        goa.Endpoint
@@ -39,12 +38,13 @@ type Endpoints struct {
 	ListTraces          goa.Endpoint
 	RefreshStory        goa.Endpoint
 	GetStoryRefresh     goa.Endpoint
+	ListChanges         goa.Endpoint
+	WaitForChanges      goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
-		CheckpointUI:        NewCheckpointUIEndpoint(s),
 		GoldenPath:          NewGoldenPathEndpoint(s),
 		ProposeChange:       NewProposeChangeEndpoint(s),
 		ReviseChange:        NewReviseChangeEndpoint(s),
@@ -68,12 +68,13 @@ func NewEndpoints(s Service) *Endpoints {
 		ListTraces:          NewListTracesEndpoint(s),
 		RefreshStory:        NewRefreshStoryEndpoint(s),
 		GetStoryRefresh:     NewGetStoryRefreshEndpoint(s),
+		ListChanges:         NewListChangesEndpoint(s),
+		WaitForChanges:      NewWaitForChangesEndpoint(s),
 	}
 }
 
 // Use applies the given middleware to all the "surla" service endpoints.
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
-	e.CheckpointUI = m(e.CheckpointUI)
 	e.GoldenPath = m(e.GoldenPath)
 	e.ProposeChange = m(e.ProposeChange)
 	e.ReviseChange = m(e.ReviseChange)
@@ -97,14 +98,8 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.ListTraces = m(e.ListTraces)
 	e.RefreshStory = m(e.RefreshStory)
 	e.GetStoryRefresh = m(e.GetStoryRefresh)
-}
-
-// NewCheckpointUIEndpoint returns an endpoint function that calls the method
-// "checkpoint_ui" of service "surla".
-func NewCheckpointUIEndpoint(s Service) goa.Endpoint {
-	return func(ctx context.Context, req any) (any, error) {
-		return s.CheckpointUI(ctx)
-	}
+	e.ListChanges = m(e.ListChanges)
+	e.WaitForChanges = m(e.WaitForChanges)
 }
 
 // NewGoldenPathEndpoint returns an endpoint function that calls the method
@@ -305,5 +300,22 @@ func NewRefreshStoryEndpoint(s Service) goa.Endpoint {
 func NewGetStoryRefreshEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		return s.GetStoryRefresh(ctx)
+	}
+}
+
+// NewListChangesEndpoint returns an endpoint function that calls the method
+// "list_changes" of service "surla".
+func NewListChangesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.ListChanges(ctx)
+	}
+}
+
+// NewWaitForChangesEndpoint returns an endpoint function that calls the method
+// "wait_for_changes" of service "surla".
+func NewWaitForChangesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*WaitForChangesPayload)
+		return s.WaitForChanges(ctx, p)
 	}
 }

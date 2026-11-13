@@ -215,7 +215,7 @@ func TestCanceledCreateIsAnsweredAndItsContainerRemoved(t *testing.T) {
 			close(senderGone)
 		}
 	})
-	ctx, cancel := context.WithCancel(WithPrincipal(t.Context(), Principal{ID: "alice@example.com"}))
+	ctx, cancel := context.WithCancel(WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}))
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
@@ -264,7 +264,7 @@ func TestUnansweredCreateKeepsItsPendingRecord(t *testing.T) {
 	t.Setenv("DOCKER_HOST", daemon.hostURI)
 	daemon.setFailCreate(true)
 	cards := filepath.Join(realTempDir(t), "cards")
-	authCtx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	authCtx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := openCheckCP(t, cards, newShopModule(t, nil))
 	_, err := cp.CheckProject(authCtx)
 	require.Error(t, err)
@@ -397,7 +397,7 @@ func TestOwnerRecordIsWrittenBeforeEachStep(t *testing.T) {
 			})
 			cp := openCheckCP(t, cards, newShopModule(t, nil))
 			defer func() { assert.NoError(t, cp.Close()) }()
-			_, err := cp.CheckProject(WithPrincipal(t.Context(), Principal{ID: "alice@example.com"}))
+			_, err := cp.CheckProject(WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}))
 			opDir := onlyOperationDir(t, cards)
 			mu.Lock()
 			defer mu.Unlock()
@@ -484,7 +484,7 @@ func TestCheckHelperSpansJoinTheServerTrace(t *testing.T) {
 		CardsDir: filepath.Join(realTempDir(t), "cards"), WorkspaceDir: newShopModule(t, nil),
 		Checker: candidate.NewContainerRunner(), CheckHelper: testCheckHelper(t), CheckTimeout: time.Minute, TracerProvider: tp,
 	})
-	res, err := cp.CheckProject(WithPrincipal(t.Context(), Principal{ID: "alice@example.com"}))
+	res, err := cp.CheckProject(WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}))
 	require.NoError(t, err)
 	require.True(t, res.Passed)
 
@@ -588,7 +588,7 @@ func runKillCase(t *testing.T, self string, tc killCase) {
 	// The output reads back by its op_id without any server running: the
 	// reader only opens the operation's files.
 	reader := &ControlPlane{checkWorkDir: filepath.Join(cards, "check-work")}
-	page, err := reader.ReadCheckOutput(WithPrincipal(t.Context(), Principal{ID: "alice@example.com"}), &gensurla.ReadCheckOutputPayload{OpID: filepath.Base(opDir)})
+	page, err := reader.ReadCheckOutput(WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}), &gensurla.ReadCheckOutputPayload{OpID: filepath.Base(opDir)})
 	require.NoError(t, err, "the helper finished the output")
 	assert.Contains(t, page.Text, "==> modules: .")
 	if raw, err := os.ReadFile(filepath.Join(opDir, ownerFile)); err == nil {
@@ -769,7 +769,7 @@ func checkHost(cardsDir, workspace, tool string) int {
 		fmt.Println("new:", err)
 		return 2
 	}
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	switch tool {
 	case checkToolProject:
 		_, err = cp.CheckProject(ctx)

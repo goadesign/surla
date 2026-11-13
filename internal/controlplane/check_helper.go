@@ -73,7 +73,7 @@ type (
 		WorkspaceIno uint64 `json:"workspace_ino"`
 		// GoProxyEnv is the operator's module proxy settings.
 		GoProxyEnv []string `json:"go_proxy_env"`
-		// CheckTimeout is the operator's -check-timeout, named in messages.
+		// CheckTimeout is the configured check timeout, named in messages.
 		CheckTimeout time.Duration `json:"check_timeout"`
 		// TraceContext carries the W3C trace context of serve's request span,
 		// so the helper's spans are its children.

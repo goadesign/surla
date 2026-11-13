@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,12 +24,8 @@ import (
 )
 
 // verificationFile is the JSON form of the operator's CP4 configuration that
-// `surla serve -verification-config` reads. Every field is required.
+// `surla verification set` validates. Every field is required.
 type verificationFile struct {
-	// RunsDir holds one private directory per verification run.
-	RunsDir string `json:"runs_dir"`
-	// ReportDir receives every full report, named by its digest.
-	ReportDir string `json:"report_dir"`
 	// CandidateRepo is the git repository builders push candidates to.
 	CandidateRepo string `json:"candidate_repo"`
 	// CandidateModule is the Go module directory inside CandidateRepo.
@@ -61,10 +56,10 @@ type cappedBuffer struct {
 }
 
 // defaultProjectVerifyTimeout is the CP4 verification timeout derived for
-// `surla serve -project <dir>`, matching the starter README.
+// the project server, matching the starter README.
 const defaultProjectVerifyTimeout = 30 * time.Minute
 
-// gitReadTimeout bounds all the read-only git queries `surla serve -project`
+// gitReadTimeout bounds all the read-only git queries the project server
 // makes at startup together, so an unresponsive repository stops startup with
 // an error.
 const gitReadTimeout = 30 * time.Second
@@ -244,7 +239,7 @@ func starterVerificationAtHEAD(
 	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return nil, fmt.Errorf(
-			"-project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
+			"project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
 			workspaceDir,
 			err,
 		)
@@ -261,7 +256,7 @@ func starterVerificationAtCommit(
 	workspaceDir, pinnedCommit, runsDir, reportDir string,
 ) (*controlplane.VerificationConfig, error) {
 	if !verify.IsCommitID(pinnedCommit) {
-		return nil, fmt.Errorf("-project %s: suite commit %q is not a full commit ID", workspaceDir, pinnedCommit)
+		return nil, fmt.Errorf("project %s: suite commit %q is not a full commit ID", workspaceDir, pinnedCommit)
 	}
 	repoRoot, prefix, err := resolveStarterRepo(ctx, workspaceDir)
 	if err != nil {
@@ -269,7 +264,7 @@ func starterVerificationAtCommit(
 	}
 	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", pinnedCommit+"^{commit}")
 	if err != nil {
-		return nil, fmt.Errorf("-project %s is missing pinned evaluator suite commit %s: %w", workspaceDir, pinnedCommit, err)
+		return nil, fmt.Errorf("project %s is missing pinned evaluator suite commit %s: %w", workspaceDir, pinnedCommit, err)
 	}
 	suiteCommit := strings.TrimSpace(string(headOut))
 	return starterVerificationFromRepoCommit(ctx, workspaceDir, repoRoot, prefix, suiteCommit, runsDir, reportDir)
@@ -280,16 +275,16 @@ func starterVerificationAtCommit(
 func resolveStarterRepo(ctx context.Context, dir string) (repoRoot, prefix string, err error) {
 	info, err := os.Stat(dir)
 	if err != nil {
-		return "", "", fmt.Errorf("read -project %s: %w", dir, err)
+		return "", "", fmt.Errorf("read project %s: %w", dir, err)
 	}
 	if !info.IsDir() {
-		return "", "", fmt.Errorf("-project %s is not a directory", dir)
+		return "", "", fmt.Errorf("project %s is not a directory", dir)
 	}
 	// Resolve from the working directory without cleaning parent components
 	// before following symlinks: alias/.. must name the linked directory's parent.
 	projectRoot, err := abspath.Eval(dir)
 	if err != nil {
-		return "", "", fmt.Errorf("resolve -project %s: %w", dir, err)
+		return "", "", fmt.Errorf("resolve project %s: %w", dir, err)
 	}
 	// Git reports the repository root and the project's path inside it, such
 	// as "services/shop/" or "" at the root, one per line.
@@ -297,16 +292,16 @@ func resolveStarterRepo(ctx context.Context, dir string) (repoRoot, prefix strin
 	if err != nil {
 		if strings.Contains(err.Error(), "not a git repository") {
 			return "", "", fmt.Errorf(
-				"-project %s is not inside a git repository (run git init && git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
+				"project %s is not inside a git repository (run git init && git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
 				dir,
 				err,
 			)
 		}
-		return "", "", fmt.Errorf("-project %s: find its git repository: %w", dir, err)
+		return "", "", fmt.Errorf("project %s: find its git repository: %w", dir, err)
 	}
 	lines := strings.Split(strings.TrimSuffix(string(topOut), "\n"), "\n")
 	if len(lines) != 2 {
-		return "", "", fmt.Errorf("-project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
+		return "", "", fmt.Errorf("project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
 	}
 	return lines[0], lines[1], nil
 }
@@ -334,7 +329,7 @@ func starterVerificationFromRepoCommit(
 	}
 	layout, err := scaffold.StarterLayout(rootGoMod, evalGoMod)
 	if err != nil {
-		return nil, fmt.Errorf("-project %s does not match the surla init starter layout at HEAD (%s): %w (commit the starter layout or pass -verification-config)",
+		return nil, fmt.Errorf("project %s does not match the surla init starter layout at HEAD (%s): %w (commit the starter layout or pass verification settings)",
 			dir, suiteCommit, err)
 	}
 	for _, tree := range []string{
@@ -372,16 +367,16 @@ func readGitBlob(ctx context.Context, repoRoot, commit, treePath, project string
 	mode, kind, err := gitEntry(ctx, repoRoot, commit, treePath)
 	switch {
 	case err != nil:
-		return nil, fmt.Errorf("-project %s: %w", project, err)
+		return nil, fmt.Errorf("project %s: %w", project, err)
 	case kind == "":
-		return nil, fmt.Errorf("-project %s is missing committed %s at HEAD (%s)"+
-			" (commit the starter layout or pass -verification-config)", project, treePath, commit)
+		return nil, fmt.Errorf("project %s is missing committed %s at HEAD (%s)"+
+			" (commit the starter layout or pass verification settings)", project, treePath, commit)
 	case kind != "blob" || (mode != "100644" && mode != "100755"):
-		return nil, fmt.Errorf("-project %s: committed %s at HEAD (%s) must be a regular file", project, treePath, commit)
+		return nil, fmt.Errorf("project %s: committed %s at HEAD (%s) must be a regular file", project, treePath, commit)
 	}
 	content, err := runGitRead(ctx, repoRoot, "cat-file", "blob", commit+":"+treePath)
 	if err != nil {
-		return nil, fmt.Errorf("-project %s: read committed %s at HEAD (%s): %w (surla serve never downloads"+
+		return nil, fmt.Errorf("project %s: read committed %s at HEAD (%s): %w (the project server never downloads"+
 			" objects; if this is a partial clone, check out HEAD there first so git fetches them)",
 			project, treePath, commit, err)
 	}
@@ -393,11 +388,11 @@ func readGitBlob(ctx context.Context, repoRoot, commit, treePath, project string
 func requireGitTree(ctx context.Context, repoRoot, commit, treePath, project string) error {
 	_, kind, err := gitEntry(ctx, repoRoot, commit, treePath)
 	if err != nil {
-		return fmt.Errorf("-project %s: %w", project, err)
+		return fmt.Errorf("project %s: %w", project, err)
 	}
 	if kind != "tree" {
-		return fmt.Errorf("-project %s is missing committed directory %s at HEAD (%s)"+
-			" (commit the starter layout or pass -verification-config)", project, treePath, commit)
+		return fmt.Errorf("project %s is missing committed directory %s at HEAD (%s)"+
+			" (commit the starter layout or pass verification settings)", project, treePath, commit)
 	}
 	return nil
 }
@@ -435,8 +430,8 @@ func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
 	if strings.Contains(stderr.buf.String(), "unknown option: --no-lazy-fetch") {
-		return nil, errors.New("surla serve -project needs Git 2.45 or newer (for --no-lazy-fetch, so startup" +
-			" never downloads objects); upgrade Git or pass -verification-config")
+		return nil, errors.New("the project server needs Git 2.45 or newer (for --no-lazy-fetch, so startup" +
+			" never downloads objects); upgrade Git or pass verification settings")
 	}
 	if stdout.overflow || stderr.overflow {
 		return nil, fmt.Errorf("git %s printed more output than a startup read allows", args[0])
@@ -452,7 +447,7 @@ func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error)
 
 // cleanGitEnv returns os.Environ without any GIT_* variable, such as GIT_DIR,
 // GIT_OBJECT_DIRECTORY or GIT_CONFIG_PARAMETERS, that could make git read a
-// different repository, objects or configuration than the -project
+// different repository, objects or configuration than the project
 // directory's own, plus settings that disable terminal prompts and the
 // system-wide configuration file and keep git's messages in English, which
 // resolveStarterRepo matches.
@@ -466,30 +461,11 @@ func cleanGitEnv() []string {
 	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "LC_ALL=C")
 }
 
-// loadVerificationConfig strictly decodes the operator's verification
-// configuration at path into a controlplane.VerificationConfig whose runs
-// re-execute this surla executable. An empty path means verification is not
-// configured.
-func loadVerificationConfig(path string) (*controlplane.VerificationConfig, error) {
-	if path == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read -verification-config: %w", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var f verificationFile
-	if err := dec.Decode(&f); err != nil {
-		return nil, fmt.Errorf("decode -verification-config %s: %w", path, err)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("decode -verification-config %s: data after the configuration", path)
-	}
+// verificationConfig validates one settings snapshot and derives all storage paths from its project owner.
+func verificationConfig(f verificationFile, runsDir, reportDir string) (*controlplane.VerificationConfig, error) {
 	var missing []string
 	for _, field := range []struct{ name, value string }{
-		{"runs_dir", f.RunsDir}, {"report_dir", f.ReportDir}, {"candidate_repo", f.CandidateRepo},
+		{"candidate_repo", f.CandidateRepo},
 		{"candidate_module", f.CandidateModule}, {"suite_repo", f.SuiteRepo}, {"suite_commit", f.SuiteCommit},
 		{"suite_module", f.SuiteModule}, {"suite_command", f.SuiteCommand}, {"timeout", f.Timeout},
 	} {
@@ -501,11 +477,11 @@ func loadVerificationConfig(path string) (*controlplane.VerificationConfig, erro
 		missing = append(missing, "binaries")
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("-verification-config %s is missing %s", path, strings.Join(missing, ", "))
+		return nil, fmt.Errorf("verification settings are missing %s", strings.Join(missing, ", "))
 	}
 	timeout, err := time.ParseDuration(f.Timeout)
 	if err != nil || timeout <= 0 {
-		return nil, fmt.Errorf("-verification-config %s: timeout %q must be a positive duration such as 30m", path, f.Timeout)
+		return nil, fmt.Errorf("verification timeout %q must be a positive duration such as 30m", f.Timeout)
 	}
 	self, err := selfCommand()
 	if err != nil {
@@ -513,11 +489,11 @@ func loadVerificationConfig(path string) (*controlplane.VerificationConfig, erro
 	}
 	return &controlplane.VerificationConfig{
 		Timeout: timeout,
-		RunsDir: f.RunsDir,
+		RunsDir: runsDir,
 		Plan: verify.Plan{
 			CandidateRepo: f.CandidateRepo, CandidateModule: f.CandidateModule, Binaries: f.Binaries,
 			SuiteRepo: f.SuiteRepo, SuiteCommit: f.SuiteCommit, SuiteModule: f.SuiteModule,
-			SuiteCommand: f.SuiteCommand, ReportDir: f.ReportDir,
+			SuiteCommand: f.SuiteCommand, ReportDir: reportDir,
 		},
 		Command: self,
 	}, nil

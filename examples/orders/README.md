@@ -139,13 +139,11 @@ go run ./cmd/surla approve \
   -artifact "orders-worker=$WORKER_SHA"
 ```
 
-To expose `CP4` (`verify_change` / `get_verification`) and `CP5` (`approve_merge`) over MCP on `surla serve`, pass `-verification-config` and `-promotion-config` pointing to JSON files with the repository root, `orders_acceptance` suite commit, report/run directories, and staged release directory (`<release_dir>/<candidate_commit>/{orders,orders-worker}`):
+To configure the project's independent verification and promotion inputs, write the following operator files outside the workspace. Surla owns run/report storage; these settings name the repositories, evaluator commit and staged release directory:
 
 ```bash
 cat > "$WORK_DIR/verification.json" <<EOF
 {
-  "runs_dir": "$WORK_DIR/runs",
-  "report_dir": "$WORK_DIR/reports",
   "candidate_repo": "$(pwd)",
   "candidate_module": "examples/orders",
   "binaries": {
@@ -162,7 +160,6 @@ EOF
 
 cat > "$WORK_DIR/promotion.json" <<EOF
 {
-  "report_dir": "$WORK_DIR/reports",
   "release_dir": "$WORK_DIR/releases",
   "suite_id": "orders_acceptance",
   "suite_commit": "$COMMIT",
@@ -170,7 +167,16 @@ cat > "$WORK_DIR/promotion.json" <<EOF
   "binaries": ["orders", "orders-worker"]
 }
 EOF
+
+cd examples/orders
+surla verification set "$WORK_DIR/verification.json"
+surla promotion set "$WORK_DIR/promotion.json"
+surla
 ```
+
+Settings apply at the next project-server start. The user confirms changes and
+approves results in the views page; agent tools cannot make those decisions.
+See the [project server reference](../../docs/REFERENCE.md#surla-serve).
 
 ---
 

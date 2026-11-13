@@ -26,16 +26,16 @@ import (
 )
 
 // TestReviseChangeOverHTTPAndMCP verifies revise_change over the Go service,
-// HTTP (`POST /changes/revise`) and MCP: the tool links the checkpoint viewer;
+// HTTP (`POST /changes/revise`) and MCP: the tool is listed;
 // unknown, foreign and stale cards are refused; an analysis that repeats an
 // option or does not account for every current example exactly once is
 // unprocessable and leaves the saved card file byte for byte unchanged; and a
 // complete analysis saves a new revision in needs_confirmation.
 func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srv.Close)
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 
@@ -43,15 +43,13 @@ func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 	require.NoError(t, err)
 	var foundReviseTool bool
 	for _, tool := range toolsList.Tools {
-		if tool.Name == "revise_change" {
-			foundReviseTool = true
-			assert.Contains(t, string(tool.Meta), "ui://surla/checkpoint")
-		}
+		foundReviseTool = foundReviseTool || tool.Name == "revise_change"
 	}
 	require.True(t, foundReviseTool, "MCP ToolsList must include revise_change")
 
 	r1 := mustPropose(t, cp, aliceCtx, "chg-tx", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
-	require.Equal(t, StatusConfirmed, r1.Status, "a proposal without open questions is confirmed")
+	r1 = mustConfirmNoop(t, cp, aliceCtx, r1)
+	require.Equal(t, StatusConfirmed, r1.Status, "the user explicitly confirmed this fixture")
 	cardPath := cp.cards.path("chg-tx")
 	r1DiskBytes, err := os.ReadFile(cardPath)
 	require.NoError(t, err)
@@ -160,7 +158,7 @@ func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 // request_revision as an earlier revision whose saved content it repeats
 // exactly, because request_revision is a digest of that content alone.
 func TestReviseChangeSavesARevisionThatOnlyItsContentDetermines(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 
 	// A confirmed card with a recorded approval loses both on revision.
@@ -249,7 +247,7 @@ choice = AmbiguityChoiceCard(1, "Shipping changes who waits")`
 // saved and every other one is refused as a conflict, because a revision is
 // saved only while the card still has the caller's request_revision.
 func TestReviseChangeConcurrentRevisionsSaveOnlyOne(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	r1 := mustPropose(t, cp, alice, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
 
@@ -303,7 +301,7 @@ func TestReviseChangeConcurrentRevisionsSaveOnlyOne(t *testing.T) {
 // workspace design/*.go changes on disk, fails if a saved Story field is
 // modified on disk.
 func TestSavedStoriesStayPairedWithTheirSourceAcrossConfirmAndRevise(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()
 	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design // refunds\n"))
 
@@ -401,7 +399,7 @@ func TestSavedStoriesStayPairedWithTheirSourceAcrossConfirmAndRevise(t *testing.
 // TestStoryWithActorsAndNoFlowsSurvivesReloadAndIdenticalRevision proves that
 // an unfinished Story stays paired with its source and has a stable revision.
 func TestStoryWithActorsAndNoFlowsSurvivesReloadAndIdenticalRevision(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	workspace := t.TempDir()
 	writeWorkspaceFiles(t, workspace, validWorkspaceStub("package design // actor draft\n"))
 	cardsDir := t.TempDir()
@@ -464,7 +462,7 @@ func TestStoryWithActorsAndNoFlowsSurvivesReloadAndIdenticalRevision(t *testing.
 //   - adopting a succeeded refresh with zero Stories equals adopting none
 //     (Stories is nil, omitted from the saved card file and revision digest).
 func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	wsDir := t.TempDir()
 	snapshot := map[string]string{
 		"go.mod":                    "module example.com/orders\n\ngo 1.24\n",
@@ -475,7 +473,7 @@ func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
 	writeWorkspaceFiles(t, wsDir, snapshot)
 
 	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"alice-token": {ID: "alice@example.com"},
 	})))
 	t.Cleanup(srv.Close)
@@ -631,7 +629,7 @@ func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
 // propose_change and revise_change: each returns an actionable unprocessable
 // error naming refresh_story and leaves card storage unchanged.
 func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	check01 := "check_01"
 	revAnalysis := &gensurla.CP1RevisionAnalysis{
 		Summary:     "Refunds up to $60 are instant.",
@@ -723,7 +721,7 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 				cp.workspaceMu.Unlock()
 				return cp, opID, nil, card
 			},
-			want: "no workspace directory is bound to this control plane; start Surla from a project directory or pass -project, then call refresh_story",
+			want: "no workspace directory is bound to this control plane; start Surla from a project directory, then call refresh_story",
 		},
 		{
 			name: "different workspace bound after refresh_story",

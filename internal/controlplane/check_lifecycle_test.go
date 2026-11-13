@@ -88,9 +88,9 @@ func TestCheckFailuresReturnReadableOutput(t *testing.T) {
 							route = "/workspace/dependencies"
 						}
 						req := httptest.NewRequest(http.MethodPost, route, nil)
-						req.Header.Set("Authorization", "Bearer generation-token")
+						req.Header.Set("Authorization", "Bearer generation-token-builder")
 						response := httptest.NewRecorder()
-						NewHTTPHandler(clients.cp, NewTokenAuthenticator(map[string]Principal{
+						NewHTTPHandler(clients.cp, workflowAuthenticator(map[string]Principal{
 							"generation-token": {ID: "developer@example.com"},
 						})).ServeHTTP(response, req)
 						require.Equal(t, failure.status, response.Code)
@@ -434,7 +434,7 @@ func TestUpdateDependenciesLifecycle(t *testing.T) {
 				}
 				return "tidied\n", "", 0
 			})
-			result, err := clients.cp.UpdateDependencies(WithPrincipal(ctx, Principal{ID: "alice@example.com"}))
+			result, err := clients.cp.UpdateDependencies(WithPrincipal(ctx, Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}))
 			require.NoError(t, err)
 			assert.NotNil(t, result.FilesWritten)
 			assert.Empty(t, result.FilesWritten)
@@ -474,7 +474,7 @@ func TestCheckOperationsConcurrentIsolation(t *testing.T) {
 // across distinct CardsDir servers on the same workspace, and startup cleanup
 // of ownerless pre-container scratch.
 func TestCheckOperationsRecoveryAndRetainedOwner(t *testing.T) {
-	authCtx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	authCtx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	dockerBin := installFakeDocker(t)
 
 	t.Run("failed_close_isolates_peer_server_and_recovers_on_restart", func(t *testing.T) {
@@ -784,7 +784,7 @@ func runPinned(t *testing.T, ws, cards string, d *fakeDockerDaemon) pinnedCheck 
 		}
 		return "pinned check output\n", "", 0
 	})
-	_, err := cp.CheckProject(WithPrincipal(t.Context(), Principal{ID: "alice@example.com"}))
+	_, err := cp.CheckProject(WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}))
 	require.Error(t, err)
 	name, ok := pinned.Load().(string)
 	require.True(t, ok)

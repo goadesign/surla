@@ -81,7 +81,7 @@ func TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	auth := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: "alice@example.com"})
+	auth := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: "alice@example.com", CallerID: "test-user", Kind: controlplane.CallerUser})
 	_, failed := tp.Tracer("surla/controlplane").Start(auth, "surla.controlplane.propose_change")
 	failed.SetAttributes(
 		attribute.String("surla.change_id", "chg-save-fault"),

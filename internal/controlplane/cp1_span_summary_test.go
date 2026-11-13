@@ -58,7 +58,7 @@ func TestCP1SpanSummariesAreCodeAuthoredAndExcludeRequestContent(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
 	t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	wsDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(wsDir, "design"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(wsDir, "design", "design.go"), []byte("package design // private-design-source-secret\n"), 0o644))
@@ -101,7 +101,7 @@ func TestCP1SpanSummariesAreCodeAuthoredAndExcludeRequestContent(t *testing.T) {
 	}
 
 	// Success over HTTP, so the bearer token reaches the server.
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"private-bearer-token-secret": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"private-bearer-token-secret": {ID: "alice@example.com"}})))
 	t.Cleanup(srv.Close)
 	status, body := postJSON(t, srv.URL+"/changes/propose", "private-bearer-token-secret", string(proposeArgs(t, &gensurla.ProposeChangePayload{
 		ChangeID: "chg", Prompt: "private-prompt-secret", Analysis: secretAnalysis(),
@@ -214,7 +214,7 @@ func TestCP1SpanSummariesAreCodeAuthoredAndExcludeRequestContent(t *testing.T) {
 // change_id, a concurrent revision or confirmation, a card removed, a card
 // now owned by someone else, and a card file that can no longer be read.
 func TestCP1ConcurrentChangesKeepTheWinningCard(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	check01 := "check_01"
 	revision := func(summary string, priorID *string) *gensurla.CP1RevisionAnalysis {
 		return &gensurla.CP1RevisionAnalysis{

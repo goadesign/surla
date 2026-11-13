@@ -1,5 +1,5 @@
 // Command surla runs the Surla MCP software factory control-plane server
-// and CLI utilities (`surla init`, `surla serve`, `surla preview`,
+// and CLI utilities (`surla init`, `surla preview`,
 // `surla diff`, `surla gen`, `surla verify`,
 // `surla approve` and `surla version`).
 // Run `surla help` for usage.
@@ -13,31 +13,26 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
+	"github.com/goadesign/surla/internal/project"
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 	"github.com/goadesign/surla/verify/candidate"
-	"go.opentelemetry.io/otel"
 )
 
-// serveConfig holds the optional `surla serve` flags that choose the model
-// live targets plan with. Zero values mean
-// "not configured".
+// serveConfig is the live-model choice derived at startup or from configure_model.
 type serveConfig struct {
 	// gatewayAddr is the host:port of a Goa-AI model gateway reached over
 	// plaintext gRPC, passed to live targets as SURLA_LIVE_MODEL_GATEWAY. It
@@ -50,33 +45,9 @@ type serveConfig struct {
 	// modelName is the provider model identifier used in direct mode, passed
 	// to live targets as SURLA_LIVE_MODEL_NAME.
 	modelName string
-	// projectDir is the bound workspace directory (default: the startup working
-	// directory); when verificationPath is empty and the workspace holds a
-	// committed starter project at startup (or after init_project), CP3/CP4
-	// verification pins its evaluator suite to that starter commit.
-	projectDir string
-	// projectSet reports whether -project was explicitly passed on the CLI.
-	projectSet bool
-	// verificationPath is the path of the operator's CP4 verification
-	// configuration (see loadVerificationConfig); empty derives CP4
-	// verification from a committed starter workspace when present.
-	verificationPath string
-	// promotionPath is the path of the operator's CP5 promotion
-	// configuration (see loadWorkspacePromotionTarget); empty leaves approve_merge
-	// unavailable.
-	promotionPath string
-	// cardsDir is the directory where CP1 Change Cards are saved, so a
-	// restarted serve returns them.
-	cardsDir string
-	// cardsDirExplicit reports whether -cards-dir was explicitly passed on the
-	// CLI.
-	cardsDirExplicit bool
-	// checkTimeout bounds one whole check_project or update_dependencies
-	// operation (copy, image pull and every container).
-	checkTimeout time.Duration
 }
 
-// defaultCheckTimeout is the default -check-timeout.
+// defaultCheckTimeout bounds one project check, including copy and containers.
 const defaultCheckTimeout = 20 * time.Minute
 
 // binaryFlags collects repeated `-binary name=pkg` flags for `surla verify`
@@ -99,7 +70,7 @@ type approveSummary struct {
 	Counts verify.Counts `json:"counts"`
 }
 
-// usage is the text `surla`, `surla help`, `surla -h` and `surla --help`
+// usage is the text `surla help`, `surla -h` and `surla --help`
 // print. Each subcommand prints its own flags with `surla <subcommand> -h`.
 const usage = `Surla checks changes to a Goa/Goa-AI service design before code is
 written, and checks the built service against an evaluator suite before it is
@@ -107,12 +78,20 @@ promoted.
 
 Usage:
 
+  surla
   surla <command> [flags]
 
 Commands:
 
   init            create a starter service with an agent and an evaluator suite
-  serve           run the Surla server that MCP clients (coding agents) connect to
+  stop            stop this project's server in order
+  verification    set, show or remove this project's verification settings
+  promotion       set, show or remove this project's promotion settings
+
+Running surla starts or attaches to this folder's project and opens its views.
+The server runs in its own parentless Herdr terminal.
+
+Other commands:
   preview         print the architecture, agent policies and tool contracts a design
                   module declares; needs no server and no model key
   diff            compare the designs in two module directories
@@ -150,21 +129,20 @@ var apiKeyEnv = map[string]string{
 }
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if err := runWithRuntime(os.Args[1:], os.Stdout, productionProjectRuntime()); err != nil {
 		fmt.Fprintf(os.Stderr, "surla: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// run dispatches the surla subcommands. No arguments, `help`, `-h`, `-help`
-// and `--help` print usage to stdout; `help <command>` and
-// `<command> -h` print that command's flags to stderr (the flag package's
+// runWithRuntime dispatches CLI commands using the composition root's project effects.
+// No arguments starts the project; `help`, `-h`, `-help` and `--help` print usage.
+// `help <command>` and `<command> -h` print that command's flags to stderr (the flag package's
 // output). A help request returns nil so the exit status is 0; an unknown
 // command or a bad flag returns an error.
-func run(args []string, stdout io.Writer) error {
+func runWithRuntime(args []string, stdout io.Writer, runtime projectRuntime) error {
 	if len(args) == 0 {
-		_, err := fmt.Fprint(stdout, usage)
-		return err
+		return runtime.start(stdout)
 	}
 	sub, rest := args[0], args[1:]
 	if slices.Contains(helpWords, sub) {
@@ -173,12 +151,12 @@ func run(args []string, stdout io.Writer) error {
 			_, err := fmt.Fprint(stdout, usage)
 			return err
 		case sub == "help" && len(rest) == 1:
-			return run([]string{rest[0], "-h"}, stdout)
+			return runWithRuntime([]string{rest[0], "-h"}, stdout, runtime)
 		default:
 			return fmt.Errorf("unexpected arguments %q after %s", rest, sub)
 		}
 	}
-	err := dispatch(sub, rest, stdout)
+	err := dispatch(sub, rest, stdout, runtime)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -187,18 +165,25 @@ func run(args []string, stdout io.Writer) error {
 
 // dispatch runs the subcommand sub with its arguments. A `-h` flag makes the
 // subcommand's flag parsing print its flags and return flag.ErrHelp.
-func dispatch(sub string, args []string, stdout io.Writer) error {
+func dispatch(sub string, args []string, stdout io.Writer, runtime projectRuntime) error {
 	switch sub {
 	case "init":
-		return runInit(args, stdout)
+		return runtime.init(args, stdout)
 	case "serve":
-		return runServe(args)
+		if err := parseProjectArgs("serve", args); err != nil {
+			return err
+		}
+		return runtime.serve()
+	case "stop":
+		return runtime.stop(args, stdout)
+	case "verification", "promotion":
+		return runtime.settings(sub, args, stdout)
 	case "preview":
-		return runPreview(args, stdout, os.Stderr)
+		return runtime.preview(args, stdout, os.Stderr)
 	case "diff":
-		return runDiff(args)
+		return runtime.diff(args)
 	case "gen":
-		return runGen(args, stdout, os.Stderr)
+		return runtime.gen(args, stdout, os.Stderr)
 	case "verify":
 		return runVerify(args)
 	case "approve":
@@ -214,156 +199,16 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 	}
 }
 
-// runServe starts the Surla HTTP and MCP JSON-RPC server protected by a
-// verified bearer-token authenticator.
-func runServe(args []string) (err error) {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	addr := fs.String("addr", "127.0.0.1:8090", "HTTP and MCP listen address")
-	principalID := fs.String("principal", "", "Authenticated operator principal ID")
-	authToken := fs.String("auth-token", "", "Bearer token required on HTTP and MCP requests (default: $SURLA_AUTH_TOKEN)")
-	var cfg serveConfig
-	bindServeConfigFlags(fs, &cfg)
-	if err := parseServeConfigFlags(fs, args, &cfg); err != nil {
-		return err
-	}
-	token := resolveAuthToken(*authToken, os.Getenv)
-	if strings.TrimSpace(*principalID) == "" || token == "" {
-		return errors.New("serve requires -principal and -auth-token (or SURLA_AUTH_TOKEN)")
-	}
-	if !utf8.ValidString(*principalID) {
-		return errors.New("-principal must be valid UTF-8")
-	}
-	tracerProvider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
-	if err != nil {
-		return err
-	}
-	previousProvider := otel.GetTracerProvider()
-	otel.SetTracerProvider(tracerProvider)
-	defer func() {
-		// The later control-plane defer finishes owned work and closes its file
-		// first. This also flushes startup evidence when construction fails.
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		err = errors.Join(err, tracerProvider.Shutdown(flushCtx))
-		otel.SetTracerProvider(previousProvider)
-	}()
-	opts, err := serveOptions(cfg, os.Getenv, os.Environ())
-	if err != nil {
-		return err
-	}
-	opts.TracerProvider = tracerProvider
-	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
-		token: {ID: strings.TrimSpace(*principalID)},
-	})
-	cp, err := controlplane.New(opts)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, cp.Close()) }()
-	srv := &http.Server{
-		Handler:           controlplane.NewHTTPHandler(cp, auth),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	ln, err := net.Listen("tcp", *addr)
-	if err != nil {
-		return err
-	}
-	starterProject := cfg.projectDir
-	if cfg.verificationPath != "" {
-		starterProject = ""
-	}
-	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, starterProject)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-		close(errCh)
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutCtx)
-	}
-}
-
-// bindServeConfigFlags registers the workspace, model, verification,
-// promotion, and check flags for `surla serve` on fs.
-func bindServeConfigFlags(fs *flag.FlagSet, cfg *serveConfig) {
-	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "model gateway host:port that live targets plan with (plaintext gRPC; excludes -model-provider and -model-name)")
-	fs.StringVar(&cfg.provider, "model-provider", "", "model provider that live targets plan with: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
-	fs.StringVar(&cfg.modelName, "model-name", "", "model name for -model-provider")
-	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
-	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
-	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
-	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
-	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
-}
-
-// parseServeConfigFlags parses args into fs, records whether -project or
-// -cards-dir was explicitly passed on cfg, and rejects unexpected positional
-// arguments.
-func parseServeConfigFlags(fs *flag.FlagSet, args []string, cfg *serveConfig) error {
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "project":
-			cfg.projectSet = true
-		case "cards-dir":
-			cfg.cardsDirExplicit = true
-		}
-	})
-	// Flag parsing stops at the first non-flag argument, so anything left over
-	// would silently drop the flags after it.
-	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments %q", fs.Args())
-	}
-	return nil
-}
-
-// resolveAuthToken returns the bearer token `surla serve` requires: the
-// -auth-token flag when it is set, otherwise SURLA_AUTH_TOKEN from getenv,
-// with surrounding whitespace removed. The environment is read here, after
-// flag parsing, rather than as the flag's default, so `surla serve -h` never
-// prints the token. An empty result means no token was given.
-func resolveAuthToken(flagValue string, getenv func(string) string) string {
-	if flagValue == "" {
-		flagValue = getenv("SURLA_AUTH_TOKEN")
-	}
-	return strings.TrimSpace(flagValue)
-}
-
-// writeServeStatus tells the operator of `surla serve`, once the listener is
-// bound, where MCP clients connect, where Change Cards are saved, and which of
-// the five checkpoints (CP1–CP5) are on or off, naming the flag or host option
-// that enables each off capability. addr is the bound address, so port 0
-// reports the port actually assigned; an unspecified IP such as [::] is shown
-// as localhost so the printed URL works from this machine. project is the
-// -project value, or empty when verification comes from -verification-config
-// or is off; with it, the status also says that the evaluator suite commit is
-// the project's HEAD at startup and that a restart selects a later one. The
-// bearer token never appears.
+// writeServeStatus reports the bound numeric loopback address and checkpoint capabilities.
+// project is nonempty only when verification uses a starter suite pinned at startup.
 func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options, project string) {
 	host := addr.String()
-	if addr.IP.IsUnspecified() {
-		host = net.JoinHostPort("localhost", strconv.Itoa(addr.Port))
-	}
 	fmt.Fprintf(w, "surla: serving on http://%s\n", host)
-	fmt.Fprintf(w, "surla: connect MCP clients to http://%s/mcp with the bearer token (architecture guide: surla://golden-path or http://%s/golden-path)\n", host, host)
 	writeCheckpointStatus(w, opts, project)
 }
 
 // writeCheckpointStatus writes the Change Cards directory and the on/off
-// status of checkpoints CP1–CP5 to w for `surla serve`.
+// status of checkpoints CP1–CP5 to w for the project server.
 func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project string) {
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
@@ -375,7 +220,7 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project strin
 		writeLeftoverLiveDirs(w, root)
 	case opts.TargetUpdater == nil:
 		fmt.Fprintln(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off"+
-			" (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
+			" (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
 	default:
 		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}
@@ -388,26 +233,26 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project strin
 			opts.WorkspaceDir, opts.RunsDir)
 	default:
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
-			" (set -project or -verification-config, or run surla verify on the CLI)")
+			" (initialize a committed starter or use surla verification set, or run surla verify on the CLI)")
 	}
 	if project != "" && opts.Verification != nil {
-		fmt.Fprintf(w, "surla: -project %s: the evaluator suite commit is the project's HEAD at startup;"+
-			" commit and restart surla serve to use a later suite\n", project)
+		fmt.Fprintf(w, "surla: project %s: the evaluator suite commit is the project's HEAD at startup;"+
+			" commit and restart Surla to use a later suite\n", project)
 	}
 	if opts.PromotionTarget == nil {
-		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)")
+		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)")
 	} else {
 		fmt.Fprintln(w, "surla: CP5 (approve_merge): on")
 	}
 }
 
-// runPreview reads the design module in -dir (default: the current directory)
+// preview reads the design module in -dir (default: the current directory)
 // with designeval.ReadModuleSnapshot, evaluates it with a design evaluator it owns, and
 // writes the result with writePreviewResult: indented JSON to w and a one-line
 // summary to stderr. It records nothing and calls no model. SIGINT and SIGTERM
 // cancel the evaluation. On every return it closes the evaluator, which
 // removes its build workspace, and returns that error with any other.
-func runPreview(args []string, w, stderr io.Writer) (err error) {
+func (runtime projectRuntime) preview(args []string, w, stderr io.Writer) (err error) {
 	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	if err := fs.Parse(args); err != nil {
@@ -422,7 +267,7 @@ func runPreview(args []string, w, stderr io.Writer) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	evalWorkDir, err := localEvalWorkDir(*dir)
+	evalWorkDir, err := runtime.localEvalWorkDir(*dir)
 	if err != nil {
 		return err
 	}
@@ -450,12 +295,12 @@ func writePreviewResult(stdout, stderr io.Writer, res designeval.Result) error {
 	return nil
 }
 
-// runDiff compares two design modules on disk, each read into a snapshot with
+// diff compares two design modules on disk, each read into a snapshot with
 // designeval.ReadModuleSnapshot, and writes the structured diff JSON report to stdout.
 // Both evaluations share one design evaluator it owns. SIGINT and SIGTERM
 // cancel them. On every return it closes the evaluator, which removes its
 // build workspace, and returns that error with any other.
-func runDiff(args []string) (err error) {
+func (runtime projectRuntime) diff(args []string) (err error) {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	oldDir := fs.String("old-dir", "", "root directory of the previous design module (holding go.mod and design/)")
 	newDir := fs.String("new-dir", "", "root directory of the candidate design module (holding go.mod and design/)")
@@ -478,7 +323,7 @@ func runDiff(args []string) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	evalWorkDir, err := localEvalWorkDir(*oldDir, *newDir)
+	evalWorkDir, err := runtime.localEvalWorkDir(*oldDir, *newDir)
 	if err != nil {
 		return err
 	}
@@ -714,23 +559,17 @@ func isSHA256Hex(s string) bool {
 	return true
 }
 
-// serveOptions builds the control-plane Options for `surla serve` from cfg.
-// getenv supplies provider API keys. When all model flags are empty,
-// resolveStartupModelConfig auto-detects anthropic/claude-sonnet-4-6 from
-// ANTHROPIC_API_KEY or openai/gpt-5.4-mini from OPENAI_API_KEY. The chosen
-// model only reaches live targets' environment; with neither flags nor API
-// keys set, live targets get no model choice until configure_model sets one.
-func serveOptions(
-	cfg serveConfig,
+// projectServeOptions derives private stores, process helpers and the initial model
+// from the initialized project and operator environment. configure_model selects
+// later model choices; no caller supplies project identity or storage paths.
+func projectServeOptions(
+	state *project.State,
 	getenv func(string) string,
 	environ []string,
 ) (controlplane.Options, error) {
-	resolvedCfg := resolveStartupModelConfig(cfg, getenv)
-	if err := validateModelConfig(resolvedCfg, getenv); err != nil {
-		return controlplane.Options{}, err
-	}
+	resolvedCfg := resolveStartupModelConfig(getenv)
 
-	ws, err := configureServeWorkspace(cfg)
+	ws, err := configureProjectWorkspace(state)
 	if err != nil {
 		return controlplane.Options{}, err
 	}
@@ -768,7 +607,7 @@ func serveOptions(
 		Live:                   live,
 		Checker:                candidate.NewContainerRunner(),
 		CheckHelper:            checkHelperCommand(self),
-		CheckTimeout:           cfg.checkTimeout,
+		CheckTimeout:           defaultCheckTimeout,
 		GoProxyEnv:             goProxyEnv,
 	}, nil
 }
@@ -800,14 +639,9 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 	return env, nil
 }
 
-// resolveStartupModelConfig selects the default direct provider and model when
-// all model flags are empty and ANTHROPIC_API_KEY or OPENAI_API_KEY is set in
-// getenv. Any explicit model flag returns cfg unchanged so validateModelConfig
-// enforces flag validation.
-func resolveStartupModelConfig(cfg serveConfig, getenv func(string) string) serveConfig {
-	if cfg.gatewayAddr != "" || cfg.provider != "" || cfg.modelName != "" {
-		return cfg
-	}
+// resolveStartupModelConfig selects the default direct provider from an operator API key.
+func resolveStartupModelConfig(getenv func(string) string) serveConfig {
+	var cfg serveConfig
 	switch {
 	case strings.TrimSpace(getenv("ANTHROPIC_API_KEY")) != "":
 		cfg.provider = "anthropic"
@@ -838,7 +672,7 @@ func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.
 		if nextCfg.provider != "" {
 			if env, ok := apiKeyEnv[nextCfg.provider]; ok && strings.TrimSpace(getenv(env)) == "" {
 				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
-					"provider %s requires %s in surla serve's environment; set %s and restart surla serve, or call configure_model with gateway_addr to attach a running model gateway",
+					"provider %s requires %s in the project server's environment; set %s and stop and start Surla, or call configure_model with gateway_addr to attach a running model gateway",
 					nextCfg.provider,
 					env,
 					env,
@@ -849,13 +683,9 @@ func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.
 	}
 }
 
-// liveTargetEnv returns the environment live targets start with: serve's own,
-// which carries the provider key its model flags use, without serve's MCP
-// bearer token, plus the model choice those flags made, so an evaluator
-// suite's Live hook can plan with the same model: SURLA_LIVE_MODEL_PROVIDER
-// and SURLA_LIVE_MODEL_NAME for -model-provider and -model-name, or
-// SURLA_LIVE_MODEL_GATEWAY for -model-gateway-addr. Nothing is added when no
-// model is configured; serve's own values replace inherited ones.
+// liveTargetEnv replaces inherited live-model variables with the server's chosen
+// provider/model or gateway. API keys remain in the inherited operator environment;
+// project credentials are never stored there.
 func liveTargetEnv(environ []string, cfg serveConfig) []string {
 	derived := map[string]string{}
 	switch {
@@ -869,7 +699,7 @@ func liveTargetEnv(environ []string, cfg serveConfig) []string {
 	for _, kv := range environ {
 		name, _, _ := strings.Cut(kv, "=")
 		switch name {
-		case "SURLA_AUTH_TOKEN", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv:
+		case liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv:
 			continue
 		}
 		out = append(out, kv)
@@ -892,33 +722,6 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 		return
 	}
 	for _, dir := range dirs {
-		fmt.Fprintf(w, "surla: CP3: an earlier surla serve using this cards directory left live target directory %s; its files were kept\n", dir)
+		fmt.Fprintf(w, "surla: CP3: an earlier project server using this cards directory left live target directory %s; its files were kept\n", dir)
 	}
-}
-
-// validateModelConfig checks the model flags `surla serve` passes to live
-// targets: a gateway address alone, or a provider with a model name and that
-// provider's API key in getenv. No flags at all is valid and means live
-// targets get no model choice. Mixed or partial model flags, an unknown
-// provider and a missing provider API key are errors; key values never
-// appear in them.
-func validateModelConfig(cfg serveConfig, getenv func(string) string) error {
-	switch {
-	case cfg.gatewayAddr != "" && (cfg.provider != "" || cfg.modelName != ""):
-		return errors.New("-model-gateway-addr cannot be combined with -model-provider or -model-name; the gateway chooses the model")
-	case cfg.gatewayAddr != "":
-		return nil
-	case cfg.provider == "" && cfg.modelName == "":
-		return nil
-	case cfg.provider == "" || cfg.modelName == "":
-		return errors.New("-model-provider and -model-name must be set together")
-	}
-	env, ok := apiKeyEnv[cfg.provider]
-	if !ok {
-		return fmt.Errorf("unsupported -model-provider %q (expected \"anthropic\" or \"openai\")", cfg.provider)
-	}
-	if getenv(env) == "" {
-		return fmt.Errorf("-model-provider %s requires %s", cfg.provider, env)
-	}
-	return nil
 }

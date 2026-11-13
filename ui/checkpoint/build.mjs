@@ -1,10 +1,14 @@
-// build.mjs derives ui/checkpoint/src/types.ts from the Goa-generated tool
-// result schemas exported by internal/controlplane/export_schemas_gen.go,
-// compiles the Surla Checkpoint Studio React + OpenUI + shadcn/ui application
-// into internal/controlplane/checkpoint.html, and exports the OpenUI catalog
-// prompt to internal/goldenpath/decision_catalog.md.
+// build.mjs derives ui/checkpoint/src/types.ts from the Goa-generated HTTP
+// contract (gen/http/openapi3.json): the request types, route table and
+// result types and validators of exactly the operations the views page
+// calls. It then compiles the views page (React + OpenUI + shadcn/ui) into
+// internal/controlplane/checkpoint.html, which the Surla server serves at
+// /views, writes the SHA-256 digest of the page's one inline script to
+// internal/controlplane/views_page_script_gen.go for the page's security
+// policy, and exports the OpenUI catalog prompt to
+// internal/goldenpath/decision_catalog.md.
 
-import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -18,10 +22,36 @@ const checkOnly = process.argv.includes("--check");
 
 const typesTsPath = path.join(__dirname, "src/types.ts");
 const checkpointHtmlPath = path.join(repoRoot, "internal/controlplane/checkpoint.html");
+const scriptHashPath = path.join(repoRoot, "internal/controlplane/views_page_script_gen.go");
 const decisionCatalogPath = path.join(repoRoot, "internal/goldenpath/decision_catalog.md");
 const openApiPath = path.join(repoRoot, "gen/http/openapi3.json");
 
-const SUPPORTED_SCHEMA_KEYS = new Set([
+// PAGE_OPERATIONS lists, by OpenAPI operationId (service#method), every HTTP
+// operation the views page sends. Only these get a generated request type,
+// route and result validator; the page cannot address anything else.
+const PAGE_OPERATIONS = [
+  "project#exchange_browser_link",
+  "surla#list_changes",
+  "surla#wait_for_changes",
+  "surla#get_change",
+  "surla#confirm_intent",
+  "surla#approve_merge",
+  "surla#preview_architecture",
+  "surla#list_verifications",
+  "surla#get_verification",
+  "surla#list_traces",
+];
+
+// ERROR_SCHEMA is Goa's error response body, which every failed operation
+// returns; the page shows its message.
+const ERROR_SCHEMA = "Error";
+
+// TS_NAMES renames component schemas whose OpenAPI name would shadow a
+// JavaScript global in the generated module.
+const TS_NAMES = { Error: "ServerError" };
+
+// STRUCTURAL_KEYS are the JSON Schema keywords that decide a value's shape.
+const STRUCTURAL_KEYS = new Set([
   "type",
   "$ref",
   "enum",
@@ -29,322 +59,384 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   "additionalProperties",
   "items",
   "properties",
-  "$defs",
-  "oneOf",
+  "anyOf",
+  "format",
 ]);
 
-const IGNORED_ANNOTATION_KEYS = new Set([
-  "$schema",
+// IGNORED_KEYS are annotations, plus value constraints (lengths, ranges,
+// patterns) that the server enforces and that do not change a value's
+// TypeScript shape. Any other keyword fails the build rather than being
+// silently dropped.
+const IGNORED_KEYS = new Set([
   "title",
   "description",
   "example",
   "examples",
   "default",
+  "minLength",
+  "maxLength",
+  "minItems",
+  "maxItems",
+  "minimum",
+  "maximum",
+  "pattern",
 ]);
 
-const SUPPORTED_TYPES = new Set([
-  "string",
-  "boolean",
-  "integer",
-  "number",
-  "array",
-  "object",
-]);
+const SUPPORTED_TYPES = new Set(["string", "boolean", "integer", "number", "array", "object"]);
 
-// compactSchema strips non-constraining annotation keys while keeping every
-// supported structural JSON Schema constraint and failing the build if any
-// unsupported keyword, type, or format constraint appears in a generated schema.
-function compactSchema(node, schemaPath = "$") {
+// tsName returns the generated TypeScript name of a component schema.
+function tsName(component) {
+  return TS_NAMES[component] || component;
+}
+
+// refName returns the component name an OpenAPI $ref points at.
+function refName(ref, at) {
+  const prefix = "#/components/schemas/";
+  if (typeof ref !== "string" || !ref.startsWith(prefix)) {
+    throw new Error(`Unsupported $ref ${JSON.stringify(ref)} at ${at}`);
+  }
+  return ref.slice(prefix.length);
+}
+
+// compactSchema keeps the shape-deciding keywords of one OpenAPI schema node,
+// rewrites component references to the generated module's $defs, and fails
+// on any keyword or type it cannot represent. Goa encodes exactly the
+// declared attributes of a result, so an object with declared properties is
+// closed: undeclared fields in a response fail its validator.
+function compactSchema(node, at, refs) {
   if (!node || typeof node !== "object" || Array.isArray(node)) {
-    throw new Error(`Invalid JSON Schema node at ${schemaPath}`);
+    throw new Error(`Invalid schema node at ${at}`);
   }
   for (const key of Object.keys(node)) {
-    if (key === "format") {
-      if (
-        !(node.type === "integer" && node.format === "int64") &&
-        !(node.type === "string" && node.format === "date-time")
-      ) {
-        throw new Error(
-          `Unsupported JSON Schema format ${JSON.stringify(node.format)} on type ${JSON.stringify(
-            node.type
-          )} at ${schemaPath}`
-        );
-      }
-      continue;
-    }
-    if (!SUPPORTED_SCHEMA_KEYS.has(key) && !IGNORED_ANNOTATION_KEYS.has(key)) {
-      throw new Error(`Unsupported JSON Schema keyword ${JSON.stringify(key)} at ${schemaPath}`);
+    if (!STRUCTURAL_KEYS.has(key) && !IGNORED_KEYS.has(key)) {
+      throw new Error(`Unsupported schema keyword ${JSON.stringify(key)} at ${at}`);
     }
   }
   const out = {};
+  if (node.$ref !== undefined) {
+    const name = refName(node.$ref, at);
+    refs.add(name);
+    out.$ref = `#/$defs/${tsName(name)}`;
+  }
   if (node.type !== undefined) {
-    if (typeof node.type !== "string" || !SUPPORTED_TYPES.has(node.type)) {
-      throw new Error(
-        `Unsupported JSON Schema type ${JSON.stringify(node.type)} at ${schemaPath}`
-      );
+    if (!SUPPORTED_TYPES.has(node.type)) {
+      throw new Error(`Unsupported schema type ${JSON.stringify(node.type)} at ${at}`);
     }
     out.type = node.type;
   }
-  if (node.$ref !== undefined) {
-    if (typeof node.$ref !== "string" || !node.$ref.startsWith("#/$defs/")) {
-      throw new Error(
-        `Unsupported JSON Schema $ref ${JSON.stringify(node.$ref)} at ${schemaPath}`
-      );
+  if (node.format !== undefined) {
+    if (node.type === "string" && node.format === "date-time") {
+      out.format = "date-time";
+    } else if (!(node.type === "integer" && node.format === "int64")) {
+      throw new Error(`Unsupported format ${JSON.stringify(node.format)} at ${at}`);
     }
-    out.$ref = node.$ref;
   }
   if (node.enum !== undefined) {
     if (!Array.isArray(node.enum) || !node.enum.every((v) => typeof v === "string")) {
-      throw new Error(`Unsupported non-string enum at ${schemaPath}`);
+      throw new Error(`Unsupported non-string enum at ${at}`);
     }
     out.enum = node.enum;
   }
-  if (node.format === "date-time") {
-    out.format = node.format;
-  }
-  if (node.oneOf !== undefined) {
-    if (!Array.isArray(node.oneOf) || node.oneOf.length === 0) {
-      throw new Error(`Invalid oneOf array at ${schemaPath}`);
+  if (node.anyOf !== undefined) {
+    if (!Array.isArray(node.anyOf) || node.anyOf.length === 0) {
+      throw new Error(`Invalid anyOf at ${at}`);
     }
-    out.oneOf = node.oneOf.map((branch, index) =>
-      compactSchema(branch, `${schemaPath}.oneOf[${index}]`)
-    );
+    out.anyOf = node.anyOf.map((branch, i) => compactSchema(branch, `${at}.anyOf[${i}]`, refs));
   }
   if (node.required !== undefined) {
-    if (!Array.isArray(node.required) || !node.required.every((v) => typeof v === "string")) {
-      throw new Error(`Invalid required array at ${schemaPath}`);
-    }
     out.required = node.required;
   }
-  if (node.additionalProperties !== undefined) {
-    if (typeof node.additionalProperties === "boolean") {
-      out.additionalProperties = node.additionalProperties;
-    } else if (
-      node.additionalProperties &&
-      typeof node.additionalProperties === "object" &&
-      !Array.isArray(node.additionalProperties)
-    ) {
-      out.additionalProperties = compactSchema(
-        node.additionalProperties,
-        `${schemaPath}.additionalProperties`
-      );
-    } else {
-      throw new Error(`Unsupported additionalProperties at ${schemaPath}`);
-    }
-  }
   if (node.items !== undefined) {
-    out.items = compactSchema(node.items, `${schemaPath}.items`);
+    out.items = compactSchema(node.items, `${at}.items`, refs);
   }
   if (node.properties !== undefined) {
-    if (typeof node.properties !== "object" || Array.isArray(node.properties)) {
-      throw new Error(`Invalid properties map at ${schemaPath}`);
-    }
     out.properties = {};
-    for (const [k, v] of Object.entries(node.properties)) {
-      out.properties[k] = compactSchema(v, `${schemaPath}.properties.${k}`);
+    for (const [name, prop] of Object.entries(node.properties)) {
+      out.properties[name] = compactSchema(prop, `${at}.properties.${name}`, refs);
     }
+    out.additionalProperties = false;
   }
-  if (node.$defs !== undefined) {
-    if (typeof node.$defs !== "object" || Array.isArray(node.$defs)) {
-      throw new Error(`Invalid $defs map at ${schemaPath}`);
+  if (node.additionalProperties !== undefined) {
+    if (node.properties !== undefined) {
+      throw new Error(`Object with both properties and additionalProperties at ${at}`);
     }
-    out.$defs = {};
-    for (const [k, v] of Object.entries(node.$defs)) {
-      out.$defs[k] = compactSchema(v, `${schemaPath}.$defs.${k}`);
-    }
+    out.additionalProperties =
+      typeof node.additionalProperties === "boolean"
+        ? node.additionalProperties
+        : compactSchema(node.additionalProperties, `${at}.additionalProperties`, refs);
+  }
+  if (out.$ref === undefined && out.type === undefined && out.anyOf === undefined) {
+    throw new Error(`Schema without type, $ref or anyOf at ${at}`);
   }
   return out;
 }
 
-// Verify at build startup that compactSchema rejects unsupported assertions.
-try {
-  compactSchema({ type: "string", minLength: 1 }, "$.selfCheck");
-  throw new Error("compactSchema failed to reject unsupported keyword minLength");
-} catch (err) {
-  if (!String(err.message || err).includes('Unsupported JSON Schema keyword "minLength"')) {
-    throw err;
+// tsType renders the TypeScript type of a compact schema node.
+function tsType(node) {
+  if (node.anyOf) {
+    return `(${node.anyOf.map(tsType).join(" | ")})`;
+  }
+  if (node.$ref) {
+    return node.$ref.replace(/^#\/\$defs\//, "");
+  }
+  switch (node.type) {
+    case "string":
+      return node.enum ? node.enum.map((v) => JSON.stringify(v)).join(" | ") : "string";
+    case "boolean":
+      return "boolean";
+    case "integer":
+    case "number":
+      return "number";
+    case "array":
+      return node.items ? `${tsType(node.items)}[]` : "unknown[]";
+    case "object":
+      if (node.properties) {
+        const required = new Set(node.required || []);
+        const fields = Object.entries(node.properties).map(
+          ([name, prop]) => `${JSON.stringify(name)}${required.has(name) ? "" : "?"}: ${tsType(prop)}`
+        );
+        return `{ ${fields.join("; ")} }`;
+      }
+      if (node.additionalProperties && typeof node.additionalProperties === "object") {
+        return `Record<string, ${tsType(node.additionalProperties)}>`;
+      }
+      return "Record<string, unknown>";
+    default:
+      throw new Error(`Cannot render schema ${JSON.stringify(node)}`);
   }
 }
 
-// tsTypeForProperty converts a JSON Schema property node into its TypeScript
-// type expression.
-function tsTypeForProperty(prop) {
-  if (Array.isArray(prop.oneOf)) {
-    return `(${prop.oneOf.map(tsTypeForProperty).join(" | ")})`;
-  }
-  if (typeof prop.$ref === "string") {
-    return prop.$ref.replace(/^#\/\$defs\//, "");
-  }
-  if (prop.type === "string") {
-    if (Array.isArray(prop.enum) && prop.enum.length > 0) {
-      return prop.enum.map((v) => JSON.stringify(v)).join(" | ");
+// emitDeclaration renders one component schema as an interface when it is an
+// object with properties, or as a type alias otherwise.
+function emitDeclaration(name, node) {
+  if (node.type === "object" && node.properties && !node.anyOf) {
+    const required = new Set(node.required || []);
+    const lines = [`export interface ${name} {`];
+    for (const [prop, schema] of Object.entries(node.properties)) {
+      lines.push(`  ${prop}${required.has(prop) ? "" : "?"}: ${tsType(schema)};`);
     }
-    return "string";
+    lines.push("}");
+    return lines.join("\n");
   }
-  if (prop.type === "boolean") {
-    return "boolean";
-  }
-  if (prop.type === "integer" || prop.type === "number") {
-    return "number";
-  }
-  if (prop.type === "array") {
-    return prop.items ? `${tsTypeForProperty(prop.items)}[]` : "unknown[]";
-  }
-  if (prop.type === "object") {
-    if (prop.properties) {
-      const required = new Set(prop.required || []);
-      const fields = Object.entries(prop.properties).map(([name, value]) =>
-        `${JSON.stringify(name)}${required.has(name) ? "" : "?"}: ${tsTypeForProperty(value)}`
-      );
-      return `{ ${fields.join("; ")} }`;
-    }
-    if (prop.additionalProperties && typeof prop.additionalProperties === "object") {
-      return `Record<string, ${tsTypeForProperty(prop.additionalProperties)}>`;
-    }
-    return "Record<string, unknown>";
-  }
-  return "unknown";
+  return `export type ${name} = ${tsType(node)};`;
 }
 
-// emitInterface renders a single TypeScript interface from a JSON Schema object.
-function emitInterface(name, schema) {
-  const req = new Set(Array.isArray(schema.required) ? schema.required : []);
-  const props = schema.properties || {};
-  const lines = [`export interface ${name} {`];
-  for (const [propName, propSchema] of Object.entries(props)) {
-    const optional = req.has(propName) ? "" : "?";
-    lines.push(`  ${propName}${optional}: ${tsTypeForProperty(propSchema)};`);
+// pascal turns a Goa method name such as get_change into GetChange.
+function pascal(method) {
+  return method
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+}
+
+// findOperations locates each page operation in the OpenAPI document and
+// reads its method, path, parameters, body and single success response.
+function findOperations(openApi, refs) {
+  const byId = new Map();
+  for (const [route, methods] of Object.entries(openApi.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      byId.set(op.operationId, { route, method: method.toUpperCase(), op });
+    }
   }
+  return PAGE_OPERATIONS.map((id) => {
+    const found = byId.get(id);
+    if (!found) {
+      throw new Error(`The views page calls ${id}, which gen/http/openapi3.json does not declare`);
+    }
+    const { route, method, op } = found;
+    const name = id.split("#")[1];
+    const params = (op.parameters || []).map((p) => {
+      if (p.in !== "path" && p.in !== "query") {
+        throw new Error(`${id}: unsupported ${p.in} parameter ${p.name}`);
+      }
+      return {
+        name: p.name,
+        in: p.in,
+        required: Boolean(p.required),
+        schema: compactSchema(p.schema, `${id}.parameters.${p.name}`, refs),
+      };
+    });
+    let body = null;
+    if (op.requestBody) {
+      const schema = op.requestBody.content?.["application/json"]?.schema;
+      body = tsName(refName(schema?.$ref, `${id}.requestBody`));
+      refs.add(refName(schema.$ref, `${id}.requestBody`));
+    }
+    const successes = Object.entries(op.responses).filter(([status]) => status.startsWith("2"));
+    if (successes.length !== 1) {
+      throw new Error(`${id} must declare exactly one success response`);
+    }
+    const [status, response] = successes[0];
+    const resultSchema = response.content?.["application/json"]?.schema;
+    const result = tsName(refName(resultSchema?.$ref, `${id}.responses.${status}`));
+    refs.add(refName(resultSchema.$ref, `${id}.responses.${status}`));
+    return { id, name, route, method, params, body, success: Number(status), result };
+  });
+}
+
+// requestDeclaration renders the request type of one operation: its body
+// payload and its path and query parameters as one flat object.
+function requestDeclaration(op) {
+  const typeName = `${pascal(op.name)}Request`;
+  const fields = op.params.map(
+    (p) => `${JSON.stringify(p.name)}${p.required ? "" : "?"}: ${tsType(p.schema)}`
+  );
+  if (op.body && fields.length > 0) {
+    return `export type ${typeName} = ${op.body} & { ${fields.join("; ")} };`;
+  }
+  if (op.body) {
+    return `export type ${typeName} = ${op.body};`;
+  }
+  if (fields.length > 0) {
+    return `export interface ${typeName} {\n${fields.map((f) => `  ${f};`).join("\n")}\n}`;
+  }
+  return `export type ${typeName} = Record<string, never>;`;
+}
+
+// encoderSource renders the function that turns one operation's request into
+// its address and JSON body.
+function encoderSource(op) {
+  const typeName = `${pascal(op.name)}Request`;
+  const pathParams = op.params.filter((p) => p.in === "path");
+  const queryParams = op.params.filter((p) => p.in === "query");
+  const segments = op.route.split(/(\{[a-zA-Z0-9_]+\})/).filter((s) => s !== "");
+  const pathExpr = segments
+    .map((segment) => {
+      const match = /^\{([a-zA-Z0-9_]+)\}$/.exec(segment);
+      if (!match) {
+        return JSON.stringify(segment);
+      }
+      if (!pathParams.some((p) => p.name === match[1])) {
+        throw new Error(`${op.id}: path segment ${segment} has no path parameter`);
+      }
+      return `encodeURIComponent(String(request.${match[1]}))`;
+    })
+    .join(" + ");
+  const lines = [`function encode${pascal(op.name)}(request: ${typeName}): EncodedRequest {`];
+  let address = pathExpr;
+  if (queryParams.length > 0) {
+    lines.push("  const query = new URLSearchParams();");
+    for (const p of queryParams) {
+      const set = `query.set(${JSON.stringify(p.name)}, String(request.${p.name}));`;
+      lines.push(p.required ? `  ${set}` : `  if (request.${p.name} !== undefined) {\n    ${set}\n  }`);
+    }
+    lines.push("  const search = query.toString();");
+    address = `${pathExpr} + (search === "" ? "" : "?" + search)`;
+  }
+  let body = "undefined";
+  if (op.body && pathParams.length + queryParams.length > 0) {
+    const omitted = [...pathParams, ...queryParams].map((p) => `${p.name}: _${p.name}`).join(", ");
+    lines.push(`  const { ${omitted}, ...payload } = request;`);
+    body = "JSON.stringify(payload)";
+  } else if (op.body) {
+    body = "JSON.stringify(request)";
+  } else if (op.params.length === 0) {
+    lines[0] = `function encode${pascal(op.name)}(_request: ${typeName}): EncodedRequest {`;
+  }
+  lines.push(`  return { path: ${address}, body: ${body} };`);
   lines.push("}");
   return lines.join("\n");
 }
 
-// generateTypesModule invokes internal/controlplane/export_schemas_gen.go to
-// obtain the generated ResultSchemas (via ToolSchemas() and ToolSchema(name))
-// and MCP OutputSchemas (via NewMCPAdapter(nil, nil).ToolsList), verifies
-// parity against gen/http/openapi3.json, and generates ui/checkpoint/src/types.ts.
+// generateTypesModule reads gen/http/openapi3.json and generates
+// ui/checkpoint/src/types.ts.
 function generateTypesModule() {
-  const exportedRaw = execFileSync(
-    "go",
-    ["run", "./internal/controlplane/export_schemas_gen.go"],
-    { cwd: repoRoot, encoding: "utf8" }
-  );
-  const exported = JSON.parse(exportedRaw);
   const openApi = JSON.parse(fs.readFileSync(openApiPath, "utf8"));
+  const components = openApi.components?.schemas || {};
+  const refs = new Set([ERROR_SCHEMA]);
+  const operations = findOperations(openApi, refs);
 
-  const rawByTool = exported.registry || {};
-  const mcpByTool = exported.mcp || {};
-  for (const [tool, regSchema] of Object.entries(rawByTool)) {
-    const mcpName = tool.replace(/^surla\./, "");
-    const mcpSchema = mcpByTool[mcpName];
-    if (!mcpSchema) {
-      throw new Error(`Missing MCP OutputSchema for ${mcpName} from ToolsList`);
+  // Compact every component reachable from the page's operations.
+  const defs = {};
+  const pending = [...refs];
+  while (pending.length > 0) {
+    const component = pending.shift();
+    const name = tsName(component);
+    if (defs[name]) {
+      continue;
     }
-    const oaType = mcpSchema.title;
-    const oaSchema = openApi.components?.schemas?.[oaType];
-    if (
-      !oaSchema ||
-      JSON.stringify(regSchema.properties) !== JSON.stringify(mcpSchema.properties) ||
-      JSON.stringify(regSchema.required) !== JSON.stringify(mcpSchema.required) ||
-      JSON.stringify(regSchema.required) !== JSON.stringify(oaSchema.required)
-    ) {
-      throw new Error(`Schema parity mismatch for ${tool} (${oaType})`);
+    if (!components[component]) {
+      throw new Error(`Missing component schema ${component}`);
     }
-  }
-
-  if (
-    JSON.stringify(rawByTool["surla.propose_change"]) !==
-      JSON.stringify(rawByTool["surla.revise_change"]) ||
-    JSON.stringify(rawByTool["surla.propose_change"]) !==
-      JSON.stringify(rawByTool["surla.confirm_intent"]) ||
-    JSON.stringify(rawByTool["surla.propose_change"]) !==
-      JSON.stringify(rawByTool["surla.get_change"]) ||
-    JSON.stringify(rawByTool["surla.propose_change"]) !==
-      JSON.stringify(rawByTool["surla.approve_merge"])
-  ) {
-    throw new Error(
-      "ChangeCardResult tool schemas (propose_change, revise_change, confirm_intent, get_change, approve_merge) diverged"
-    );
-  }
-  if (
-    JSON.stringify(rawByTool["surla.verify_change"]) !==
-    JSON.stringify(rawByTool["surla.get_verification"])
-  ) {
-    throw new Error("VerificationStatusResult tool schemas diverged");
-  }
-
-  const rootSchemas = {
-    ChangeCardResult: compactSchema(
-      rawByTool["surla.propose_change"],
-      "ChangeCardResult"
-    ),
-    ArchitecturePreviewResult: compactSchema(
-      rawByTool["surla.preview_architecture"],
-      "ArchitecturePreviewResult"
-    ),
-    DiffResult: compactSchema(rawByTool["surla.diff"], "DiffResult"),
-    DraftOverrideResult: compactSchema(
-      rawByTool["surla.draft_override"],
-      "DraftOverrideResult"
-    ),
-    VerificationStatusResult: compactSchema(
-      rawByTool["surla.get_verification"],
-      "VerificationStatusResult"
-    ),
-    VerificationListResult: compactSchema(
-      rawByTool["surla.list_verifications"],
-      "VerificationListResult"
-    ),
-    TraceList: compactSchema(rawByTool["surla.list_traces"], "TraceList"),
-    LiveTargetResult: compactSchema(
-      rawByTool["surla.start_live_target"],
-      "LiveTargetResult"
-    ),
-    StopLiveTargetResult: compactSchema(
-      rawByTool["surla.stop_live_target"],
-      "StopLiveTargetResult"
-    ),
-  };
-
-  const emittedDefs = new Set();
-  const interfaceBlocks = [];
-  for (const [rootName, rootSchema] of Object.entries(rootSchemas)) {
-    for (const [defName, defSchema] of Object.entries(rootSchema.$defs || {})) {
-      if (!emittedDefs.has(defName)) {
-        emittedDefs.add(defName);
-        interfaceBlocks.push(emitInterface(defName, defSchema));
+    const found = new Set();
+    defs[name] = compactSchema(components[component], `components.schemas.${component}`, found);
+    for (const next of found) {
+      if (!defs[tsName(next)]) {
+        pending.push(next);
       }
     }
-    if (!emittedDefs.has(rootName)) {
-      emittedDefs.add(rootName);
-      interfaceBlocks.push(emitInterface(rootName, rootSchema));
-    }
   }
+  const defNames = Object.keys(defs).sort();
+  const results = [...new Set([...operations.map((op) => op.result), tsName(ERROR_SCHEMA)])].sort();
 
-  return `// Code generated by ui/checkpoint/build.mjs from gen/surla/toolsets/surla; DO NOT EDIT.
+  return `// Code generated by ui/checkpoint/build.mjs from gen/http/openapi3.json; DO NOT EDIT.
 //
-// Package types declares the generated MCP tool result interfaces and
-// JSON-Schema-driven runtime validators for Surla Checkpoint Studio.
+// Package types declares the views page's view of the Surla HTTP contract:
+// the request and result types of each operation the page sends, the route
+// table that addresses them, and validators for the JSON each one returns.
 
 import { z } from "zod";
 
-${interfaceBlocks.join("\n\n")}
+${defNames.map((name) => emitDeclaration(name, defs[name])).join("\n\n")}
+
+${operations.map(requestDeclaration).join("\n\n")}
+
+// Operations maps each operation the page sends to its request and result.
+export interface Operations {
+${operations
+  .map((op) => `  ${op.name}: { request: ${pascal(op.name)}Request; result: ${op.result} };`)
+  .join("\n")}
+}
+
+// OperationName names one operation the page sends.
+export type OperationName = keyof Operations;
+
+// EncodedRequest is a request's same-origin address and JSON body.
+export interface EncodedRequest {
+  // path is the address relative to the page's origin, including any query.
+  path: string;
+  // body is the JSON request body, or undefined when the operation has none.
+  body: string | undefined;
+}
+
+// Route is how one operation is sent and how its success is recognized.
+export interface Route<K extends OperationName> {
+  // method is the HTTP method.
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  // success is the HTTP status of a successful answer.
+  success: number;
+  // encode builds the operation's address and body from its request.
+  encode: (request: Operations[K]["request"]) => EncodedRequest;
+  // decode reports whether a parsed answer is the operation's result.
+  decode: (value: unknown) => value is Operations[K]["result"];
+}
+
+${operations.map(encoderSource).join("\n\n")}
+
+// ROUTES addresses every operation the page sends.
+export const ROUTES: { [K in OperationName]: Route<K> } = {
+${operations
+  .map(
+    (op) =>
+      `  ${op.name}: { method: ${JSON.stringify(op.method)}, success: ${op.success}, encode: encode${pascal(op.name)}, decode: is${op.result} },`
+  )
+  .join("\n")}
+};
 
 interface JSONSchemaNode {
   type?: string;
   $ref?: string;
   enum?: string[];
   format?: "date-time";
-  oneOf?: JSONSchemaNode[];
+  anyOf?: JSONSchemaNode[];
   required?: string[];
   additionalProperties?: boolean | JSONSchemaNode;
   items?: JSONSchemaNode;
   properties?: Record<string, JSONSchemaNode>;
-  $defs?: Record<string, JSONSchemaNode>;
 }
 
-const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = ${JSON.stringify(
-    rootSchemas,
+const SCHEMA_DEFS: Record<string, JSONSchemaNode> = ${JSON.stringify(
+    Object.fromEntries(defNames.map((name) => [name, defs[name]])),
     null,
     2
   )};
@@ -361,28 +453,15 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === "object" && !Array.isArray(v);
 }
 
-// matchesJSONSchema validates an unknown runtime value against a generated
-// Draft 2020-12 JSON Schema node and its root $defs dictionary.
-function matchesJSONSchema(
-  value: unknown,
-  schema: JSONSchemaNode,
-  defs: Record<string, JSONSchemaNode>
-): boolean {
-  if (schema.oneOf) {
-    let matches = 0;
-    for (const branch of schema.oneOf) {
-      if (matchesJSONSchema(value, branch, defs)) {
-        matches++;
-      }
-    }
-    if (matches !== 1) {
-      return false;
-    }
+// matchesSchema validates an unknown parsed value against a generated schema
+// node, resolving references through SCHEMA_DEFS.
+function matchesSchema(value: unknown, schema: JSONSchemaNode): boolean {
+  if (schema.anyOf && !schema.anyOf.some((branch) => matchesSchema(value, branch))) {
+    return false;
   }
   if (typeof schema.$ref === "string") {
-    const defName = schema.$ref.replace(/^#\\/\\$defs\\//, "");
-    const target = defs[defName];
-    return Boolean(target) && matchesJSONSchema(value, target, defs);
+    const target = SCHEMA_DEFS[schema.$ref.replace(/^#\\/\\$defs\\//, "")];
+    return Boolean(target) && matchesSchema(value, target);
   }
   if (schema.type === "string") {
     if (typeof value !== "string") {
@@ -407,96 +486,45 @@ function matchesJSONSchema(
     );
   }
   if (schema.type === "array") {
-    if (!Array.isArray(value)) {
-      return false;
-    }
-    return !schema.items || value.every((item) => matchesJSONSchema(item, schema.items!, defs));
+    return Array.isArray(value) && (!schema.items || value.every((item) => matchesSchema(item, schema.items!)));
   }
   if (schema.type === "object") {
     if (!isPlainObject(value)) {
       return false;
     }
     const props = schema.properties || {};
-    const req = schema.required || [];
-    for (let i = 0; i < req.length; i++) {
-      if (value[req[i]] === undefined) {
+    for (const name of schema.required || []) {
+      if (value[name] === undefined) {
         return false;
       }
     }
     for (const key of Object.keys(value)) {
-      const propVal = value[key];
-      if (propVal === undefined) {
-        continue;
-      }
+      const propValue = value[key];
       if (Object.prototype.hasOwnProperty.call(props, key)) {
-        if (!matchesJSONSchema(propVal, props[key], defs)) {
+        if (!matchesSchema(propValue, props[key])) {
           return false;
         }
       } else if (schema.additionalProperties === false) {
         return false;
-      } else if (
-        schema.additionalProperties &&
-        typeof schema.additionalProperties === "object"
-      ) {
-        if (!matchesJSONSchema(propVal, schema.additionalProperties, defs)) {
+      } else if (isPlainObject(schema.additionalProperties)) {
+        if (!matchesSchema(propValue, schema.additionalProperties)) {
           return false;
         }
       }
     }
     return true;
   }
-  return Boolean(schema.oneOf);
+  return Boolean(schema.anyOf);
 }
 
-function validateGeneratedRoot(name: string, value: unknown): boolean {
-  const schema = GENERATED_RESULT_SCHEMAS[name];
-  return Boolean(schema) && matchesJSONSchema(value, schema, schema.$defs || {});
-}
-
-// isChangeCardResult validates that a payload conforms to the generated ChangeCardResult schema.
-export function isChangeCardResult(p: unknown): p is ChangeCardResult {
-  return validateGeneratedRoot("ChangeCardResult", p);
-}
-
-// isArchitecturePreviewResult validates that a payload conforms to the generated ArchitecturePreviewResult schema.
-export function isArchitecturePreviewResult(p: unknown): p is ArchitecturePreviewResult {
-  return validateGeneratedRoot("ArchitecturePreviewResult", p);
-}
-
-// isDiffResult validates that a payload conforms to the generated DiffResult schema.
-export function isDiffResult(p: unknown): p is DiffResult {
-  return validateGeneratedRoot("DiffResult", p);
-}
-
-// isDraftOverrideResult validates that a payload conforms to the generated DraftOverrideResult schema.
-export function isDraftOverrideResult(p: unknown): p is DraftOverrideResult {
-  return validateGeneratedRoot("DraftOverrideResult", p);
-}
-
-// isVerificationStatusResult validates the generated CP4 state and report.
-export function isVerificationStatusResult(p: unknown): p is VerificationStatusResult {
-  return validateGeneratedRoot("VerificationStatusResult", p);
-}
-
-// isVerificationListResult validates the generated CP4 saved-run list.
-export function isVerificationListResult(p: unknown): p is VerificationListResult {
-  return validateGeneratedRoot("VerificationListResult", p);
-}
-
-// isTraceList validates the generated safe operation history page.
-export function isTraceList(p: unknown): p is TraceList {
-  return validateGeneratedRoot("TraceList", p);
-}
-
-// isLiveTargetResult validates a start_live_target result.
-export function isLiveTargetResult(p: unknown): p is LiveTargetResult {
-  return validateGeneratedRoot("LiveTargetResult", p);
-}
-
-// isStopLiveTargetResult validates a stop_live_target result.
-export function isStopLiveTargetResult(p: unknown): p is StopLiveTargetResult {
-  return validateGeneratedRoot("StopLiveTargetResult", p);
-}
+${results
+  .map(
+    (name) => `// is${name} validates a parsed answer against the generated ${name} schema.
+export function is${name}(value: unknown): value is ${name} {
+  return matchesSchema(value, { $ref: "#/$defs/${name}" });
+}`
+  )
+  .join("\n\n")}
 `;
 }
 
@@ -542,35 +570,47 @@ async function buildArtifacts() {
   // tag in checkpoint.html is never prematurely closed by the HTML parser.
   const safeJs = rawJs.replace(/<\/script/gi, "<\\/script");
 
+  // scriptText is the exact text between the page's <script> tags. A browser
+  // hashes this text as UTF-8 after normalizing line endings and refuses to
+  // run it unless the digest matches the policy, so it must contain no
+  // carriage return or NUL that parsing would change.
+  const scriptText = `\n  ${safeJs}\n  `;
+  if (/[\r\0]/.test(scriptText)) {
+    throw new Error("the views page script contains a carriage return or NUL character");
+  }
+  const scriptDigest = crypto.createHash("sha256").update(scriptText, "utf8").digest("base64");
+  const scriptHashGo = `// Code generated by ui/checkpoint/build.mjs. DO NOT EDIT.
+
+package controlplane
+
+// viewsPageScriptSource is the Content-Security-Policy source that allows the
+// views page's one inline script: the SHA-256 digest of its exact text.
+const viewsPageScriptSource = "'sha256-${scriptDigest}'"
+`;
+
+  // The page is a fixed shell with no project data. Its security policy is
+  // sent by the server as a response header (internal/controlplane/views.go).
   const html = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Surla Checkpoint Studio</title>
+  <title>Surla Architecture Workspace</title>
   <style>
 ${stylesCss}
   </style>
 </head>
 <body>
-  <main id="surla-checkpoint-root" data-profile="mcp-app" data-state="waiting">
-    <header>
-      <h1>Surla Checkpoint Studio</h1>
-      <p>Review and confirm domain decisions, concrete examples, architecture previews, prompt updates, and verification results for your change.</p>
-      <details class="surla-details">
-        <summary>Details</summary>
-        <p><small>Submitting Checkpoint 1 edits dispatches <code>confirm_intent</code> through the MCP Apps host; server authentication and <code>request_revision</code> checks remain authoritative.</small></p>
-      </details>
+  <main id="surla-checkpoint-root" data-state="starting">
+    <header class="surla-workspace-header">
+      <h1>Surla Architecture Workspace</h1>
+      <p>Review and confirm this project's changes: domain decisions, architecture, verification proof, and promotion approvals.</p>
     </header>
-    <p id="surla-checkpoint-status" role="status" aria-live="polite">Connecting to checkpoint studio...</p>
-    <nav id="surla-checkpoint-nav" aria-label="Checkpoint views" hidden></nav>
-    <section id="surla-checkpoint-view" aria-label="Checkpoint Payload"></section>
+    <p id="surla-checkpoint-status" role="status" aria-live="polite">Opening Surla...</p>
+    <nav id="surla-checkpoint-nav" aria-label="Workspace stages" hidden></nav>
+    <section id="surla-checkpoint-view" aria-label="Workspace View"></section>
   </main>
-  <script>
-  /* MCP Apps bridge origin guard: event.source !== window.parent */
-  ${safeJs}
-  </script>
+  <script>${scriptText}</script>
 </body>
 </html>
 `;
@@ -636,28 +676,36 @@ ${stylesCss}
     const existingCatalog = fs.existsSync(decisionCatalogPath)
       ? fs.readFileSync(decisionCatalogPath, "utf8")
       : "";
+    const existingScriptHash = fs.existsSync(scriptHashPath)
+      ? fs.readFileSync(scriptHashPath, "utf8")
+      : "";
     if (existingTypes !== generatedTypesTs) {
-      console.error("ERROR: ui/checkpoint/src/types.ts is out of date with gen/surla/toolsets/surla.");
+      console.error("ERROR: ui/checkpoint/src/types.ts is out of date with gen/http/openapi3.json.");
       process.exit(1);
     }
     if (existingHtml !== html) {
       console.error("ERROR: internal/controlplane/checkpoint.html is out of date with ui/checkpoint/src.");
       process.exit(1);
     }
+    if (existingScriptHash !== scriptHashGo) {
+      console.error("ERROR: internal/controlplane/views_page_script_gen.go is out of date with checkpoint.html.");
+      process.exit(1);
+    }
     if (existingCatalog !== catalogMarkdown) {
       console.error("ERROR: internal/goldenpath/decision_catalog.md is out of date with ui/checkpoint/src/openui/library.tsx.");
       process.exit(1);
     }
-    console.log("OK: types.ts, checkpoint.html, and decision_catalog.md are up to date.");
+    console.log("OK: types.ts, checkpoint.html, views_page_script_gen.go, and decision_catalog.md are up to date.");
     return;
   }
 
   fs.mkdirSync(path.dirname(checkpointHtmlPath), { recursive: true });
   fs.mkdirSync(path.dirname(decisionCatalogPath), { recursive: true });
   fs.writeFileSync(checkpointHtmlPath, html, "utf8");
+  fs.writeFileSync(scriptHashPath, scriptHashGo, "utf8");
   fs.writeFileSync(decisionCatalogPath, catalogMarkdown, "utf8");
   console.log(
-    `Built types.ts (${Buffer.byteLength(generatedTypesTs)} bytes), checkpoint.html (${Buffer.byteLength(html)} bytes), and decision_catalog.md (${Buffer.byteLength(catalogMarkdown)} bytes).`
+    `Built types.ts (${Buffer.byteLength(generatedTypesTs)} bytes), checkpoint.html (${Buffer.byteLength(html)} bytes), views_page_script_gen.go, and decision_catalog.md (${Buffer.byteLength(catalogMarkdown)} bytes).`
   );
 }
 

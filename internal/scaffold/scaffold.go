@@ -63,7 +63,7 @@ type (
 	}
 
 	// Layout names the command packages Init writes for one starter project,
-	// which `surla serve -project` builds: the candidate in the project
+	// which the project server builds: the candidate in the project
 	// directory and the evaluator suite in its SuiteDir module.
 	Layout struct {
 		// Service is the candidate service and binary name, the last element
@@ -152,7 +152,7 @@ type (
 )
 
 // SuiteDir is the directory, relative to the project directory, where Init
-// writes the evaluator suite's module <module>/eval. surla serve -project
+// writes the evaluator suite's module <module>/eval. The project server
 // reads that module's go.mod from there.
 const SuiteDir = "eval"
 

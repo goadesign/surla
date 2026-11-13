@@ -505,13 +505,12 @@ its selected accepted authoring attempt instead, including an automatic
 starter with both a startup verification configuration and a bound resolver.
 
 The final increment exposes timeline editing and proof/history through MCP
-and the viewer, and verifies the full first-time journey and backward loops.
-Serving the current checkpoint HTML over HTTP is existing behavior; a working
-standalone-page client and timeline-to-guide editing handoff remain to build.
-The current guest requires an MCP Apps parent and supplies neither that
-standalone client nor a host-chat message method. A prototype export does not
-prove those interactions work. Deterministic checks must not be described as
-evidence from real model execution or host interaction.
+and the views page, and verifies the full first-time journey and backward
+loops. The views page is a standalone page the Surla server serves and that
+calls the server directly; showing the timeline on it and a timeline-to-guide
+editing handoff remain to build. A prototype export does not prove those
+interactions work. Deterministic checks must not be described as evidence
+from real model execution or agent interaction.
 
 ### Review and verification limits
 

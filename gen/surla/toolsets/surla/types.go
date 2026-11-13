@@ -48,7 +48,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItem
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
@@ -147,7 +147,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItem
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
@@ -260,7 +260,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItem
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
@@ -348,6 +348,23 @@ type (
 		// repository (40 or 64 lowercase hex characters); start_live_target and
 		// verify_change take this commit ID.
 		Commit string
+	}
+	// ListChangesPayload defines the JSON payload for the surla.list_changes tool.
+	ListChangesPayload = struct {
+	}
+	// ListChangesResult defines the JSON result for the surla.list_changes tool.
+	ListChangesResult = struct {
+		// Saved Change Cards, most recently saved first.
+		Changes []*ChangeListItem
+		// Opaque value identifying this exact list; it changes whenever any listed
+		// value changes.
+		Version string
+		// Whether approve_merge can record approvals on this server. It is false when
+		// no promotion target is configured, or when the server could not resolve its
+		// promotion target; approve_merge then refuses every approval. To configure
+		// one, store the project's promotion settings with surla promotion set, then
+		// restart Surla.
+		ApprovalAvailable bool
 	}
 	// ListTracesPayload defines the JSON payload for the surla.list_traces tool.
 	ListTracesPayload = struct {
@@ -453,7 +470,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItem
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
@@ -563,7 +580,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItem
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
@@ -681,9 +698,7 @@ type (
 	}
 	// ApprovalItem is a nested type used by the generated JSON contract.
 	ApprovalItem = struct {
-		// Authenticated principal that owns the card and called approve_merge.
-		// Authentication does not prove that a human, rather than a coding agent, made
-		// the call.
+		// User who approved the result.
 		ApprovedBy string
 		// SHA-256 digest of the approved CP4 verification report.
 		ReportDigest string
@@ -757,8 +772,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string
 	}
 	// CP1AnalysisAmbiguity is a nested type used by the generated JSON contract.
@@ -809,8 +824,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string
 	}
 	// CP1RevisionAnalysisExample is a nested type used by the generated JSON contract.
@@ -829,6 +844,22 @@ type (
 		// deterministic when code can check the outcome directly; model_judged when
 		// checking it needs judgment.
 		VerificationKind string
+	}
+	// ChangeListItem is a nested type used by the generated JSON contract.
+	ChangeListItem = struct {
+		// Change Card identifier; get_change takes it.
+		ChangeID string
+		// Plain-English summary of the current revision.
+		Summary string
+		// Checkpoint status of the current revision.
+		Status string
+		// Current request_revision of the Change Card.
+		RequestRevision string
+		// The Change Card's most recently accepted verification run; absent when none
+		// was started.
+		LatestVerification *LatestVerificationItem
+		// When the Change Card was last saved. It is not part of request_revision.
+		SavedAt string
 	}
 	// DesignSnapshot is a nested type used by the generated JSON contract.
 	DesignSnapshot = struct {
@@ -850,6 +881,15 @@ type (
 		ExpectedOutcome string
 		// Evaluator check classification (deterministic or model_judged).
 		VerificationKind string
+	}
+	// LatestVerificationItem is a nested type used by the generated JSON contract.
+	LatestVerificationItem = struct {
+		// Verification run identifier; get_verification takes it.
+		RunID string
+		// running while the run builds or evaluates the candidate; passed or failed
+		// when its report's verdict is known; not_completed when it stopped without a
+		// report.
+		State string
 	}
 	// StoryActorItem is a nested type used by the generated JSON contract.
 	StoryActorItem = struct {
@@ -979,8 +1019,8 @@ type (
 		Status string
 		// Safe operation summary, at most 2048 bytes; never a raw error message.
 		Summary string
-		// Selected operation identifiers and results; at most six values of 1024 bytes
-		// each.
+		// Selected operation identifiers, results, and private caller attribution; at
+		// most seven values of 1024 bytes each.
 		Attributes map[string]string
 		// True when text was shortened to fit this diagnostic record; use operator
 		// telemetry for the full values.
@@ -989,9 +1029,9 @@ type (
 	// UICompositionItem is a nested type used by the generated JSON contract.
 	UICompositionItem = struct {
 		// OpenUI Lang program from the analysis's ui_composition, exactly as the
-		// caller sent it. The server does not check it; the checkpoint viewer
-		// validates it and shows its error state, with the rest of the card still
-		// usable, when the program is not a valid composition.
+		// caller sent it. The server does not check it; the views page validates it
+		// and shows its error state, with the rest of the card still usable, when the
+		// program is not a valid composition.
 		Program string
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision string

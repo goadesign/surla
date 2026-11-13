@@ -34,6 +34,9 @@ type (
 		store *traceview.Store
 		// principal is taken from authenticated context when the operation starts.
 		principal string
+		// callerID and callerKind are private attribution and never added to SDK spans.
+		callerID   string
+		callerKind string
 		// ended lets only the first End export and append this operation.
 		ended atomic.Bool
 	}
@@ -52,7 +55,7 @@ func (c *ControlPlane) ListTraces(
 		return nil, errors.New("authenticated principal is required")
 	}
 	if c.traceProvider == nil {
-		return nil, gensurla.MakeNotImplemented(errors.New("operation recording is not configured; the server operator must set controlplane.Options.TracerProvider when constructing controlplane.New, or use surla serve for automatic recording"))
+		return nil, gensurla.MakeNotImplemented(errors.New("operation recording is not configured; the server operator must set controlplane.Options.TracerProvider when constructing controlplane.New, or start the project with surla for automatic recording"))
 	}
 	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_traces")
 	defer span.End()
@@ -76,15 +79,20 @@ func (t diagnosticTracer) Start(
 	name string,
 	opts ...trace.SpanStartOption,
 ) (context.Context, trace.Span) {
-	next, span := t.Tracer.Start(ctx, name, opts...)
 	principal, ok := PrincipalFromContext(ctx)
-	if !span.IsRecording() || !ok {
+	next, span := t.Tracer.Start(ctx, name, opts...)
+	// The browser waiting read stays in exported traces without adding periodic observations to local operation history.
+	// Both its request boundary span and its inner span are excluded: the views page always keeps one waiting read
+	// open, and saving either would fill the bounded history and push real operations out of view.
+	if !span.IsRecording() || !ok || name == "surla.request.wait_for_changes" || name == waitForChangesSpan {
 		return next, span
 	}
 	return next, &diagnosticSpan{
 		ReadWriteSpan: span.(sdktrace.ReadWriteSpan),
 		store:         t.store,
 		principal:     principal.ID,
+		callerID:      principal.CallerID,
+		callerKind:    string(principal.Kind),
 	}
 }
 
@@ -120,7 +128,7 @@ func (c *ControlPlane) tracer(scope string) trace.Tracer {
 // recordCompleted saves the ended SDK span even while its End resumes a panic.
 // It holds no span history and reports only actual storage failures to the host.
 func (s *diagnosticSpan) recordCompleted() {
-	if err := s.store.Record(s.principal, s.ReadWriteSpan); err != nil {
+	if err := s.store.Record(s.principal, s.callerID, s.callerKind, s.ReadWriteSpan); err != nil {
 		otel.Handle(err)
 	}
 }

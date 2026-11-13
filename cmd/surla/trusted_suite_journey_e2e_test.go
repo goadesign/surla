@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,6 @@ import (
 
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
-	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -35,28 +35,6 @@ import (
 // timeout or terminal state first when it can; the wait does not guarantee
 // the owner finished if its I/O fails.
 const journeyOwnerWait = defaultProjectVerifyTimeout + 2*time.Minute
-
-// TestMain lets selfCommand launch the test executable's real verify-run
-// and check-run implementations. A detached verification supervisor stops
-// its run at the run's saved timeout, as in production. Other invocations
-// retain the ordinary Go testing entrypoint.
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == "verify-run" {
-		if err := runVerifyRun(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
-	if len(os.Args) > 1 && os.Args[1] == "check-run" {
-		if err := runCheckRun(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
 
 // trustedSuiteCommit commits only the harmless evaluator comment and returns
 // the full candidate commit ID; Git identity is local to the parent test.
@@ -106,26 +84,16 @@ func toolErrorText(content []*genmcpsurla.ContentItem) string {
 	return strings.Join(texts, "\n")
 }
 
-// writeStarterPromotion writes the operator's promotion configuration for the
-// starter project service, whose evaluator suite is pinned at suiteCommit, to
-// <operator-project-dir>/promotion.json, the file surla serve reads on every
-// verification and approval when -promotion-config is not given, so the
-// operator can add it after init_project without restarting. It finds that
-// directory for workspace, the bound workspace, the way surla serve does
-// (abspath.Stored, defaultOperatorRoot and sha256HexString).
-// report_dir is the operator's default reports directory, so verification
-// writes its reports where approval reads them; release_dir is a new empty
-// directory outside the workspace. The suite ID and environment are the ones
-// the starter's evaluator suite declares.
+// writeStarterPromotion stores promotion settings through CLI management before the
+// next server start. Reports use project-owned storage and staged releases remain
+// outside the workspace. Suite identity matches the starter evaluator contract.
 func writeStarterPromotion(t *testing.T, workspace, service, suiteCommit string) promotionFile {
 	t.Helper()
-	root, err := abspath.Stored(workspace)
+	t.Chdir(workspace)
+	state, err := fixtureProjectState(workspace)
 	require.NoError(t, err)
-	opRoot, err := defaultOperatorRoot(root)
-	require.NoError(t, err)
-	projectDir := filepath.Join(opRoot, "project-"+sha256HexString(root))
 	promotion := promotionFile{
-		ReportDir:   filepath.Join(projectDir, "reports"),
+		ReportDir:   filepath.Join(state.Dir, "reports"),
 		ReleaseDir:  filepath.Join(t.TempDir(), "releases"),
 		SuiteID:     service + "_acceptance",
 		SuiteCommit: suiteCommit,
@@ -135,7 +103,9 @@ func writeStarterPromotion(t *testing.T, workspace, service, suiteCommit string)
 	require.NoError(t, os.Mkdir(promotion.ReleaseDir, 0o700))
 	raw, err := json.Marshal(promotion)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "promotion.json"), raw, 0o600))
+	path := filepath.Join(t.TempDir(), "promotion.json")
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+	require.NoError(t, runProjectSettings("promotion", []string{"set", path}, io.Discard))
 	return promotion
 }
 

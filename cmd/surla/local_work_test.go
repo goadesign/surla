@@ -230,8 +230,6 @@ func TestRunInitKeepsFailedLogsOutsideTheWorkspace(t *testing.T) {
 func isolateLocalWork(t *testing.T) string {
 	t.Helper()
 	parent := t.TempDir()
-	prior := userConfigDir
-	userConfigDir = func() (string, error) { return parent, nil }
-	t.Cleanup(func() { userConfigDir = prior })
+	t.Setenv("SURLA_TEST_USER_CONFIG_DIR", parent)
 	return parent
 }

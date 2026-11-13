@@ -2,11 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -235,7 +243,7 @@ func TestRunPrintsHelpAndDispatchesCommands(t *testing.T) {
 		wantUsage bool
 		wantErr   string
 	}{
-		{name: "no arguments", args: nil, wantUsage: true},
+		{name: "no arguments", args: nil},
 		{name: "help", args: []string{"help"}, wantUsage: true},
 		{name: "-h", args: []string{"-h"}, wantUsage: true},
 		{name: "--help", args: []string{"--help"}, wantUsage: true},
@@ -252,23 +260,28 @@ func TestRunPrintsHelpAndDispatchesCommands(t *testing.T) {
 		{name: "init without flags", args: []string{"init"}, wantErr: "init requires -dir and -module"},
 		{name: "help for init", args: []string{"help", "init"}},
 		{name: "init with a mutable version", args: []string{"init", "-dir", "x", "-module", "example.com/x", "-surla-version", "latest"}, wantErr: "not an exact module version"},
-		{name: "serve without credentials", args: []string{"serve"}, wantErr: "serve requires -principal and -auth-token"},
-		{name: "serve with a stray argument before a flag", args: []string{"serve", "-principal", "op", "x", "-promotion-config", "p.json"}, wantErr: `unexpected arguments ["x" "-promotion-config" "p.json"]`},
+
 		{name: "diff with a stray argument", args: []string{"diff", "-old-dir", "a", "-new-dir", "b", "c"}, wantErr: `unexpected arguments ["c"]`},
 		{name: "preview with a bad flag", args: []string{"preview", "-nope"}, wantErr: "flag provided but not defined"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("SURLA_AUTH_TOKEN", "")
 			var out bytes.Buffer
-			err := run(tc.args, &out)
+			var err error
+			if tc.args == nil {
+				err = runWithRuntime(tc.args, &out, projectDispatchRuntime(t))
+			} else {
+				err = run(tc.args, &out)
+			}
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			if tc.wantUsage {
+			if tc.args == nil {
+				assert.Contains(t, out.String(), "Surla is running for")
+			} else if tc.wantUsage {
 				assert.Equal(t, usage, out.String())
 			} else {
 				assert.Empty(t, out.String())
@@ -288,50 +301,6 @@ func TestShellQuoteMakesOneShellWord(t *testing.T) {
 	}
 }
 
-func TestResolveAuthTokenPrefersTheFlag(t *testing.T) {
-	cases := []struct {
-		name, flag, env, want string
-	}{
-		{name: "flag only", flag: "from-flag", want: "from-flag"},
-		{name: "environment only", env: "from-env", want: "from-env"},
-		{name: "flag beats environment", flag: "from-flag", env: "from-env", want: "from-flag"},
-		{name: "whitespace trimmed", env: "  from-env\n", want: "from-env"},
-		{name: "neither", want: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			getenv := func(name string) string {
-				require.Equal(t, "SURLA_AUTH_TOKEN", name)
-				return tc.env
-			}
-			assert.Equal(t, tc.want, resolveAuthToken(tc.flag, getenv))
-		})
-	}
-}
-
-func TestServeHelpNeverPrintsTheEnvironmentToken(t *testing.T) {
-	const token = "synthetic-token-7f3a"
-	t.Setenv("SURLA_AUTH_TOKEN", token)
-	for _, args := range [][]string{{"serve", "-h"}, {"help", "serve"}} {
-		stderr := captureStderr(t, func() {
-			var stdout bytes.Buffer
-			require.NoError(t, run(args, &stdout))
-			assert.NotContains(t, stdout.String(), token)
-		})
-		assert.Contains(t, stderr, "-auth-token")
-		assert.NotContains(t, stderr, token, "help for %v", args)
-	}
-	// The environment token still satisfies serve's credential check, so
-	// serve gets past it and fails later, on the invalid listen address.
-	err := run([]string{"serve", "-addr", "256.0.0.1:0", "-principal", "op", "-cards-dir", t.TempDir()}, &bytes.Buffer{})
-	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "requires -principal and -auth-token")
-}
-
-// captureStderr runs fn with os.Stderr redirected to a pipe and returns what
-// fn wrote. The pipe is read only after fn returns, so fn must write less than
-// the pipe buffer (about 16 KiB); help text is about 1 KiB. Tests using it
-// must not run in parallel because os.Stderr is process-wide.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -364,4 +333,55 @@ func without(args []string, name string) []string {
 		out = append(out, args[i])
 	}
 	return out
+}
+
+// projectDispatchRuntime proves no-argument dispatch through actual management HTTP
+// while replacing terminal and browser effects and every state-root resolution.
+func projectDispatchRuntime(t *testing.T) projectRuntime {
+	t.Helper()
+	root := t.TempDir()
+	runtime := testProjectRuntimeAt(root)
+	runtime.preflight = func() error { return nil }
+	runtime.waitTerminal = func(ctx context.Context, id string) (bool, error) { <-ctx.Done(); return false, nil }
+	starts, opens := 0, 0
+	runtime.startTerminal = func(ctx context.Context, state *project.State) (string, error) {
+		starts++
+		cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
+		if err != nil {
+			return "", err
+		}
+		t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+		listener, err := net.Listen("tcp", state.Address())
+		if err != nil {
+			return "", err
+		}
+		management := project.NewServer(state, func() {})
+		server := &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
+		t.Cleanup(func() { assert.NoError(t, server.Close()) })
+		go func() {
+			if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
+				assert.NoError(t, err)
+			}
+		}()
+		return "stand-in", nil
+	}
+	runtime.openViews = func(ctx context.Context, link string) error {
+		opens++
+		assert.Contains(t, link, "/views#link=")
+		return nil
+	}
+	t.Cleanup(func() { assert.Equal(t, 1, starts); assert.Equal(t, 1, opens) })
+	return runtime
+}
+
+// TestDefaultProjectEffectsAreBlocked prevents dispatch regressions from reaching
+// user config, real terminals, or the browser when a test omits its stand-ins.
+func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
+	runtime := testProjectRuntime()
+	_, err := runtime.configRoot()
+	require.ErrorContains(t, err, "test-owned configuration directory")
+	_, err = runtime.startTerminal(t.Context(), nil)
+	require.ErrorContains(t, err, "cannot start real")
+	require.ErrorContains(t, runtime.openViews(t.Context(), "unused"), "cannot open real")
+	require.ErrorContains(t, run(nil, io.Discard), "cannot start real")
 }

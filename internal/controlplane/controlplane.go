@@ -8,13 +8,10 @@ package controlplane
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +32,7 @@ import (
 	"github.com/goadesign/surla/internal/traceview"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -48,6 +46,10 @@ type (
 	Principal struct {
 		// ID is the stable authenticated operator identifier (for example, "alice@example.com").
 		ID string
+		// CallerID identifies the browser session or agent responsible for an action.
+		CallerID string
+		// Kind is established by the credential owner, never by request payloads.
+		Kind CallerKind
 	}
 
 	// RequestAuthenticator verifies an incoming HTTP request and returns the
@@ -108,6 +110,11 @@ type (
 		// Change Cards, one file per card. It is required, and one process at
 		// a time may use it.
 		CardsDir string
+		// BeforeStoreRelease removes the composition root's running record after
+		// owned work closes, while the card-store lock remains held. Close calls
+		// it once before release; a live-target failure retaining the store never
+		// calls it.
+		BeforeStoreRelease func() error
 		// TracerProvider optionally supplies the host-owned SDK provider used
 		// to record authenticated operation diagnostics from construction.
 		// When nil, operations keep global telemetry but ListTraces returns
@@ -208,6 +215,9 @@ type (
 		// stories holds the evaluated domain Stories adopted for this revision,
 		// or nil when none were adopted.
 		stories []designeval.StorySummary
+		// savedAt is when the card store last wrote this card; zero for a
+		// record not yet saved. It is not part of request_revision.
+		savedAt time.Time
 	}
 
 	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
@@ -250,6 +260,8 @@ type (
 
 	// ControlPlane implements gensurla.Service.
 	ControlPlane struct {
+		// beforeStoreRelease finishes the host running record under the card-store lock.
+		beforeStoreRelease func() error
 		// traces owns the bounded diagnostic records under the card-store lock.
 		traces *traceview.Store
 		// traceProvider is fixed at construction; only this control plane's
@@ -341,6 +353,9 @@ type (
 		storyRefreshOps sync.WaitGroup
 		// storyRefreshTimeout overrides defaultStoryRefreshTimeout in tests when positive.
 		storyRefreshTimeout time.Duration
+		// changesWait and changesPoll override defaultChangesWait and
+		// defaultChangesPoll in tests when positive.
+		changesWait, changesPoll time.Duration
 		// newGenerator constructs a fresh scaffold.Generator for each
 		// InitProject call when non-nil.
 		newGenerator func() scaffold.Generator
@@ -369,15 +384,6 @@ const (
 	TargetKindCompiledRule = "compiled_rule"
 )
 
-var (
-	// checkpointUIHTML is the stateless MCP Apps (`ui://surla/checkpoint`,
-	// `text/html;profile=mcp-app`) HTML document host embedded from
-	// checkpoint.html.
-	//
-	//go:embed checkpoint.html
-	checkpointUIHTML string
-)
-
 // WithPrincipal returns a child context carrying the authenticated Principal.
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, principalContextKey{}, p)
@@ -395,34 +401,8 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	if !ok || strings.TrimSpace(p.ID) == "" || !utf8.ValidString(p.ID) {
 		return Principal{}, false
 	}
-	return Principal{ID: strings.TrimSpace(p.ID)}, true
-}
-
-// NewTokenAuthenticator returns a RequestAuthenticator that validates
-// `Authorization: Bearer <token>` headers in constant time against the
-// configured token-to-principal map.
-func NewTokenAuthenticator(tokens map[string]Principal) RequestAuthenticator {
-	cloned := maps.Clone(tokens)
-	return func(r *http.Request) (Principal, error) {
-		if r == nil {
-			return Principal{}, errors.New("missing http request")
-		}
-		raw := strings.TrimSpace(r.Header.Get("Authorization"))
-		token, ok := strings.CutPrefix(raw, "Bearer ")
-		if !ok || strings.TrimSpace(token) == "" {
-			return Principal{}, errors.New("missing bearer token")
-		}
-		token = strings.TrimSpace(token)
-		for expected, principal := range cloned {
-			if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1 {
-				if strings.TrimSpace(principal.ID) == "" {
-					return Principal{}, errors.New("empty principal configured for token")
-				}
-				return Principal{ID: strings.TrimSpace(principal.ID)}, nil
-			}
-		}
-		return Principal{}, errors.New("invalid bearer token")
-	}
+	p.ID = strings.TrimSpace(p.ID)
+	return p, true
 }
 
 // New constructs a ControlPlane that saves its Change Cards under
@@ -476,6 +456,7 @@ func New(opts Options) (*ControlPlane, error) {
 	}
 	cp := &ControlPlane{
 		cards:                  cards,
+		beforeStoreRelease:     opts.BeforeStoreRelease,
 		traces:                 traces,
 		traceProvider:          opts.TracerProvider,
 		liveModelEnv:           initialLiveEnv,
@@ -532,16 +513,22 @@ func New(opts Options) (*ControlPlane, error) {
 
 // NewHTTPHandler mounts both the Goa HTTP endpoints and the MCP JSON-RPC
 // server (`/mcp`) for svc onto a single HTTP handler protected by auth. The
-// HTTP endpoints decode JSON bodies with strictJSONRequestDecoder; the MCP
+// HTTP endpoints decode JSON bodies with StrictJSONRequestDecoder; the MCP
 // server keeps Goa's decoder for its JSON-RPC envelope, because its generated
 // tool codecs already refuse undeclared argument fields.
+// auth is required and is supplied by the project credential owner.
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)
+	recorder := otel.Tracer("surla/requests")
+	if owner, ok := svc.(*ControlPlane); ok {
+		recorder = owner.tracer("surla/requests")
+	}
+	applyOperationPolicy(endpoints, recorder)
 	httpServer := gensurlahttp.New(
 		endpoints,
 		mux,
-		strictJSONRequestDecoder,
+		StrictJSONRequestDecoder,
 		goahttp.ResponseEncoder,
 		nil,
 		nil,
@@ -550,6 +537,7 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 
 	mcpAdapter := genmcpadapter.NewMCPAdapter(endpoints, nil)
 	mcpEndpoints := genmcpadapter.NewEndpoints(mcpAdapter)
+	filterMCPDiscovery(mcpEndpoints)
 	mcpServer := genmcpsurla.New(
 		mcpEndpoints,
 		mux,
@@ -560,21 +548,19 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 	genmcpsurla.Mount(mux, mcpServer)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if auth != nil {
-			principal, err := auth(r)
-			if err != nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
+		principal, err := auth(r)
+		if err != nil {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			if encodeErr := goahttp.ResponseEncoder(r.Context(), w).Encode(goahttp.NewErrorResponse(r.Context(), gensurla.MakeForbidden(errors.New("open the project views with surla; session or credential is no longer valid")))); encodeErr != nil {
+				otel.Handle(encodeErr)
 			}
-			r = r.WithContext(WithPrincipal(r.Context(), principal))
+			return
 		}
+		r = r.WithContext(WithPrincipal(r.Context(), principal))
 		mux.ServeHTTP(w, r)
 	})
-}
-
-// CheckpointUI returns the interactive MCP Apps HTML host for `ui://surla/checkpoint`.
-func (c *ControlPlane) CheckpointUI(_ context.Context) (string, error) {
-	return checkpointUIHTML, nil
 }
 
 // GoldenPath returns the Markdown `surla://golden-path` serves: the Golden
@@ -597,8 +583,7 @@ func (c *ControlPlane) GoldenPath(_ context.Context) (string, error) {
 // design/*.go snapshot and evaluated Stories from that succeeded
 // refresh_story operation; otherwise design/*.go
 // from the bound workspace; else none), and binds the card to the
-// authenticated principal. A card without ambiguities is saved confirmed by
-// its owner; otherwise it waits in needs_confirmation. A change_id that
+// authenticated principal. Every proposed card waits in needs_confirmation for the user, including a card without ambiguities. A change_id that
 // already has a card is a conflict; a payload that breaks a rule, a blank
 // change_id or prompt, an invalid or stale story_refresh_op_id, or an
 // unreadable workspace design is unprocessable, and none saves anything.
@@ -644,14 +629,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		span.SetAttributes(attribute.String("surla.public_summary", cp1RejectedAnalysisSummary(false)))
 		return nil, gensurla.MakeUnprocessable(fmt.Errorf("invalid analysis: %w", err))
 	}
-	status := StatusConfirmed
-	var confirmedBy *string
-	if len(ambiguities) > 0 {
-		status = StatusNeedsConfirmation
-	} else {
-		ownerCopy := principal.ID
-		confirmedBy = &ownerCopy
-	}
+	status := StatusNeedsConfirmation
 
 	card := &gensurla.ChangeCardResult{
 		ChangeID:           p.ChangeID,
@@ -662,7 +640,6 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		Examples:           examples,
 		PreservedBehaviors: preserved,
 		Stories:            storySummaryItemsOrNil(stories),
-		ConfirmedBy:        confirmedBy,
 	}
 	rev, err := computeCanonicalRevision(card, principal.ID, designSrc)
 	if err != nil {
@@ -744,7 +721,11 @@ func (c *ControlPlane) Close() error {
 	defer c.workspaceMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return errors.Join(evalErr, checkErr, c.traces.Close(), c.cards.close())
+	var recordErr error
+	if c.cards.lock != nil && c.beforeStoreRelease != nil {
+		recordErr = c.beforeStoreRelease()
+	}
+	return errors.Join(evalErr, checkErr, c.traces.Close(), recordErr, c.cards.close())
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It
@@ -920,7 +901,7 @@ func (c *ControlPlane) Diff(ctx context.Context, p *gensurla.DiffPayload) (*gens
 	}, nil
 }
 
-// strictJSONRequestDecoder is the request body decoder of every HTTP route
+// StrictJSONRequestDecoder is the request body decoder of every HTTP route
 // NewHTTPHandler mounts. It returns goahttp.RequestDecoder's decoder for r's
 // Content-Type and, when that is a JSON decoder (application/json, or no
 // Content-Type), makes it refuse object fields the route's design does not
@@ -928,7 +909,7 @@ func (c *ControlPlane) Diff(ctx context.Context, p *gensurla.DiffPayload) (*gens
 // decode_payload error, HTTP 400, naming the field; for example a
 // propose_change analysis carrying a caller-chosen ambiguity "id". Bodies in
 // other formats Goa accepts (XML, gob, text) decode exactly as before.
-func strictJSONRequestDecoder(r *http.Request) goahttp.Decoder {
+func StrictJSONRequestDecoder(r *http.Request) goahttp.Decoder {
 	dec := goahttp.RequestDecoder(r)
 	if jsonDec, ok := dec.(*json.Decoder); ok {
 		jsonDec.DisallowUnknownFields()

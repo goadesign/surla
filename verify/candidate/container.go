@@ -132,7 +132,7 @@ func NewContainerRunner() *ContainerRunner {
 func (r *ContainerRunner) Open(ctx context.Context, configDir string) (*Engine, error) {
 	docker, err := r.lookPath("docker")
 	if err != nil {
-		return nil, fmt.Errorf("%w: docker is not installed or not on PATH for surla serve: %v", ErrEngineUnavailable, err)
+		return nil, fmt.Errorf("%w: docker is not installed or not on PATH for the project server: %v", ErrEngineUnavailable, err)
 	}
 	host := os.Getenv("DOCKER_HOST")
 	if host == "" {

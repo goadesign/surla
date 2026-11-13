@@ -300,7 +300,7 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	evalGoMod, err := os.ReadFile(filepath.Join(dir, "eval", "go.mod"))
 	require.NoError(t, err)
 	layout, err := StarterLayout(rootGoMod, evalGoMod)
-	require.NoError(t, err, "surla serve -project accepts the modules Init writes")
+	require.NoError(t, err, "the project server accepts the modules Init writes")
 	for _, pkgDir := range []string{
 		filepath.Join(dir, filepath.FromSlash(layout.CandidatePackage)),
 		filepath.Join(dir, SuiteDir, filepath.FromSlash(layout.SuiteCommand)),

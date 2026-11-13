@@ -98,7 +98,7 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	ambiguous := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
 		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{Question: "Who approves?", Options: []string{"instant", "manager"}}},
@@ -107,7 +107,7 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 		}},
 		PreservedBehaviors: []string{},
 	}
-	auth := NewTokenAuthenticator(map[string]Principal{
+	auth := workflowAuthenticator(map[string]Principal{
 		"alice-token": {ID: "alice@example.com"},
 		"bob-token":   {ID: "bob@example.com"},
 	})
@@ -195,7 +195,7 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 				require.NoError(t, err)
 			}
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(string(raw)))
-			req.Header.Set("Authorization", "Bearer "+tc.token)
+			workflowAuthorization(req, tc.token)
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			tc.h.ServeHTTP(rec, req)
@@ -236,10 +236,10 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 // including one made only of U+200B or U+FEFF, is saved byte for byte as sent,
 // surrounding whitespace included.
 func TestAnalysisTextsMustHoldMoreThanWhitespace(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srv.Close)
 
 	// The test source names each character by code point so it stays ASCII.

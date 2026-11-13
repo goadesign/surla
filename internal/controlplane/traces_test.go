@@ -73,7 +73,7 @@ func TestCloseKeepsTracingUntilCheckRequestEnds(t *testing.T) {
 	})
 	requestDone := make(chan error, 1)
 	go func() {
-		_, err := cp.CheckProject(WithPrincipal(deadline, Principal{ID: "alice@example.com"}))
+		_, err := cp.CheckProject(WithPrincipal(deadline, Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser}))
 		requestDone <- err
 	}()
 	select {
@@ -147,7 +147,7 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	)
 	t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
 	cp := newControlPlane(t, Options{TracerProvider: tp})
-	alice := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	parentCtx, parent := cp.tracer("surla/controlplane").Start(alice, "operation-parent")
 	_, failed := cp.tracer("surla/controlplane").Start(parentCtx, "operation-failed")
 	failed.SetAttributes(
@@ -159,14 +159,14 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	failed.SetStatus(codes.Error, "private storage content")
 	failed.End()
 	parent.End()
-	bob := WithPrincipal(t.Context(), Principal{ID: "bob@example.com"})
+	bob := WithPrincipal(t.Context(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	_, other := cp.tracer("surla/controlplane").Start(bob, "bob-operation")
 	other.SetStatus(codes.Error, "bob-private-error")
 	other.End()
 	_, unauthenticated := cp.tracer("surla/controlplane").Start(t.Context(), "no-authenticated-owner")
 	unauthenticated.End()
 
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"generation-token": {ID: "alice@example.com"},
 		"bob-token":        {ID: "bob@example.com"},
 	})))
@@ -185,7 +185,7 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	assert.Equal(t, parent.SpanContext().TraceID().String(), view.TraceID)
 	assert.Equal(t, parent.SpanContext().SpanID().String(), view.ParentSpanID)
 	assert.Equal(t, "error", view.Status)
-	assert.Equal(t, map[string]string{"surla.change_id": "change-1"}, view.Attributes)
+	assert.Equal(t, map[string]string{"surla.change_id": "change-1", "surla.caller_id": "test-user", "surla.caller_kind": "user"}, view.Attributes)
 	assert.Equal(t, cp1SafeFaultSummary(false, cp1FaultStorageSave), view.Summary)
 	raw, err := json.Marshal(page)
 	require.NoError(t, err)
@@ -248,9 +248,9 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	}
 }
 
-// TestTraceToolEncodesEmptyDataWithoutUI verifies the generated data-tool
+// TestTraceToolEncodesEmptyData verifies the generated list_traces tool
 // contract without relying on HTTP's normalization of nil collections.
-func TestTraceToolEncodesEmptyDataWithoutUI(t *testing.T) {
+func TestTraceToolEncodesEmptyData(t *testing.T) {
 	t.Parallel()
 	tp := sdktrace.NewTracerProvider()
 	t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
@@ -262,11 +262,10 @@ func TestTraceToolEncodesEmptyDataWithoutUI(t *testing.T) {
 	for _, tool := range tools.Tools {
 		if tool.Name == "list_traces" {
 			found = true
-			assert.NotContains(t, string(tool.Meta), "resourceUri")
 		}
 	}
-	require.True(t, found, "the data tool must be discoverable without opening a viewer")
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	require.True(t, found, "MCP ToolsList must include list_traces")
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	result, err := adapter.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: "list_traces", Arguments: json.RawMessage(`{}`)})
 	require.NoError(t, err)
 	complete, ok := result.Outcome.AsComplete()
@@ -283,7 +282,7 @@ func TestTraceToolEncodesEmptyDataWithoutUI(t *testing.T) {
 func TestTraceToolExplainsMissingRecording(t *testing.T) {
 	t.Parallel()
 	cp := newControlPlane(t, Options{})
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	_, err := cp.ListTraces(ctx, &gensurla.ListTracesPayload{Status: "all", Limit: 20})
 	assertServiceError(t, err, "not_implemented")
 	adapter := genmcpsurla.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
@@ -296,14 +295,14 @@ func TestTraceToolExplainsMissingRecording(t *testing.T) {
 	require.NotEmpty(t, complete.Content)
 	require.NotNil(t, complete.Content[0].Text)
 	assert.Contains(t, *complete.Content[0].Text, "Options.TracerProvider")
-	assert.Contains(t, *complete.Content[0].Text, "surla serve")
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	assert.Contains(t, *complete.Content[0].Text, "start the project with surla")
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"generation-token": {ID: "alice@example.com"},
 	})))
 	t.Cleanup(srv.Close)
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/traces", nil)
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer generation-token")
+	req.Header.Set("Authorization", "Bearer generation-token-builder")
 	response, err := srv.Client().Do(req)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, response.Body.Close()) })
@@ -320,7 +319,7 @@ func TestTraceToolReadsSavedHistoryAfterRestart(t *testing.T) {
 	first, err := New(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, first.Close()) })
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	_, span := first.tracer("surla/controlplane").Start(ctx, "saved-before-restart")
 	span.End()
 	require.NoError(t, first.Close())
@@ -354,7 +353,7 @@ func TestCP1FailuresProduceSafeSavedRecovery(t *testing.T) {
 		assert.NoError(t, cp.Close())
 		assert.NoError(t, tp.Shutdown(context.Background()))
 	})
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	seed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
 		ChangeID: "existing", Prompt: "private-feature-request", Analysis: refundAnalysis("private-analysis-summary"),
 	})
@@ -401,7 +400,7 @@ func TestCP1FailuresProduceSafeSavedRecovery(t *testing.T) {
 		seen[key] = span.Status
 		switch key {
 		case "surla.controlplane.propose_change existing":
-			assert.Equal(t, "Proposed Change Card (confirmed).", span.Summary)
+			assert.Equal(t, "Proposed Change Card (needs_confirmation).", span.Summary)
 		case "surla.controlplane.revise_change existing":
 			assert.NotEqual(t, "error", span.Status, "a broken revision rule is the caller's input, not a server failure")
 			assert.Contains(t, span.Summary, "retry revise_change")
@@ -433,7 +432,7 @@ func TestSharedProviderKeepsControlPlaneHistoriesSeparate(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
 	a := newControlPlane(t, Options{TracerProvider: tp})
 	b := newControlPlane(t, Options{TracerProvider: tp})
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	_, host := tp.Tracer("surla/controlplane").Start(ctx, "private-host-operation")
 	host.SetAttributes(attribute.String("host.evidence", "original-host-evidence"))
 	host.End()
@@ -475,7 +474,7 @@ func TestDiagnosticTracingPreservesSDKParentAccounting(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(full))
 	t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
 	cp := newControlPlane(t, Options{TracerProvider: tp})
-	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 	ctx, parent := cp.tracer("surla/controlplane").Start(ctx, "parent")
 	_, child := tp.Tracer("host-child").Start(ctx, "child")
 	child.End()
@@ -500,7 +499,7 @@ func TestDiagnosticTracingPreservesSDKPanicEvidence(t *testing.T) {
 			tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(full))
 			t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
 			cp := newControlPlane(t, Options{TracerProvider: tp})
-			ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+			ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "test-user", Kind: CallerUser})
 			plain := runDiagnosticPanic(ctx, tp.Tracer("surla/controlplane"), direct)
 			owned := runDiagnosticPanic(ctx, cp.tracer("surla/controlplane"), direct)
 			assert.Equal(t, "private-panic-evidence", plain)
@@ -531,4 +530,19 @@ func runDiagnosticPanic(ctx context.Context, tracer trace.Tracer, direct bool) (
 		defer func() { span.End() }()
 	}
 	panic("private-panic-evidence")
+}
+
+// TestWaitingReadBoundaryExportsWithoutRecording excludes periodic browser waits from private operation history.
+func TestWaitingReadBoundaryExportsWithoutRecording(t *testing.T) {
+	exported := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exported))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	cp := newControlPlane(t, Options{TracerProvider: provider})
+	caller := WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "session", Kind: CallerUser})
+	_, span := cp.tracer("surla/requests").Start(caller, "surla.request.wait_for_changes")
+	span.End()
+	assert.Len(t, exported.GetSpans(), 1)
+	history, err := cp.traces.List("owner", "all", 20, nil)
+	require.NoError(t, err)
+	assert.Empty(t, history.Spans)
 }

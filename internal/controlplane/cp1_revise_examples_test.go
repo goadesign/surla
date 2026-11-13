@@ -46,7 +46,7 @@ func withRevisionAnalysis(t *testing.T, p *gensurla.ReviseChangePayload, analysi
 // assigns check_01, check_02, ... IDs matching the goa-ai/eval validateID regex
 // even when change_id contains hyphens and digits.
 func TestProposeChangeAssignsDefaultExampleIDs_Decision2A(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	proposalJSON := `{
 		"summary": "Process refunds under $50 instantly.",
 		"ambiguities": [],
@@ -78,7 +78,7 @@ func TestProposeChangeAssignsDefaultExampleIDs_Decision2A(t *testing.T) {
 // preserves surviving prior examples' exact IDs via prior_id (both code-assigned check_01
 // and caller-confirmed custom IDs like ex-search).
 func TestReviseChangePreservesSurvivingPriorExamples_Decision1A(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	proposalJSON := `{
 		"summary": "Search products.",
 		"ambiguities": [{"question": "Include out of stock?", "options": ["yes", "no"]}],
@@ -143,7 +143,7 @@ func TestReviseChangePreservesSurvivingPriorExamples_Decision1A(t *testing.T) {
 // TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables verifies that brand-new
 // examples in revise_change receive the lowest check_%02d absent from both input and output tables.
 func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	t.Run("surviving check_01 and check_05 allocate check_02 for new example", func(t *testing.T) {
 		proposalJSON := `{
@@ -252,7 +252,7 @@ func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
 // rejects any prior example omitted from both examples[*].prior_id and removed_example_ids
 // as unprocessable, leaving the saved card untouched.
 func TestReviseChangeRejectsOmittedPriorExampleID_Decision1A(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	proposalJSON := `{
 		"summary": "Feature.",
 		"ambiguities": [],
@@ -298,7 +298,7 @@ func TestReviseChangeRejectsOmittedPriorExampleID_Decision1A(t *testing.T) {
 // rejects unknown prior_id, duplicate prior_id, unknown removed_example_ids, duplicate
 // removed_example_ids, ID in both lists, or a whitespace-only removed entry as unprocessable.
 func TestReviseChangeRejectsInvalidPriorAccounting_Decision1A(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
 	cases := []struct {
 		name       string
@@ -431,7 +431,7 @@ func TestReviseChangeRejectsInvalidPriorAccounting_Decision1A(t *testing.T) {
 //     and a later revision (R4) after " check_01 " is no longer in the prior table can
 //     allocate "check_01" again.
 func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	proposeR1JSON := `{
 		"summary": "Initial feature.",
 		"ambiguities": [],

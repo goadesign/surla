@@ -34,7 +34,7 @@ var (
 	errManifestConflict = errors.New("manifest conflict")
 	// errPublicationCanceled reports a changed manifest that was not written
 	// because the operation was canceled or ran out of time first.
-	errPublicationCanceled = errors.New("the operation was canceled or exceeded -check-timeout before writing it")
+	errPublicationCanceled = errors.New("the operation was canceled or exceeded check timeout before writing it")
 	// fsyncDir makes a rename durable; tests replace it to inject a failure
 	// after the rename succeeded.
 	fsyncDir = unix.Fsync
@@ -101,7 +101,7 @@ func (op *checkOperation) updateDependencies(ctx context.Context) (*gensurla.Upd
 	}
 	written, notes, canceled := op.publishManifests(ctx, failures)
 	if canceled && len(written) == 0 {
-		return nil, op.finish(fmt.Errorf("check exceeded -check-timeout (%s) or was canceled before writing the dependency files; nothing was written: %w", op.checkTimeout, ctx.Err()))
+		return nil, op.finish(fmt.Errorf("check exceeded check timeout (%s) or was canceled before writing the dependency files; nothing was written: %w", op.checkTimeout, ctx.Err()))
 	}
 	warning := ""
 	if err := op.finish(nil); err != nil {

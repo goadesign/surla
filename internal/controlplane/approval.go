@@ -155,7 +155,7 @@ func (c *ControlPlane) ApproveMerge(
 //     recovery reason.
 //  5. When card has a saved approval and no PromotionTarget is bound, a shallow
 //     copy is returned with `Approval == nil` and `UnverifiedApproval` carrying
-//     the recorded approval and a recovery reason naming `-promotion-config`.
+//     the recorded approval and a recovery reason naming `surla promotion set`.
 //
 // Callers must not hold c.mu because PromotionTarget.CurrentInputs may be slow.
 func (c *ControlPlane) currentCard(
@@ -172,7 +172,7 @@ func (c *ControlPlane) currentCard(
 		unverified.UnverifiedApproval = &gensurla.UnverifiedApprovalItem{
 			Approval: a,
 			Reason: fmt.Sprintf(
-				"Saved approval for candidate commit %s could not be verified because no promotion target is configured (-promotion-config). Configure a promotion target and reload the card with get_change.",
+				"Saved approval for candidate commit %s could not be verified because no promotion target is configured (surla promotion set). Configure a promotion target and reload the card with get_change.",
 				a.CandidateCommit,
 			),
 		}
@@ -195,7 +195,7 @@ func (c *ControlPlane) currentCard(
 		unverified.UnverifiedApproval = &gensurla.UnverifiedApprovalItem{
 			Approval: a,
 			Reason: fmt.Sprintf(
-				"Saved approval for candidate commit %s could not be verified because no promotion target is configured (-promotion-config). Configure a promotion target and reload the card with get_change.",
+				"Saved approval for candidate commit %s could not be verified because no promotion target is configured (surla promotion set). Configure a promotion target and reload the card with get_change.",
 				a.CandidateCommit,
 			),
 		}

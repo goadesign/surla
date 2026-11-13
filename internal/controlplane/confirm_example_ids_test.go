@@ -15,7 +15,7 @@ import (
 // confirm_intent keeps an edited example's existing id and an added example's
 // caller-chosen id exactly as sent, in a new revision.
 func TestConfirmIntentKeepsCallerExampleIDs(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	analysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
 		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},

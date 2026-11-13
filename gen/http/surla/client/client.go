@@ -17,10 +17,6 @@ import (
 
 // Client lists the surla service endpoint HTTP clients.
 type Client struct {
-	// CheckpointUI Doer is the HTTP client used to make requests to the
-	// checkpoint_ui endpoint.
-	CheckpointUIDoer goahttp.Doer
-
 	// GoldenPath Doer is the HTTP client used to make requests to the golden_path
 	// endpoint.
 	GoldenPathDoer goahttp.Doer
@@ -112,6 +108,14 @@ type Client struct {
 	// get_story_refresh endpoint.
 	GetStoryRefreshDoer goahttp.Doer
 
+	// ListChanges Doer is the HTTP client used to make requests to the
+	// list_changes endpoint.
+	ListChangesDoer goahttp.Doer
+
+	// WaitForChanges Doer is the HTTP client used to make requests to the
+	// wait_for_changes endpoint.
+	WaitForChangesDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -132,7 +136,6 @@ func NewClient(
 	restoreBody bool,
 ) *Client {
 	return &Client{
-		CheckpointUIDoer:        doer,
 		GoldenPathDoer:          doer,
 		ProposeChangeDoer:       doer,
 		ReviseChangeDoer:        doer,
@@ -156,30 +159,13 @@ func NewClient(
 		ListTracesDoer:          doer,
 		RefreshStoryDoer:        doer,
 		GetStoryRefreshDoer:     doer,
+		ListChangesDoer:         doer,
+		WaitForChangesDoer:      doer,
 		RestoreResponseBody:     restoreBody,
 		scheme:                  scheme,
 		host:                    host,
 		decoder:                 dec,
 		encoder:                 enc,
-	}
-}
-
-// CheckpointUI returns an endpoint that makes HTTP requests to the surla
-// service checkpoint_ui server.
-func (c *Client) CheckpointUI() goa.Endpoint {
-	var (
-		decodeResponse = DecodeCheckpointUIResponse(c.decoder, c.RestoreResponseBody)
-	)
-	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildCheckpointUIRequest(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := c.CheckpointUIDoer.Do(req)
-		if err != nil {
-			return nil, goahttp.ErrRequestError("surla", "checkpoint_ui", err)
-		}
-		return decodeResponse(resp)
 	}
 }
 
@@ -685,6 +671,49 @@ func (c *Client) GetStoryRefresh() goa.Endpoint {
 		resp, err := c.GetStoryRefreshDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_story_refresh", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ListChanges returns an endpoint that makes HTTP requests to the surla
+// service list_changes server.
+func (c *Client) ListChanges() goa.Endpoint {
+	var (
+		decodeResponse = DecodeListChangesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildListChangesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ListChangesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "list_changes", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// WaitForChanges returns an endpoint that makes HTTP requests to the surla
+// service wait_for_changes server.
+func (c *Client) WaitForChanges() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeWaitForChangesRequest(c.encoder)
+		decodeResponse = DecodeWaitForChangesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildWaitForChangesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.WaitForChangesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "wait_for_changes", err)
 		}
 		return decodeResponse(resp)
 	}

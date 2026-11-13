@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/abspath"
@@ -59,7 +60,7 @@ type (
 		Examples []*gensurla.ExampleItem
 		// PreservedBehaviors lists contract invariants preserved by this change.
 		PreservedBehaviors []string
-		// ConfirmedBy is the authenticated principal that confirmed the card.
+		// ConfirmedBy is the project owner whose user session confirmed the card.
 		ConfirmedBy *string
 		// RequestRevision is the SHA-256 digest of the canonical versioned card.
 		RequestRevision string
@@ -81,6 +82,10 @@ type (
 		// Stories holds the evaluated domain Stories adopted for this card
 		// revision in declaration order.
 		Stories []designeval.StorySummary `json:"stories"`
+		// SavedAt is when save last wrote the file. It sits outside Card so
+		// request_revision never covers it: saving the same content again
+		// keeps the revision and moves only this time.
+		SavedAt time.Time `json:"saved_at"`
 	}
 )
 
@@ -226,15 +231,20 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 	if rev != card.RequestRevision {
 		return storedChangeCard{}, fmt.Errorf("change card %q does not match its request_revision", label)
 	}
+	if f.SavedAt.IsZero() {
+		return storedChangeCard{}, fmt.Errorf("change card %q has no saved time", label)
+	}
 	return storedChangeCard{
 		card:         card,
 		owner:        f.Owner,
 		designSource: f.DesignSource,
 		stories:      stories,
+		savedAt:      f.SavedAt,
 	}, nil
 }
 
-// save replaces the saved card for record.card.ChangeID. It writes and syncs
+// save replaces the saved card for record.card.ChangeID and records the
+// current time as its saved time, ignoring record.savedAt. It writes and syncs
 // the card to the directory's one staging file, then renames that over the
 // card's file. Only one save runs at a time in a directory (the directory
 // lock and ControlPlane.mu), so one staging file suffices; a save that
@@ -269,6 +279,7 @@ func (s *cardStore) save(record storedChangeCard) error {
 		Owner:        record.owner,
 		DesignSource: record.designSource,
 		Stories:      persistedStories,
+		SavedAt:      time.Now().UTC(),
 	})
 	if err != nil {
 		return fmt.Errorf("encode change card %q: %w", record.card.ChangeID, err)
@@ -303,19 +314,18 @@ func (s *cardStore) path(changeID string) string {
 	return filepath.Join(s.dir, hex.EncodeToString(sum[:])+".json")
 }
 
-// hasWorkspaceCardsWithFiles reports whether any saved card in s captured
-// existing workspace design files (non-empty design_source). Cards proposed
-// in an empty workspace before init_project have
-// an empty design_source and do not block initialization. Every saved card file
-// is validated with the same strict decoder as load.
-func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
+// all returns every saved card in s in directory order. Every saved card
+// file is validated with the same strict decoder as load, so one unreadable
+// card fails the call rather than being skipped.
+func (s *cardStore) all() ([]storedChangeCard, error) {
 	if s.lock == nil {
-		return false, errCardsClosed
+		return nil, errCardsClosed
 	}
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		return false, fmt.Errorf("read cards directory: %w", err)
+		return nil, fmt.Errorf("read cards directory: %w", err)
 	}
+	var records []storedChangeCard
 	for _, entry := range entries {
 		name := entry.Name()
 		if !isHexCardFilename(name) {
@@ -323,12 +333,27 @@ func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
 		}
 		raw, err := readCardRegularFileNoFollow(filepath.Join(s.dir, name))
 		if err != nil {
-			return false, fmt.Errorf("read saved card %s: %w", name, err)
+			return nil, fmt.Errorf("read saved card %s: %w", name, err)
 		}
 		rec, err := decodeCardBytes(name, name, false, raw)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
+		records = append(records, rec)
+	}
+	return records, nil
+}
+
+// hasWorkspaceCardsWithFiles reports whether any saved card in s captured
+// existing workspace design files (non-empty design_source). Cards proposed
+// in an empty workspace before init_project have an empty design_source and
+// do not block initialization.
+func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
+	records, err := s.all()
+	if err != nil {
+		return false, err
+	}
+	for _, rec := range records {
 		if strings.TrimSpace(rec.designSource) != "" {
 			return true, nil
 		}
@@ -357,4 +382,24 @@ func readCardRegularFileNoFollow(path string) ([]byte, error) {
 	}
 	raw, readErr := io.ReadAll(f)
 	return raw, errors.Join(readErr, f.Close())
+}
+
+// CardStoreInUse probes the existing writer lock without reading or changing any cards.
+// The caller must serialize start decisions separately; the lock, not a PID record, proves liveness.
+func CardStoreInUse(dir string) (inUse bool, err error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false, err
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return false, err
+	}
+	defer func() { err = errors.Join(err, lock.Close()) }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 }

@@ -66,7 +66,7 @@ type (
 		copy grantCopy
 		// checker resolves the operation's engine.
 		checker *candidate.ContainerRunner
-		// checkTimeout is the operator's -check-timeout, named in messages
+		// checkTimeout is the configured check timeout, named in messages
 		// about operations that ran out of time.
 		checkTimeout time.Duration
 		// goProxyEnv is the operator's module proxy settings for download
@@ -158,7 +158,7 @@ func (c *ControlPlane) admitCheckOperation() error {
 }
 
 // checkDeadline bounds a whole check or dependency operation (copy, image
-// pull, every container) by the operator's -check-timeout, and cancels it
+// pull, every container) by the configured check timeout, and cancels it
 // when the server closes. The request context can only shorten it.
 func (c *ControlPlane) checkDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(ctx, c.checkTimeout)
@@ -321,7 +321,7 @@ func (op *checkOperation) start(ctx context.Context) error {
 		var changed *errSourceChanged
 		switch {
 		case ctx.Err() != nil:
-			return op.finish(fmt.Errorf("check exceeded -check-timeout (%s) or was canceled while copying the workspace: %w", op.checkTimeout, err))
+			return op.finish(fmt.Errorf("check exceeded check timeout (%s) or was canceled while copying the workspace: %w", op.checkTimeout, err))
 		case errors.As(err, &changed):
 			return op.finish(err)
 		}
@@ -358,7 +358,7 @@ func (op *checkOperation) start(ctx context.Context) error {
 // every path afterwards.
 func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, srcReadOnly bool, extraEnv []string, args ...string) (moduleOutcome, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return moduleOutcome{}, false, fmt.Errorf("check exceeded -check-timeout (%s) or was canceled before %s of %s: %w", op.checkTimeout, step, mod, err)
+		return moduleOutcome{}, false, fmt.Errorf("check exceeded check timeout (%s) or was canceled before %s of %s: %w", op.checkTimeout, step, mod, err)
 	}
 	name := fmt.Sprintf("surla-check-%s-%d", op.id, op.containers)
 	work := op.path(fmt.Sprintf("work-%d", op.containers))
@@ -405,7 +405,7 @@ func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, 
 	code, err := op.runContainer(ctx, spec)
 	end := op.out.size()
 	if err != nil && ctx.Err() != nil {
-		err = fmt.Errorf("check exceeded -check-timeout (%s) or was canceled during %s of %s: %w", op.checkTimeout, step, mod, err)
+		err = fmt.Errorf("check exceeded check timeout (%s) or was canceled during %s of %s: %w", op.checkTimeout, step, mod, err)
 	}
 	if kept := op.settle(ctx, name); kept != nil {
 		// The container may still exist or still appear; owner.json keeps
@@ -500,7 +500,7 @@ func (op *checkOperation) finish(cause error) error {
 		}
 	}
 	if len(op.owner.Containers) > 0 && op.owner.scratchUnused() {
-		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kept the record of container %s in %s: its creation was never confirmed, so it may still appear; surla serve looks for it at every start and shutdown", op.owner.Containers[0].Name, op.dir))
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kept the record of container %s in %s: its creation was never confirmed, so it may still appear; the project server looks for it at every start and shutdown", op.owner.Containers[0].Name, op.dir))
 	}
 	err := errors.Join(cause, closeErr, cleanupErr)
 	if err == nil {
@@ -656,7 +656,7 @@ func (op *checkOperation) openLive(wsRoot *os.Root, accepted []string) error {
 	}
 	rel, err := filepath.Rel(op.grantRoot, wsPath)
 	if err != nil || !filepath.IsLocal(rel) && rel != "." {
-		return gensurla.MakeUnprocessable(fmt.Errorf("workspace %s is outside %s, the source directory this server accepted at startup; if the workspace moved, move it back or restart surla serve from it", wsPath, op.grantRoot))
+		return gensurla.MakeUnprocessable(fmt.Errorf("workspace %s is outside %s, the source directory this server accepted at startup; if the workspace moved, move it back or stop and start Surla from it", wsPath, op.grantRoot))
 	}
 	op.workspaceRel = filepath.ToSlash(rel)
 	return nil

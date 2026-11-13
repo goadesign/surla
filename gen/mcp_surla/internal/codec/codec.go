@@ -88,9 +88,7 @@ func ValidateApproveMergeResultAmbiguityQuestionTransport(value *ApproveMergeRes
 
 // ApproveMergeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -413,7 +411,7 @@ type ApproveMergeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ApproveMergeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -508,9 +506,9 @@ func ValidateApproveMergeResultTransport(value *ApproveMergeResultTransport) (er
 // ApproveMergeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultUICompositionItemTransport struct {
 	// OpenUI Lang program from the analysis's ui_composition, exactly as the
-	// caller sent it. The server does not check it; the checkpoint viewer
-	// validates it and shows its error state, with the rest of the card still
-	// usable, when the program is not a valid composition.
+	// caller sent it. The server does not check it; the views page validates it
+	// and shows its error state, with the rest of the card still usable, when the
+	// program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -773,9 +771,7 @@ func ValidateConfirmIntentResultAmbiguityQuestionTransport(value *ConfirmIntentR
 
 // ConfirmIntentResultApprovalItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -1098,7 +1094,7 @@ type ConfirmIntentResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ConfirmIntentResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -1193,9 +1189,9 @@ func ValidateConfirmIntentResultTransport(value *ConfirmIntentResultTransport) (
 // ConfirmIntentResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultUICompositionItemTransport struct {
 	// OpenUI Lang program from the analysis's ui_composition, exactly as the
-	// caller sent it. The server does not check it; the checkpoint viewer
-	// validates it and shows its error state, with the rest of the card still
-	// usable, when the program is not a valid composition.
+	// caller sent it. The server does not check it; the views page validates it
+	// and shows its error state, with the rest of the card still usable, when the
+	// program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -1494,9 +1490,7 @@ func ValidateGetChangeResultAmbiguityQuestionTransport(value *GetChangeResultAmb
 
 // GetChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type GetChangeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -1819,7 +1813,7 @@ type GetChangeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*GetChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -1914,9 +1908,9 @@ func ValidateGetChangeResultTransport(value *GetChangeResultTransport) (err erro
 // GetChangeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type GetChangeResultUICompositionItemTransport struct {
 	// OpenUI Lang program from the analysis's ui_composition, exactly as the
-	// caller sent it. The server does not check it; the checkpoint viewer
-	// validates it and shows its error state, with the rest of the card still
-	// usable, when the program is not a valid composition.
+	// caller sent it. The server does not check it; the views page validates it
+	// and shows its error state, with the rest of the card still usable, when the
+	// program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -2617,6 +2611,127 @@ func ValidateInitProjectResultTransport(value *InitProjectResultTransport) (err 
 	return err
 }
 
+// ListChangesResultChangeListItemTransport stores JSON fields until they have been validated.
+type ListChangesResultChangeListItemTransport struct {
+	// Change Card identifier; get_change takes it.
+	ChangeID *string `json:"change_id"`
+	// Plain-English summary of the current revision.
+	Summary *string `json:"summary"`
+	// Checkpoint status of the current revision.
+	Status *string `json:"status"`
+	// Current request_revision of the Change Card.
+	RequestRevision *string `json:"request_revision"`
+	// The Change Card's most recently accepted verification run; absent when none
+	// was started.
+	LatestVerification *ListChangesResultLatestVerificationItemTransport `json:"latest_verification,omitempty"`
+	// When the Change Card was last saved. It is not part of request_revision.
+	SavedAt *string `json:"saved_at"`
+}
+
+// ValidateListChangesResultChangeListItemTransport checks decoded JSON before it becomes a service value.
+func ValidateListChangesResultChangeListItemTransport(value *ListChangesResultChangeListItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.SavedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("saved_at", "body"))
+	}
+	if value.Status != nil {
+		if !(*value.Status == "needs_confirmation" || *value.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	if value.LatestVerification != nil {
+		if err2 := ValidateListChangesResultLatestVerificationItemTransport(value.LatestVerification); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.SavedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.saved_at", *value.SavedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
+// ListChangesResultLatestVerificationItemTransport stores JSON fields until they have been validated.
+type ListChangesResultLatestVerificationItemTransport struct {
+	// Verification run identifier; get_verification takes it.
+	RunID *string `json:"run_id"`
+	// running while the run builds or evaluates the candidate; passed or failed
+	// when its report's verdict is known; not_completed when it stopped without a
+	// report.
+	State *string `json:"state"`
+}
+
+// ValidateListChangesResultLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
+func ValidateListChangesResultLatestVerificationItemTransport(value *ListChangesResultLatestVerificationItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"running", "passed", "failed", "not_completed"}))
+		}
+	}
+	return err
+}
+
+// ListChangesResultTransport stores JSON fields until they have been validated.
+type ListChangesResultTransport struct {
+	// Saved Change Cards, most recently saved first.
+	Changes []*ListChangesResultChangeListItemTransport `json:"changes"`
+	// Opaque value identifying this exact list; it changes whenever any listed
+	// value changes.
+	Version *string `json:"version"`
+	// Whether approve_merge can record approvals on this server. It is false when
+	// no promotion target is configured, or when the server could not resolve its
+	// promotion target; approve_merge then refuses every approval. To configure
+	// one, store the project's promotion settings with surla promotion set, then
+	// restart Surla.
+	ApprovalAvailable *bool `json:"approval_available"`
+}
+
+// ValidateListChangesResultTransport checks decoded JSON before it becomes a service value.
+func ValidateListChangesResultTransport(value *ListChangesResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Changes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changes", "body"))
+	}
+	if value.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	if value.ApprovalAvailable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval_available", "body"))
+	}
+	for _, e := range value.Changes {
+		if e != nil {
+			if err2 := ValidateListChangesResultChangeListItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ListTracesPayloadIntTransport stores JSON fields until they have been validated.
 type ListTracesPayloadIntTransport int
 
@@ -2692,8 +2807,8 @@ type ListTracesResultTraceSpanTransport struct {
 	Status *string `json:"status"`
 	// Safe operation summary, at most 2048 bytes; never a raw error message.
 	Summary *string `json:"summary"`
-	// Selected operation identifiers and results; at most six values of 1024 bytes
-	// each.
+	// Selected operation identifiers, results, and private caller attribution; at
+	// most seven values of 1024 bytes each.
 	Attributes map[string]string `json:"attributes"`
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
@@ -3590,8 +3705,8 @@ type ProposeChangePayloadCP1AnalysisTransport struct {
 	// questions, built only from the decision components the surla://golden-path
 	// resource lists. Refer to an ambiguity or example only by its 1-based
 	// position in this analysis (1 is the first); never invent identifiers. Surla
-	// saves it unchanged without checking it; the checkpoint viewer validates and
-	// renders it. Omit it when a plain card is clearer.
+	// saves it unchanged without checking it; the views page validates and renders
+	// it. Omit it when a plain card is clearer.
 	UIComposition *string `json:"ui_composition,omitempty"`
 }
 
@@ -3716,9 +3831,7 @@ func ValidateProposeChangeResultAmbiguityQuestionTransport(value *ProposeChangeR
 
 // ProposeChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -4041,7 +4154,7 @@ type ProposeChangeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ProposeChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -4136,9 +4249,9 @@ func ValidateProposeChangeResultTransport(value *ProposeChangeResultTransport) (
 // ProposeChangeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultUICompositionItemTransport struct {
 	// OpenUI Lang program from the analysis's ui_composition, exactly as the
-	// caller sent it. The server does not check it; the checkpoint viewer
-	// validates it and shows its error state, with the rest of the card still
-	// usable, when the program is not a valid composition.
+	// caller sent it. The server does not check it; the views page validates it
+	// and shows its error state, with the rest of the card still usable, when the
+	// program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -4608,8 +4721,8 @@ type ReviseChangePayloadCP1RevisionAnalysisTransport struct {
 	// questions, built only from the decision components the surla://golden-path
 	// resource lists. Refer to an ambiguity or example only by its 1-based
 	// position in this analysis (1 is the first); never invent identifiers. Surla
-	// saves it unchanged without checking it; the checkpoint viewer validates and
-	// renders it. Omit it when a plain card is clearer.
+	// saves it unchanged without checking it; the views page validates and renders
+	// it. Omit it when a plain card is clearer.
 	UIComposition *string `json:"ui_composition,omitempty"`
 }
 
@@ -4754,9 +4867,7 @@ func ValidateReviseChangeResultAmbiguityQuestionTransport(value *ReviseChangeRes
 
 // ReviseChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultApprovalItemTransport struct {
-	// Authenticated principal that owns the card and called approve_merge.
-	// Authentication does not prove that a human, rather than a coding agent, made
-	// the call.
+	// User who approved the result.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -5079,7 +5190,7 @@ type ReviseChangeResultTransport struct {
 	// revision in declaration order; omitted when the card has no Stories.
 	// Included in request_revision.
 	Stories []*ReviseChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
-	// Authenticated principal that confirmed the Change Card.
+	// User who confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
@@ -5174,9 +5285,9 @@ func ValidateReviseChangeResultTransport(value *ReviseChangeResultTransport) (er
 // ReviseChangeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultUICompositionItemTransport struct {
 	// OpenUI Lang program from the analysis's ui_composition, exactly as the
-	// caller sent it. The server does not check it; the checkpoint viewer
-	// validates it and shows its error state, with the rest of the card still
-	// usable, when the program is not a valid composition.
+	// caller sent it. The server does not check it; the views page validates it
+	// and shows its error state, with the rest of the card still usable, when the
+	// program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -6745,6 +6856,33 @@ func EncodeInitProjectResult(in *surla.InitProjectResult) ([]byte, error) {
 	return data, nil
 }
 
+// EncodeListChangesResult turns a service value into JSON using the field names in the Goa design.
+func EncodeListChangesResult(in *surla.ChangeList) ([]byte, error) {
+	var body *ListChangesResultTransport
+	{
+		body = &ListChangesResultTransport{
+			Version:           &in.Version,
+			ApprovalAvailable: &in.ApprovalAvailable,
+		}
+		body.Changes = make([]*ListChangesResultChangeListItemTransport, len(in.Changes))
+		for i, val := range in.Changes {
+			if val == nil {
+				body.Changes[i] = nil
+				continue
+			}
+			body.Changes[i] = encodeChangeListItemToListChangesResultChangeListItemTransport(val)
+		}
+	}
+	if err := ValidateListChangesResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ListChangesResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ListChangesResult JSON: %w", err)
+	}
+	return data, nil
+}
+
 // DecodeListTracesPayload checks JSON field names from the Goa design and returns a service value.
 func DecodeListTracesPayload(data []byte) (out *surla.ListTracesPayload, err error) {
 	var body *ListTracesPayloadTransport
@@ -7889,6 +8027,21 @@ func encodeC4EdgeItemToPreviewArchitectureResultC4EdgeItemTransport(v *surla.C4E
 	return res
 }
 
+func encodeChangeListItemToListChangesResultChangeListItemTransport(v *surla.ChangeListItem) *ListChangesResultChangeListItemTransport {
+	res := &ListChangesResultChangeListItemTransport{
+		ChangeID:        &v.ChangeID,
+		Summary:         &v.Summary,
+		Status:          &v.Status,
+		RequestRevision: &v.RequestRevision,
+		SavedAt:         &v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v.LatestVerification)
+	}
+
+	return res
+}
+
 func encodeExampleItemToApproveMergeResultExampleItemTransport(v *surla.ExampleItem) *ApproveMergeResultExampleItemTransport {
 	res := &ApproveMergeResultExampleItemTransport{
 		ID:               &v.ID,
@@ -7944,6 +8097,15 @@ func encodeExampleItemToReviseChangeResultExampleItemTransport(v *surla.ExampleI
 		InputSummary:     &v.InputSummary,
 		ExpectedOutcome:  &v.ExpectedOutcome,
 		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v *surla.LatestVerificationItem) *ListChangesResultLatestVerificationItemTransport {
+	res := &ListChangesResultLatestVerificationItemTransport{
+		RunID: &v.RunID,
+		State: &v.State,
 	}
 
 	return res

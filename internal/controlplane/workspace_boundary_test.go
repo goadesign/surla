@@ -216,7 +216,7 @@ func TestSyncDirTreeFDFollowedByRemoveOwnedStagingDirAndFailedWALCleanup(t *test
 	tmpObstacle := filepath.Join(cp.cards.dir, workspaceRecordFile+".tmp")
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpObstacle, "keep"), 0o700))
 
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	_, err = cp.InitProject(aliceCtx, &gensurla.InitProjectPayload{
 		ModulePath: "example.com/shop",
 	})
@@ -276,7 +276,7 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 	require.NoError(t, err)
 	defer cp.Close()
 
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"alice-token": {ID: "alice@example.com"},
 	})))
 	defer srv.Close()
@@ -288,7 +288,7 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer alice-token")
+	req.Header.Set("Authorization", "Bearer alice-token-guide")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
@@ -350,7 +350,7 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 		message:  "Publishing the initialized starter workspace",
 	}, events[1])
 
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	verCfg, err := cp.resolveActiveVerification(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, verCfg)
@@ -440,7 +440,7 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 		assert.DirExists(t, cardsWithSpace)
 		assert.Equal(t, runsWithSpace, cp.effectiveRunsDir())
 
-		alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+		alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 		paddedDir := " shop "
 		_, err = cp.InitProject(alice, &gensurla.InitProjectPayload{
 			ModulePath: "example.com/shop",
@@ -633,7 +633,7 @@ func TestInitProjectAcceptsAnotherSpellingOfTheWorkspace(t *testing.T) {
 	defer func() { require.NoError(t, cp.Close()) }()
 	assert.Equal(t, ws, cp.initialWorkspaceRoot, "the stored spelling")
 
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	initRes, err := cp.InitProject(alice, &gensurla.InitProjectPayload{ModulePath: "example.com/shop"})
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(ws, "shop"), initRes.Dir)

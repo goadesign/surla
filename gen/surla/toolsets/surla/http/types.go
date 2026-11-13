@@ -54,7 +54,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -171,7 +171,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -308,7 +308,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -414,6 +414,29 @@ type (
 		// repository (40 or 64 lowercase hex characters); start_live_target and
 		// verify_change take this commit ID.
 		Commit *string `json:"commit"`
+	}
+	// ListChangesPayloadTransport is the internal JSON transport type for ListChangesPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListChangesPayloadTransport struct {
+	}
+	// ListChangesResultTransport is the internal JSON transport type for ListChangesResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListChangesResultTransport struct {
+		// Saved Change Cards, most recently saved first.
+		Changes []*ChangeListItemTransport `json:"changes"`
+		// Opaque value identifying this exact list; it changes whenever any listed
+		// value changes.
+		Version *string `json:"version"`
+		// Whether approve_merge can record approvals on this server. It is false when
+		// no promotion target is configured, or when the server could not resolve its
+		// promotion target; approve_merge then refuses every approval. To configure
+		// one, store the project's promotion settings with surla promotion set, then
+		// restart Surla.
+		ApprovalAvailable *bool `json:"approval_available"`
 	}
 	// ListTracesPayloadTransport is the internal JSON transport type for ListTracesPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -543,7 +566,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -671,7 +694,7 @@ type (
 		// revision in declaration order; omitted when the card has no Stories.
 		// Included in request_revision.
 		Stories []*StorySummaryItemTransport `json:"stories,omitempty"`
-		// Authenticated principal that confirmed the Change Card.
+		// User who confirmed the Change Card.
 		ConfirmedBy *string `json:"confirmed_by,omitempty"`
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision *string `json:"request_revision"`
@@ -822,9 +845,7 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	ApprovalItemTransport struct {
-		// Authenticated principal that owns the card and called approve_merge.
-		// Authentication does not prove that a human, rather than a coding agent, made
-		// the call.
+		// User who approved the result.
 		ApprovedBy *string `json:"approved_by"`
 		// SHA-256 digest of the approved CP4 verification report.
 		ReportDigest *string `json:"report_digest"`
@@ -938,8 +959,8 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string `json:"ui_composition,omitempty"`
 	}
 	// CP1RevisionAnalysisExampleTransport is the internal JSON transport type for CP1RevisionAnalysisExampleTransport.
@@ -991,9 +1012,28 @@ type (
 		// questions, built only from the decision components the surla://golden-path
 		// resource lists. Refer to an ambiguity or example only by its 1-based
 		// position in this analysis (1 is the first); never invent identifiers. Surla
-		// saves it unchanged without checking it; the checkpoint viewer validates and
-		// renders it. Omit it when a plain card is clearer.
+		// saves it unchanged without checking it; the views page validates and renders
+		// it. Omit it when a plain card is clearer.
 		UIComposition *string `json:"ui_composition,omitempty"`
+	}
+	// ChangeListItemTransport is the internal JSON transport type for ChangeListItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ChangeListItemTransport struct {
+		// Change Card identifier; get_change takes it.
+		ChangeID *string `json:"change_id"`
+		// Plain-English summary of the current revision.
+		Summary *string `json:"summary"`
+		// Checkpoint status of the current revision.
+		Status *string `json:"status"`
+		// Current request_revision of the Change Card.
+		RequestRevision *string `json:"request_revision"`
+		// The Change Card's most recently accepted verification run; absent when none
+		// was started.
+		LatestVerification *LatestVerificationItemTransport `json:"latest_verification,omitempty"`
+		// When the Change Card was last saved. It is not part of request_revision.
+		SavedAt *string `json:"saved_at"`
 	}
 	// DesignSnapshotTransport is the internal JSON transport type for DesignSnapshotTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1021,6 +1061,18 @@ type (
 		ExpectedOutcome *string `json:"expected_outcome"`
 		// Evaluator check classification (deterministic or model_judged).
 		VerificationKind *string `json:"verification_kind"`
+	}
+	// LatestVerificationItemTransport is the internal JSON transport type for LatestVerificationItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LatestVerificationItemTransport struct {
+		// Verification run identifier; get_verification takes it.
+		RunID *string `json:"run_id"`
+		// running while the run builds or evaluates the candidate; passed or failed
+		// when its report's verdict is known; not_completed when it stopped without a
+		// report.
+		State *string `json:"state"`
 	}
 	// StoryActorItemTransport is the internal JSON transport type for StoryActorItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1174,8 +1226,8 @@ type (
 		Status *string `json:"status"`
 		// Safe operation summary, at most 2048 bytes; never a raw error message.
 		Summary *string `json:"summary"`
-		// Selected operation identifiers and results; at most six values of 1024 bytes
-		// each.
+		// Selected operation identifiers, results, and private caller attribution; at
+		// most seven values of 1024 bytes each.
 		Attributes map[string]string `json:"attributes"`
 		// True when text was shortened to fit this diagnostic record; use operator
 		// telemetry for the full values.
@@ -1187,9 +1239,9 @@ type (
 	// the public tool type.
 	UICompositionItemTransport struct {
 		// OpenUI Lang program from the analysis's ui_composition, exactly as the
-		// caller sent it. The server does not check it; the checkpoint viewer
-		// validates it and shows its error state, with the rest of the card still
-		// usable, when the program is not a valid composition.
+		// caller sent it. The server does not check it; the views page validates it
+		// and shows its error state, with the rest of the card still usable, when the
+		// program is not a valid composition.
 		Program *string `json:"program"`
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision *string `json:"composed_for_revision"`

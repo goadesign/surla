@@ -72,7 +72,7 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 		WorkspaceDir: workspace, CardsDir: privateCards,
 		Evaluator: designeval.NewEvaluatorInDir(filepath.Join("operator-link", "work")),
 	})
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"generation-token": {ID: "developer@example.com"},
 	})))
 	t.Cleanup(srv.Close)
@@ -88,7 +88,6 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	require.NoError(t, err)
 	index := slices.IndexFunc(tools.Tools, func(tool *genmcpsurla.ToolInfo) bool { return tool.Name == "generate_code" })
 	require.NotEqual(t, -1, index)
-	assert.Empty(t, tools.Tools[index].Meta, "generation leaves an open checkpoint view undisturbed")
 	args, err := gensurla.EncodeGenerateCodePayload(&gensurla.GenerateCodePayload{})
 	require.NoError(t, err)
 	call, err := mcpClient.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: "generate_code", Arguments: args})
@@ -123,7 +122,7 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	writeGenerationFiles(t, workspace, map[string]string{"design/design.go": updated})
 	candidate := "candidate"
 	second, err := cp.GenerateCode(
-		WithPrincipal(ctx, Principal{ID: "developer@example.com"}),
+		WithPrincipal(ctx, Principal{ID: "developer@example.com", CallerID: "developer@example.com", Kind: CallerUser}),
 		&gensurla.GenerateCodePayload{Target: &candidate},
 	)
 	require.NoError(t, err)
@@ -279,7 +278,7 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, cp.Close())
-	_, err = cp.GenerateCode(WithPrincipal(ctx, Principal{ID: "developer@example.com"}), &gensurla.GenerateCodePayload{})
+	_, err = cp.GenerateCode(WithPrincipal(ctx, Principal{ID: "developer@example.com", CallerID: "developer@example.com", Kind: CallerUser}), &gensurla.GenerateCodePayload{})
 	require.Error(t, err)
 	assert.Equal(t, candidateBeforeEval, generationFiles(t, workspace, "gen"), "a closed server never publishes")
 }
@@ -307,7 +306,7 @@ func TestGenerateCodeRejectsUnavailableModules(t *testing.T) {
 					require.NoError(t, os.Mkdir(filepath.Join(workspace, "eval"), 0o755))
 				}
 			}
-			_, err := cp.GenerateCode(WithPrincipal(t.Context(), Principal{ID: "developer@example.com"}), payload)
+			_, err := cp.GenerateCode(WithPrincipal(t.Context(), Principal{ID: "developer@example.com", CallerID: "developer@example.com", Kind: CallerUser}), payload)
 			require.Error(t, err)
 			assert.Equal(t, "unprocessable", goaErrorName(err))
 			matches, err := filepath.Glob(filepath.Join(workspace, "gen"))
@@ -323,7 +322,7 @@ func TestGenerateCodeRejectsUnavailableModules(t *testing.T) {
 
 // Do supplies the configured bearer token to the generated clients' requests.
 func (d generationDoer) Do(request *http.Request) (*http.Response, error) {
-	request.Header.Set("Authorization", "Bearer generation-token")
+	request.Header.Set("Authorization", "Bearer generation-token-builder")
 	return d.client.Do(request)
 }
 

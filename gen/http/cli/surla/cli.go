@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 
+	projectc "github.com/goadesign/surla/gen/http/project/client"
 	surlac "github.com/goadesign/surla/gen/http/surla/client"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
@@ -23,13 +24,15 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh)",
+		"project (identity|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|list-changes|wait-for-changes)",
 	}
 }
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "surla checkpoint-ui" + "\n" +
+	return os.Args[0] + " " + "project identity" + "\n" +
+		os.Args[0] + " " + "surla golden-path" + "\n" +
 		""
 }
 
@@ -62,9 +65,24 @@ func ParseEndpoint(
 	restore bool,
 ) (goa.Endpoint, any, error) {
 	var (
-		surlaFlags = flag.NewFlagSet("surla", flag.ContinueOnError)
+		projectFlags = flag.NewFlagSet("project", flag.ContinueOnError)
 
-		surlaCheckpointUIFlags = flag.NewFlagSet("checkpoint-ui", flag.ExitOnError)
+		projectIdentityFlags = flag.NewFlagSet("identity", flag.ExitOnError)
+
+		projectStopFlags = flag.NewFlagSet("stop", flag.ExitOnError)
+
+		projectAddAgentFlags    = flag.NewFlagSet("add-agent", flag.ExitOnError)
+		projectAddAgentBodyFlag = new(cliStringFlag)
+
+		projectRemoveAgentFlags       = flag.NewFlagSet("remove-agent", flag.ExitOnError)
+		projectRemoveAgentActorIDFlag = new(cliStringFlag)
+
+		projectBrowserLinkFlags = flag.NewFlagSet("browser-link", flag.ExitOnError)
+
+		projectExchangeBrowserLinkFlags    = flag.NewFlagSet("exchange-browser-link", flag.ExitOnError)
+		projectExchangeBrowserLinkBodyFlag = new(cliStringFlag)
+
+		surlaFlags = flag.NewFlagSet("surla", flag.ContinueOnError)
 
 		surlaGoldenPathFlags = flag.NewFlagSet("golden-path", flag.ExitOnError)
 
@@ -131,7 +149,15 @@ func ParseEndpoint(
 		surlaRefreshStoryFlags = flag.NewFlagSet("refresh-story", flag.ExitOnError)
 
 		surlaGetStoryRefreshFlags = flag.NewFlagSet("get-story-refresh", flag.ExitOnError)
+
+		surlaListChangesFlags = flag.NewFlagSet("list-changes", flag.ExitOnError)
+
+		surlaWaitForChangesFlags     = flag.NewFlagSet("wait-for-changes", flag.ExitOnError)
+		surlaWaitForChangesSinceFlag = new(cliStringFlag)
 	)
+	projectAddAgentFlags.Var(projectAddAgentBodyFlag, "body", "")
+	projectRemoveAgentFlags.Var(projectRemoveAgentActorIDFlag, "actor-id", "Agent identifier.")
+	projectExchangeBrowserLinkFlags.Var(projectExchangeBrowserLinkBodyFlag, "body", "")
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
 	surlaConfirmIntentFlags.Var(surlaConfirmIntentBodyFlag, "body", "")
@@ -150,9 +176,17 @@ func ParseEndpoint(
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
 	surlaListTracesFlags.Var(surlaListTracesCursorFlag, "cursor", "")
+	surlaWaitForChangesFlags.Var(surlaWaitForChangesSinceFlag, "since", "")
+
+	projectFlags.Usage = projectUsage
+	projectIdentityFlags.Usage = projectIdentityUsage
+	projectStopFlags.Usage = projectStopUsage
+	projectAddAgentFlags.Usage = projectAddAgentUsage
+	projectRemoveAgentFlags.Usage = projectRemoveAgentUsage
+	projectBrowserLinkFlags.Usage = projectBrowserLinkUsage
+	projectExchangeBrowserLinkFlags.Usage = projectExchangeBrowserLinkUsage
 
 	surlaFlags.Usage = surlaUsage
-	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
 	surlaGoldenPathFlags.Usage = surlaGoldenPathUsage
 	surlaProposeChangeFlags.Usage = surlaProposeChangeUsage
 	surlaReviseChangeFlags.Usage = surlaReviseChangeUsage
@@ -176,6 +210,8 @@ func ParseEndpoint(
 	surlaListTracesFlags.Usage = surlaListTracesUsage
 	surlaRefreshStoryFlags.Usage = surlaRefreshStoryUsage
 	surlaGetStoryRefreshFlags.Usage = surlaGetStoryRefreshUsage
+	surlaListChangesFlags.Usage = surlaListChangesUsage
+	surlaWaitForChangesFlags.Usage = surlaWaitForChangesUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -192,6 +228,8 @@ func ParseEndpoint(
 	{
 		svcn = flag.Arg(0)
 		switch svcn {
+		case "project":
+			svcf = projectFlags
 		case "surla":
 			svcf = surlaFlags
 		default:
@@ -209,11 +247,30 @@ func ParseEndpoint(
 	{
 		epn = svcf.Arg(0)
 		switch svcn {
+		case "project":
+			switch epn {
+			case "identity":
+				epf = projectIdentityFlags
+
+			case "stop":
+				epf = projectStopFlags
+
+			case "add-agent":
+				epf = projectAddAgentFlags
+
+			case "remove-agent":
+				epf = projectRemoveAgentFlags
+
+			case "browser-link":
+				epf = projectBrowserLinkFlags
+
+			case "exchange-browser-link":
+				epf = projectExchangeBrowserLinkFlags
+
+			}
+
 		case "surla":
 			switch epn {
-			case "checkpoint-ui":
-				epf = surlaCheckpointUIFlags
-
 			case "golden-path":
 				epf = surlaGoldenPathFlags
 
@@ -283,6 +340,12 @@ func ParseEndpoint(
 			case "get-story-refresh":
 				epf = surlaGetStoryRefreshFlags
 
+			case "list-changes":
+				epf = surlaListChangesFlags
+
+			case "wait-for-changes":
+				epf = surlaWaitForChangesFlags
+
 			}
 
 		}
@@ -305,11 +368,28 @@ func ParseEndpoint(
 	)
 	{
 		switch svcn {
+		case "project":
+			c := projectc.NewClient(scheme, host, doer, enc, dec, restore)
+			switch epn {
+			case "identity":
+				endpoint = c.Identity()
+			case "stop":
+				endpoint = c.Stop()
+			case "add-agent":
+				endpoint = c.AddAgent()
+				data, err = projectc.BuildAddAgentPayload(projectAddAgentBodyFlag.value)
+			case "remove-agent":
+				endpoint = c.RemoveAgent()
+				data, err = projectc.BuildRemoveAgentPayload(projectRemoveAgentActorIDFlag.value)
+			case "browser-link":
+				endpoint = c.BrowserLink()
+			case "exchange-browser-link":
+				endpoint = c.ExchangeBrowserLink()
+				data, err = projectc.BuildExchangeBrowserLinkPayload(projectExchangeBrowserLinkBodyFlag.value)
+			}
 		case "surla":
 			c := surlac.NewClient(scheme, host, doer, enc, dec, restore)
 			switch epn {
-			case "checkpoint-ui":
-				endpoint = c.CheckpointUI()
 			case "golden-path":
 				endpoint = c.GoldenPath()
 			case "propose-change":
@@ -373,6 +453,11 @@ func ParseEndpoint(
 				endpoint = c.RefreshStory()
 			case "get-story-refresh":
 				endpoint = c.GetStoryRefresh()
+			case "list-changes":
+				endpoint = c.ListChanges()
+			case "wait-for-changes":
+				endpoint = c.WaitForChanges()
+				data, err = surlac.BuildWaitForChangesPayload(surlaWaitForChangesSinceFlag.value)
 			}
 		}
 	}
@@ -383,55 +468,157 @@ func ParseEndpoint(
 	return endpoint, data, nil
 }
 
-// surlaUsage displays the usage of the surla command and its subcommands.
-func surlaUsage() {
-	fmt.Fprintln(os.Stderr, `Surla MCP software factory control plane.`)
-	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] surla COMMAND [flags]\n\n", os.Args[0])
+// projectUsage displays the usage of the project command and its subcommands.
+func projectUsage() {
+	fmt.Fprintln(os.Stderr, `Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials never authorize application decisions. This service is not exposed as agent tools.`)
+	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] project COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
-	fmt.Fprintln(os.Stderr, `    checkpoint-ui: Serve the interactive MCP Apps HTML host for Surla checkpoints.`)
-	fmt.Fprintln(os.Stderr, `    golden-path: Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms, followed by the decision component catalog for the optional ui_composition of a propose_change or revise_change analysis.`)
-	fmt.Fprintln(os.Stderr, `    propose-change: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
-	fmt.Fprintln(os.Stderr, `    revise-change: Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
-	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
-	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
-	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, and Goa-AI guardrails from a candidate Goa design bound to a confirmed Change Card. Surla reads the candidate module snapshot from the bound workspace. The result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
-	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
-	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.`)
-	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
-	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.`)
-	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.`)
-	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
-	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.`)
-	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
-	fmt.Fprintln(os.Stderr, `    configure-model: Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from surla serve's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
-	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.`)
-	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
-	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
-	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
-	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
-	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.`)
-	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
-	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
+	fmt.Fprintln(os.Stderr, `    identity: The CLI proves the answering server belongs to its project using the management credential.`)
+	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.`)
+	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
+	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
+	fmt.Fprintln(os.Stderr, `    exchange-browser-link: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
-	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "    %s project COMMAND --help\n", os.Args[0])
 }
-func surlaCheckpointUIUsage() {
+func projectIdentityUsage() {
 	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla checkpoint-ui", os.Args[0])
+	fmt.Fprintf(os.Stderr, "%s [flags] project identity", os.Args[0])
 	fmt.Fprintln(os.Stderr)
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Serve the interactive MCP Apps HTML host for Surla checkpoints.`)
+	fmt.Fprintln(os.Stderr, `The CLI proves the answering server belongs to its project using the management credential.`)
 
 	// Flags list
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla checkpoint-ui")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project identity")
 }
 
+func projectStopUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project stop", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project stop")
+}
+
+func projectAddAgentUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project add-agent", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project add-agent --body '{\n      \"actor_id\": \"s5\",\n      \"role\": \"builder\"\n   }'")
+}
+
+func projectRemoveAgentUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project remove-agent", os.Args[0])
+	fmt.Fprint(os.Stderr, " -actor-id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI revokes an agent and removes its private credential file before returning.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -actor-id STRING: Agent identifier.`)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project remove-agent --actor-id \"I3\"")
+}
+
+func projectBrowserLinkUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project browser-link", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project browser-link")
+}
+
+func projectExchangeBrowserLinkUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project exchange-browser-link", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project exchange-browser-link --body '{\n      \"link\": \"mn9\"\n   }'")
+}
+
+// surlaUsage displays the usage of the surla command and its subcommands.
+func surlaUsage() {
+	fmt.Fprintln(os.Stderr, `Surla MCP software factory control plane.`)
+	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] surla COMMAND [flags]\n\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "COMMAND:")
+	fmt.Fprintln(os.Stderr, `    golden-path: Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms, followed by the decision component catalog for the optional ui_composition of a propose_change or revise_change analysis.`)
+	fmt.Fprintln(os.Stderr, `    propose-change: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
+	fmt.Fprintln(os.Stderr, `    revise-change: Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
+	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
+	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
+	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, and Goa-AI guardrails from a candidate Goa design bound to a confirmed Change Card. Surla reads the candidate module snapshot from the bound workspace. The result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
+	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
+	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
+	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
+	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
+	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.`)
+	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
+	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.`)
+	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
+	fmt.Fprintln(os.Stderr, `    configure-model: Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
+	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.`)
+	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
+	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
+	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
+	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
+	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
+	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
+	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
+	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Additional help:")
+	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
+}
 func surlaGoldenPathUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla golden-path", os.Args[0])
@@ -456,7 +643,7 @@ func surlaProposeChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
+	fmt.Fprintln(os.Stderr, `Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -546,7 +733,7 @@ func surlaDraftOverrideUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
+	fmt.Fprintln(os.Stderr, `Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -564,7 +751,7 @@ func surlaStartLiveTargetUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.`)
+	fmt.Fprintln(os.Stderr, `Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -599,7 +786,7 @@ func surlaVerifyChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.`)
+	fmt.Fprintln(os.Stderr, `Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -654,7 +841,7 @@ func surlaApproveMergeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.`)
+	fmt.Fprintln(os.Stderr, `Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -690,7 +877,7 @@ func surlaConfigureModelUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from surla serve's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
+	fmt.Fprintln(os.Stderr, `Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -796,7 +983,7 @@ func surlaListTracesUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.`)
+	fmt.Fprintln(os.Stderr, `Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -status STRING: `)
@@ -838,4 +1025,38 @@ func surlaGetStoryRefreshUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-story-refresh")
+}
+
+func surlaListChangesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla list-changes", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-changes")
+}
+
+func surlaWaitForChangesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla wait-for-changes", os.Args[0])
+	fmt.Fprint(os.Stderr, " -since STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -since STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla wait-for-changes --since \"fj8\"")
 }

@@ -2,9 +2,7 @@
 // builds and runs it following Surla's suite command contract
 // (github.com/goadesign/surla/verify/suite): --describe prints the declared
 // scenarios, and --artifact [[.Name]]=<path> runs them against that binary.
-// surla serve's start_live_target runs its --live mode, which starts the
-// [[.Name]] for live CP3 prompt drafts with the model surla serve was started
-// with.
+// The project server runs --live for start_live_target, using its selected model.
 package main
 
 import (
@@ -42,23 +40,20 @@ func main() {
 	})
 }
 
-// live starts the [[.Name]] for a live CP3 target with the model surla serve
-// chose: SURLA_LIVE_MODEL_GATEWAY for -model-gateway-addr, or
-// SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME for -model-provider and
-// -model-name, with the provider's key from the same variable surla serve
-// read. The key stays in this process.
+// live starts the [[.Name]] for CP3 with the project server's selected gateway
+// or direct provider and model. Provider keys stay in this process.
 func live(ctx context.Context, binary candidate.Artifact, key string, getenv func(string) string) (suite.LiveTarget, error) {
 	gatewayAddr := getenv("SURLA_LIVE_MODEL_GATEWAY")
 	providerName, modelName := getenv("SURLA_LIVE_MODEL_PROVIDER"), getenv("SURLA_LIVE_MODEL_NAME")
 	switch {
 	case gatewayAddr != "" && (providerName != "" || modelName != ""):
-		return suite.LiveTarget{}, errors.New("the live [[.Name]] got both a model gateway and a model provider; surla serve passes only one")
+		return suite.LiveTarget{}, errors.New("the live [[.Name]] got both a model gateway and a model provider; the Surla project server passes only one")
 	case gatewayAddr != "":
 		return acceptance.LiveThroughGateway(ctx, binary, key, gatewayAddr)
 	case providerName == "" && modelName == "":
-		return suite.LiveTarget{}, errors.New("no model for the live [[.Name]]: start surla serve with -model-provider and -model-name, or -model-gateway-addr")
+		return suite.LiveTarget{}, errors.New("no model for the live [[.Name]]: ask the user to configure a model in Surla")
 	case providerName == "" || modelName == "":
-		return suite.LiveTarget{}, errors.New("the live [[.Name]] needs both a model provider and a model name; start surla serve with -model-provider and -model-name")
+		return suite.LiveTarget{}, errors.New("the live [[.Name]] needs both a model provider and a model name; ask the user to configure a provider and model in Surla")
 	}
 	provider, err := liveProvider(providerName, modelName, getenv)
 	if err != nil {
@@ -67,8 +62,7 @@ func live(ctx context.Context, binary candidate.Artifact, key string, getenv fun
 	return acceptance.Live(ctx, binary, key, provider)
 }
 
-// liveProvider builds the model provider surla serve's -model-provider and
-// -model-name chose, with its key from the variable surla serve read.
+// liveProvider builds the selected provider from its inherited API key.
 func liveProvider(providerName, modelName string, getenv func(string) string) (model.Provider, error) {
 	switch providerName {
 	case "anthropic":

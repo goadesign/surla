@@ -246,7 +246,7 @@ func newCheckTestServer(t *testing.T, opts Options) checkClients {
 	opts.CheckHelper = testCheckHelper(t)
 	opts.CheckTimeout = 30 * time.Second
 	cp := newControlPlane(t, opts)
-	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"generation-token": {ID: "developer@example.com"},
 	})))
 	t.Cleanup(srv.Close)
