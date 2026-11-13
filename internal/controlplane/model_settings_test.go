@@ -440,6 +440,7 @@ func TestHeldSettingsRevealNothingWhenFormatted(t *testing.T) {
 // unlisted variable, and that the first run kept its accepted snapshot while
 // the second got the new one.
 func TestStoredEvaluatorRunsReceiveEveryHeldProviderSnapshot(t *testing.T) {
+	isolateProviderFamilies(t)
 	report := t.TempDir()
 	cfg := verificationConfig(t)
 	cfg.Command = []string{"/bin/sh", "-c", presenceScript, filepath.Join(report, "run")}
@@ -477,6 +478,7 @@ func TestStoredEvaluatorRunsReceiveEveryHeldProviderSnapshot(t *testing.T) {
 // tests agents wrote after a hand-over: the run's supervisor stand-in
 // reports that no provider setting reached it.
 func TestWrittenTestRunsReceiveNoProviderSettings(t *testing.T) {
+	isolateProviderFamilies(t)
 	root := realTempDir(t)
 	repo := newLayoutRepo(t, filepath.Join(root, "repo"))
 	runsDir := filepath.Join(root, "runs")
@@ -593,6 +595,7 @@ func TestSavedFilesHoldNoHandedOverValue(t *testing.T) {
 // neither restarted nor unbound and keeps the settings it started with,
 // while the next launch receives the changed ones.
 func TestChangedSettingsReachTheNextLaunchOnly(t *testing.T) {
+	isolateProviderFamilies(t)
 	self, err := os.Executable()
 	require.NoError(t, err)
 	reports := t.TempDir()
@@ -761,4 +764,18 @@ func assertTreeHoldsNoSentinel(t *testing.T, root string) {
 		}
 		return nil
 	}))
+}
+
+// isolateProviderFamilies hides the machine's own provider variables from a
+// test and restores each when it ends: this process's environment is what a
+// verification run inherits, and no test may depend on a real key.
+func isolateProviderFamilies(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		name, value, _ := strings.Cut(kv, "=")
+		if modelsettings.InFamily(name) {
+			t.Setenv(name, value)
+			require.NoError(t, os.Unsetenv(name))
+		}
+	}
 }

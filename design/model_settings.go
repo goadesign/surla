@@ -10,10 +10,6 @@ import (
 	"github.com/goadesign/surla/internal/modelsettings"
 )
 
-// maxModelSettingLength bounds one request setting value; Goa's length error
-// names the variable without echoing the value.
-const maxModelSettingLength = 4096
-
 // HandOverModelSettingsPayload carries the request settings of each provider
 // the surla command found a key for.
 var HandOverModelSettingsPayload = Type("HandOverModelSettingsPayload", func() {
@@ -47,7 +43,8 @@ func providerSettings(p modelsettings.Provider) {
 		Key(func() { Enum(names...) })
 		Elem(func() {
 			MinLength(1)
-			MaxLength(maxModelSettingLength)
+			// Goa's length error names the variable without echoing the value.
+			MaxLength(modelsettings.MaxValueLength)
 		})
 	})
 }

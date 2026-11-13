@@ -31,6 +31,7 @@ var reportedSettings = []string{
 // operator's evaluator and for written tests alike; no argument list holds a
 // value.
 func TestLiveExecutorGivesSettingsOnlyToTheTestProgram(t *testing.T) {
+	isolateProviderFamilies(t)
 	for _, tests := range []verify.TestsSource{verify.TestsEvaluator, verify.TestsWritten} {
 		t.Run(string(tests), func(t *testing.T) {
 			t.Setenv(liveFakeEnv, "ready")
@@ -64,6 +65,7 @@ func TestLiveExecutorGivesSettingsOnlyToTheTestProgram(t *testing.T) {
 // handed-over snapshot it passes, while preparation in the executor's
 // process never sees a provider variable and no argument list holds one.
 func TestVerificationExecutorGivesSettingsOnlyToTheJudgingSuite(t *testing.T) {
+	isolateProviderFamilies(t)
 	t.Setenv(fakeModeEnv, "judge")
 	anthropic, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-judge-key", "ANTHROPIC_AUTH_TOKEN": "sentinel-judge-token"})
 	require.NoError(t, err)
@@ -189,4 +191,18 @@ func lookupEnv(environ []string, name string) (string, bool) {
 		}
 	}
 	return value, found
+}
+
+// isolateProviderFamilies hides the machine's own provider variables from a
+// test and restores each when it ends: this process's environment is what a
+// verification run inherits, and no test may depend on a real key.
+func isolateProviderFamilies(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		name, value, _ := strings.Cut(kv, "=")
+		if modelsettings.InFamily(name) {
+			t.Setenv(name, value)
+			require.NoError(t, os.Unsetenv(name))
+		}
+	}
 }

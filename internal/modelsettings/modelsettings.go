@@ -102,7 +102,13 @@ const (
 	// Redacted is what every formatting of a Value shows, and what Protect
 	// writes in place of a held secret.
 	Redacted = "[redacted]"
+	// MaxValueLength bounds one request setting value, in characters. The
+	// hand-over's design validates it and the surla command names it when
+	// the project server refuses a longer value.
+	MaxValueLength = 4096
+)
 
+const (
 	// kindSecret is a credential: Protect replaces it with Redacted.
 	kindSecret settingKind = iota
 	// kindURL is an endpoint that may carry credentials in its user

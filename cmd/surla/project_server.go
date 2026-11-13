@@ -668,7 +668,7 @@ func managementCall(
 			}
 			if responseErr.Method == "hand_over_model_settings" && doer.lastStatus == http.StatusBadRequest {
 				return nil, fmt.Errorf("the project server refused the model settings from this shell (HTTP %d); "+
-					"each ANTHROPIC_ and OPENAI_ request setting must be at most 4096 characters", doer.lastStatus)
+					"each ANTHROPIC_ and OPENAI_ request setting must be at most %d characters", doer.lastStatus, modelsettings.MaxValueLength)
 			}
 			return nil, goahttp.ErrInvalidResponse(responseErr.Service, responseErr.Method, doer.lastStatus, "")
 		}
