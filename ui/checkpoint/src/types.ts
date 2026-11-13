@@ -651,6 +651,8 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
 
 interface JSONSchemaNode {
   type?: string;
+  minimum?: number;
+  maximum?: number;
   $ref?: string;
   enum?: string[];
   format?: "date-time";
@@ -991,7 +993,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
                 "type": "string"
               },
               "required_test_count": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               },
               "started_at": {
                 "type": "string",
@@ -1818,7 +1821,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
             ],
             "properties": {
               "count": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 2
               },
               "state": {
                 "type": "string",
@@ -1958,7 +1962,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
         "type": "string"
       },
       "required_test_count": {
-        "type": "integer"
+        "type": "integer",
+        "minimum": 0
       },
       "started_at": {
         "type": "string",
@@ -2270,7 +2275,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
         "type": "boolean"
       },
       "report": {
-        "type": "integer"
+        "type": "integer",
+        "minimum": 0
       },
       "tests": {
         "type": "object",
@@ -2333,7 +2339,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
                 "format": "date-time"
               },
               "finding_count": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1
               },
               "state": {
                 "type": "string",
@@ -2954,7 +2961,9 @@ function matchesSchema(value: unknown, schema: JSONSchemaNode): boolean {
     return (
       typeof value === "number" &&
       Number.isFinite(value) &&
-      (schema.type !== "integer" || Number.isInteger(value))
+      (schema.type !== "integer" || Number.isInteger(value)) &&
+      (schema.minimum === undefined || value >= schema.minimum) &&
+      (schema.maximum === undefined || value <= schema.maximum)
     );
   }
   if (schema.type === "array") {

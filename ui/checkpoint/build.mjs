@@ -61,8 +61,8 @@ const ERROR_SCHEMA = "Error";
 // JavaScript global in the generated module.
 const TS_NAMES = { Error: "ServerError" };
 
-// STRUCTURAL_KEYS are the JSON Schema keywords that decide a value's shape.
-const STRUCTURAL_KEYS = new Set([
+// VALIDATED_KEYS are the JSON Schema keywords retained for response validation.
+const VALIDATED_KEYS = new Set([
   "type",
   "$ref",
   "enum",
@@ -72,9 +72,11 @@ const STRUCTURAL_KEYS = new Set([
   "properties",
   "anyOf",
   "format",
+  "minimum",
+  "maximum",
 ]);
 
-// IGNORED_KEYS are annotations, plus value constraints (lengths, ranges,
+// IGNORED_KEYS are annotations, plus value constraints (lengths,
 // patterns) that the server enforces and that do not change a value's
 // TypeScript shape. Any other keyword fails the build rather than being
 // silently dropped.
@@ -88,8 +90,6 @@ const IGNORED_KEYS = new Set([
   "maxLength",
   "minItems",
   "maxItems",
-  "minimum",
-  "maximum",
   "pattern",
 ]);
 
@@ -109,7 +109,7 @@ function refName(ref, at) {
   return ref.slice(prefix.length);
 }
 
-// compactSchema keeps the shape-deciding keywords of one OpenAPI schema node,
+// compactSchema keeps the shape and numeric bounds of one OpenAPI schema node,
 // rewrites component references to the generated module's $defs, and fails
 // on any keyword or type it cannot represent. Goa encodes exactly the
 // declared attributes of a result, so an object with declared properties is
@@ -119,7 +119,7 @@ function compactSchema(node, at, refs) {
     throw new Error(`Invalid schema node at ${at}`);
   }
   for (const key of Object.keys(node)) {
-    if (!STRUCTURAL_KEYS.has(key) && !IGNORED_KEYS.has(key)) {
+    if (!VALIDATED_KEYS.has(key) && !IGNORED_KEYS.has(key)) {
       throw new Error(`Unsupported schema keyword ${JSON.stringify(key)} at ${at}`);
     }
   }
@@ -134,6 +134,14 @@ function compactSchema(node, at, refs) {
       throw new Error(`Unsupported schema type ${JSON.stringify(node.type)} at ${at}`);
     }
     out.type = node.type;
+  }
+  for (const bound of ["minimum", "maximum"]) {
+    if (node[bound] === undefined) continue;
+    if ((node.type !== "integer" && node.type !== "number") ||
+        typeof node[bound] !== "number" || !Number.isFinite(node[bound])) {
+      throw new Error(`Invalid numeric ${bound} at ${at}`);
+    }
+    out[bound] = node[bound];
   }
   if (node.format !== undefined) {
     if (node.type === "string" && node.format === "date-time") {
@@ -447,6 +455,8 @@ ${operations
 
 interface JSONSchemaNode {
   type?: string;
+  minimum?: number;
+  maximum?: number;
   $ref?: string;
   enum?: string[];
   format?: "date-time";
@@ -504,7 +514,9 @@ function matchesSchema(value: unknown, schema: JSONSchemaNode): boolean {
     return (
       typeof value === "number" &&
       Number.isFinite(value) &&
-      (schema.type !== "integer" || Number.isInteger(value))
+      (schema.type !== "integer" || Number.isInteger(value)) &&
+      (schema.minimum === undefined || value >= schema.minimum) &&
+      (schema.maximum === undefined || value <= schema.maximum)
     );
   }
   if (schema.type === "array") {
