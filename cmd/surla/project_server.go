@@ -46,8 +46,9 @@ type projectRuntime struct {
 	removeTerminal func(context.Context, string) error
 	// listen binds only the saved project address; tests observe the actual close boundary.
 	listen func(string, string) (net.Listener, error)
-	// teamDependencies binds the server login environment and accepted-work lifetime.
-	teamDependencies func(context.Context) (project.TeamDependencies, error)
+	// teamDependencies binds the server login environment and accepted-work lifetime; its
+	// []string is the server's original environment, which only Herdr's programs receive.
+	teamDependencies func(context.Context, []string) (project.TeamDependencies, error)
 	// startTeamPrograms starts absent desktop/service dependencies after server readiness.
 	startTeamPrograms func(context.Context) error
 }
@@ -77,7 +78,7 @@ func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
 		configRoot: os.UserConfigDir,
 		preflight: func() error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			commands, err := cliTeamCommands()
 			if err != nil {
 				return err
 			}
@@ -88,11 +89,10 @@ func productionProjectRuntime() projectRuntime {
 		},
 		teamDependencies: projectTeamDependencies,
 		startTeamPrograms: func(ctx context.Context) error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			commands, err := cliTeamCommands()
 			if err != nil {
 				return err
 			}
-			commands.start = startDetachedTeamProgram
 			return startTeamPrograms(ctx, commands)
 		},
 		startTerminal: func(ctx context.Context, state *project.State) (string, error) {
@@ -106,6 +106,21 @@ func productionProjectRuntime() projectRuntime {
 		removeTerminal: removeProjectTerminal,
 		listen:         net.Listen,
 	}
+}
+
+// cliTeamCommands resolves the team programs the surla command runs. Herdr's programs get
+// this command's environment unchanged: a Herdr core one of them starts keeps it for every
+// terminal, and agents may sign in with its provider variables. Chorus gets it without any
+// model provider family.
+func cliTeamCommands() (teamCommands, error) {
+	commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+	if err != nil {
+		return teamCommands{}, err
+	}
+	commands.start = startDetachedTeamProgram
+	commands.herdrEnv = os.Environ()
+	commands.chorusEnv = withoutProviderFamilies(os.Environ())
+	return commands, nil
 }
 
 // start serializes discovery and starts at most one server, then opens a one-use views link.
@@ -441,6 +456,12 @@ func projectHolder(state *project.State) string {
 // come from the record there, and serve never derives a folder from its own
 // environment or working directory.
 func (runtime projectRuntime) serve(stateDir string) (err error) {
+	// Provider settings reach the server only through hand_over_model_settings: none that
+	// Herdr's core environment holds may supply a live target, a verification or a check.
+	herdrEnv, err := takeProviderFamilies()
+	if err != nil {
+		return err
+	}
 	state, err := project.Open(stateDir)
 	if err != nil {
 		return err
@@ -464,7 +485,7 @@ func (runtime projectRuntime) serve(stateDir string) (err error) {
 	opts.TracerProvider = provider
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	team, err := runtime.teamDependencies(ctx)
+	team, err := runtime.teamDependencies(ctx, herdrEnv)
 	if err != nil {
 		return err
 	}
@@ -851,12 +872,14 @@ func projectBrowserProgram() (string, error) {
 }
 
 // openProjectViews is the only launch whose argument is allowed to contain a one-use browser credential.
+// The opener never receives the shell's model provider settings.
 func openProjectViews(ctx context.Context, url string) error {
 	program, err := projectBrowserProgram()
 	if err != nil {
 		return err
 	}
 	command := exec.CommandContext(ctx, program, url)
+	command.Env = withoutProviderFamilies(os.Environ())
 	return command.Run()
 }
 

@@ -169,9 +169,10 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	require.True(t, ok)
 	assert.Len(t, rawResources, 1)
 	// Waiting, starting builds, reading the model choice, reading a build's
-	// findings, and the three team
-	// operations are HTTP-only.
-	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-7)
+	// findings, the three team operations and the model settings hand-over
+	// are HTTP-only.
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-8)
+	assert.False(t, toolNames["hand_over_model_settings"], "no MCP tool hands model settings over")
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)

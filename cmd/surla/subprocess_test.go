@@ -30,7 +30,7 @@ func testProjectRuntimeAt(directory string) projectRuntime {
 		startTeamPrograms: func(context.Context) error {
 			return errors.New("default tests cannot start real team services or windows")
 		},
-		teamDependencies: func(context.Context) (project.TeamDependencies, error) {
+		teamDependencies: func(context.Context, []string) (project.TeamDependencies, error) {
 			return project.TeamDependencies{}, errors.New("default tests cannot resolve or change real project teams")
 		},
 		configRoot: func() (string, error) {

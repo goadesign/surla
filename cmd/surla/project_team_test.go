@@ -58,7 +58,7 @@ func fixtureTeamDependencies(state *project.State) project.TeamDependencies {
 // bindFixtureTeamEffects explicitly opts a journey into test-owned team effects.
 func bindFixtureTeamEffects(runtime *projectRuntime) {
 	runtime.startTeamPrograms = func(context.Context) error { return nil }
-	runtime.teamDependencies = func(ctx context.Context) (project.TeamDependencies, error) {
+	runtime.teamDependencies = func(ctx context.Context, _ []string) (project.TeamDependencies, error) {
 		root, err := runtime.configRoot()
 		if err != nil {
 			return project.TeamDependencies{}, err
@@ -77,7 +77,7 @@ func TestTeamPreflightVersionAndPrograms(t *testing.T) {
 					return "", assert.AnError
 				}
 				return name, nil
-			}, func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil })
+			}, func(context.Context, []string, string, ...string) ([]byte, error) { calls++; return nil, nil })
 			require.ErrorContains(t, err, missing)
 			assert.Contains(t, err.Error(), "install it with:")
 			assert.Zero(t, calls)
@@ -85,7 +85,7 @@ func TestTeamPreflightVersionAndPrograms(t *testing.T) {
 	}
 	for _, version := range []string{"v0.10.1", "v0.11.0", "v0.12.0", "invalid", "v0.11.0-rc.1"} {
 		t.Run(version, func(t *testing.T) {
-			commands := teamCommands{chorus: "chorus", run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			commands := teamCommands{chorus: "chorus", run: func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
 				assert.Equal(t, "chorus", name)
 				assert.Equal(t, []string{"version"}, args)
 				return []byte("chorus " + version + "\n"), nil
@@ -107,7 +107,7 @@ func TestTeamProgramStartup(t *testing.T) {
 			var calls []string
 			chorusReady, appReady := scenario == "ready", scenario == "ready"
 			commands := teamCommands{chorus: "chorus", app: "herdr-app"}
-			commands.start = func(name string, args ...string) (<-chan error, error) {
+			commands.start = func(_ []string, name string, args ...string) (<-chan error, error) {
 				call := name + " " + strings.Join(args, " ")
 				calls = append(calls, strings.TrimSpace(call))
 				if name == commands.chorus {
@@ -125,7 +125,7 @@ func TestTeamProgramStartup(t *testing.T) {
 				done <- nil
 				return done, nil
 			}
-			commands.run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			commands.run = func(ctx context.Context, _ []string, name string, args ...string) ([]byte, error) {
 				call := name + " " + strings.Join(args, " ")
 				calls = append(calls, strings.TrimSpace(call))
 				if name == "chorus" && len(args) > 0 && args[0] == "status" {
@@ -178,7 +178,7 @@ func TestTeamProgramStartup(t *testing.T) {
 // TestTeamCommandProtocol verifies one JSON argument and process/JSON failure handling.
 func TestTeamCommandProtocol(t *testing.T) {
 	var calls [][]string
-	c := teamCommands{core: "herdr-core", app: "herdr-app", run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+	c := teamCommands{core: "herdr-core", app: "herdr-app", run: func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{name}, args...))
 		switch args[0] {
 		case "do":
@@ -219,7 +219,7 @@ func TestTeamCommandProtocol(t *testing.T) {
 		}
 	}
 	for _, reply := range []string{`{"error":"private"}`, `broken`, `{}`, `null`} {
-		c.run = func(context.Context, string, ...string) ([]byte, error) { return []byte(reply), nil }
+		c.run = func(context.Context, []string, string, ...string) ([]byte, error) { return []byte(reply), nil }
 		_, err := c.Spaces(t.Context())
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private")
@@ -273,7 +273,9 @@ func TestTeamPreflightHasNoStateEffects(t *testing.T) {
 						return "", assert.AnError
 					}
 					return name, nil
-				}, func(context.Context, string, ...string) ([]byte, error) { return []byte("chorus v0.10.1"), nil })
+				}, func(context.Context, []string, string, ...string) ([]byte, error) {
+					return []byte("chorus v0.10.1"), nil
+				})
 				if err != nil {
 					return err
 				}

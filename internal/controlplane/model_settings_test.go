@@ -30,6 +30,7 @@ import (
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/modelsettings"
+	"github.com/goadesign/surla/internal/verifyrun"
 )
 
 // Sentinels stand for the values a shell would hand over; none is a real
@@ -475,6 +476,94 @@ func TestWrittenTestRunsReceiveNoProviderSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ANTHROPIC_API_KEY=\nFIRST_KEY=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nOPENAI_ADMIN_KEY=\n",
 		waitForPresence(t, filepath.Join(report, "run"), run.RunID))
+}
+
+// TestLiveStartFailureExportsProtectedDetail hands settings over, then
+// starts a live target whose suite prints them and quotes its key in its
+// first line before failing: the refusal, every span and the diagnostics
+// history hold no value, and the exported executor_log_tail event shows the
+// redaction and the base URL's scheme and host only.
+func TestLiveStartFailureExportsProtectedDetail(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	cardsDir := t.TempDir()
+	cp := newControlPlane(t, Options{
+		CardsDir: cardsDir, TracerProvider: provider,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=leak"), StartTimeout: time.Minute},
+	})
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{
+		"ANTHROPIC_API_KEY": sentinelKey, "ANTHROPIC_AUTH_TOKEN": sentinelToken, "ANTHROPIC_BASE_URL": sentinelURL,
+	}})
+
+	_, err = cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	assertServiceError(t, err, "live_target_failed")
+	assertHoldsNoSentinel(t, err.Error())
+	var tail string
+	for _, span := range recorder.Ended() {
+		assertSpanHoldsNoSentinel(t, span)
+		for _, event := range span.Events() {
+			for _, kv := range event.Attributes {
+				if kv.Key == "executor_log_tail" {
+					tail = kv.Value.AsString()
+				}
+			}
+		}
+	}
+	assert.Contains(t, tail, `json: unknown field "`+modelsettings.Redacted+`"`)
+	assert.Contains(t, tail, "ANTHROPIC_AUTH_TOKEN="+modelsettings.Redacted)
+	assert.Contains(t, tail, "ANTHROPIC_BASE_URL=https://gateway.invalid\n")
+	history, err := os.ReadFile(filepath.Join(cardsDir, "traces.jsonl"))
+	require.NoError(t, err)
+	assertHoldsNoSentinel(t, string(history))
+	dirs, err := verifyrunLeftovers(cardsDir)
+	require.NoError(t, err)
+	assert.Empty(t, dirs, "the failed start's folder, which held the suite's output, is removed once its group is empty")
+}
+
+// TestSavedFilesHoldNoHandedOverValue hands settings over and runs a live
+// target with a quiet suite: no file in the state the control plane keeps
+// holds a value, and stopping the target removes its folder.
+func TestSavedFilesHoldNoHandedOverValue(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cardsDir := t.TempDir()
+	runsDir := t.TempDir()
+	provider := sdktrace.NewTracerProvider()
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	cp := newControlPlane(t, Options{
+		CardsDir: cardsDir, TracerProvider: provider,
+		Verification: &VerificationConfig{RunsDir: runsDir},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
+	})
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{
+		Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelKey, "ANTHROPIC_AUTH_TOKEN": sentinelToken, "ANTHROPIC_BASE_URL": sentinelURL},
+		Openai:    map[string]string{"OPENAI_API_KEY": sentinelOpenAIKey},
+	})
+	builder := asCaller("alice@example.com", CallerBuilder)
+	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	assertHoldsNoSentinel(t, started.Message)
+	dirs, err := verifyrunLeftovers(cardsDir)
+	require.NoError(t, err)
+	require.Len(t, dirs, 1, "the running target has its folder")
+	assertTreeHoldsNoSentinel(t, cardsDir)
+	assertTreeHoldsNoSentinel(t, runsDir)
+
+	_, err = cp.StopLiveTarget(builder)
+	require.NoError(t, err)
+	dirs, err = verifyrunLeftovers(cardsDir)
+	require.NoError(t, err)
+	assert.Empty(t, dirs, "Stop removes the live folder once its group is empty")
+	assertTreeHoldsNoSentinel(t, cardsDir)
+}
+
+// verifyrunLeftovers lists the live target folders under cardsDir.
+func verifyrunLeftovers(cardsDir string) ([]string, error) {
+	return verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
 }
 
 // presenceScript is a supervisor stand-in: it writes, to the file named by

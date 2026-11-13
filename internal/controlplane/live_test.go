@@ -30,6 +30,7 @@ import (
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/modelsettings"
 	genpromptsserver "github.com/goadesign/surla/internal/targetprompt/gen/http/prompts/server"
 	genprompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
 	"github.com/goadesign/surla/internal/verify"
@@ -141,6 +142,17 @@ func serveFakeTarget() int {
 	case "fail":
 		fmt.Fprintln(os.Stderr, "no provider key")
 		return 2
+	case "leak":
+		// A suite that prints its provider configuration, then a first line
+		// whose unknown field is its key, which the executor quotes.
+		for _, kv := range os.Environ() {
+			if name, _, _ := strings.Cut(kv, "="); modelsettings.InFamily(name) {
+				fmt.Fprintln(os.Stderr, "suite configuration:", kv)
+			}
+		}
+		fmt.Printf("{%q:true}\n", os.Getenv("ANTHROPIC_API_KEY"))
+		time.Sleep(time.Hour)
+		return 0
 	case "fail-pinned":
 		// A file the suite cannot remove makes the owner's cleanup fail.
 		pinned := filepath.Join(os.TempDir(), "immutable")

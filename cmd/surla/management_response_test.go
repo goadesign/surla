@@ -247,6 +247,7 @@ func TestManagementResponseStatusIsRequestLocal(t *testing.T) {
 // its owned listener removes the record while the control plane still holds its lock.
 func TestServeWithdrawsRunningBeforeStoreRelease(t *testing.T) {
 	isolateServeWorkspace(t)
+	isolateProviderFamilies(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	runtime := testProjectRuntime()

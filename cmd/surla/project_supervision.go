@@ -26,7 +26,7 @@ type (
 	// teamObservations keeps only clients and program bindings, never outside snapshots.
 	teamObservations struct {
 		commands  teamCommands
-		stream    func(context.Context, string, []string, func(io.Reader) error) error
+		stream    func(context.Context, []string, string, []string, func(io.Reader) error) error
 		client    *http.Client
 		chorusURL string
 	}
@@ -94,7 +94,7 @@ func (o teamObservations) Follow(ctx context.Context, selection project.TeamSele
 	for _, role := range selection.Roles {
 		workers.Go(func() {
 			args := []string{"events", "--json", "--label", "chorus.project=" + selection.Root, "--label", "herdr.space=" + selection.Space, "--label", "chorus.handle=" + role.Handle}
-			err := o.stream(ctx, o.commands.core, args, func(reader io.Reader) error { return readTeamEvents(reader, role.Role, emit) })
+			err := o.stream(ctx, o.commands.herdrEnv, o.commands.core, args, func(reader io.Reader) error { return readTeamEvents(reader, role.Role, emit) })
 			results <- err
 		})
 	}
@@ -174,8 +174,9 @@ func (labels teamLabels) values() map[string]string {
 // through HUP. Native clients may recover Core after a crash/update; supervision
 // therefore uses ordinary reads without a precheck and issues no explicit start command.
 // runTeamStream closes stdin, never reads screen output, and drains the owned
-// read-only subscriber process on cancellation or decode failure.
-func runTeamStream(ctx context.Context, program string, args []string, read func(io.Reader) error) error {
+// read-only subscriber process on cancellation or decode failure. The process
+// runs with env, Herdr's own environment.
+func runTeamStream(ctx context.Context, env []string, program string, args []string, read func(io.Reader) error) error {
 	resolved, err := exec.LookPath(program)
 	if err != nil {
 		return errors.New("Herdr event reader is unavailable")
@@ -183,6 +184,7 @@ func runTeamStream(ctx context.Context, program string, args []string, read func
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	command := exec.CommandContext(ctx, resolved, args...)
+	command.Env = env
 	command.WaitDelay = time.Second
 	output, err := command.StdoutPipe()
 	if err != nil {

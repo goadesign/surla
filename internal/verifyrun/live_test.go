@@ -36,8 +36,13 @@ const (
 	//   - "suite-bad-line": the suite starts a child, prints a diagnostic
 	//     instead of the ready line and keeps serving;
 	//   - "target-ends": the suite prints the line and exits 1s later,
-	//     leaving its child running, as a candidate a suite did not stop.
-	// Each started process records "pgid pid" lines in TMPDIR/pids.
+	//     leaving its child running, as a candidate a suite did not stop;
+	//   - "leak": the suite prints every provider variable it was given to
+	//     stderr and a first line whose unknown field is its anthropic key,
+	//     then waits to be killed.
+	// Each started process records "pgid pid" lines in TMPDIR/pids. Prepare
+	// and the suite always report, by names and booleans only, which
+	// provider variables they see (writeSettingsReport).
 	liveFakeEnv = "VERIFYRUN_TEST_LIVE"
 	// liveHostReady is printed by the fake host once its live target was ready, and
 	// liveHostEnded once the target reported that it ended.
@@ -48,6 +53,9 @@ const (
 // fakePrepare stands in for verify.Prepare: it returns this test binary as the
 // suite, which then acts as fakeSuiteLive.
 func fakePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
+	if err := writeSettingsReport(filepath.Join(os.TempDir(), "prepare-report"), os.Environ()); err != nil {
+		return verify.Prepared{}, err
+	}
 	switch os.Getenv(liveFakeEnv) {
 	case "prepare-fails-child":
 		if err := startRecordedChild(); err != nil {
@@ -90,12 +98,25 @@ func fakeSuiteLive() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
+	if err := writeSettingsReport(filepath.Join(os.TempDir(), "suite-report"), os.Environ()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	if os.Getenv(suite.LiveKeyEnv) != "secret-key" {
 		fmt.Fprintln(os.Stderr, "missing live key")
 		return 2
 	}
 	mode := os.Getenv(liveFakeEnv)
 	switch mode {
+	case "leak":
+		for _, kv := range os.Environ() {
+			if name, _, _ := strings.Cut(kv, "="); modelsettings.InFamily(name) {
+				fmt.Fprintln(os.Stderr, "suite configuration:", kv)
+			}
+		}
+		fmt.Printf("{%q:true}\n", os.Getenv("ANTHROPIC_API_KEY"))
+		time.Sleep(time.Hour)
+		return 0
 	case "suite-exits":
 		return 2
 	case "suite-unsupported":

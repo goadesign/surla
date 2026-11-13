@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -60,7 +61,7 @@ func TestTeamFilteredSubscription(t *testing.T) {
 	var mu sync.Mutex
 	var calls [][]string
 	started := make(chan struct{}, 2)
-	o := teamObservations{commands: teamCommands{core: "recorded-herdr"}, stream: func(ctx context.Context, program string, args []string, read func(io.Reader) error) error {
+	o := teamObservations{commands: teamCommands{core: "recorded-herdr"}, stream: func(ctx context.Context, _ []string, program string, args []string, read func(io.Reader) error) error {
 		assert.Equal(t, "recorded-herdr", program)
 		mu.Lock()
 		calls = append(calls, args)
@@ -97,7 +98,7 @@ func TestTeamFilteredSubscription(t *testing.T) {
 // before any get, and the resulting narrow values contain no message or title.
 func TestTeamDiscoveryBeforeRead(t *testing.T) {
 	var calls [][]string
-	c := teamCommands{core: "recorded", run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+	c := teamCommands{core: "recorded", run: func(_ context.Context, _ []string, _ string, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		if args[0] == "ls" {
 			return []byte(`{"terminals":[{"address":"owned"}]}`), nil
@@ -161,7 +162,7 @@ func TestTeamSenderRecordedProtocol(t *testing.T) {
 	for _, condition := range []string{"idle", ""} {
 		for _, code := range []int{0, 9, 10, 11, 1} {
 			var args []string
-			c := teamCommands{core: "recorded", run: func(_ context.Context, _ string, argv ...string) ([]byte, error) {
+			c := teamCommands{core: "recorded", run: func(_ context.Context, _ []string, _ string, argv ...string) ([]byte, error) {
 				args = argv
 				if code != 0 {
 					return nil, teamCommandExit{code: code}
@@ -180,7 +181,7 @@ func TestTeamSenderRecordedProtocol(t *testing.T) {
 			assert.NotContains(t, args, "--wait")
 		}
 	}
-	deps, err := projectTeamDependencies(t.Context())
+	deps, err := projectTeamDependencies(t.Context(), os.Environ())
 	require.NoError(t, err)
 	require.IsType(t, unboundTeamSender{}, deps.Sender)
 	outcome, err := deps.Sender.Send(t.Context(), project.TeamReminder{})

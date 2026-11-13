@@ -73,8 +73,19 @@ func helper(role, dir string) int {
 var evaluatorPlan = verify.Plan{Tests: verify.TestsEvaluator}
 
 // fakeRun stands in for verify.Run according to fakeModeEnv.
-func fakeRun(ctx context.Context, plan verify.Plan, _ []string) (verify.Report, error) {
+func fakeRun(ctx context.Context, plan verify.Plan, environ []string) (verify.Report, error) {
 	switch os.Getenv(fakeModeEnv) {
+	case "judge":
+		// An operator's suite whose judge needs its provider key: preparation
+		// runs in this process, the suite from environ.
+		if err := writeSettingsReport(filepath.Join(filepath.Dir(plan.WorkDir), "prepare-report"), os.Environ()); err != nil {
+			return verify.Report{}, err
+		}
+		if err := writeSettingsReport(filepath.Join(filepath.Dir(plan.WorkDir), "suite-report"), verify.ProgramEnv(plan, environ, plan.WorkDir)); err != nil {
+			return verify.Report{}, err
+		}
+		_, judged := lookupEnv(verify.ProgramEnv(plan, environ, plan.WorkDir), "ANTHROPIC_API_KEY")
+		return saveReport(plan, judged)
 	case "pass":
 		if err := os.MkdirAll(filepath.Join(plan.WorkDir, "candidate-bin"), 0o700); err != nil {
 			return verify.Report{}, err
