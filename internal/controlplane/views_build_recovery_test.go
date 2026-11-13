@@ -192,6 +192,7 @@ const answer = page.$('#surla-proposal [data-option="total_with_tax"]');
 expect(answer, "the proposal's question is missing");
 answer.click();
 expect(primary(page.$("#surla-proposal-adopt")) && !primary(page.$("#surla-build-view-team")) && !primary(page.$("#surla-build-again")), "the waiting proposal lost action priority to Build");
+await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "the proposal's background build read did not settle before rebuilding");
 page.$("#surla-build-again").click();
 await until(() => page.$("#surla-build-confirm"), "rebuilding the current agreement did not ask for confirmation");
 expect(page.sent("POST", path).length === 1, "opening the current rebuild question sent a start");
