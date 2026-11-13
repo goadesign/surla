@@ -237,6 +237,9 @@ against the Story saved with the build, without running any of the copy's code
 outside the sandbox:
 
 1. It writes the required tests into the copy again from the build's Story.
+   Like a build start, it first removes any `.surla-gen-*` staging folder
+   that a write cut short by a server's death left in the test module. A
+   link or a file with such a name is the test writer's and is left alone.
 2. It checks that only files inside the test module changed since the copy's
    base, regenerates the generated folder in a private snapshot, builds the
    generated test program `./gen/cmd/<name>-evals` in the build sandbox

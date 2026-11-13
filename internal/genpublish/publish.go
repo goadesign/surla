@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path"
@@ -114,4 +115,49 @@ func Publish(
 		result.Warnings = append(result.Warnings, err.Error())
 	}
 	return result, nil
+}
+
+// RemoveLeftoverStages removes from the module open at root the staging
+// directories that earlier publications left there because their process
+// died before cleaning up. Left in place, each one would be reported by every
+// later Publish. It is for a module in which one owner publishes at a time,
+// such as the test module of a test writer's working copy, whose publications
+// take turns: a staging directory another publication is still writing looks
+// the same and would be removed with the others, which is why Publish itself
+// leaves them alone.
+//
+// The module's files are untrusted, and a staging name proves nothing. Every
+// step therefore goes through root and a handle on the directory itself,
+// never through a path: an entry is treated as a staging directory only when
+// it has the shape Publish gives one (openLeftover); only the gen tree inside
+// the opened directory is removed, without following any link in it, so a
+// link or a hard link there loses its name and what it names is untouched;
+// and the directory's own name is removed only while it still names the
+// opened directory, with a non-recursive remove. An entry with a staging name
+// that is a symbolic link, a file, or a directory holding anything else is
+// the module author's and is left exactly as it is, without an error.
+//
+// The error names each staging directory that could not be removed. It never
+// means the module is unusable: Publish works beside whatever is left.
+func RemoveLeftoverStages(root *os.Root) error {
+	var errs []error
+	for _, name := range leftoverStages(root) {
+		inspected, err := root.Lstat(name)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("left %s: %w", name, err))
+			continue
+		}
+		stage, err := openLeftover(root, name, inspected)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if stage != nil {
+			errs = append(errs, stage.cleanup(root))
+		}
+	}
+	return errors.Join(errs...)
 }

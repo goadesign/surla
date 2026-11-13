@@ -34,6 +34,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/genpublish"
@@ -263,7 +266,9 @@ func WithoutAbsolutePaths(text string) string {
 // candidate.ErrIsolationUnavailable), the generator failed while preparing
 // its own files, or the generated folder could not be written. A generation
 // failure wraps the evaluator's error, from which
-// designeval.GenerationDiagnostic derives the caller-safe text.
+// designeval.GenerationDiagnostic derives the caller-safe text. A staging
+// folder that an interrupted publication left in the module is removed and
+// never a failure (publish).
 func (c *Checker) Prepare(
 	ctx context.Context, wc WorkingCopy, s Suite, stories []designeval.StorySummary,
 ) ([]designeval.StoryScenario, error) {
@@ -406,16 +411,38 @@ func (v Verdict) Accepted() bool {
 	return len(v.Findings) == 0
 }
 
-// publish replaces the gen/ folder of the module open at root with files. A
-// publication warning, such as a staging folder left by an earlier run, is an
-// error: the folder may not hold exactly the generated files.
+// publish replaces the gen/ folder of the module open at root with files. An
+// error means gen/ was not replaced.
+//
+// It first removes the staging folders that publications cut short by a
+// server's death left in the module (genpublish.RemoveLeftoverStages). Surla
+// writes the generated folder of a working copy and of its snapshots one
+// publication at a time, in the project's working-copy turn, so none of its
+// own publications is using one. A surla gen the author runs in the copy at
+// that moment loses its staging folder and fails; the copy's generated folder
+// is Surla's to write, and this publication writes it. An entry with a
+// staging folder's name that is not one Surla made, such as a link or a file,
+// is the author's: it is left as it is, like any other file the author keeps
+// in the module.
+//
+// Nothing else fails the publication. A staging folder that could not be
+// removed and the warnings of genpublish.Publish (the agent guide, the change
+// listing, this publication's own staging folder) all describe work beside a
+// gen/ that already holds the generated files, so they are recorded as events
+// on ctx's span and the caller goes on.
 func publish(ctx context.Context, root *os.Root, files map[string][]byte) error {
+	span := trace.SpanFromContext(ctx)
+	if err := genpublish.RemoveLeftoverStages(root); err != nil {
+		span.AddEvent("staging folders of earlier publications were left in the test module",
+			trace.WithAttributes(attribute.String("surla.error", err.Error())))
+	}
 	res, err := genpublish.Publish(ctx, root, files)
 	if err != nil {
 		return fmt.Errorf("write the generated folder: %w", err)
 	}
 	if len(res.Warnings) > 0 {
-		return fmt.Errorf("write the generated folder: %s", strings.Join(res.Warnings, "; "))
+		span.AddEvent("the generated folder was written with warnings",
+			trace.WithAttributes(attribute.StringSlice("surla.warnings", res.Warnings)))
 	}
 	return nil
 }
