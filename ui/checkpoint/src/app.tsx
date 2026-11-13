@@ -1368,6 +1368,9 @@ export function bootstrapViewsPage() {
               buildStartReceipt = null;
               buildStartError = null;
             }
+            if (before !== null && JSON.stringify(before) !== JSON.stringify(result.build)) {
+              refreshOpenCard(changeId);
+            }
             followBuildFindings();
           }
         }
@@ -1499,6 +1502,7 @@ export function bootstrapViewsPage() {
         followBuildFindings();
         statusEl.textContent = "The build started for the agreed revision.";
         readBuild(changeId);
+        refreshOpenCard(changeId);
         readTeam();
       },
       (message, failure) => {

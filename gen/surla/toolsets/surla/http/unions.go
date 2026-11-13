@@ -15,6 +15,188 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
+// ApprovalTestSource holds exactly one of its branch values.
+type ApprovalTestSource struct {
+	kind         ApprovalTestSourceKind
+	evaluator    *OperatorEvaluatorTestsTransport
+	writtenTests *AgentWrittenTestsTransport
+}
+
+// ApprovalTestSourceKind records which ApprovalTestSource branch is selected.
+type ApprovalTestSourceKind string
+
+const (
+	// ApprovalTestSourceKindEvaluator identifies the evaluator branch.
+	ApprovalTestSourceKindEvaluator ApprovalTestSourceKind = "evaluator"
+	// ApprovalTestSourceKindWrittenTests identifies the written_tests branch.
+	ApprovalTestSourceKindWrittenTests ApprovalTestSourceKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ApprovalTestSource) Kind() ApprovalTestSourceKind {
+	return u.kind
+}
+
+// NewApprovalTestSourceEvaluator constructs ApprovalTestSource with the evaluator branch set.
+func NewApprovalTestSourceEvaluator(v *OperatorEvaluatorTestsTransport) ApprovalTestSource {
+	return ApprovalTestSource{
+		kind:      ApprovalTestSourceKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// AsEvaluator returns the value when the evaluator branch is selected.
+func (u ApprovalTestSource) AsEvaluator() (_ *OperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != ApprovalTestSourceKindEvaluator {
+		return
+	}
+	return u.evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch and stores v.
+func (u *ApprovalTestSource) SetEvaluator(v *OperatorEvaluatorTestsTransport) {
+	*u = ApprovalTestSource{
+		kind:      ApprovalTestSourceKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// NewApprovalTestSourceWrittenTests constructs ApprovalTestSource with the written_tests branch set.
+func NewApprovalTestSourceWrittenTests(v *AgentWrittenTestsTransport) ApprovalTestSource {
+	return ApprovalTestSource{
+		kind:         ApprovalTestSourceKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// AsWrittenTests returns the value when the written_tests branch is selected.
+func (u ApprovalTestSource) AsWrittenTests() (_ *AgentWrittenTestsTransport, ok bool) {
+	if u.kind != ApprovalTestSourceKindWrittenTests {
+		return
+	}
+	return u.writtenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch and stores v.
+func (u *ApprovalTestSource) SetWrittenTests(v *AgentWrittenTestsTransport) {
+	*u = ApprovalTestSource{
+		kind:         ApprovalTestSourceKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u ApprovalTestSource) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u ApprovalTestSource) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("source", "", []any{
+			string(ApprovalTestSourceKindEvaluator),
+			string(ApprovalTestSourceKindWrittenTests),
+		})
+	case ApprovalTestSourceKindEvaluator:
+		if u.evaluator == nil {
+			return nil, goa.MissingFieldError("value", "ApprovalTestSource")
+		}
+		return u.evaluator, nil
+	case ApprovalTestSourceKindWrittenTests:
+		if u.writtenTests == nil {
+			return nil, goa.MissingFieldError("value", "ApprovalTestSource")
+		}
+		return u.writtenTests, nil
+	default:
+		return nil, goa.InvalidEnumValueError("source", u.kind, []any{
+			string(ApprovalTestSourceKindEvaluator),
+			string(ApprovalTestSourceKindWrittenTests),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u ApprovalTestSource) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ApprovalTestSource branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *ApprovalTestSource) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["source"]
+	if !exists {
+		return goa.MissingFieldError("source", "ApprovalTestSource")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("source", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "source")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(ApprovalTestSourceKindEvaluator):
+		var v *OperatorEvaluatorTestsTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetEvaluator(v)
+	case string(ApprovalTestSourceKindWrittenTests):
+		var v *AgentWrittenTestsTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetWrittenTests(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("source", "ApprovalTestSource")
+		}
+		return goa.InvalidEnumValueError("source", raw.Type, []any{
+			string(ApprovalTestSourceKindEvaluator),
+			string(ApprovalTestSourceKindWrittenTests),
+		})
+	}
+	return nil
+}
+
 // Build holds exactly one of its branch values.
 type Build struct {
 	kind       BuildKind

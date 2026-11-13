@@ -168,36 +168,77 @@ func TestPromotionSettingsSurviveRestart(t *testing.T) {
 	commit := strings.Repeat("c", 40)
 	publish(t, release, commit, map[string]string{"app": "verified binary"})
 	file := filepath.Join(t.TempDir(), "promotion.json")
-	raw := fmt.Sprintf(`{"release_dir":%q,"suite_id":"suite","suite_commit":%q,"environment":"sim","binaries":["app"]}`, release, strings.Repeat("b", 40))
+	raw := fmt.Sprintf(`{"release_dir":%q,"binaries":["app"]}`, release)
 	require.NoError(t, os.WriteFile(file, []byte(raw), 0o600))
 	var output bytes.Buffer
 	require.NoError(t, runProjectSettings("promotion", []string{"set", file}, &output))
 	assert.Contains(t, output.String(), "next time")
-	load := func() controlplane.PromotionInputs {
+	load := func() map[string]string {
 		config, err := configureServeWorkspace()
 		require.NoError(t, err)
 		require.NotNil(t, config.promotionTarget)
 		cp, err := controlplane.New(controlplane.Options{CardsDir: config.cardsDir, PromotionTarget: config.promotionTarget})
 		require.NoError(t, err)
-		inputs, err := config.promotionTarget.CurrentInputs(t.Context(), commit)
+		artifacts, err := config.promotionTarget.CurrentArtifacts(t.Context(), commit)
 		require.NoError(t, err)
 		require.NoError(t, cp.Close())
-		return inputs
+		return artifacts
 	}
 	before := load()
-	assert.Equal(t, digestOf("verified binary"), before.Artifacts["app"])
+	assert.Equal(t, digestOf("verified binary"), before["app"])
 	// Both fields removed from settings are rejected; no alternate report store can be introduced.
 	require.NoError(t, os.WriteFile(file, []byte(strings.TrimSuffix(raw, "}")+`,"report_dir":"/unowned"}`), 0o600))
 	assert.Error(t, runProjectSettings("promotion", []string{"set", file}, &output))
 	assert.Equal(t, before, load())
 	output.Reset()
 	require.NoError(t, runProjectSettings("promotion", []string{"show"}, &output))
-	assert.Contains(t, output.String(), `"suite_id":"suite"`)
+	assert.Contains(t, output.String(), `"binaries":["app"]`)
 	assert.NotContains(t, output.String(), "report_dir")
 	require.NoError(t, runProjectSettings("promotion", []string{"remove"}, &output))
 	current, err := configureServeWorkspace()
 	require.NoError(t, err)
 	assert.Nil(t, current.promotionTarget)
+}
+
+// TestServeRefusesInvalidStoredSettingsWithRecoveryStep verifies Proof clause 2:
+// when a stored promotion.json (such as an older file containing suite_id) or
+// verification.json is invalid at server start, runWithRuntime(["serve", "-state", ...])
+// fails with the underlying cause first and ends with the recovery step.
+func TestServeRefusesInvalidStoredSettingsWithRecoveryStep(t *testing.T) {
+	cases := []struct {
+		name     string
+		kind     string
+		content  string
+		wantPart string
+		wantStep string
+	}{
+		{
+			name:     "old stored promotion settings with suite fields",
+			kind:     "promotion",
+			content:  `{"release_dir":"/rel","suite_id":"orders","suite_commit":"` + strings.Repeat("b", 40) + `","environment":"sim","binaries":["orders"]}`,
+			wantPart: `unknown field "suite_id"`,
+			wantStep: storedPromotionSettingsStep,
+		},
+		{
+			name:     "invalid stored verification settings",
+			kind:     "verification",
+			content:  `{"candidate_repo":"/candidate.git","suite_commit":"not-a-commit"}`,
+			wantPart: "verification settings are missing",
+			wantStep: storedVerificationSettingsStep,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			require.NoError(t, state.SaveSettings(tc.kind, []byte(tc.content)))
+			err = runWithRuntime([]string{"serve", "-state", state.Dir}, io.Discard, testProjectRuntime())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantPart)
+			assert.True(t, strings.HasSuffix(err.Error(), tc.wantStep), "error %q must end with %q", err.Error(), tc.wantStep)
+		})
+	}
 }
 
 // TestProjectSettingsRejectsWorkspaceAndRepositoryPaths proves management cannot
@@ -236,7 +277,7 @@ func TestProjectSettingsRejectsWorkspaceAndRepositoryPaths(t *testing.T) {
 				}
 				content := `{"candidate_repo":"/c.git","candidate_module":".","binaries":{"app":"./cmd/app"},"suite_repo":"/s.git","suite_commit":"` + strings.Repeat("b", 40) + `","suite_module":".","suite_command":"./cmd/evals","timeout":"30m"}`
 				if kind == "promotion" {
-					content = `{"release_dir":"` + release + `","suite_id":"suite","suite_commit":"` + strings.Repeat("b", 40) + `","environment":"sim","binaries":["app"]}`
+					content = `{"release_dir":"` + release + `","binaries":["app"]}`
 				}
 				require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 				err := runProjectSettings(kind, []string{"set", path}, io.Discard)

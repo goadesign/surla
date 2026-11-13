@@ -69,30 +69,13 @@ type (
 		// under digest, from storage only the evaluator writes. It fails when
 		// no such report exists.
 		LoadReport(ctx context.Context, digest string) (verify.Report, error)
-		// CurrentInputs returns the evaluator suite and environment the
-		// promotion requires and the digests of the candidate binaries
-		// measured independently for candidateCommit, as one coherent
-		// snapshot the implementation does not change after returning it.
-		// It fails when those facts do not fix the target's behavior (see
-		// the verify package). approve_merge checks a report against it,
-		// and get_change and confirm_intent return a saved approval only
-		// while it still matches.
-		CurrentInputs(ctx context.Context, candidateCommit string) (PromotionInputs, error)
-	}
-
-	// PromotionInputs are the facts a verification report must match at
-	// Checkpoint 5, besides the candidate commit and request revision.
-	PromotionInputs struct {
-		// SuiteID names the evaluator suite the promotion requires.
-		SuiteID string
-		// SuiteCommit is the evaluator suite commit the promotion requires.
-		SuiteCommit string
-		// Environment is the dependency profile the promotion requires, such
-		// as "sim".
-		Environment string
-		// Artifacts maps each candidate binary name to its measured SHA-256
-		// digest.
-		Artifacts map[string]string
+		// CurrentArtifacts returns the SHA-256 digests of the candidate
+		// binaries measured independently for candidateCommit, as one coherent
+		// snapshot the implementation does not change after returning it. It
+		// fails when those binaries cannot be measured. approve_merge checks a
+		// report against it, and get_change and confirm_intent return a saved
+		// approval only while its binary digests still match.
+		CurrentArtifacts(ctx context.Context, candidateCommit string) (map[string]string, error)
 	}
 
 	// Options configures a ControlPlane instance.
@@ -159,12 +142,15 @@ type (
 		// choice made with configure_model. Without it, configure_model returns
 		// not_implemented.
 		LiveModelEnv LiveModelEnv
-		// PromotionTarget supplies CP5 verification reports and current
-		// promotion inputs. Without it or ResolvePromotionTarget, approve_merge
-		// fails.
+		// PromotionTarget optionally supplies CP5 verification reports and
+		// measured release binary digests. When nil and ResolvePromotionTarget
+		// resolves nil, approve_merge loads reports from the configured
+		// verifier's ReportDir and records approvals without release-file
+		// digests.
 		PromotionTarget PromotionTarget
-		// ResolvePromotionTarget dynamically resolves a PromotionTarget from
-		// the currently bound workspace directory when PromotionTarget is nil.
+		// ResolvePromotionTarget dynamically resolves an optional
+		// PromotionTarget from the currently bound workspace directory when
+		// PromotionTarget is nil.
 		ResolvePromotionTarget func(ctx context.Context, workspaceDir string) (PromotionTarget, error)
 		// Verification is the operator's stored evaluator: the CP4
 		// configuration stored with `surla verification set`. Every change
@@ -795,10 +781,12 @@ func (c *ControlPlane) Close() error {
 // GetChange returns the current Change Card for change_id to its owner. It
 // fails for an unknown change_id or a caller who does not own the card, and
 // never changes the card. A saved approval is returned in Approval only while
-// it still matches the promotion target's current inputs, or in
+// its suite_commit is still the tests' commit chosen for this revision and its
+// binary digests still match the promotion target's current binaries, or in
 // UnverifiedApproval when no promotion target is configured or the target
-// cannot report its current inputs (see currentCard). A revision proposed
-// beside a confirmed card is returned in ProposedRevision while it waits.
+// cannot measure the candidate's binaries (see currentCard). A revision
+// proposed beside a confirmed card is returned in ProposedRevision while it
+// waits.
 func (c *ControlPlane) GetChange(ctx context.Context, p *gensurla.GetChangePayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {

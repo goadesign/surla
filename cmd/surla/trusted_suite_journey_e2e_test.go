@@ -156,22 +156,22 @@ func assertVerifyRefusedWithoutBuild(t *testing.T, ctx context.Context, client *
 
 // writeStarterPromotion stores promotion settings through CLI management before the
 // next server start. Reports use project-owned storage and staged releases remain
-// outside the workspace. Suite identity matches the starter evaluator contract.
-func writeStarterPromotion(t *testing.T, workspace, service, suiteCommit string) promotionFile {
+// outside the workspace.
+func writeStarterPromotion(t *testing.T, workspace, service string) promotionFile {
 	t.Helper()
 	t.Chdir(workspace)
 	state, err := fixtureProjectState(workspace)
 	require.NoError(t, err)
 	promotion := promotionFile{
-		ReportDir:   filepath.Join(state.Dir, "reports"),
-		ReleaseDir:  filepath.Join(t.TempDir(), "releases"),
-		SuiteID:     service + "_acceptance",
-		SuiteCommit: suiteCommit,
-		Environment: "scripted-model",
-		Binaries:    []string{service},
+		ReportDir:  filepath.Join(state.Dir, "reports"),
+		ReleaseDir: filepath.Join(t.TempDir(), "releases"),
+		Binaries:   []string{service},
 	}
 	require.NoError(t, os.Mkdir(promotion.ReleaseDir, 0o700))
-	raw, err := json.Marshal(promotion)
+	raw, err := json.Marshal(map[string]any{
+		"release_dir": promotion.ReleaseDir,
+		"binaries":    promotion.Binaries,
+	})
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "promotion.json")
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
@@ -339,20 +339,23 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	approved, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "approve_merge", args))
 	require.NoError(t, err)
 	assert.Equal(t, card.RequestRevision, approved.RequestRevision, "approval does not change the card's revision")
+	suiteID := promotion.Binaries[0] + "_acceptance"
+	const environment = "scripted-model"
 	want := &gensurla.ApprovalItem{
 		ApprovedBy:      "operator@example.com",
 		ReportDigest:    done.Report.ReportDigest,
 		CandidateCommit: candidateCommit,
-		SuiteID:         promotion.SuiteID,
+		SuiteID:         suiteID,
 		SuiteCommit:     suiteCommit,
-		Environment:     promotion.Environment,
+		Environment:     environment,
 		Artifacts:       saved.Report.Binding.Artifacts,
 		ScenarioCount:   saved.Report.Counts.Required,
+		TestSource:      gensurla.NewApprovalTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}),
 	}
 	assert.Equal(t, want, approved.Approval)
 	assert.Nil(t, approved.UnverifiedApproval)
-	assert.Equal(t, promotion.SuiteID, saved.Report.Binding.SuiteID)
-	assert.Equal(t, promotion.Environment, saved.Report.Binding.Environment)
+	assert.Equal(t, suiteID, saved.Report.Binding.SuiteID)
+	assert.Equal(t, environment, saved.Report.Binding.Environment)
 
 	args, err = gensurla.EncodeGetChangePayload(&gensurla.GetChangePayload{ChangeID: card.ChangeID})
 	require.NoError(t, err)

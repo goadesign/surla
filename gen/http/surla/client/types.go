@@ -247,17 +247,19 @@ type ProposeChangeResponseBody struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -301,17 +303,19 @@ type ReviseChangeResponseBody struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -355,17 +359,19 @@ type ConfirmIntentResponseBody struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -409,17 +415,19 @@ type GetChangeResponseBody struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -463,17 +471,19 @@ type DeclineRevisionResponseBody struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -642,17 +652,19 @@ type ApproveMergeResponseBody struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -854,11 +866,10 @@ type ListChangesResponseBody struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
-	// Whether approve_merge can record approvals on this server. It is false when
-	// no promotion target is configured, or when the server could not resolve its
-	// promotion target; approve_merge then refuses every approval. To configure
-	// one, store the project's promotion settings with surla promotion set, then
-	// restart Surla.
+	// Whether approve_merge can record approvals on this server. It is true
+	// whenever Checkpoint 4 verification is configured and any stored promotion
+	// settings could be resolved; it is false when verification is not configured
+	// or when resolving the promotion target returns an error.
 	ApprovalAvailable *bool `form:"approval_available,omitempty" json:"approval_available,omitempty" xml:"approval_available,omitempty"`
 }
 
@@ -1876,6 +1887,43 @@ type ApproveMergeNotFoundResponseBody struct {
 // ApproveMergeConflictResponseBody is the type of the "surla" service
 // "approve_merge" endpoint HTTP response body for the "conflict" error.
 type ApproveMergeConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// ApproveMergeNoBuildResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "no_build" error.
+type ApproveMergeNoBuildResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// ApproveMergeTestsNotAcceptedResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "tests_not_accepted"
+// error.
+type ApproveMergeTestsNotAcceptedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3359,17 +3407,38 @@ type ApprovalItemResponseBody struct {
 	ReportDigest *string `form:"report_digest,omitempty" json:"report_digest,omitempty" xml:"report_digest,omitempty"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `form:"suite_id,omitempty" json:"suite_id,omitempty" xml:"suite_id,omitempty"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `form:"environment,omitempty" json:"environment,omitempty" xml:"environment,omitempty"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `form:"artifacts,omitempty" json:"artifacts,omitempty" xml:"artifacts,omitempty"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `form:"scenario_count,omitempty" json:"scenario_count,omitempty" xml:"scenario_count,omitempty"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *ApprovalTestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
+}
+
+// OperatorEvaluatorTestsResponseBody is used to define fields on response body
+// types.
+type OperatorEvaluatorTestsResponseBody struct {
+}
+
+// AgentWrittenTestsResponseBody is used to define fields on response body
+// types.
+type AgentWrittenTestsResponseBody struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `form:"notice,omitempty" json:"notice,omitempty" xml:"notice,omitempty"`
 }
 
 // UnverifiedApprovalItemResponseBody is used to define fields on response body
@@ -3378,7 +3447,7 @@ type UnverifiedApprovalItemResponseBody struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
 }
 
@@ -3549,21 +3618,6 @@ type LiveTargetNotConfirmedStoppedResponseBody struct {
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
 	// What happened and what to do next.
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-}
-
-// OperatorEvaluatorTestsResponseBody is used to define fields on response body
-// types.
-type OperatorEvaluatorTestsResponseBody struct {
-}
-
-// AgentWrittenTestsResponseBody is used to define fields on response body
-// types.
-type AgentWrittenTestsResponseBody struct {
-	// Commit Surla recorded the accepted tests at; the same as suite_commit.
-	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
-	// Always: These tests were written by a separate agent on this machine and are
-	// not isolated from the builder.
-	Notice *string `form:"notice,omitempty" json:"notice,omitempty" xml:"notice,omitempty"`
 }
 
 // VerificationRunningResponseBody is used to define fields on response body
@@ -4120,6 +4174,188 @@ type DesignSnapshotRequestBody struct {
 	// File contents keyed by module-relative path, such as design/design.go or
 	// go.mod.
 	Files map[string]string `form:"files" json:"files" xml:"files"`
+}
+
+// ApprovalTestSourceResponseBody holds exactly one of its branch values.
+type ApprovalTestSourceResponseBody struct {
+	kind         ApprovalTestSourceResponseBodyKind
+	evaluator    *OperatorEvaluatorTestsResponseBody
+	writtenTests *AgentWrittenTestsResponseBody
+}
+
+// ApprovalTestSourceResponseBodyKind records which ApprovalTestSourceResponseBody branch is selected.
+type ApprovalTestSourceResponseBodyKind string
+
+const (
+	// ApprovalTestSourceResponseBodyKindEvaluator identifies the evaluator branch.
+	ApprovalTestSourceResponseBodyKindEvaluator ApprovalTestSourceResponseBodyKind = "evaluator"
+	// ApprovalTestSourceResponseBodyKindWrittenTests identifies the written_tests branch.
+	ApprovalTestSourceResponseBodyKindWrittenTests ApprovalTestSourceResponseBodyKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ApprovalTestSourceResponseBody) Kind() ApprovalTestSourceResponseBodyKind {
+	return u.kind
+}
+
+// NewApprovalTestSourceResponseBodyEvaluator constructs ApprovalTestSourceResponseBody with the evaluator branch set.
+func NewApprovalTestSourceResponseBodyEvaluator(v *OperatorEvaluatorTestsResponseBody) ApprovalTestSourceResponseBody {
+	return ApprovalTestSourceResponseBody{
+		kind:      ApprovalTestSourceResponseBodyKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// AsEvaluator returns the value when the evaluator branch is selected.
+func (u ApprovalTestSourceResponseBody) AsEvaluator() (_ *OperatorEvaluatorTestsResponseBody, ok bool) {
+	if u.kind != ApprovalTestSourceResponseBodyKindEvaluator {
+		return
+	}
+	return u.evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch and stores v.
+func (u *ApprovalTestSourceResponseBody) SetEvaluator(v *OperatorEvaluatorTestsResponseBody) {
+	*u = ApprovalTestSourceResponseBody{
+		kind:      ApprovalTestSourceResponseBodyKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// NewApprovalTestSourceResponseBodyWrittenTests constructs ApprovalTestSourceResponseBody with the written_tests branch set.
+func NewApprovalTestSourceResponseBodyWrittenTests(v *AgentWrittenTestsResponseBody) ApprovalTestSourceResponseBody {
+	return ApprovalTestSourceResponseBody{
+		kind:         ApprovalTestSourceResponseBodyKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// AsWrittenTests returns the value when the written_tests branch is selected.
+func (u ApprovalTestSourceResponseBody) AsWrittenTests() (_ *AgentWrittenTestsResponseBody, ok bool) {
+	if u.kind != ApprovalTestSourceResponseBodyKindWrittenTests {
+		return
+	}
+	return u.writtenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch and stores v.
+func (u *ApprovalTestSourceResponseBody) SetWrittenTests(v *AgentWrittenTestsResponseBody) {
+	*u = ApprovalTestSourceResponseBody{
+		kind:         ApprovalTestSourceResponseBodyKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u ApprovalTestSourceResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u ApprovalTestSourceResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("source", "", []any{
+			string(ApprovalTestSourceResponseBodyKindEvaluator),
+			string(ApprovalTestSourceResponseBodyKindWrittenTests),
+		})
+	case ApprovalTestSourceResponseBodyKindEvaluator:
+		if u.evaluator == nil {
+			return nil, goa.MissingFieldError("value", "ApprovalTestSourceResponseBody")
+		}
+		return u.evaluator, nil
+	case ApprovalTestSourceResponseBodyKindWrittenTests:
+		if u.writtenTests == nil {
+			return nil, goa.MissingFieldError("value", "ApprovalTestSourceResponseBody")
+		}
+		return u.writtenTests, nil
+	default:
+		return nil, goa.InvalidEnumValueError("source", u.kind, []any{
+			string(ApprovalTestSourceResponseBodyKindEvaluator),
+			string(ApprovalTestSourceResponseBodyKindWrittenTests),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u ApprovalTestSourceResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ApprovalTestSourceResponseBody branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *ApprovalTestSourceResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["source"]
+	if !exists {
+		return goa.MissingFieldError("source", "ApprovalTestSourceResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("source", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "source")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(ApprovalTestSourceResponseBodyKindEvaluator):
+		var v *OperatorEvaluatorTestsResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetEvaluator(v)
+	case string(ApprovalTestSourceResponseBodyKindWrittenTests):
+		var v *AgentWrittenTestsResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetWrittenTests(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("source", "ApprovalTestSourceResponseBody")
+		}
+		return goa.InvalidEnumValueError("source", raw.Type, []any{
+			string(ApprovalTestSourceResponseBodyKindEvaluator),
+			string(ApprovalTestSourceResponseBodyKindWrittenTests),
+		})
+	}
+	return nil
 }
 
 // BuildResponseBody holds exactly one of its branch values.
@@ -7869,6 +8105,36 @@ func NewApproveMergeNotFound(body *ApproveMergeNotFoundResponseBody) *goa.Servic
 // NewApproveMergeConflict builds a surla service approve_merge endpoint
 // conflict error.
 func NewApproveMergeConflict(body *ApproveMergeConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewApproveMergeNoBuild builds a surla service approve_merge endpoint
+// no_build error.
+func NewApproveMergeNoBuild(body *ApproveMergeNoBuildResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewApproveMergeTestsNotAccepted builds a surla service approve_merge
+// endpoint tests_not_accepted error.
+func NewApproveMergeTestsNotAccepted(body *ApproveMergeTestsNotAcceptedResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -12092,6 +12358,54 @@ func ValidateApproveMergeConflictResponseBody(body *ApproveMergeConflictResponse
 	return
 }
 
+// ValidateApproveMergeNoBuildResponseBody runs the validations defined on
+// ApproveMergeNoBuildResponseBody
+func ValidateApproveMergeNoBuildResponseBody(body *ApproveMergeNoBuildResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateApproveMergeTestsNotAcceptedResponseBody runs the validations
+// defined on ApproveMergeTestsNotAcceptedResponseBody
+func ValidateApproveMergeTestsNotAcceptedResponseBody(body *ApproveMergeTestsNotAcceptedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateApproveMergeUnprocessableResponseBody runs the validations defined
 // on ApproveMergeUnprocessableResponseBody
 func ValidateApproveMergeUnprocessableResponseBody(body *ApproveMergeUnprocessableResponseBody) (err error) {
@@ -14247,6 +14561,26 @@ func ValidateApprovalItemResponseBody(body *ApprovalItemResponseBody) (err error
 	if body.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validateAgentWrittenTestsResponseBody(actual, "body.test_source.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
 	return
 }
 
@@ -14276,6 +14610,50 @@ func validateApprovalItemResponseBody(body *ApprovalItemResponseBody, path strin
 	}
 	if body.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", path))
+	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", path))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validateAgentWrittenTestsResponseBody(actual, path+".test_source.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
+// ValidateAgentWrittenTestsResponseBody runs the validations defined on
+// AgentWrittenTests
+func ValidateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody) (err error) {
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if body.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return
+}
+
+// validateAgentWrittenTestsResponseBody checks AgentWrittenTests and reports
+// errors using the path supplied by its caller
+func validateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody, path string) (err error) {
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", path))
+	}
+	if body.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", path))
 	}
 	return
 }
@@ -14798,30 +15176,6 @@ func validateLiveTargetNotConfirmedStoppedResponseBody(body *LiveTargetNotConfir
 	}
 	if body.Message == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("message", path))
-	}
-	return
-}
-
-// ValidateAgentWrittenTestsResponseBody runs the validations defined on
-// AgentWrittenTests
-func ValidateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody) (err error) {
-	if body.Commit == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
-	}
-	if body.Notice == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
-	}
-	return
-}
-
-// validateAgentWrittenTestsResponseBody checks AgentWrittenTests and reports
-// errors using the path supplied by its caller
-func validateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody, path string) (err error) {
-	if body.Commit == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("commit", path))
-	}
-	if body.Notice == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("notice", path))
 	}
 	return
 }

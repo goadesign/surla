@@ -28,29 +28,20 @@ var suiteCommit = strings.Repeat("b", 40)
 // TestLoadPromotionConfig checks that only a complete configuration with
 // distinct plain binary names outside the bound workspace starts serve.
 func TestLoadPromotionConfig(t *testing.T) {
-	valid := `{"release_dir":"/rel","suite_id":"orders","suite_commit":"` + suiteCommit +
-		`","environment":"sim","binaries":["orders","orders-worker"]}`
+	valid := `{"release_dir":"/rel","binaries":["orders","orders-worker"]}`
 	cases := []struct {
 		name    string
 		content string
 		wantErr string
 	}{
 		{"complete", valid, ""},
-		{"missing fields", `{"binaries":[]}`, "is missing release_dir, suite_id, suite_commit, environment, binaries"},
+		{"missing fields", `{"binaries":[]}`, "is missing release_dir, binaries"},
 		{"unknown field", strings.TrimSuffix(valid, "}") + `,"extra":1}`, "unknown field"},
+		{"legacy suite_id field", strings.TrimSuffix(valid, "}") + `,"suite_id":"orders"}`, "unknown field"},
 		{"trailing data", valid + "{}", "data after the configuration"},
-		{"64-digit suite commit", strings.Replace(valid, suiteCommit, strings.Repeat("b", 64), 1), ""},
 		{"binary with a path", strings.Replace(valid, `"orders-worker"`, `"bin/orders-worker"`, 1), "must not contain /"},
 		{"parent directory", strings.Replace(valid, `"orders-worker"`, `".."`, 1), "is not a valid artifact name"},
 		{"repeated binary", strings.Replace(valid, `"orders-worker"`, `"orders"`, 1), "is listed twice"},
-	}
-	for _, bad := range []string{strings.Repeat("b", 39), strings.Repeat("b", 41), strings.Repeat("b", 63),
-		strings.Repeat("b", 65), strings.Repeat("g", 40), strings.Repeat("B", 40), "garbage"} {
-		cases = append(cases, struct {
-			name    string
-			content string
-			wantErr string
-		}{"suite commit " + bad, strings.Replace(valid, suiteCommit, bad, 1), "must be a full commit ID"})
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -81,7 +72,7 @@ func TestLoadPromotionConfig(t *testing.T) {
 	wsDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	path := filepath.Join(baseDir, "promotion.json")
-	relative := strings.Replace(strings.Replace(valid, `"/r"`, `"reports"`, 1), `"/rel"`, `"release"`, 1)
+	relative := strings.Replace(valid, `"/rel"`, `"release"`, 1)
 	require.NoError(t, os.WriteFile(path, []byte(relative), 0o600))
 	target, err := storedPromotionTarget(t, path)
 	require.NoError(t, err)
@@ -91,7 +82,7 @@ func TestLoadPromotionConfig(t *testing.T) {
 	assert.Equal(t, filepath.Join(baseDir, "release"), cfg.ReleaseDir)
 }
 
-// TestReleaseTargetMeasuresStagedBinaries checks that CurrentInputs hashes
+// TestReleaseTargetMeasuresStagedBinaries checks that CurrentArtifacts hashes
 // the files in the commit's release directory and fails, naming the binary,
 // when one is missing or reached through a link that leaves the directory.
 func TestReleaseTargetMeasuresStagedBinaries(t *testing.T) {
@@ -100,19 +91,16 @@ func TestReleaseTargetMeasuresStagedBinaries(t *testing.T) {
 	target := newReleaseTarget(t, release, t.TempDir())
 	publish(t, release, commit, map[string]string{"orders": "api v1", "orders-worker": "worker v1"})
 
-	inputs, err := target.CurrentInputs(context.Background(), commit)
+	artifacts, err := target.CurrentArtifacts(context.Background(), commit)
 	require.NoError(t, err)
-	assert.Equal(t, controlplane.PromotionInputs{
-		SuiteID: "orders", SuiteCommit: suiteCommit, Environment: "sim",
-		Artifacts: map[string]string{"orders": digestOf("api v1"), "orders-worker": digestOf("worker v1")},
-	}, inputs)
+	assert.Equal(t, map[string]string{"orders": digestOf("api v1"), "orders-worker": digestOf("worker v1")}, artifacts)
 
-	_, err = target.CurrentInputs(context.Background(), strings.Repeat("d", 40))
+	_, err = target.CurrentArtifacts(context.Background(), strings.Repeat("d", 40))
 	assert.ErrorContains(t, err, "open release directory for commit "+strings.Repeat("d", 40))
 
 	missing := strings.Repeat("e", 40)
 	publish(t, release, missing, map[string]string{"orders": "api v1"})
-	_, err = target.CurrentInputs(context.Background(), missing)
+	_, err = target.CurrentArtifacts(context.Background(), missing)
 	assert.ErrorContains(t, err, "read release binary orders-worker for commit "+missing)
 
 	escaping := strings.Repeat("f", 40)
@@ -120,22 +108,22 @@ func TestReleaseTargetMeasuresStagedBinaries(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "worker")
 	require.NoError(t, os.WriteFile(outside, []byte("worker v1"), 0o600))
 	require.NoError(t, os.Symlink(outside, filepath.Join(release, escaping, "orders-worker")))
-	_, err = target.CurrentInputs(context.Background(), escaping)
+	_, err = target.CurrentArtifacts(context.Background(), escaping)
 	assert.ErrorContains(t, err, "path escapes from parent", "a link out of the release directory is not followed")
 
 	long := strings.Repeat("a", 64)
 	publish(t, release, long, map[string]string{"orders": "api v1", "orders-worker": "worker v1"})
-	_, err = target.CurrentInputs(context.Background(), long)
+	_, err = target.CurrentArtifacts(context.Background(), long)
 	assert.NoError(t, err, "a SHA-256 commit ID names a release directory too")
 
 	for _, bad := range []string{"../" + commit, commit + "/..", strings.Repeat("c", 39), strings.ToUpper(commit)} {
-		_, err = target.CurrentInputs(context.Background(), bad)
+		_, err = target.CurrentArtifacts(context.Background(), bad)
 		assert.ErrorContains(t, err, "is not a full commit ID", bad)
 	}
 }
 
 // TestReleaseTargetRefusesNonRegularFiles stages a FIFO under a binary's
-// name and checks that CurrentInputs fails promptly instead of blocking on it.
+// name and checks that CurrentArtifacts fails promptly instead of blocking on it.
 func TestReleaseTargetRefusesNonRegularFiles(t *testing.T) {
 	commit := strings.Repeat("c", 40)
 	release := t.TempDir()
@@ -145,14 +133,14 @@ func TestReleaseTargetRefusesNonRegularFiles(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := target.CurrentInputs(context.Background(), commit)
+		_, err := target.CurrentArtifacts(context.Background(), commit)
 		done <- err
 	}()
 	select {
 	case err := <-done:
 		assert.ErrorContains(t, err, "orders-worker is not a regular file")
 	case <-time.After(10 * time.Second):
-		t.Fatal("CurrentInputs blocked on a FIFO")
+		t.Fatal("CurrentArtifacts blocked on a FIFO")
 	}
 }
 
@@ -181,7 +169,9 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 		Environment: "sim", Artifacts: map[string]string{"orders": digestOf("api v1"), "orders-worker": digestOf("worker v1")},
 	}, true)
 	cp, err = controlplane.New(controlplane.Options{
-		CardsDir: cardsDir, PromotionTarget: newReleaseTarget(t, release, filepath.Dir(report.path)),
+		CardsDir:        cardsDir,
+		Verification:    &controlplane.VerificationConfig{Plan: verify.Plan{SuiteCommit: suiteCommit}},
+		PromotionTarget: newReleaseTarget(t, release, filepath.Dir(report.path)),
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
@@ -192,6 +182,7 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, approved.Approval)
 	assert.Equal(t, digestOf("worker v1"), approved.Approval.Artifacts["orders-worker"])
+	assert.Equal(t, gensurla.NewApprovalTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}), approved.Approval.TestSource)
 
 	publish(t, release, commit, map[string]string{"orders": "api v1", "orders-worker": "worker v2"})
 	got, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
@@ -205,15 +196,18 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	assert.Nil(t, got.UnverifiedApproval)
 
 	// Removing a configured binary or the staged commit directory causes the
-	// real releaseTarget.CurrentInputs to fail; GetChange still returns the
-	// card with UnverifiedApproval and a path-free reason.
+	// real releaseTarget.CurrentArtifacts to fail; GetChange still returns the
+	// card with UnverifiedApproval and a path-free reason, and ApproveMerge
+	// refuses with a declared error naming the release folder basename and
+	// recovery step without leaking the host path.
 	require.NoError(t, os.Remove(filepath.Join(release, commit, "orders-worker")))
 	got, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Nil(t, got.Approval)
 	require.NotNil(t, got.UnverifiedApproval)
 	assert.Equal(t, approved.Approval, got.UnverifiedApproval.Approval)
-	assert.Contains(t, got.UnverifiedApproval.Reason, "could not report its current inputs")
+	assert.Contains(t, got.UnverifiedApproval.Reason, "because the release binaries could not be read")
+	assert.Contains(t, got.UnverifiedApproval.Reason, "Check current approval")
 	assert.NotContains(t, got.UnverifiedApproval.Reason, release)
 
 	require.NoError(t, os.RemoveAll(filepath.Join(release, commit)))
@@ -222,8 +216,15 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	assert.Nil(t, got.Approval)
 	require.NotNil(t, got.UnverifiedApproval)
 	assert.Equal(t, approved.Approval, got.UnverifiedApproval.Approval)
-	assert.Contains(t, got.UnverifiedApproval.Reason, "could not report its current inputs")
+	assert.Contains(t, got.UnverifiedApproval.Reason, "because the release binaries could not be read")
 	assert.NotContains(t, got.UnverifiedApproval.Reason, release)
+
+	_, err = cp.ApproveMerge(alice, &gensurla.ApproveMergePayload{
+		ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: commit, ReportDigest: report.digest,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "publish the binaries the run built to <release_dir>/"+commit+"/, or remove the promotion settings")
+	assert.NotContains(t, err.Error(), release)
 }
 
 // confirmedAnalysis returns the analysis these tests propose: the
@@ -248,8 +249,7 @@ func newReleaseTarget(t *testing.T, release, reports string) controlplane.Promot
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "promotion.json")
-	content := `{"release_dir":"` + release + `","suite_id":"orders","suite_commit":"` +
-		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
+	content := `{"release_dir":"` + release + `","binaries":["orders","orders-worker"]}`
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	target, err := storedPromotionTarget(t, path)
 	require.NoError(t, err)

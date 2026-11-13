@@ -53,9 +53,10 @@ const (
 // requirement on an existing card uses revise_change.
 //
 // An unchanged submission returns the saved card the same way get_change
-// does: with its approval in Approval only while that approval still matches
-// the promotion target's current inputs, or in UnverifiedApproval when current
-// promotion inputs cannot be verified.
+// does: with its approval in Approval only while its suite_commit is still the
+// tests' commit chosen for this revision and its binary digests still match
+// the promotion target's current binaries, or in UnverifiedApproval when
+// current binaries cannot be verified.
 func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {

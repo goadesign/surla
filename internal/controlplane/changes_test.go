@@ -116,20 +116,62 @@ func TestListChangesRecordsWhyARunCouldNotBeRead(t *testing.T) {
 }
 
 // TestListChangesSaysWhetherApprovalIsAvailable lists the same empty project
-// with no promotion target, a bound one, and a resolver that fails: only a
-// bound target makes approval available, the fact is part of the version,
-// and a failing resolver keeps the list working while its span records why.
+// across verification and promotion configurations: approval is available
+// whenever verification or a promotion target is configured and the resolver
+// does not fail, the fact is part of the version, and a failing resolver
+// keeps the list working while its span records why.
 func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
-	bound := &pageTarget{inputs: PromotionInputs{SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40), Environment: "sim"}}
+	ws := t.TempDir()
+	bound := &pageTarget{artifacts: map[string]string{"orders": strings.Repeat("a", 64)}}
 	unreadable := errors.New("read /private/operator/promotion.json: permission denied")
 	cases := []struct {
 		name      string
-		resolve   func(context.Context, string) (PromotionTarget, error)
+		opts      func(*testing.T) Options
 		available bool
+		wantErr   error
 	}{
-		{name: "no promotion target", available: false},
-		{name: "bound promotion target", resolve: bound.resolve, available: true},
-		{name: "resolver fails", resolve: func(context.Context, string) (PromotionTarget, error) { return nil, unreadable }, available: false},
+		{
+			name:      "neither verification nor promotion target",
+			opts:      func(*testing.T) Options { return Options{WorkspaceDir: ws} },
+			available: false,
+		},
+		{
+			name: "stored verification without promotion target",
+			opts: func(t *testing.T) Options {
+				return Options{WorkspaceDir: ws, Verification: verificationConfig(t)}
+			},
+			available: true,
+		},
+		{
+			name: "written test runs without promotion target",
+			opts: func(t *testing.T) Options {
+				return Options{
+					WorkspaceDir:    ws,
+					RunsDir:         t.TempDir(),
+					WrittenTestRuns: &WrittenTestRuns{ReportDir: t.TempDir(), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
+				}
+			},
+			available: true,
+		},
+		{
+			name: "bound promotion target",
+			opts: func(*testing.T) Options {
+				return Options{WorkspaceDir: ws, ResolvePromotionTarget: bound.resolve}
+			},
+			available: true,
+		},
+		{
+			name: "resolver fails",
+			opts: func(t *testing.T) Options {
+				return Options{
+					WorkspaceDir:           ws,
+					Verification:           verificationConfig(t),
+					ResolvePromotionTarget: func(context.Context, string) (PromotionTarget, error) { return nil, unreadable },
+				}
+			},
+			available: false,
+			wantErr:   unreadable,
+		},
 	}
 	versions := map[bool]string{}
 	for _, tc := range cases {
@@ -137,7 +179,9 @@ func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
 			exporter := tracetest.NewInMemoryExporter()
 			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-			cp := newControlPlane(t, Options{TracerProvider: provider, ResolvePromotionTarget: tc.resolve})
+			opts := tc.opts(t)
+			opts.TracerProvider = provider
+			cp := newControlPlane(t, opts)
 			alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "guide", Kind: CallerGuide})
 			list, err := cp.ListChanges(alice)
 			require.NoError(t, err, "the list works whatever the promotion target's state")
@@ -148,14 +192,14 @@ func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
 			versions[tc.available] = list.Version
 			spans := exporter.GetSpans().Snapshots()
 			require.Len(t, spans, 1)
-			if tc.resolve == nil || tc.available {
+			if tc.wantErr == nil {
 				assert.NotEqual(t, codes.Error, spans[0].Status().Code)
 				assert.Empty(t, spans[0].Events())
 				return
 			}
 			assert.Equal(t, codes.Error, spans[0].Status().Code, "a failing resolver is recorded as an error")
 			require.Len(t, spans[0].Events(), 1)
-			assert.Contains(t, spans[0].Events()[0].Attributes, attribute.String("exception.message", unreadable.Error()))
+			assert.Contains(t, spans[0].Events()[0].Attributes, attribute.String("exception.message", tc.wantErr.Error()))
 		})
 	}
 	assert.NotEqual(t, versions[true], versions[false], "availability is part of the list's version")
@@ -340,11 +384,11 @@ func TestWaitForChangesIsTracedButNotSaved(t *testing.T) {
 // approval is available, with no promotion setting or path in the answer,
 // and only the user's browser session may wait for them.
 func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
-	inputs := PromotionInputs{
+	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
 	}
-	target := &pageTarget{inputs: inputs}
+	target := &pageTarget{artifacts: spec.Artifacts}
 	cp := newControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
 	cp.changesWait = 20 * time.Millisecond
 	auth := fixtureCredentials(map[string]Principal{
@@ -412,7 +456,7 @@ func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
 				require.NoError(t, json.Unmarshal(body, &fields))
 				assert.Equal(t, true, fields["approval_available"], "every caller allowed to list sees whether approval is available")
 				assert.ElementsMatch(t, []string{"changes", "version", "approval_available"}, slices.Collect(maps.Keys(fields)))
-				for _, private := range []string{inputs.SuiteID, inputs.SuiteCommit, inputs.Environment, inputs.Artifacts["orders"], cp.cards.dir} {
+				for _, private := range []string{spec.SuiteID, spec.SuiteCommit, spec.Environment, spec.Artifacts["orders"], cp.cards.dir} {
 					assert.NotContains(t, string(body), private, "the list reveals no promotion setting or path")
 				}
 			}
@@ -440,11 +484,11 @@ func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
 // under runsDir, with its report, as a verify-run supervisor leaves it.
 func writeListedRun(t *testing.T, runsDir, owner string, card *gensurla.ChangeCardResult, runID string, accepted time.Time, passed bool) {
 	t.Helper()
-	inputs := PromotionInputs{SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40), Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)}}
+	spec := reportSpec{SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40), Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)}}
 	commit := strings.Repeat("1", 40)
-	report := failingReport(t, card.RequestRevision, commit, inputs)
+	report := failingReport(t, card.RequestRevision, commit, spec)
 	if passed {
-		report = passingReport(t, card.RequestRevision, commit, inputs)
+		report = passingReport(t, card.RequestRevision, commit, spec)
 	}
 	reportDir := filepath.Join(runsDir, "reports")
 	require.NoError(t, os.MkdirAll(reportDir, 0o700))
@@ -456,7 +500,7 @@ func writeListedRun(t *testing.T, runsDir, owner string, card *gensurla.ChangeCa
 	req, err := json.Marshal(verifyrun.Request{
 		RunID: runID, Owner: owner, ChangeID: card.ChangeID, AcceptedAt: accepted,
 		Plan: verify.Plan{
-			CandidateCommit: commit, RequestRevision: card.RequestRevision, SuiteCommit: inputs.SuiteCommit, ReportDir: reportDir,
+			CandidateCommit: commit, RequestRevision: card.RequestRevision, SuiteCommit: spec.SuiteCommit, ReportDir: reportDir,
 			Tests: verify.TestsEvaluator,
 		},
 	})

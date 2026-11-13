@@ -145,12 +145,14 @@ page.close();
 // reads the approved one again as the promotion target's inputs change,
 // fail, disappear and return, checking each of the five approval states.
 func TestCheckpointUIApprovalStates(t *testing.T) {
-	inputs := PromotionInputs{
+	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("3", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("b", 64)},
 	}
-	target := &pageTarget{inputs: inputs}
-	cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
+	cfg := verificationConfig(t)
+	cfg.Plan.SuiteCommit = spec.SuiteCommit
+	target := &pageTarget{artifacts: spec.Artifacts}
+	cp := pageControlPlane(t, Options{Verification: cfg, ResolvePromotionTarget: target.resolve})
 	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
 	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
 	confirm := func(changeID string) *gensurla.ChangeCardResult {
@@ -164,7 +166,7 @@ func TestCheckpointUIApprovalStates(t *testing.T) {
 	confirm("chg-unapproved")
 	approved := confirm("chg-approved")
 	const commit = "2222222222222222222222222222222222222222"
-	report := passingReport(t, approved.RequestRevision, commit, inputs)
+	report := passingReport(t, approved.RequestRevision, commit, spec)
 	target.update(func(p *pageTarget) { p.report = report })
 	_, err := cp.ApproveMerge(user, &gensurla.ApproveMergePayload{
 		ChangeID: approved.ChangeID, RequestRevision: approved.RequestRevision, CandidateCommit: commit, ReportDigest: report.Digest,
@@ -173,17 +175,17 @@ func TestCheckpointUIApprovalStates(t *testing.T) {
 	ps := startPageServer(t, cp)
 	ps.act("inputs-changed", func() {
 		target.update(func(p *pageTarget) {
-			p.inputs = PromotionInputs{SuiteID: inputs.SuiteID, SuiteCommit: inputs.SuiteCommit, Environment: inputs.Environment, Artifacts: map[string]string{"orders": strings.Repeat("c", 64)}}
+			p.artifacts = map[string]string{"orders": strings.Repeat("c", 64)}
 		})
 	})
 	ps.act("inputs-unreadable", func() {
 		target.update(func(p *pageTarget) {
-			p.inputs = inputs
-			p.inputsErr = errors.New("open /var/lib/surla/releases/orders: no such file or directory")
+			p.artifacts = spec.Artifacts
+			p.artifactsErr = errors.New("open /var/lib/surla/releases/orders: no such file or directory")
 		})
 	})
 	ps.act("absent", func() { target.update(func(p *pageTarget) { p.absent = true }) })
-	ps.act("restored", func() { target.update(func(p *pageTarget) { p.absent, p.inputsErr = false, nil }) })
+	ps.act("restored", func() { target.update(func(p *pageTarget) { p.absent, p.artifactsErr = false, nil }) })
 	runPageScript(t, ps, nil, `
 const page = await openPage(origin, { link: input.link });
 const editor = () => page.$("#surla-cp1-editor");

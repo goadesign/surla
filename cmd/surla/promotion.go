@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -27,12 +26,6 @@ type (
 		// ReleaseDir holds one directory per candidate commit, each holding
 		// the binaries to deploy for that commit.
 		ReleaseDir string `json:"release_dir"`
-		// SuiteID is the evaluator suite a promotion requires.
-		SuiteID string `json:"suite_id"`
-		// SuiteCommit is the evaluator suite commit a promotion requires.
-		SuiteCommit string `json:"suite_commit"`
-		// Environment is the dependency profile a promotion requires.
-		Environment string `json:"environment"`
 		// Binaries names the binaries every release directory must hold.
 		Binaries []string `json:"binaries"`
 	}
@@ -51,41 +44,61 @@ type (
 	}
 )
 
-// CurrentInputs returns the required suite and environment and the SHA-256
-// digest of each configured binary in <release_dir>/<candidateCommit>/. It
-// opens that directory once and reads every binary through it, so the
-// digests come from one directory even if the operator publishes a
-// replacement meanwhile; a later replacement makes this answer stale, as any
-// answer can become. candidateCommit must be a full commit ID, since it names
-// a directory here; it comes from approve_merge's payload or from a saved
-// approval. A missing, unreadable or non-regular binary fails the call.
-func (t *releaseTarget) CurrentInputs(_ context.Context, candidateCommit string) (controlplane.PromotionInputs, error) {
+// publishReleaseBinariesStep tells the user how to recover when a configured
+// promotion target's release directory or binary cannot be read.
+const publishReleaseBinariesStep = "publish the binaries the run built to <release_dir>/%s/, or remove the promotion settings"
+
+// CurrentArtifacts returns the SHA-256 digest of each configured binary in
+// <release_dir>/<candidateCommit>/. It opens that directory once and reads
+// every binary through it, so the digests come from one directory even if the
+// operator publishes a replacement meanwhile; a later replacement makes this
+// answer stale, as any answer can become. candidateCommit must be a full commit
+// ID, since it names a directory here; it comes from approve_merge's payload or
+// from a saved approval. A missing, unreadable or non-regular binary fails the
+// call with a path-free error naming the recovery step.
+func (t *releaseTarget) CurrentArtifacts(_ context.Context, candidateCommit string) (map[string]string, error) {
 	if !verify.IsCommitID(candidateCommit) {
-		return controlplane.PromotionInputs{}, fmt.Errorf("candidate commit %q is not a full commit ID", candidateCommit)
+		return nil, fmt.Errorf("candidate commit %q is not a full commit ID", candidateCommit)
 	}
 	dir := filepath.Join(t.cfg.ReleaseDir, candidateCommit)
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return controlplane.PromotionInputs{}, fmt.Errorf("open release directory for commit %s: %w", candidateCommit, err)
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
+		return nil, fmt.Errorf(
+			"open release directory for commit %s: %w: "+publishReleaseBinariesStep,
+			candidateCommit,
+			err,
+			candidateCommit,
+		)
 	}
 	artifacts := make(map[string]string, len(t.cfg.Binaries))
 	for _, name := range t.cfg.Binaries {
 		digest, err := hashFile(root, name)
 		if err != nil {
-			return controlplane.PromotionInputs{}, errors.Join(
-				fmt.Errorf("read release binary %s for commit %s: %w", name, candidateCommit, err), root.Close())
+			return nil, errors.Join(
+				fmt.Errorf(
+					"read release binary %s for commit %s: %w: "+publishReleaseBinariesStep,
+					name,
+					candidateCommit,
+					err,
+					candidateCommit,
+				),
+				root.Close(),
+			)
 		}
 		artifacts[name] = digest
 	}
 	if err := root.Close(); err != nil {
-		return controlplane.PromotionInputs{}, fmt.Errorf("close release directory for commit %s: %w", candidateCommit, err)
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
+		return nil, fmt.Errorf("close release directory for commit %s: %w", candidateCommit, err)
 	}
-	return controlplane.PromotionInputs{
-		SuiteID:     t.cfg.SuiteID,
-		SuiteCommit: t.cfg.SuiteCommit,
-		Environment: t.cfg.Environment,
-		Artifacts:   artifacts,
-	}, nil
+	return artifacts, nil
 }
 
 // LoadReport returns the full report the evaluator saved under digest in

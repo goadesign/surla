@@ -1329,7 +1329,7 @@ var (
 var approveMergePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Identifies the confirmed Change Card revision, the candidate commit being promoted, and the evaluator-written verification report to check. The report itself and the expected suite, environment and binary digests come from the control plane's promotion target, never from the caller.",
+		Description: "Identifies the confirmed Change Card revision, the candidate commit being promoted, and the verification report to check. Which tests' commit the report must have run comes from the project's stored verification settings or the tests Surla accepted for the revision's build, and the report itself and the measured candidate binary digests come from the control plane's promotion target, never from the caller.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -1670,7 +1670,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -1690,37 +1690,94 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
 		JSONType:    "object",
-		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+		Description: "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
@@ -1745,37 +1802,94 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
-		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+		Description: "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
@@ -2525,7 +2639,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -2545,37 +2659,94 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
 		JSONType:    "object",
-		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+		Description: "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
@@ -2600,37 +2771,94 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
-		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+		Description: "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
@@ -3267,7 +3495,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -3287,37 +3515,94 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
 		JSONType:    "object",
-		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+		Description: "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
@@ -3342,37 +3627,94 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
-		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+		Description: "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
@@ -4695,7 +5037,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -4715,37 +5057,94 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
 		JSONType:    "object",
-		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+		Description: "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
@@ -4770,37 +5169,94 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
-		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+		Description: "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
@@ -6646,7 +7102,7 @@ var listChangesResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval_available")},
 		JSONType:    "boolean",
-		Description: "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+		Description: "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.",
 	},
 }
 var listTestWriterAssignmentsPayloadFields = []tools.FieldMetadata{
@@ -8106,7 +8562,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -8126,37 +8582,94 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
 		JSONType:    "object",
-		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+		Description: "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
@@ -8181,37 +8694,94 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
-		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+		Description: "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
@@ -9433,7 +10003,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -9453,37 +10023,94 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
 		JSONType:    "object",
-		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+		Description: "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
@@ -9508,37 +10135,94 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
 		JSONType:    "string",
-		Description: "Evaluator suite the promotion target requires.",
+		Description: "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Evaluator suite commit the promotion target requires.",
+		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
 		JSONType:    "string",
-		Description: "Dependency profile the promotion target requires, such as sim.",
+		Description: "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
 		JSONType:    "object",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
-		Description: "Number of declared evaluator scenarios, every one of which passed.",
+		Description: "Number of declared scenarios in the report, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"evaluator",
+			"written_tests",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the operator's evaluator: the one stored with surla verification set, or the one named on surla verify's command line.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "evaluator",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source")},
+		JSONType:    "object",
+		Description: "The run used the tests Surla accepted for the change's build, which a separate agent on this machine wrote.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("notice")},
+		JSONType:    "string",
+		Description: "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("test_source"), tools.FixedField("source")},
+				Value:         "written_tests",
+			},
+		},
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
-		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+		Description: "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision")},
@@ -17283,7 +17967,7 @@ func validateStopLiveTargetPayloadJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	return validateStopLiveTargetPayloadJSONValue("", root, "")
+	return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue("", root, "")
 }
 
 // validateStopLiveTargetResultJSON parses one JSON document and checks the exact value
@@ -18095,7 +18779,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "approval":
 			if err := validateProposeChangeResultApprovalItemTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+				typed[key], "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 			); err != nil {
 				return err
 			}
@@ -18179,7 +18863,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "unverified_approval":
 			if err := validateProposeChangeResultUnverifiedApprovalItemTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+				typed[key], "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 			); err != nil {
 				return err
 			}
@@ -18341,7 +19025,7 @@ func validateProposeChangeResultApprovalItemTransportJSONValue(path string, valu
 		case "artifacts":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+				typed[key], "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 			); err != nil {
 				return err
 			}
@@ -18355,7 +19039,7 @@ func validateProposeChangeResultApprovalItemTransportJSONValue(path string, valu
 		case "environment":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Dependency profile the promotion target requires, such as sim.",
+				typed[key], "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 			); err != nil {
 				return err
 			}
@@ -18369,21 +19053,28 @@ func validateProposeChangeResultApprovalItemTransportJSONValue(path string, valu
 		case "scenario_count":
 			if err := validateIntJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Number of declared evaluator scenarios, every one of which passed.",
+				typed[key], "Number of declared scenarios in the report, every one of which passed.",
 			); err != nil {
 				return err
 			}
 		case "suite_commit":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Evaluator suite commit the promotion target requires.",
+				typed[key], "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 			); err != nil {
 				return err
 			}
 		case "suite_id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Evaluator suite the promotion target requires.",
+				typed[key], "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
+			); err != nil {
+				return err
+			}
+		case "test_source":
+			if err := validateProposeChangeResultApprovalItemTransportTestSourceJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
 			); err != nil {
 				return err
 			}
@@ -18397,6 +19088,7 @@ func validateProposeChangeResultApprovalItemTransportJSONValue(path string, valu
 				"scenario_count",
 				"suite_commit",
 				"suite_id",
+				"test_source",
 			})
 		}
 	}
@@ -18418,6 +19110,111 @@ func validateIntJSONValue(path string, value any, description string) error {
 	}
 	if _, err := strconv.ParseInt(typed.String(), 10, strconv.IntSize); err != nil {
 		return invalidGeneratedFieldTypeError(field, "integer", "number", description)
+	}
+	return nil
+}
+
+// validateProposeChangeResultApprovalItemTransportTestSourceJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangeResultApprovalItemTransportTestSourceJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	rawDiscriminator, discriminatorPresent := typed["source"]
+	discriminator, ok := rawDiscriminator.(string)
+	if !ok {
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "source", false), rawDiscriminator, discriminatorPresent, []string{"evaluator", "written_tests"})
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "source" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "evaluator":
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
+	case "written_tests":
+		return validateProposeChangeResultAgentWrittenTestsTransportJSONValue(path, branch, "")
+	default:
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "source", false), discriminator, true, []string{"evaluator", "written_tests"})
+	}
+}
+
+// validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateProposeChangeResultAgentWrittenTestsTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangeResultAgentWrittenTestsTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+			); err != nil {
+				return err
+			}
+		case "notice":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+				"notice",
+			})
+		}
 	}
 	return nil
 }
@@ -19148,7 +19945,7 @@ func validateProposeChangeResultUnverifiedApprovalItemTransportJSONValue(path st
 		case "reason":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+				typed[key], "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 			); err != nil {
 				return err
 			}
@@ -20374,33 +21171,6 @@ func validateStartLiveTargetResultJSONValue(path string, value any, description 
 	return nil
 }
 
-// validateStopLiveTargetPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStopLiveTargetPayloadJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		default:
-			return unknownJSONFieldError(path, key, []string{})
-		}
-	}
-	return nil
-}
-
 // validateStopLiveTargetResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateStopLiveTargetResultJSONValue(path string, value any, description string) error {
 	field := path
@@ -20507,7 +21277,7 @@ func validateGetLiveTargetResultRootLiveTargetJSONValue(path string, value any, 
 	}
 	switch discriminator {
 	case "none":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "starting":
 		return validateGetLiveTargetResultLiveTargetStartingTransportJSONValue(path, branch, "")
 	case "running":
@@ -20865,7 +21635,7 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 				return err
 			}
 		case "test_source":
-			if err := validateVerifyChangeResultRootTestSourceJSONValue(
+			if err := validateProposeChangeResultApprovalItemTransportTestSourceJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
 			); err != nil {
@@ -21356,84 +22126,6 @@ func validateVerifyChangeResultVerificationNotCompletedTransportJSONValue(path s
 				"kind",
 				"stage",
 				"summary",
-			})
-		}
-	}
-	return nil
-}
-
-// validateVerifyChangeResultRootTestSourceJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateVerifyChangeResultRootTestSourceJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	rawDiscriminator, discriminatorPresent := typed["source"]
-	discriminator, ok := rawDiscriminator.(string)
-	if !ok {
-		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "source", false), rawDiscriminator, discriminatorPresent, []string{"evaluator", "written_tests"})
-	}
-	branch := make(map[string]any, len(typed)-1)
-	for key, item := range typed {
-		if key != "source" {
-			branch[key] = item
-		}
-	}
-	switch discriminator {
-	case "evaluator":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
-	case "written_tests":
-		return validateVerifyChangeResultAgentWrittenTestsTransportJSONValue(path, branch, "")
-	default:
-		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "source", false), discriminator, true, []string{"evaluator", "written_tests"})
-	}
-}
-
-// validateVerifyChangeResultAgentWrittenTestsTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateVerifyChangeResultAgentWrittenTestsTransportJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "commit":
-			if err := validateStringJSONValue(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Commit Surla recorded the accepted tests at; the same as suite_commit.",
-			); err != nil {
-				return err
-			}
-		case "notice":
-			if err := validateStringJSONValue(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"commit",
-				"notice",
 			})
 		}
 	}
@@ -22662,7 +23354,7 @@ func validateListChangesResultJSONValue(path string, value any, description stri
 		case "approval_available":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+				typed[key], "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.",
 			); err != nil {
 				return err
 			}
@@ -22921,7 +23613,7 @@ func validateGetBuildResultRootBuildJSONValue(path string, value any, descriptio
 	}
 	switch discriminator {
 	case "not_started":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "started":
 		return validateGetBuildResultStartedBuildTransportJSONValue(path, branch, "")
 	default:
@@ -23119,11 +23811,11 @@ func validateGetBuildResultTestWriterProgressTransportTestsJSONValue(path string
 	}
 	switch discriminator {
 	case "not_used":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "assigned":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "reported":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "needs_changes":
 		return validateGetBuildResultTestsNeedChangesTransportJSONValue(path, branch, "")
 	case "accepted":
@@ -23437,9 +24129,9 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportWrittenTestsJ
 	}
 	switch discriminator {
 	case "not_used":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "not_yet_accepted":
-		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+		return validateProposeChangeResultOperatorEvaluatorTestsTransportJSONValue(path, branch, "")
 	case "accepted":
 		return validateGetBuildResultTestsAcceptedTransportJSONValue(path, branch, "")
 	default:
@@ -24138,6 +24830,39 @@ func decodeApprovalItemTransportToApprovalItem(v *toolhttp.ApprovalItemTransport
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *OperatorEvaluatorTests
+		if actual != nil {
+			obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *AgentWrittenTests
+		if actual != nil {
+			obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*AgentWrittenTests)(obj))
+		res.TestSource = u
+	}
+
+	return res
+}
+func decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(v *toolhttp.OperatorEvaluatorTestsTransport) *OperatorEvaluatorTests {
+	res := &OperatorEvaluatorTests{}
+
+	return res
+}
+func decodeAgentWrittenTestsTransportToAgentWrittenTests(v *toolhttp.AgentWrittenTestsTransport) *AgentWrittenTests {
+	res := &AgentWrittenTests{
+		Commit: *v.Commit,
+		Notice: *v.Notice,
+	}
 
 	return res
 }
@@ -24334,6 +25059,41 @@ func encodeApprovalItemToApprovalItemTransport(v *ApprovalItem) *toolhttp.Approv
 		tk := key
 		tv := val
 		res.Artifacts[tk] = tv
+	}
+	var testSourceValue toolhttp.ApprovalTestSource
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *toolhttp.OperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*toolhttp.OperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *toolhttp.AgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*toolhttp.AgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
+
+	return res
+}
+func encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(v *OperatorEvaluatorTests) *toolhttp.OperatorEvaluatorTestsTransport {
+	res := &toolhttp.OperatorEvaluatorTestsTransport{}
+
+	return res
+}
+func encodeAgentWrittenTestsToAgentWrittenTestsTransport(v *AgentWrittenTests) *toolhttp.AgentWrittenTestsTransport {
+	res := &toolhttp.AgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
 	}
 
 	return res
@@ -24800,19 +25560,6 @@ func encodeRequiredTestToRequiredTestTransport(v *RequiredTest) *toolhttp.Requir
 
 	return res
 }
-func decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(v *toolhttp.OperatorEvaluatorTestsTransport) *OperatorEvaluatorTests {
-	res := &OperatorEvaluatorTests{}
-
-	return res
-}
-func decodeAgentWrittenTestsTransportToAgentWrittenTests(v *toolhttp.AgentWrittenTestsTransport) *AgentWrittenTests {
-	res := &AgentWrittenTests{
-		Commit: *v.Commit,
-		Notice: *v.Notice,
-	}
-
-	return res
-}
 func decodeVerificationRunningTransportToVerificationRunning(v *toolhttp.VerificationRunningTransport) *VerificationRunning {
 	res := &VerificationRunning{
 		StartedAt: *v.StartedAt,
@@ -24891,19 +25638,6 @@ func decodeVerificationNotCompletedTransportToVerificationNotCompleted(v *toolht
 		Kind:    *v.Kind,
 		Stage:   *v.Stage,
 		Summary: *v.Summary,
-	}
-
-	return res
-}
-func encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(v *OperatorEvaluatorTests) *toolhttp.OperatorEvaluatorTestsTransport {
-	res := &toolhttp.OperatorEvaluatorTestsTransport{}
-
-	return res
-}
-func encodeAgentWrittenTestsToAgentWrittenTestsTransport(v *AgentWrittenTests) *toolhttp.AgentWrittenTestsTransport {
-	res := &toolhttp.AgentWrittenTestsTransport{
-		Commit: &v.Commit,
-		Notice: &v.Notice,
 	}
 
 	return res

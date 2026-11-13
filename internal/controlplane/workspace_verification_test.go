@@ -210,7 +210,7 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 		{
 			name: "tests not accepted", build: assigned, candidate: repo.candidate,
 			refusal: "tests_not_accepted", reason: "the tests of this build are not accepted; their state is assigned",
-			step: "the test writer writes the required tests and reports them finished; verify again once Surla accepts them",
+			step: "the test writer writes the required tests and reports them finished; the builder verifies again once Surla accepts them",
 		},
 		{
 			name: "unknown candidate commit", build: accepted, tests: repo.tests, candidate: unknown,
@@ -361,11 +361,11 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 	}{
 		{
 			name: "reported", tw: testWriterAssignment{State: testsReported, Findings: []string{}},
-			want: "reported: Surla is checking the test writer's report; verify again after its verdict",
+			want: "reported: Surla is checking the test writer's report; the builder verifies again after its verdict",
 		},
 		{
 			name: "needs changes", tw: testWriterAssignment{State: testsNeedChanges, Findings: []string{"refund_over_limit is missing"}, CheckedAt: time.Now()},
-			want: "needs changes: the test writer fixes Surla's findings and reports again; verify again once Surla accepts them",
+			want: "needs changes: the test writer fixes Surla's findings and reports again; the builder verifies again once Surla accepts them",
 		},
 		{
 			name: "could not run", tw: testWriterAssignment{

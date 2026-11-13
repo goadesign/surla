@@ -32,6 +32,7 @@ export interface ApprovalItem {
   scenario_count: number;
   suite_commit: string;
   suite_id: string;
+  test_source: ({ "source": "evaluator" } | { "commit": string; "notice": string; "source": "written_tests" });
 }
 
 export interface ApproveMergePayload {
@@ -757,7 +758,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "suite_commit",
       "environment",
       "artifacts",
-      "scenario_count"
+      "scenario_count",
+      "test_source"
     ],
     "properties": {
       "approved_by": {
@@ -786,6 +788,49 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       },
       "suite_id": {
         "type": "string"
+      },
+      "test_source": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "evaluator"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "notice",
+              "source"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "notice": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "written_tests"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "additionalProperties": false

@@ -1565,6 +1565,26 @@ func ValidateApprovalItemTransport(body *ApprovalItemTransport) (err error) {
 	if body.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
 	return
 }
 
