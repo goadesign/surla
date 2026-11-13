@@ -4,6 +4,7 @@ package project
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,10 @@ type (
 // is independent of a build's working-copy and generation phase.
 const teamStartTimeout = 45 * time.Second
 
+// errRoleFolder marks a roster failure caused by a role's working folder rather
+// than the project's private state, so the team failure names that folder's step.
+var errRoleFolder = errors.New("role working folder cannot be used")
+
 // EnsureTeam accepts management authority once, then completes bounded server-owned work.
 // A disconnected caller can repeat the operation; saved identity and space adoption avoid duplication.
 func (s *Server) EnsureTeam(ctx context.Context) (*genproject.ProjectTeam, error) {
@@ -156,13 +161,13 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 		}
 	}()
 	if err := ctx.Err(); err != nil {
-		return nil, teamUnavailable(ctx, "lifetime")
+		return nil, teamUnavailable(ctx, "lifetime", "stopping")
 	}
 	host := s.team.dependencies.Host
 	// Observe dialogs before any space creation or focus change: opening the launcher is a toggle.
 	overlays, err := host.Overlays(ctx)
 	if err != nil {
-		return nil, teamUnavailable(ctx, "overlays")
+		return nil, teamUnavailable(ctx, "overlays", "herdr")
 	}
 	launcherOpen := false
 	for _, overlay := range overlays {
@@ -181,7 +186,7 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 	}
 	spaces, err := host.Spaces(ctx)
 	if err != nil {
-		return nil, teamUnavailable(ctx, "spaces")
+		return nil, teamUnavailable(ctx, "spaces", "herdr")
 	}
 	var space TeamSpace
 	for _, candidate := range spaces {
@@ -209,18 +214,18 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 			}
 			space, err = host.CreateSpace(ctx, team, record.Directory)
 			if err != nil {
-				return nil, teamUnavailable(ctx, "create_space")
+				return nil, teamUnavailable(ctx, "create_space", "herdr")
 			}
 		}
 	}
 	if !safeSpaceID(space.ID) {
-		return nil, teamUnavailable(ctx, "space_identity")
+		return nil, teamUnavailable(ctx, "space_identity", "herdr")
 	}
 	// Keep the old identity until its roster is removed; deterministic adoption recovers a lost reply.
 	if record.Space != "" && record.Space != space.ID {
 		err = os.Remove(filepath.Join(s.team.dependencies.RosterDirectory, record.Space+".json"))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, teamUnavailable(ctx, "remove_roster")
+			return nil, teamUnavailable(ctx, "remove_roster", "roster_folder")
 		}
 	}
 	s.state.mu.Lock()
@@ -233,10 +238,10 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 	}
 	s.state.mu.Unlock()
 	if err != nil {
-		return nil, teamUnavailable(ctx, "save_team")
+		return nil, teamUnavailable(ctx, "save_team", "project_state")
 	}
 	if _, err := s.registerAgent(teamName("guide", record.ID), agentRecord{Role: "guide", Folder: record.Directory}); err != nil {
-		return nil, teamUnavailable(ctx, "register_guide")
+		return nil, teamUnavailable(ctx, "register_guide", "project_state")
 	}
 	// Snapshot after admission: every registered actor survives this operation.
 	s.state.mu.Lock()
@@ -247,14 +252,17 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 	s.state.mu.Unlock()
 	roles := registeredTeamRoles(agents)
 	roster, err := s.teamRoster(roles)
+	if errors.Is(err, errRoleFolder) {
+		return nil, teamUnavailable(ctx, "roster", "role_folder")
+	}
 	if err != nil {
-		return nil, teamUnavailable(ctx, "roster")
+		return nil, teamUnavailable(ctx, "roster", "project_state")
 	}
 	if err := os.MkdirAll(s.team.dependencies.RosterDirectory, 0o700); err != nil {
-		return nil, teamUnavailable(ctx, "roster_directory")
+		return nil, teamUnavailable(ctx, "roster_directory", "roster_folder")
 	}
 	if err := writeJSON(filepath.Join(s.team.dependencies.RosterDirectory, space.ID+".json"), roster); err != nil {
-		return nil, teamUnavailable(ctx, "write_roster")
+		return nil, teamUnavailable(ctx, "write_roster", "roster_folder")
 	}
 	handles := make([]string, 0, len(agents))
 	for handle := range agents {
@@ -262,7 +270,7 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 	}
 	terminals, err := host.Terminals(ctx, record.Directory, space.ID, handles)
 	if err != nil {
-		return nil, teamUnavailable(ctx, "terminals")
+		return nil, teamUnavailable(ctx, "terminals", "herdr")
 	}
 	runningHandles := map[string]bool{}
 	for _, terminal := range terminals {
@@ -296,10 +304,10 @@ func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam
 		return result, nil
 	}
 	if err := host.Focus(ctx, space); err != nil {
-		return nil, teamUnavailable(ctx, "focus")
+		return nil, teamUnavailable(ctx, "focus", "herdr")
 	}
 	if err := host.OpenLauncher(ctx); err != nil {
-		return nil, teamUnavailable(ctx, "launcher")
+		return nil, teamUnavailable(ctx, "launcher", "herdr")
 	}
 	result.Dialog = "opened"
 	return result, nil
@@ -348,10 +356,10 @@ func (s *Server) teamRoster(roles []launcherRole) (launcherRoster, error) {
 			continue
 		}
 		if err != nil {
-			return launcherRoster{}, err
+			return launcherRoster{}, fmt.Errorf("%w: %w", errRoleFolder, err)
 		}
 		if !filepath.IsAbs(role.Folder) || !info.IsDir() {
-			return launcherRoster{}, errors.New("role folder must be an existing absolute directory")
+			return launcherRoster{}, fmt.Errorf("%w: it must be an existing absolute directory", errRoleFolder)
 		}
 		if _, err := readCredential(s.state.AgentFile(role.Handle)); err != nil {
 			return launcherRoster{}, err
@@ -368,7 +376,7 @@ func (s *Server) teamRoster(roles []launcherRole) (launcherRoster, error) {
 		roster.Roles = append(roster.Roles, role)
 	}
 	if len(roster.Roles) == 0 {
-		return launcherRoster{}, errors.New("no team working folder exists")
+		return launcherRoster{}, fmt.Errorf("%w: no team working folder exists", errRoleFolder)
 	}
 	return roster, nil
 }
@@ -449,13 +457,15 @@ func validTeamName(value string) bool {
 }
 
 // teamUnavailable records a fixed bounded failure without exporting private paths or command arguments.
-func teamUnavailable(ctx context.Context, step string) error {
+// The failed step stays on the span; the returned cause is one of the design's
+// TeamUnavailable values and selects the recovery step each caller shows.
+func teamUnavailable(ctx context.Context, step, cause string) error {
 	failure := errors.New("project team could not be prepared")
 	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("team.failed_step", step))
+	span.SetAttributes(attribute.String("team.failed_step", step), attribute.String("team.failed_cause", cause))
 	span.RecordError(failure)
 	span.SetStatus(codes.Error, "team start failed")
-	return genproject.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and run surla again"))
+	return &genproject.TeamUnavailable{Name: "team_unavailable", Cause: cause}
 }
 
 // teamNextStep owns the user's next action after preparing a team. The launcher

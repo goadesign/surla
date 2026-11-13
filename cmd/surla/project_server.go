@@ -77,7 +77,7 @@ func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
 		configRoot: os.UserConfigDir,
 		preflight: func() error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func productionProjectRuntime() projectRuntime {
 		},
 		teamDependencies: projectTeamDependencies,
 		startTeamPrograms: func(ctx context.Context) error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
 			if err != nil {
 				return err
 			}
@@ -168,34 +168,37 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		return err
 	}
 
-	if err := runtime.startTeamPrograms(context.Background()); err != nil {
-		return err
+	// Confirming and approving on the views page need no agent, so a team that cannot
+	// be prepared is reported after the page opens, and still fails the command.
+	teamErr := runtime.startTeamPrograms(context.Background())
+	if teamErr == nil {
+		teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
+		defer stopTeam()
+		team, err := client.EnsureTeam(teamCtx)
+		if err != nil {
+			teamErr = err
+		} else if _, err := fmt.Fprintf(stdout, "Team %s.\n%s\n", team.Team, team.Step); err != nil {
+			return err
+		}
 	}
-	teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
-	defer stopTeam()
-	team, err := client.EnsureTeam(teamCtx)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(stdout, "Team %s.\n%s\n", team.Team, team.Step)
-	if err != nil {
-		return err
+	if teamErr != nil {
+		teamErr = fmt.Errorf("the project team is not ready: %w", teamErr)
 	}
 
 	linkCtx, stopLink := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopLink()
 	link, err := client.BrowserLink(linkCtx)
 	if err != nil {
-		return err
+		return errors.Join(err, teamErr)
 	}
 	if err := validateProjectViewsLink(state, link.URL); err != nil {
-		return err
+		return errors.Join(err, teamErr)
 	}
 	if err := runtime.openViews(linkCtx, link.URL); err != nil {
-		return fmt.Errorf("open project views: %w", err)
+		return errors.Join(fmt.Errorf("open project views: %w", err), teamErr)
 	}
 	_, err = fmt.Fprintf(stdout, "Surla is running for %s at %s\n", state.Record.Directory, state.Origin())
-	return err
+	return errors.Join(err, teamErr)
 }
 
 // validateProjectViewsLink confines the browser opener to the project's exact views
@@ -243,7 +246,7 @@ func attachOrStartProject(
 		}
 		listener, err := net.Listen("tcp", state.Address())
 		if err != nil {
-			return nil, created, fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
+			return nil, created, takenPortError(state, err)
 		}
 		if err := listener.Close(); err != nil {
 			return nil, created, err
@@ -253,13 +256,48 @@ func attachOrStartProject(
 		}
 	}
 	client = projectClient(state)
-	if err := confirmProject(ctx, state, client); err != nil {
+	identity, err := confirmProject(ctx, state, client)
+	if err != nil {
 		if inUse {
 			return nil, created, fmt.Errorf("%s; no second server was started: %w", projectHolder(state), err)
 		}
 		return nil, created, fmt.Errorf("the project server in Herdr terminal %s did not start answering: %w", terminal, err)
 	}
+	if err := confirmBuild(identity); err != nil {
+		return nil, created, err
+	}
 	return client, created, nil
+}
+
+// takenPortError names what holds a stopped project's saved port and the step that frees it.
+// The holder is another project's server when a project sharing the port, saved before new
+// projects avoided each other's ports, holds its card store; otherwise it is another program.
+// The saved port is kept: agents' connections and the launcher roster name it.
+func takenPortError(state *project.State, listenErr error) error {
+	port := state.Record.Port
+	if !errors.Is(listenErr, syscall.EADDRINUSE) {
+		return fmt.Errorf("project port %d could not be used; no server was started: %w", port, listenErr)
+	}
+	sharing, err := state.ProjectsSharingPort()
+	var checkErrs []error
+	if err != nil {
+		checkErrs = append(checkErrs, err)
+	}
+	for _, other := range sharing {
+		inUse, err := controlplane.CardStoreInUse(other.CardsDir())
+		if err != nil {
+			checkErrs = append(checkErrs, err)
+			continue
+		}
+		if inUse {
+			return fmt.Errorf("project port %d is held by the Surla server of the project in %s, which saved the same port, so only one of the two can run at a time; no server was started; run surla stop in that folder, then run surla here", port, other.Record.Directory)
+		}
+	}
+	taken := fmt.Errorf("another program is listening on %s, the address saved for this project; no server was started; stop that program, then run surla (lsof -nP -iTCP:%d -sTCP:LISTEN names it)", state.Address(), port)
+	if len(checkErrs) > 0 {
+		return errors.Join(taken, fmt.Errorf("other Surla projects could not be checked for this port: %w", errors.Join(checkErrs...)))
+	}
+	return taken
 }
 
 // endedStartError explains a start whose owned terminal ended before the server answered.
@@ -404,7 +442,7 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 		return err
 	}
 	client := projectClient(state)
-	if err := confirmProject(ctx, state, client); err != nil {
+	if _, err := confirmProject(ctx, state, client); err != nil {
 		return fmt.Errorf("%s: %w", projectHolder(state), err)
 	}
 	if err := client.Stop(ctx); err != nil {
@@ -482,7 +520,7 @@ func (runtime projectRuntime) serve(stateDir string) (err error) {
 
 	listener, err := runtime.listen("tcp", state.Address())
 	if err != nil {
-		return fmt.Errorf("project port is occupied: %w", err)
+		return fmt.Errorf("project port %d is occupied: %w; stop the program listening on it, then run surla", state.Record.Port, err)
 	}
 	application := http.NewServeMux()
 	application.Handle("GET /views", controlplane.ViewsPage())
@@ -578,7 +616,7 @@ func teamManagementEndpoint(state *project.State) goa.Endpoint {
 	return func(ctx context.Context, payload any) (any, error) {
 		result, err := next(ctx, payload)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("project team request did not finish; check Herdr, then run surla again: %w", context.DeadlineExceeded)
+			return nil, fmt.Errorf("project team request did not finish because Herdr did not answer in time; open the Herdr app, then click Start agents on the views page: %w", context.DeadlineExceeded)
 		}
 		return result, err
 	}
@@ -619,13 +657,15 @@ func managementEndpoint(
 		if errors.As(err, &spaceConflict) {
 			return nil, fmt.Errorf("%d Herdr spaces match this project; close duplicate spaces and run surla again (HTTP %d)", spaceConflict.Count, doer.lastStatus)
 		}
+		var unavailable *genproject.TeamUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, fmt.Errorf("%s (HTTP %d)", teamUnavailableStep(state, unavailable.Cause), doer.lastStatus)
+		}
 		var serviceErr *goa.ServiceError
 		if errors.As(err, &serviceErr) {
 			switch serviceErr.Name {
 			case "window_busy":
 				return nil, fmt.Errorf("a dialog is open in Herdr; close it, then run surla again (HTTP %d)", doer.lastStatus)
-			case "team_unavailable":
-				return nil, fmt.Errorf("project team could not be prepared; check Herdr and run surla again (HTTP %d)", doer.lastStatus)
 			case "forbidden":
 				return nil, fmt.Errorf("project management operation is not permitted (HTTP %d); run surla again", doer.lastStatus)
 			case "unprocessable":
@@ -634,6 +674,26 @@ func managementEndpoint(
 		}
 		return nil, fmt.Errorf("project server response could not be used (HTTP %d); run surla again", doer.lastStatus)
 	}
+}
+
+// teamUnavailableStep is the CLI's fixed text for one declared team failure cause. It names
+// what could not be used and the step that repairs it; the retry is the views page's
+// Start agents, which reaches the same team operation, because the page opens regardless.
+func teamUnavailableStep(state *project.State, cause string) string {
+	const retry = "then click Start agents on the views page"
+	switch cause {
+	case "stopping":
+		return "the project server is stopping; run surla again"
+	case "herdr":
+		return "Herdr did not complete a team command; open the Herdr app, " + retry
+	case "roster_folder":
+		return "Herdr's launcher roster folder could not be written; make data/chorus-launcher/rosters in Herdr's app folder (~/.config/herdr-app unless HERDR_APP_HOME is set) writable by this account, " + retry
+	case "project_state":
+		return fmt.Sprintf("this project's private state in %s could not be read or written; make that folder and the folders in it private to this account (chmod 700) and its files too (chmod 600), %s", state.Dir, retry)
+	case "role_folder":
+		return fmt.Sprintf("a team role's working folder could not be read; make sure this account can open the project folder %s and its build working folders, %s", state.Record.Directory, retry)
+	}
+	return "project team could not be prepared; run surla again"
 }
 
 // projectHTTPClient keeps management requests off proxies and refuses redirects,
@@ -761,14 +821,33 @@ func waitForRunning(ctx context.Context, state *project.State) (project.Running,
 // errWrongProject ends attachment before any further management operation is sent.
 var errWrongProject = errors.New("the saved port answered for another project")
 
+// errOtherBuild refuses to attach to a server another surla build started, such as the
+// one still running after an upgrade: it would serve its own tools and page, and start
+// the new executable for its child processes. surla stop accepts any build.
+var errOtherBuild = errors.New("this project's server was started by another build of surla; run surla stop, then surla")
+
 // confirmProject verifies the typed identity before trusting a saved port's answering process.
-func confirmProject(ctx context.Context, state *project.State, client *genproject.Client) error {
+// It accepts a server of any build, so surla stop reaches one an earlier build started.
+func confirmProject(ctx context.Context, state *project.State, client *genproject.Client) (*genproject.ProjectIdentity, error) {
 	identity, err := client.Identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if identity.ProjectID != state.Record.ID || identity.Directory != state.Record.Directory || identity.Owner != state.Record.Owner {
+		return nil, errWrongProject
+	}
+	return identity, nil
+}
+
+// confirmBuild attaches only to a server started by this build; a server that reports no
+// build predates the field and is another build.
+func confirmBuild(identity *genproject.ProjectIdentity) error {
+	build, err := project.BuildIdentity()
 	if err != nil {
 		return err
 	}
-	if identity.ProjectID != state.Record.ID || identity.Directory != state.Record.Directory || identity.Owner != state.Record.Owner {
-		return errWrongProject
+	if identity.Build == nil || *identity.Build != build {
+		return errOtherBuild
 	}
 	return nil
 }

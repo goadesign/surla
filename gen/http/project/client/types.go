@@ -30,6 +30,11 @@ type IdentityResponseBody struct {
 	Directory *string `form:"directory,omitempty" json:"directory,omitempty" xml:"directory,omitempty"`
 	// Immutable operating-system account identity.
 	Owner *string `form:"owner,omitempty" json:"owner,omitempty" xml:"owner,omitempty"`
+	// SHA-256 of the surla executable the server started from, read when it
+	// started; it tells any two builds apart, including two local builds of one
+	// commit. The CLI attaches only to its own build. Servers built before this
+	// field omit it, and surla stop must still reach them, so it is not required.
+	Build *string `form:"build,omitempty" json:"build,omitempty" xml:"build,omitempty"`
 }
 
 // EnsureTeamResponseBody is the type of the "project" service "ensure_team"
@@ -125,24 +130,6 @@ type EnsureTeamAmbiguousSpaceResponseBody struct {
 	Count *int `form:"count,omitempty" json:"count,omitempty" xml:"count,omitempty"`
 }
 
-// EnsureTeamTeamUnavailableResponseBody is the type of the "project" service
-// "ensure_team" endpoint HTTP response body for the "team_unavailable" error.
-type EnsureTeamTeamUnavailableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
 // EnsureTeamForbiddenResponseBody is the type of the "project" service
 // "ensure_team" endpoint HTTP response body for the "forbidden" error.
 type EnsureTeamForbiddenResponseBody struct {
@@ -177,6 +164,19 @@ type EnsureTeamUnprocessableResponseBody struct {
 	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
 	// Is the error a server-side fault?
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// EnsureTeamTeamUnavailableResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "team_unavailable" error.
+type EnsureTeamTeamUnavailableResponseBody struct {
+	// Error name.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// What could not be used: stopping (the server is shutting down), herdr (a
+	// Herdr command failed), roster_folder (Herdr's launcher roster folder could
+	// not be written), project_state (the project's private record or an agent
+	// credential could not be read or written), or role_folder (a role's working
+	// folder could not be read).
+	Cause *string `form:"cause,omitempty" json:"cause,omitempty" xml:"cause,omitempty"`
 }
 
 // StopForbiddenResponseBody is the type of the "project" service "stop"
@@ -316,6 +316,7 @@ func NewIdentityProjectIdentityOK(body *IdentityResponseBody) *project.ProjectId
 		ProjectID: *body.ProjectID,
 		Directory: *body.Directory,
 		Owner:     *body.Owner,
+		Build:     body.Build,
 	}
 
 	return v
@@ -398,21 +399,6 @@ func NewEnsureTeamAmbiguousSpace(body *EnsureTeamAmbiguousSpaceResponseBody) *pr
 	return v
 }
 
-// NewEnsureTeamTeamUnavailable builds a project service ensure_team endpoint
-// team_unavailable error.
-func NewEnsureTeamTeamUnavailable(body *EnsureTeamTeamUnavailableResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
 // NewEnsureTeamForbidden builds a project service ensure_team endpoint
 // forbidden error.
 func NewEnsureTeamForbidden(body *EnsureTeamForbiddenResponseBody) *goa.ServiceError {
@@ -438,6 +424,17 @@ func NewEnsureTeamUnprocessable(body *EnsureTeamUnprocessableResponseBody) *goa.
 		Temporary: *body.Temporary,
 		Timeout:   *body.Timeout,
 		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewEnsureTeamTeamUnavailable builds a project service ensure_team endpoint
+// team_unavailable error.
+func NewEnsureTeamTeamUnavailable(body *EnsureTeamTeamUnavailableResponseBody) *project.TeamUnavailable {
+	v := &project.TeamUnavailable{
+		Name:  *body.Name,
+		Cause: *body.Cause,
 	}
 
 	return v
@@ -564,6 +561,9 @@ func ValidateIdentityResponseBody(body *IdentityResponseBody) (err error) {
 	}
 	if body.Owner == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("owner", "body"))
+	}
+	if body.Build != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.build", *body.Build, "^[0-9a-f]{64}$"))
 	}
 	return
 }
@@ -725,30 +725,6 @@ func ValidateEnsureTeamAmbiguousSpaceResponseBody(body *EnsureTeamAmbiguousSpace
 	return
 }
 
-// ValidateEnsureTeamTeamUnavailableResponseBody runs the validations defined
-// on EnsureTeamTeamUnavailableResponseBody
-func ValidateEnsureTeamTeamUnavailableResponseBody(body *EnsureTeamTeamUnavailableResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
 // ValidateEnsureTeamForbiddenResponseBody runs the validations defined on
 // EnsureTeamForbiddenResponseBody
 func ValidateEnsureTeamForbiddenResponseBody(body *EnsureTeamForbiddenResponseBody) (err error) {
@@ -793,6 +769,23 @@ func ValidateEnsureTeamUnprocessableResponseBody(body *EnsureTeamUnprocessableRe
 	}
 	if body.Fault == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateEnsureTeamTeamUnavailableResponseBody runs the validations defined
+// on EnsureTeamTeamUnavailableResponseBody
+func ValidateEnsureTeamTeamUnavailableResponseBody(body *EnsureTeamTeamUnavailableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Cause == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("cause", "body"))
+	}
+	if body.Cause != nil {
+		if !(*body.Cause == "stopping" || *body.Cause == "herdr" || *body.Cause == "roster_folder" || *body.Cause == "project_state" || *body.Cause == "role_folder") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.cause", *body.Cause, []any{"stopping", "herdr", "roster_folder", "project_state", "role_folder"}))
+		}
 	}
 	return
 }

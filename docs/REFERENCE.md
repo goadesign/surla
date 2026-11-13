@@ -477,8 +477,9 @@ Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum
 Run `surla` in a project folder to start or attach to its server and open the
 views page and prepare its guide team in Herdr. Before creating state or starting
 anything, Surla requires `herdr-core`, `herdr-app`, Chorus v0.11.0 or newer, and
-the platform browser opener. Missing programs name their install command; an
-older Chorus names `chorus update -yes`. Install
+the platform browser opener. Missing programs name their install command, and a
+Herdr or Chorus program installed in `~/.local/bin` but missing from PATH names
+that folder to add to PATH; an older Chorus names `chorus update -yes`. Install
 [Herdr core](https://herdr.dev/core/) with
 `curl -fsSL https://releases.herdr.dev/core/install.sh | sh`, the
 [Herdr app](https://herdr.dev/) with
@@ -632,7 +633,7 @@ control characters removed. For example:
 
 ```text
 surla: the project server stopped while starting, and its last lines were:
-  surla: project port is occupied: listen tcp 127.0.0.1:52011: bind: address already in use
+  surla: project port 52011 is occupied: listen tcp 127.0.0.1:52011: bind: address already in use; stop the program listening on it, then run surla
 ```
 
 If the terminal's output cannot be read or holds no printable text, the error
