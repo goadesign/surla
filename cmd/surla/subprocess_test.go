@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"testing"
 
@@ -25,6 +26,7 @@ func testProjectRuntime() projectRuntime {
 // testProjectRuntimeAt binds a fixture root value without mutable package state.
 func testProjectRuntimeAt(directory string) projectRuntime {
 	return projectRuntime{
+		listen: net.Listen,
 		configRoot: func() (string, error) {
 			if directory == "" {
 				return "", errors.New("default tests must bind a test-owned configuration directory")

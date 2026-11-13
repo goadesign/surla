@@ -220,7 +220,7 @@ func TestProjectListenerRevokesBeforeClose(t *testing.T) {
 
 // TestManagementClientRefreshesOnlyChangedRefusals proves a refusal cannot create a resend loop.
 func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
-	for _, scenario := range []string{"unchanged", "changed", "changed then refused", "fresh next request"} {
+	for _, scenario := range []string{"unchanged", "changed", "changed then refused", "changed then malformed", "fresh next request"} {
 		t.Run(scenario, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			state, err := fixtureProjectState("")
@@ -246,6 +246,15 @@ func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
 				}
 				if scenario == "changed then refused" {
 					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if scenario == "changed then malformed" {
+					conn, writer, err := w.(http.Hijacker).Hijack()
+					require.NoError(t, err)
+					defer func() { assert.NoError(t, conn.Close()) }()
+					_, err = fmt.Fprintf(writer, "HTTP/1.1 %s peer-must-never-print\r\n\r\n", second)
+					assert.NoError(t, err)
+					assert.NoError(t, writer.Flush())
 					return
 				}
 				expected := first
@@ -282,6 +291,12 @@ func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
 					require.NoError(t, err)
 				} else {
 					assert.Error(t, err)
+					if scenario == "changed then malformed" {
+						assert.ErrorContains(t, err, "project server connection failed")
+						assert.NotContains(t, err.Error(), "HTTP 401")
+						assert.False(t, strings.Contains(err.Error(), second))
+						assert.False(t, strings.Contains(err.Error(), "peer-must-never-print"))
+					}
 				}
 			}
 			expected := int32(2)
@@ -481,7 +496,7 @@ func TestManagementCredentialStaysOutOfMetadata(t *testing.T) {
 	t.Setenv("SURLA_TEST_HC_ARGS", arguments)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	terminal, err := startProjectTerminal(ctx, state)
+	terminal, err := startProjectTerminal(ctx, state, func() (string, error) { return filepath.Join(bin, "hc"), nil })
 	require.NoError(t, err)
 	assert.Equal(t, "stand-in", terminal)
 	argv, err := os.ReadFile(arguments)

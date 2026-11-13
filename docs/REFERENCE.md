@@ -303,10 +303,17 @@ redirects. Each management request, including a changed-credential retry, opens
 a fresh connection after reading the credential; connections are never reused. A refused credential is retried once only if the record now contains
 a different credential; otherwise the command says to run `surla` again. A
 missing record is awaited within the command's deadline without network traffic.
-The credential cannot confirm changes or approve results, is never printed,
-and is revoked before every listener close even if record removal fails.
+Management cannot confirm changes or approve results. A live management
+credential is never printed and is revoked before every listener close even if
+record removal fails. The management value can reach another program only after
+losing its authority; an echoed dead value is not treated as a secret.
 Agent credentials survive restart and are removed with their agent. Agent connection settings and rosters name only their
 own credential files, never the management credential.
+
+The CLI opens only its exact saved views address with a 64-hex-digit link
+fragment. It refuses any other destination without printing the supplied URL.
+Management failures use CLI-owned wording and the received status, never text
+from the TCP peer; malformed connections use a fixed connection-failure message.
 
 The browser link expires after two minutes and can be exchanged once through
 `POST /project/browser-session` for a random user session. The fixed `/views`

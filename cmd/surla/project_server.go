@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -26,6 +27,7 @@ import (
 	"github.com/goadesign/surla/internal/project"
 	"go.opentelemetry.io/otel"
 	goahttp "goa.design/goa/v3/http"
+	goa "goa.design/goa/v3/pkg"
 )
 
 // projectRuntime binds project state and process effects at the CLI composition root.
@@ -38,6 +40,8 @@ type projectRuntime struct {
 	openViews      func(context.Context, string) error
 	waitTerminal   func(context.Context, string) (bool, error)
 	removeTerminal func(context.Context, string) error
+	// listen binds only the saved project address; tests observe the actual close boundary.
+	listen func(string, string) (net.Listener, error)
 }
 
 // ownedProjectListener ends management authority before every underlying listener close,
@@ -45,19 +49,24 @@ type projectRuntime struct {
 type ownedProjectListener struct {
 	net.Listener
 	management *project.Server
-	once       sync.Once
-	err        error
+	// once prevents an old owner's repeated Close from removing its successor's record.
+	once sync.Once
+	// err preserves the first revocation and underlying-close result for every caller.
+	err error
 }
 
 // productionProjectRuntime is selected only by the executable's composition root.
 func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
-		configRoot:     os.UserConfigDir,
-		preflight:      func() error { return preflightProjectStart(projectHerdrProgram) },
-		startTerminal:  startProjectTerminal,
+		configRoot: os.UserConfigDir,
+		preflight:  func() error { return preflightProjectStart(projectHerdrProgram) },
+		startTerminal: func(ctx context.Context, state *project.State) (string, error) {
+			return startProjectTerminal(ctx, state, projectHerdrProgram)
+		},
 		openViews:      openProjectViews,
 		waitTerminal:   waitProjectTerminal,
 		removeTerminal: removeProjectTerminal,
+		listen:         net.Listen,
 	}
 }
 
@@ -120,11 +129,27 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
+	if err := validateProjectViewsLink(state, link.URL); err != nil {
+		return err
+	}
 	if err := runtime.openViews(linkCtx, link.URL); err != nil {
 		return fmt.Errorf("open project views: %w", err)
 	}
 	_, err = fmt.Fprintf(stdout, "Surla is running for %s at %s\n", state.Record.Directory, state.Origin())
 	return err
+}
+
+// validateProjectViewsLink confines the browser opener to the project's exact views
+// address and opaque link format, without returning an untrusted URL in an error.
+func validateProjectViewsLink(state *project.State, address string) error {
+	token, ok := strings.CutPrefix(address, state.Origin()+"/views#link=")
+	if !ok || len(token) != 64 {
+		return errors.New("project server returned an invalid views link; run surla again")
+	}
+	if _, err := hex.DecodeString(token); err != nil {
+		return errors.New("project server returned an invalid views link; run surla again")
+	}
+	return nil
 }
 
 // writeProjectCreatedNotice explains the folder-identity rule whenever the CLI creates a project.
@@ -171,7 +196,7 @@ func attachOrStartProject(
 	client = projectClient(state)
 	if err := confirmProject(ctx, state, client); err != nil {
 		if inUse {
-			return nil, created, fmt.Errorf("the project server is running but not answering; no second server was started: %w", err)
+			return nil, created, fmt.Errorf("%s; no second server was started: %w", projectHolder(state), err)
 		}
 		return nil, created, fmt.Errorf("the project server in Herdr terminal %s did not start answering: %w", terminal, err)
 	}
@@ -211,7 +236,7 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 	}
 	client := projectClient(state)
 	if err := confirmProject(ctx, state, client); err != nil {
-		return fmt.Errorf("project server is running but not answering: %w", err)
+		return fmt.Errorf("%s: %w", projectHolder(state), err)
 	}
 	if err := client.Stop(ctx); err != nil {
 		return err
@@ -231,6 +256,15 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
+}
+
+// projectHolder describes a held lock without claiming the listener is ready.
+// Terminal metadata is optional; unavailable metadata does not change the lock's fact.
+func projectHolder(state *project.State) string {
+	if running, err := state.ReadRunning(); err == nil && running.Terminal != "" {
+		return fmt.Sprintf("a server in Herdr terminal %s holds this project and may still be starting or stopping", running.Terminal)
+	}
+	return "a server holds this project and may still be starting or stopping"
 }
 
 // serve is the Herdr program entry, with project identity and address derived from private state.
@@ -266,7 +300,7 @@ func (runtime projectRuntime) serve() (err error) {
 	// Close drains owned work before releasing the store writer lock.
 	defer func() { err = errors.Join(err, cp.Close()) }()
 
-	listener, err := net.Listen("tcp", state.Address())
+	listener, err := runtime.listen("tcp", state.Address())
 	if err != nil {
 		return fmt.Errorf("project port is occupied: %w", err)
 	}
@@ -288,6 +322,8 @@ func (runtime projectRuntime) serve() (err error) {
 	return serveProjectHTTP(ctx, server, &ownedProjectListener{Listener: listener, management: management})
 }
 
+// Close irreversibly revokes management access and withdraws its record before
+// closing the real listener, including on a failed withdrawal. The result is stable.
 func (l *ownedProjectListener) Close() error {
 	l.once.Do(func() {
 		revokeErr := l.management.RevokeManagement()
@@ -350,9 +386,58 @@ func (runtime projectRuntime) discover() (*project.State, error) {
 // projectClient uses the literal project address with a private, proxy-free transport.
 // Each generated management request obtains the currently published credential.
 func projectClient(state *project.State) *genproject.Client {
-	doer := &managementDoer{state: state, client: projectHTTPClient()}
-	httpClient := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	return genproject.NewClient(httpClient.Identity(), httpClient.Stop(), httpClient.AddAgent(), httpClient.RemoveAgent(), httpClient.BrowserLink(), httpClient.ExchangeBrowserLink())
+	client := projectHTTPClient()
+	return genproject.NewClient(
+		managementEndpoint(state, client, (*genprojectclient.Client).Identity),
+		managementEndpoint(state, client, (*genprojectclient.Client).Stop),
+		managementEndpoint(state, client, (*genprojectclient.Client).AddAgent),
+		managementEndpoint(state, client, (*genprojectclient.Client).RemoveAgent),
+		managementEndpoint(state, client, (*genprojectclient.Client).BrowserLink),
+		managementEndpoint(state, client, (*genprojectclient.Client).ExchangeBrowserLink),
+	)
+}
+
+// managementEndpoint preserves generated transport behavior without printing peer-authored
+// error text. Only declared error names select fixed CLI wording; other replies name status.
+// Response status belongs to this invocation's Doer, including a changed-key retry.
+func managementEndpoint(
+	state *project.State,
+	client *http.Client,
+	endpoint func(*genprojectclient.Client) goa.Endpoint,
+) goa.Endpoint {
+	return func(ctx context.Context, payload any) (any, error) {
+		doer := &managementDoer{state: state, client: client}
+		transport := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+		result, err := endpoint(transport)(ctx, payload)
+		if err == nil {
+			return result, nil
+		}
+		if doer.localErr != nil {
+			return nil, doer.localErr
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, managementConnectionError(ctx, err)
+		}
+		if doer.lastStatus == 0 {
+			return nil, err
+		}
+		var responseErr *goahttp.ClientError
+		if errors.As(err, &responseErr) && responseErr.Name == "invalid_response" {
+			return nil, goahttp.ErrInvalidResponse(responseErr.Service, responseErr.Method, doer.lastStatus, "")
+		}
+		var serviceErr *goa.ServiceError
+		if errors.As(err, &serviceErr) {
+			switch serviceErr.Name {
+			case "forbidden":
+				return nil, fmt.Errorf("project management operation is not permitted (HTTP %d); run surla again", doer.lastStatus)
+			case "conflict":
+				return nil, fmt.Errorf("project management operation conflicts with current state (HTTP %d)", doer.lastStatus)
+			case "unprocessable":
+				return nil, fmt.Errorf("project management request could not be applied (HTTP %d)", doer.lastStatus)
+			}
+		}
+		return nil, fmt.Errorf("project server response could not be used (HTTP %d); run surla again", doer.lastStatus)
+	}
 }
 
 // projectHTTPClient keeps management requests off proxies and refuses redirects,
@@ -376,24 +461,39 @@ func projectHTTPClient() *http.Client {
 type managementDoer struct {
 	state  *project.State
 	client *http.Client
+	// lastStatus is private to one generated endpoint invocation, never shared across calls.
+	lastStatus int
+	// localErr retains a private-file failure without a peer-authored error wrapper.
+	localErr error
 }
 
 func (d *managementDoer) Do(r *http.Request) (*http.Response, error) {
 	running, err := waitForRunning(r.Context(), d.state)
 	if err != nil {
+		d.localErr = err
 		return nil, err
 	}
 	r.Header.Set("Authorization", "Bearer "+running.ManagementCredential)
+	d.lastStatus = 0
 	response, err := d.client.Do(r)
-	if err != nil || response.StatusCode != http.StatusUnauthorized {
+	if response != nil {
+		d.lastStatus = response.StatusCode
+	}
+	if err != nil {
+		return nil, managementConnectionError(r.Context(), err)
+	}
+	if response.StatusCode != http.StatusUnauthorized {
 		return response, err
 	}
 	current, readErr := d.state.ReadRunning()
 	if readErr != nil || current.ManagementCredential == running.ManagementCredential {
-		return nil, errors.Join(errors.New("project management access was refused; run surla again"), readErr, response.Body.Close())
+		if readErr != nil {
+			d.localErr = fmt.Errorf("project management access was refused; run surla again: %w", readErr)
+		}
+		return nil, errors.Join(errors.New("project management access was refused; run surla again"), d.localErr, managementConnectionError(r.Context(), response.Body.Close()))
 	}
 	if err := response.Body.Close(); err != nil {
-		return nil, err
+		return nil, managementConnectionError(r.Context(), err)
 	}
 	retry := r.Clone(r.Context())
 	if r.Body != nil && r.Body != http.NoBody {
@@ -406,7 +506,33 @@ func (d *managementDoer) Do(r *http.Request) (*http.Response, error) {
 		}
 	}
 	retry.Header.Set("Authorization", "Bearer "+current.ManagementCredential)
-	return d.client.Do(retry)
+	d.lastStatus = 0
+	response, err = d.client.Do(retry)
+	if response != nil {
+		d.lastStatus = response.StatusCode
+	}
+	if err != nil {
+		return nil, managementConnectionError(r.Context(), err)
+	}
+	return response, err
+}
+
+// managementConnectionError keeps malformed HTTP and transport diagnostics out of
+// CLI output while retaining cancellation/deadline identity without the raw peer error.
+func managementConnectionError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("project server request did not finish: %w", ctx.Err())
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("project server request did not finish: %w", context.DeadlineExceeded)
+	}
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("project server request did not finish: %w", context.Canceled)
+	}
+	return errors.New("project server connection failed; run surla again")
 }
 
 // waitForRunning waits without network traffic while startup has not published access.
@@ -444,12 +570,16 @@ func confirmProject(ctx context.Context, state *project.State, client *genprojec
 }
 
 // startProjectTerminal delegates process lifetime to a parentless Herdr terminal; Surla never detaches a process itself.
-func startProjectTerminal(ctx context.Context, state *project.State) (string, error) {
+func startProjectTerminal(
+	ctx context.Context,
+	state *project.State,
+	findHerdr func() (string, error),
+) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	hc, err := projectHerdrProgram()
+	hc, err := findHerdr()
 	if err != nil {
 		return "", err
 	}
