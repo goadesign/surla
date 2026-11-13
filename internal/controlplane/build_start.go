@@ -157,7 +157,7 @@ func (c *ControlPlane) StartBuild(
 		if err == nil {
 			err = copy.Prepare(work, saved.Stories)
 		}
-		current, saveErr := c.saveBuildPreparation(saved, err)
+		current, saveErr := c.saveBuildPreparation(work, saved, err)
 		if saveErr != nil {
 			span.RecordError(errors.New("saved build preparation could not be recorded"))
 			span.SetStatus(codes.Error, "record build preparation")
@@ -181,7 +181,9 @@ func (c *ControlPlane) StartBuild(
 // saveBuildPreparation preserves a report made while generation ran. A verdict
 // changes only this start's still-assigned report generation, under the lock;
 // the saved file, including any assignment read, is always the update's base.
-func (c *ControlPlane) saveBuildPreparation(saved buildFile, prepareErr error) (heldBuild, error) {
+func (c *ControlPlane) saveBuildPreparation(
+	ctx context.Context, saved buildFile, prepareErr error,
+) (heldBuild, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	current, found, err := c.cards.loadBuild(saved.ChangeID)
@@ -204,9 +206,9 @@ func (c *ControlPlane) saveBuildPreparation(saved buildFile, prepareErr error) (
 		} else {
 			tw.State = testsCouldNotRun
 			reason := designeval.GenerationDiagnostic(prepareErr)
-			if errors.Is(prepareErr, context.DeadlineExceeded) {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				reason = "The build-start time limit ended before the required tests could be prepared."
-			} else if errors.Is(prepareErr, context.Canceled) {
+			} else if errors.Is(ctx.Err(), context.Canceled) {
 				reason = "The server stopped before the required tests could be prepared."
 			}
 			tw.Reason = boundedBuildReason(reason)

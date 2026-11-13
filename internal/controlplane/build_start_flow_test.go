@@ -381,7 +381,12 @@ func TestStartBuildDeadlineBoundaries(t *testing.T) {
 				copy.prepare = func(ctx context.Context, _ []designeval.StorySummary) error {
 					time.Sleep(elapsed)
 					synctest.Wait()
-					return ctx.Err()
+					if ctx.Err() != nil {
+						// A real subprocess may return an opaque exit error. The
+						// phase context, rather than that error, owns the reason.
+						return errors.New("sandboxed generation exited")
+					}
+					return nil
 				}
 				result, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 				require.NoError(t, err)
@@ -390,6 +395,9 @@ func TestStartBuildDeadlineBoundaries(t *testing.T) {
 					want = gensurla.TestsKindAssigned
 				}
 				assert.Equal(t, want, result.Build.TestWriter.Tests.Kind())
+				if failure, ok := result.Build.TestWriter.Tests.AsCouldNotRun(); ok {
+					assert.Equal(t, "The build-start time limit ended before the required tests could be prepared.", failure.Reason)
+				}
 				assert.Equal(t, []string{"register", "start"}, cp.team.Service.(*teamServiceFixture).calls, "registration survives the phase limit and team start has its own lifetime")
 			})
 		})

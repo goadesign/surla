@@ -466,7 +466,7 @@ func teamNextStep(dialog string) string {
 	case "opened":
 		return "Choose an agent for each role in the open Chorus dialog in Herdr."
 	case "already_open":
-		return "Click \"Reload team\" in the open Chorus dialog, then choose the agents."
+		return "If the open Chorus dialog is for this project, click \"Reload team\", then choose the agents. If it is for another project, close it and run surla again."
 	case "not_needed":
 		return "Every listed role is running."
 	}
