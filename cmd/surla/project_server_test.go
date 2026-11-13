@@ -464,13 +464,57 @@ func TestReadProjectTerminalArguments(t *testing.T) {
 	}
 }
 
-// TestInternalServerAcceptsNoCallerOptions keeps all configuration in its owning workflow.
-func TestInternalServerAcceptsNoCallerOptions(t *testing.T) {
-	require.NoError(t, parseProjectArgs("serve", nil))
-	for _, option := range []string{"-model-provider", "-model-name", "-model-gateway-addr", "-check-timeout", "-principal", "-token", "-addr", "-cards-dir", "-project", "-verification-config", "-promotion-config"} {
-		assert.ErrorContains(t, parseProjectArgs("serve", []string{option, "value"}), "flag provided but not defined", option)
+// TestInternalServerTakesOnlyItsStateFolder keeps all configuration in its owning workflow:
+// serve's one input is the state folder its launcher found, and every other option is refused.
+func TestInternalServerTakesOnlyItsStateFolder(t *testing.T) {
+	stateDir, err := parseServeArgs([]string{"-state", "/owned/project-state"})
+	require.NoError(t, err)
+	assert.Equal(t, "/owned/project-state", stateDir)
+	for _, args := range [][]string{nil, {"-state", ""}} {
+		_, err := parseServeArgs(args)
+		assert.ErrorContains(t, err, "serve requires -state; start the project with surla", args)
 	}
-	assert.ErrorContains(t, parseProjectArgs("serve", []string{"directory"}), "unexpected arguments")
+	for _, option := range []string{"-model-provider", "-model-name", "-model-gateway-addr", "-check-timeout", "-principal", "-token", "-addr", "-cards-dir", "-project", "-verification-config", "-promotion-config"} {
+		_, err := parseServeArgs([]string{"-state", "/owned/project-state", option, "value"})
+		assert.ErrorContains(t, err, "flag provided but not defined", option)
+	}
+	_, err = parseServeArgs([]string{"-state", "/owned/project-state", "directory"})
+	assert.ErrorContains(t, err, "unexpected arguments")
+}
+
+// TestServeReadsOnlyItsStateFolder starts the real serve entry from a working directory that
+// belongs to no project, with a runtime whose configuration folder must never be asked for:
+// the server publishes its management record in exactly the folder named by -state.
+func TestServeReadsOnlyItsStateFolder(t *testing.T) {
+	isolateServeWorkspace(t)
+	state, err := fixtureProjectState("")
+	require.NoError(t, err)
+	t.Chdir(t.TempDir())
+	runtime := testProjectRuntime()
+	// The shared team fixture keeps its rosters under the configuration folder, so this
+	// test binds its own rosters folder and leaves the configuration folder unreachable.
+	rosters := t.TempDir()
+	runtime.teamDependencies = func(ctx context.Context) (project.TeamDependencies, error) {
+		return project.TeamDependencies{Lifetime: ctx, Host: &fixtureTeamHost{}, RosterDirectory: rosters, Shell: "/bin/zsh"}, nil
+	}
+	runtime.configRoot = func() (string, error) {
+		t.Error("serve must not resolve a configuration folder")
+		return "", errors.New("configuration folder is not available to serve")
+	}
+	done := make(chan error, 1)
+	go func() { done <- runWithRuntime([]string{"serve", "-state", state.Dir}, io.Discard, runtime) }()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	running, err := waitForRunning(ctx, state)
+	require.NoError(t, err)
+	assert.Len(t, running.ManagementCredential, 64)
+	require.NoError(t, projectClient(state).Stop(ctx))
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("serve did not stop")
+	}
 }
 
 // TestMissingBrowserOpenerFailsBeforeProjectCreation checks the production preflight
