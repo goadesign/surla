@@ -199,7 +199,10 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 				listed[tool.Name] = true
 			}
 			// The views page's HTTP-only operations are not listed as tools.
-			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true, "start_build": true, "get_model_connection": true, "get_team": true, "show_team_pane": true, "start_team_agents": true}
+			httpOrResourceOnly := map[string]bool{
+				"golden_path": true, "wait_for_changes": true, "start_build": true, "get_model_connection": true, "get_test_findings": true,
+				"get_team": true, "show_team_pane": true, "start_team_agents": true,
+			}
 			for _, name := range gensurla.MethodNames {
 				if !httpOrResourceOnly[name] {
 					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
@@ -462,6 +465,7 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 		{"wait_for_changes", "GET", "/change-updates?since=version", ""},
 		{"start_build", "POST", "/changes/change/build", fmt.Sprintf(`{"request_revision":%q}`, revision)},
 		{"get_build", "GET", "/changes/change/build", ""},
+		{"get_test_findings", "GET", "/changes/change/build/findings", ""},
 		{"list_builder_assignments", "GET", "/assignments/builder", ""},
 		{"get_builder_assignment", "GET", "/assignments/builder/change", ""},
 		{"list_test_writer_assignments", "GET", "/assignments/test-writer", ""},

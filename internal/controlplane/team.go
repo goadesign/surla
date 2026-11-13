@@ -137,8 +137,12 @@ func (c *ControlPlane) superviseTeam() {
 }
 
 // assignmentGenerations deliberately uses the store owner's nonmutating read,
-// including builds of earlier revisions. Verdict stamps join the identity when
-// the verdict producer exists; current builds have no verdict/report counter.
+// including builds of earlier revisions. A generation names the version of an
+// assignment a role owes a read of: its build (change, revision and start)
+// and what the role's assignment shows of the verdicts. The builder's adds the
+// accepted commit; the test writer's adds the report number and the verdict's
+// time. So every verdict gives the test writer a new generation, and an
+// acceptance gives both roles one, as it marks both assignments unread.
 func (c *ControlPlane) assignmentGenerations(ctx context.Context) ([]AssignmentGeneration, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -149,21 +153,40 @@ func (c *ControlPlane) assignmentGenerations(ctx context.Context) ([]AssignmentG
 	}
 	owed := make([]AssignmentGeneration, 0, 2*len(builds))
 	for _, build := range builds {
-		raw, err := json.Marshal(struct {
-			Change, Revision string
-			Started          time.Time
-		}{build.file.ChangeID, build.file.RequestRevision, build.file.StartedAt})
-		if err != nil {
-			return nil, err
-		}
-		sum := sha256.Sum256(raw)
-		generation := hex.EncodeToString(sum[:])
-		if !build.file.Builder.Read {
+		saved := build.file
+		if !saved.Builder.Read {
+			generation, err := assignmentGeneration(struct {
+				Change, Revision string
+				Started          time.Time
+				Accepted         string
+			}{saved.ChangeID, saved.RequestRevision, saved.StartedAt, saved.TestWriter.Commit})
+			if err != nil {
+				return nil, err
+			}
 			owed = append(owed, AssignmentGeneration{Role: "builder", Generation: generation})
 		}
-		if !build.storedEvaluator && !build.file.TestWriter.Read {
+		if !build.storedEvaluator && !saved.TestWriter.Read {
+			generation, err := assignmentGeneration(struct {
+				Change, Revision string
+				Started          time.Time
+				Report           int
+				Checked          time.Time
+			}{saved.ChangeID, saved.RequestRevision, saved.StartedAt, saved.ReportNumber, saved.TestWriter.CheckedAt})
+			if err != nil {
+				return nil, err
+			}
 			owed = append(owed, AssignmentGeneration{Role: "test_writer", Generation: generation})
 		}
 	}
 	return owed, nil
+}
+
+// assignmentGeneration returns the hex SHA-256 of identity's JSON form.
+func assignmentGeneration(identity any) (string, error) {
+	raw, err := json.Marshal(identity)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
 }

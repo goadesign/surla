@@ -126,11 +126,21 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	assert.False(t, build.TestWriter.Read, "the builder's read is not the test writer's")
 	_, err = cp.GetTestWriterAssignment(tests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
+	// The report wakes the report checker; its check waits until released,
+	// and a build start waits for no check (it is refused as busy).
+	release := make(chan struct{})
+	checked := &buildCopyFixture{folder: t.TempDir(), check: func(context.Context, []designeval.StorySummary) (testwriter.Verdict, error) {
+		<-release
+		return testwriter.Verdict{Findings: []testwriter.Finding{{Kind: testwriter.FindingBuild, Message: "RefundOverLimit is not implemented"}}}, nil
+	}}
+	cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return checked, nil }
 	_, err = cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
 	require.NoError(t, err)
 	build = mustStartedBuild(t, cp, user, "chg")
 	assert.True(t, build.TestWriter.Read)
 	assert.Equal(t, gensurla.TestsKindReported, build.TestWriter.Tests.Kind())
+	close(release)
+	waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
 
 	second, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
 		ChangeID: "chg", RequestRevision: first.RequestRevision, Answers: map[string]string{},
@@ -347,10 +357,15 @@ func TestReportForAnotherRevisionIsRefused(t *testing.T) {
 			assert.Equal(t, before, readBuildFile(t, cp, "chg"), "a refused report changes nothing")
 		})
 	}
-	reported, err := cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
-	require.NoError(t, err)
-	assert.Equal(t, gensurla.TestsKindReported, reported.Progress.Tests.Kind())
-	assert.Equal(t, gensurla.TestsKindReported, mustStartedBuild(t, cp, user, "chg").TestWriter.Tests.Kind(), "the report is saved")
+	for report := 1; report <= 2; report++ {
+		reported, err := cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+		require.NoError(t, err)
+		assert.Equal(t, gensurla.TestsKindReported, reported.Progress.Tests.Kind())
+		assert.Equal(t, report, reported.Progress.Report, "every report is counted, even when already reported")
+		saved := mustStartedBuild(t, cp, user, "chg").TestWriter
+		assert.Equal(t, gensurla.TestsKindReported, saved.Tests.Kind(), "the report is saved")
+		assert.Equal(t, report, saved.Report)
+	}
 }
 
 // TestAssignmentsListOnlyTheCallersOwnChanges lists builds most recently
@@ -467,7 +482,21 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 		}), refusal: "verdict time"},
 		{name: "assigned with a verdict time", edit: savedTestWriter(map[string]any{"state": "assigned", "checked_at": at}), refusal: "verdict time"},
 		{name: "reported with a reason", edit: savedTestWriter(map[string]any{"state": "reported", "reason": "git failed"}), refusal: "does not allow"},
-		{name: "counted reports", edit: func(f map[string]any) map[string]any { f["report_number"] = 3; return f }, tests: gensurla.TestsKindAssigned},
+		{name: "assigned with a counted report", edit: func(f map[string]any) map[string]any { f["report_number"] = 3; return f }, refusal: "report number 0 while"},
+		{name: "reported without a counted report", edit: func(f map[string]any) map[string]any {
+			f["test_writer"].(map[string]any)["state"] = "reported"
+			return f
+		}, refusal: "at least 1 while"},
+		{name: "a verdict given as the build started", edit: func(f map[string]any) map[string]any {
+			tw := f["test_writer"].(map[string]any)
+			tw["state"], tw["findings"], tw["checked_at"] = "needs_changes", []string{"RefundOverLimit is not implemented"}, at
+			return f
+		}, tests: gensurla.TestsKindNeedsChanges},
+		{name: "reported with counted reports", edit: func(f map[string]any) map[string]any {
+			f["test_writer"].(map[string]any)["state"] = "reported"
+			f["report_number"] = 3
+			return f
+		}, tests: gensurla.TestsKindReported},
 		{name: "negative report number", edit: func(f map[string]any) map[string]any { f["report_number"] = -1; return f }, refusal: "negative report number"},
 	}
 	for _, tc := range cases {
@@ -494,11 +523,15 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 			assert.Equal(t, tc.tests, build.TestWriter.Tests.Kind())
 			assignment, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 			require.NoError(t, err)
-			if findings, ok := assignment.Progress.Tests.AsNeedsChanges(); ok {
-				assert.Equal(t, []string{"RefundOverLimit is not implemented"}, findings.Findings)
+			if needs, ok := assignment.Progress.Tests.AsNeedsChanges(); ok {
+				assert.Equal(t, 1, needs.FindingCount)
+				assert.Equal(t, []string{"RefundOverLimit is not implemented"}, assignment.Findings)
+			} else {
+				assert.Empty(t, assignment.Findings)
 			}
 			if accepted, ok := assignment.Progress.Tests.AsAccepted(); ok {
 				assert.Equal(t, commit, accepted.Commit)
+				assert.Equal(t, testsNotJudged, accepted.NotJudged)
 			}
 		})
 	}
@@ -646,27 +679,38 @@ func refundStory(title string) []designeval.StorySummary {
 }
 
 // testWriterState returns an edit that sets the saved test writer's state,
-// findings and commit.
+// findings and commit, counting a report as reportedOnce does.
 func testWriterState(state string, findings []string, commit string) func(map[string]any) map[string]any {
 	return func(f map[string]any) map[string]any {
 		tw := f["test_writer"].(map[string]any)
 		tw["state"] = state
 		tw["findings"] = findings
 		tw["commit"] = commit
-		return f
+		return reportedOnce(f)
 	}
 }
 
 // savedTestWriter returns an edit that sets each of fields on the saved test
-// writer, leaving its other fields as saved.
+// writer, leaving its other fields as saved, and counts a report as
+// reportedOnce does.
 func savedTestWriter(fields map[string]any) func(map[string]any) map[string]any {
 	return func(f map[string]any) map[string]any {
 		tw := f["test_writer"].(map[string]any)
 		for key, value := range fields {
 			tw[key] = value
 		}
-		return f
+		return reportedOnce(f)
 	}
+}
+
+// reportedOnce sets a saved build's report number to 1 when its test writer
+// state is past assigned and no report is counted, as the one report before
+// that state would have.
+func reportedOnce(f map[string]any) map[string]any {
+	if f["test_writer"].(map[string]any)["state"] != testsAssigned && f["report_number"] == float64(0) {
+		f["report_number"] = 1
+	}
+	return f
 }
 
 // mustStartedBuild reads changeID's build as ctx and fails the test unless

@@ -1,4 +1,5 @@
-// This file binds build starts to the working-copy and generation owners.
+// This file binds build starts and the report checker to the working-copy
+// and generation owners.
 package controlplane
 
 import (
@@ -11,12 +12,22 @@ import (
 )
 
 type (
-	// buildCopy is the start's narrow execution boundary. The production owner
-	// is testwriter; deterministic stand-ins exercise ordering and races.
+	// buildCopy is the narrow execution boundary of the test writer's working
+	// copy: a start opens, refreshes and prepares it, and the report checker
+	// prepares, checks and records it. The production owner is testwriter;
+	// deterministic stand-ins exercise ordering and races.
 	buildCopy interface {
+		// Project returns the project's folder inside the copy.
 		Project() string
+		// Refresh brings the copy to the project's commit when it is safe.
 		Refresh(context.Context) (testwriter.RefreshResult, error)
+		// Prepare writes the required tests for stories into the copy.
 		Prepare(context.Context, []designeval.StorySummary) error
+		// Check judges the copy against stories.
+		Check(context.Context, []designeval.StorySummary) (testwriter.Verdict, error)
+		// Record commits an accepted verdict on the tests branch and returns
+		// the commit.
+		Record(ctx context.Context, v testwriter.Verdict, message string) (string, error)
 	}
 	// writerBuildCopy keeps one opened copy and the suite checked before opening.
 	writerBuildCopy struct {
@@ -40,7 +51,7 @@ func (c *ControlPlane) openBuildCopy(
 	return writerBuildCopy{
 		copy:    wc,
 		checker: testwriter.NewChecker(c.evaluator, filepath.Join(c.cards.dir, "test-writer")),
-		suite:   testwriter.Suite{Module: scaffold.SuiteDir, Command: layout.SuiteCommand},
+		suite:   testwriter.Suite{Module: scaffold.SuiteDir, Command: layout.GeneratedSuiteCommand()},
 	}, nil
 }
 
@@ -56,4 +67,14 @@ func (w writerBuildCopy) Refresh(ctx context.Context) (testwriter.RefreshResult,
 func (w writerBuildCopy) Prepare(ctx context.Context, stories []designeval.StorySummary) error {
 	_, err := w.checker.Prepare(ctx, w.copy, w.suite, stories)
 	return err
+}
+
+// Check judges the copy against the saved Story through its owner.
+func (w writerBuildCopy) Check(ctx context.Context, stories []designeval.StorySummary) (testwriter.Verdict, error) {
+	return w.checker.Check(ctx, w.copy, w.suite, stories)
+}
+
+// Record commits an accepted verdict through its owner.
+func (w writerBuildCopy) Record(ctx context.Context, v testwriter.Verdict, message string) (string, error) {
+	return testwriter.Record(ctx, v, message)
 }

@@ -51,7 +51,7 @@ var operationRoles = map[string][]CallerKind{
 	"list_changes":         {CallerUser, CallerGuide, CallerBuilder},
 	"wait_for_changes":     {CallerUser},
 	"get_team":             {CallerUser}, "show_team_pane": {CallerUser}, "start_team_agents": {CallerUser},
-	"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
+	"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter}, "get_test_findings": {CallerUser},
 	// get_builder_assignment and get_test_writer_assignment are GET routes that
 	// record that the assignment was read. The diagnostics history leaves out
 	// the user's GET requests that succeed (diagnosticTracer in traces.go), so
@@ -131,6 +131,7 @@ func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	e.StartTeamAgents = wrap("start_team_agents", e.StartTeamAgents)
 	e.StartBuild = wrap("start_build", e.StartBuild)
 	e.GetBuild = wrap("get_build", e.GetBuild)
+	e.GetTestFindings = wrap("get_test_findings", e.GetTestFindings)
 	e.ListBuilderAssignments = wrap("list_builder_assignments", e.ListBuilderAssignments)
 	e.GetBuilderAssignment = wrap("get_builder_assignment", e.GetBuilderAssignment)
 	e.ListTestWriterAssignments = wrap("list_test_writer_assignments", e.ListTestWriterAssignments)

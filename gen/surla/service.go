@@ -293,9 +293,15 @@ type Service interface {
 	// none exists, including a builder-only build whose stored verification
 	// settings were removed; start a new build on the views page. Otherwise return
 	// the revision built, when, whether the builder read its assignment, the test
-	// writer's state and whether it read its assignment, and whether the build is
-	// for the change's revision in force. Reading changes nothing.
+	// writer's state (with the number of Surla's findings, never their text) and
+	// whether it read its assignment, and whether the build is for the change's
+	// revision in force. Reading changes nothing.
 	GetBuild(context.Context, *GetBuildPayload) (res *ChangeBuild, err error)
+	// Return the text of Surla's findings on the tests of a change's build, which
+	// get_build only counts, with the build's revision and start time, the number
+	// of the report Surla checked and when it reached the verdict. A build whose
+	// tests do not need changes is refused. Reading changes nothing.
+	GetTestFindings(context.Context, *GetTestFindingsPayload) (res *TestFindings, err error)
 	// List the builder's assignments, one per change the user built, most recently
 	// started first, each with its change, revision and whether it was read.
 	// Reading the list records nothing.
@@ -310,16 +316,20 @@ type Service interface {
 	ListTestWriterAssignments(context.Context) (res *TestWriterAssignmentList, err error)
 	// Return the test writer's assignment for a change in full (the working
 	// folder, the design and Story as agreed at the built revision, the tests it
-	// requires, and the state with any findings) and record that the test writer
-	// read it at its revision. Later revisions do not change the saved design or
-	// Story. A new build of the change replaces the assignment, which then counts
-	// as unread.
+	// requires, and the state with the text of any findings) and record that the
+	// test writer read it at its revision. Later revisions do not change the saved
+	// design or Story. A new build of the change replaces the assignment, which
+	// then counts as unread, and so does each verdict of Surla's check.
 	GetTestWriterAssignment(context.Context, *GetTestWriterAssignmentPayload) (res *TestWriterAssignment, err error)
 	// The test writer reports that its tests for a change at the build's revision
-	// are finished. Surla only records the report: the assignment's state becomes
-	// reported from any state, earlier findings or a recorded commit are cleared,
-	// and the tests are not checked. A report for another revision is refused and
-	// changes nothing.
+	// are finished. Every report raises the build's report number by one and makes
+	// the state reported, from any state, clearing an earlier verdict, and returns
+	// at once. Surla then checks the tests in the working folder against the
+	// build's Story; its verdict, needs_changes, accepted or could_not_run,
+	// replaces reported in the test writer's assignment, which then counts as
+	// unread. A report for another revision, or in a project that verifies with
+	// its stored evaluator, where no test writer is used, is refused and changes
+	// nothing.
 	ReportTestsFinished(context.Context, *ReportTestsFinishedPayload) (res *TestWriterAssignmentItem, err error)
 }
 
@@ -337,7 +347,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [38]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "decline_revision", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "get_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "get_model_connection", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "get_team", "show_team_pane", "start_team_agents", "list_changes", "wait_for_changes", "start_build", "get_build", "list_builder_assignments", "get_builder_assignment", "list_test_writer_assignments", "get_test_writer_assignment", "report_tests_finished"}
+var MethodNames = [39]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "decline_revision", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "get_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "get_model_connection", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "get_team", "show_team_pane", "start_team_agents", "list_changes", "wait_for_changes", "start_build", "get_build", "get_test_findings", "list_builder_assignments", "get_builder_assignment", "list_test_writer_assignments", "get_test_writer_assignment", "report_tests_finished"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -984,6 +994,13 @@ type GetChangePayload struct {
 	ChangeID string
 }
 
+// GetTestFindingsPayload is the payload type of the surla service
+// get_test_findings method.
+type GetTestFindingsPayload struct {
+	// Change Card identifier.
+	ChangeID string
+}
+
 // GetTestWriterAssignmentPayload is the payload type of the surla service
 // get_test_writer_assignment method.
 type GetTestWriterAssignmentPayload struct {
@@ -1498,6 +1515,25 @@ type TeamSpaceConflict struct {
 	Count int
 }
 
+// TestFindings is the result type of the surla service get_test_findings
+// method.
+type TestFindings struct {
+	// Change Card identifier.
+	ChangeID string
+	// Change Card revision the build is for.
+	RequestRevision string
+	// When the user started the build, as get_build reports it.
+	StartedAt string
+	// Number of the test writer's report that Surla checked, as get_build reports
+	// it; 0 when Surla found the problems while writing the required tests as the
+	// build started, before any report.
+	Report int
+	// When Surla's check reached this verdict.
+	CheckedAt string
+	// What Surla found, one problem per item, with no absolute path.
+	Findings []string
+}
+
 // TestWriterAssignment is the result type of the surla service
 // get_test_writer_assignment method.
 type TestWriterAssignment struct {
@@ -1511,9 +1547,12 @@ type TestWriterAssignment struct {
 	// proposed revision or confirmed another revision: the assignment then stays
 	// for this earlier revision until the user builds again.
 	InForce bool
-	// Where this assignment stands, including Surla's findings when it needs
-	// changes.
+	// Where this assignment stands.
 	Progress *TestWriterProgress
+	// Surla's findings, one problem per item, with no absolute path: as many as
+	// progress gives in finding_count when its state is needs_changes, and none in
+	// any other state. Fix them in working_folder, then report again.
+	Findings []string
 	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder string
 	// The canonical design source as agreed at request_revision, copied when this
@@ -1555,15 +1594,16 @@ type TestWriterAssignmentList struct {
 // Where the test writer's assignment for one build stands.
 type TestWriterProgress struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests Tests
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read bool
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report int
 }
 
@@ -1574,6 +1614,8 @@ type TestsAccepted struct {
 	Commit string
 	// When Surla's check reached this verdict.
 	CheckedAt string
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged string
 }
 
 // Surla assigned the tests for this build; the test writer has not reported
@@ -1593,11 +1635,11 @@ type TestsCouldNotRun struct {
 }
 
 // Surla checked the reported tests and found problems the test writer must fix
-// before reporting again.
+// before reporting again. Their text is in the test writer's assignment
+// (get_test_writer_assignment) and, for the user, in get_test_findings.
 type TestsNeedChanges struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string
+	// Number of problems Surla found.
+	FindingCount int
 	// When Surla's check reached this verdict.
 	CheckedAt string
 }
@@ -1612,8 +1654,8 @@ type TestsNotUsed struct {
 type TestsNotYetAccepted struct {
 }
 
-// The test writer reported its tests finished at this build's revision; Surla
-// has not checked them.
+// The test writer reported its tests finished at this build's revision. Surla
+// checks them right after each report; its verdict replaces this state.
 type TestsReported struct {
 }
 
@@ -5285,6 +5327,64 @@ func validatejsonTeamSpaceConflictTransport(value *jsonTeamSpaceConflictTranspor
 	return err
 }
 
+// jsonTestFindingsTransport stores JSON fields until they have been validated.
+type jsonTestFindingsTransport struct {
+	// Change Card identifier.
+	ChangeID *string `json:"change_id"`
+	// Change Card revision the build is for.
+	RequestRevision *string `json:"request_revision"`
+	// When the user started the build, as get_build reports it.
+	StartedAt *string `json:"started_at"`
+	// Number of the test writer's report that Surla checked, as get_build reports
+	// it; 0 when Surla found the problems while writing the required tests as the
+	// build started, before any report.
+	Report *testFindingsIntTransport `json:"report"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `json:"checked_at"`
+	// What Surla found, one problem per item, with no absolute path.
+	Findings []string `json:"findings"`
+}
+
+// validatejsonTestFindingsTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestFindingsTransport(value *jsonTestFindingsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if value.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
+	}
+	if value.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	}
+	if value.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *value.StartedAt, goa.FormatDateTime))
+	}
+	if value.Report != nil {
+		if int(*value.Report) < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", int(*value.Report), 0, true))
+		}
+	}
+	if value.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if len(value.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	}
+	return err
+}
+
 // jsonTestWriterAssignmentItemTransport stores JSON fields until they have been validated.
 type jsonTestWriterAssignmentItemTransport struct {
 	// Change Card the tests are for; get_test_writer_assignment takes it.
@@ -5363,9 +5463,12 @@ type jsonTestWriterAssignmentTransport struct {
 	// proposed revision or confirmed another revision: the assignment then stays
 	// for this earlier revision until the user builds again.
 	InForce *bool `json:"in_force"`
-	// Where this assignment stands, including Surla's findings when it needs
-	// changes.
+	// Where this assignment stands.
 	Progress *jsonTestWriterProgressTransport `json:"progress"`
+	// Surla's findings, one problem per item, with no absolute path: as many as
+	// progress gives in finding_count when its state is needs_changes, and none in
+	// any other state. Fix them in working_folder, then report again.
+	Findings []string `json:"findings"`
 	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder *string `json:"working_folder"`
 	// The canonical design source as agreed at request_revision, copied when this
@@ -5395,6 +5498,9 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	}
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
 	if value.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
@@ -5433,15 +5539,16 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 // jsonTestWriterProgressTransport stores JSON fields until they have been validated.
 type jsonTestWriterProgressTransport struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *jsonTestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *changeBuildIntTransport `json:"report"`
 }
 
@@ -5505,6 +5612,8 @@ type jsonTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // validatejsonTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -5518,11 +5627,19 @@ func validatejsonTestsAcceptedTransport(value *jsonTestsAcceptedTransport) (err 
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -5588,9 +5705,8 @@ func validatejsonTestsCouldNotRunTransport(value *jsonTestsCouldNotRunTransport)
 
 // jsonTestsNeedChangesTransport stores JSON fields until they have been validated.
 type jsonTestsNeedChangesTransport struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `json:"findings"`
+	// Number of problems Surla found.
+	FindingCount *changeBuildIntTransport `json:"finding_count"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
 }
@@ -5600,14 +5716,16 @@ func validatejsonTestsNeedChangesTransport(value *jsonTestsNeedChangesTransport)
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
-	if value.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if value.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(value.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	if value.FindingCount != nil {
+		if int(*value.FindingCount) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", int(*value.FindingCount), 1, true))
+		}
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
@@ -6322,6 +6440,26 @@ func ValidateteamSpaceConflictIntTransport(value teamSpaceConflictIntTransport) 
 	return err
 }
 
+// testFindingsIntTransport stores JSON fields until they have been validated.
+type testFindingsIntTransport int
+
+// UnmarshalJSON reads an exact whole JSON number and stores it within this type's
+// declared range. Decimal and exponent spellings do not change its value.
+func (value *testFindingsIntTransport) UnmarshalJSON(data []byte) error {
+	number, err := rawjson.DecodeInteger[int](data)
+	if err != nil {
+		return fmt.Errorf("decode testFindingsIntTransport integer: %w", err)
+	}
+	*value = testFindingsIntTransport(number)
+	return nil
+}
+
+// ValidatetestFindingsIntTransport checks decoded JSON before it becomes a service value.
+func ValidatetestFindingsIntTransport(value testFindingsIntTransport) (err error) {
+
+	return err
+}
+
 // traceListInt64Transport stores JSON fields until they have been validated.
 type traceListInt64Transport int64
 
@@ -6523,6 +6661,9 @@ func validateBuilderAssignmentOriginal(value *BuilderAssignment) (err error) {
 func validateTestsAcceptedOriginal(value *TestsAccepted) (err error) {
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	err = goa.MergeErrors(err, goa.ValidateFormat("value.checked_at", value.CheckedAt, goa.FormatDateTime))
+	if !(value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.not_judged", value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+	}
 	return err
 }
 
@@ -6784,11 +6925,8 @@ func validateTestWriterProgressOriginal(value *TestWriterProgress) (err error) {
 
 // validateTestsNeedChangesOriginal checks the original typed value before JSON conversion.
 func validateTestsNeedChangesOriginal(value *TestsNeedChanges) (err error) {
-	if value.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "value"))
-	}
-	if len(value.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("value.findings", value.Findings, len(value.Findings), 1, true))
+	if value.FindingCount < 1 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.finding_count", value.FindingCount, 1, true))
 	}
 	err = goa.MergeErrors(err, goa.ValidateFormat("value.checked_at", value.CheckedAt, goa.FormatDateTime))
 	return err
@@ -7521,10 +7659,29 @@ func validateTeamSpaceConflictOriginal(value *TeamSpaceConflict) (err error) {
 	return err
 }
 
+// validateTestFindingsOriginal checks the original typed value before JSON conversion.
+func validateTestFindingsOriginal(value *TestFindings) (err error) {
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "value"))
+	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.started_at", value.StartedAt, goa.FormatDateTime))
+	if value.Report < 0 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.report", value.Report, 0, true))
+	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.checked_at", value.CheckedAt, goa.FormatDateTime))
+	if len(value.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.findings", value.Findings, len(value.Findings), 1, true))
+	}
+	return err
+}
+
 // validateTestWriterAssignmentOriginal checks the original typed value before JSON conversion.
 func validateTestWriterAssignmentOriginal(value *TestWriterAssignment) (err error) {
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
+	}
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "value"))
 	}
 	if value.Stories == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "value"))
@@ -18243,6 +18400,115 @@ func DecodeTeamSpaceConflict(data []byte) (out *TeamSpaceConflict, err error) {
 	return out, nil
 }
 
+// EncodeTestFindings turns a service value into JSON using the field names in the Goa design.
+func EncodeTestFindings(in *TestFindings) ([]byte, error) {
+	if err := checkTestFindingsValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestFindings JSON: %w", err)
+	}
+	if err := validateTestFindingsOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestFindings value: %w", err)
+	}
+	var body *jsonTestFindingsTransport
+	{
+		body = &jsonTestFindingsTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			StartedAt:       &in.StartedAt,
+			CheckedAt:       &in.CheckedAt,
+		}
+		report := testFindingsIntTransport(in.Report)
+		body.Report = &report
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
+	}
+	if err := validatejsonTestFindingsTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestFindings JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestFindings JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestFindingsValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestFindingsValue(in *TestFindings) error {
+	if err := checkTestFindingsValue(in); err != nil {
+		return fmt.Errorf("validate TestFindings value: %w", err)
+	}
+	if err := validateTestFindingsOriginal(in); err != nil {
+		return fmt.Errorf("validate TestFindings value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestFindings")
+	}
+
+	var body *jsonTestFindingsTransport
+	{
+		body = &jsonTestFindingsTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			StartedAt:       &in.StartedAt,
+			CheckedAt:       &in.CheckedAt,
+		}
+		report := testFindingsIntTransport(in.Report)
+		body.Report = &report
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
+	}
+	if err := validatejsonTestFindingsTransport(body); err != nil {
+		return fmt.Errorf("validate TestFindings value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestFindings checks JSON field names from the Goa design and returns a service value.
+func DecodeTestFindings(data []byte) (out *TestFindings, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestFindings JSON: %w", err)
+	}
+	if err := validateTestFindingsJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestFindings JSON: %w", err)
+	}
+	var body *jsonTestFindingsTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestFindings JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestFindings JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestFindings JSON after first value: %w", err)
+	}
+	if err := validatejsonTestFindingsTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestFindings JSON: %w", err)
+	}
+	{
+		out = &TestFindings{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+			StartedAt:       *body.StartedAt,
+			Report:          int(*body.Report),
+			CheckedAt:       *body.CheckedAt,
+		}
+		out.Findings = make([]string, len(body.Findings))
+		for i, val := range body.Findings {
+			out.Findings[i] = val
+		}
+	}
+	return out, nil
+}
+
 // EncodeTestWriterAssignment turns a service value into JSON using the field names in the Goa design.
 func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
 	if err := checkTestWriterAssignmentValue(in); err != nil {
@@ -18261,6 +18527,10 @@ func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
 			DesignSource:    &in.DesignSource,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
 		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
 		for i, val := range in.Stories {
 			if val == nil {
@@ -18313,6 +18583,10 @@ func ValidateTestWriterAssignmentValue(in *TestWriterAssignment) error {
 			DesignSource:    &in.DesignSource,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
 		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
 		for i, val := range in.Stories {
 			if val == nil {
@@ -18369,6 +18643,10 @@ func DecodeTestWriterAssignment(data []byte) (out *TestWriterAssignment, err err
 			DesignSource:    *body.DesignSource,
 		}
 		out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(body.Progress)
+		out.Findings = make([]string, len(body.Findings))
+		for i, val := range body.Findings {
+			out.Findings[i] = val
+		}
 		out.Stories = make([]*StorySummaryItem, len(body.Stories))
 		for i, val := range body.Stories {
 			if val == nil {
@@ -18404,7 +18682,7 @@ func EncodeTestWriterAssignmentItem(in *TestWriterAssignmentItem) ([]byte, error
 			RequestRevision: &in.RequestRevision,
 			InForce:         &in.InForce,
 		}
-		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
+		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
 	}
 	if err := validatejsonTestWriterAssignmentItemTransport(body); err != nil {
 		return nil, fmt.Errorf("validate TestWriterAssignmentItem JSON: %w", err)
@@ -18438,7 +18716,7 @@ func ValidateTestWriterAssignmentItemValue(in *TestWriterAssignmentItem) error {
 			RequestRevision: &in.RequestRevision,
 			InForce:         &in.InForce,
 		}
-		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
+		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
 	}
 	if err := validatejsonTestWriterAssignmentItemTransport(body); err != nil {
 		return fmt.Errorf("validate TestWriterAssignmentItem value: %w", err)
@@ -18855,6 +19133,7 @@ func EncodeTestsAccepted(in *TestsAccepted) ([]byte, error) {
 		body = &jsonTestsAcceptedTransport{
 			Commit:    &in.Commit,
 			CheckedAt: &in.CheckedAt,
+			NotJudged: &in.NotJudged,
 		}
 	}
 	if err := validatejsonTestsAcceptedTransport(body); err != nil {
@@ -18887,6 +19166,7 @@ func ValidateTestsAcceptedValue(in *TestsAccepted) error {
 		body = &jsonTestsAcceptedTransport{
 			Commit:    &in.Commit,
 			CheckedAt: &in.CheckedAt,
+			NotJudged: &in.NotJudged,
 		}
 	}
 	if err := validatejsonTestsAcceptedTransport(body); err != nil {
@@ -18923,6 +19203,7 @@ func DecodeTestsAccepted(data []byte) (out *TestsAccepted, err error) {
 		out = &TestsAccepted{
 			Commit:    *body.Commit,
 			CheckedAt: *body.CheckedAt,
+			NotJudged: *body.NotJudged,
 		}
 	}
 	return out, nil
@@ -19060,7 +19341,7 @@ func DecodeTestsCouldNotRun(data []byte) (out *TestsCouldNotRun, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode TestsCouldNotRun JSON: %w", err)
 	}
-	if err := validateChangeBuildJSONValue10("", root, ""); err != nil {
+	if err := validateChangeBuildJSONValue9("", root, ""); err != nil {
 		return out, fmt.Errorf("decode TestsCouldNotRun JSON: %w", err)
 	}
 	var body *jsonTestsCouldNotRunTransport
@@ -19101,10 +19382,8 @@ func EncodeTestsNeedChanges(in *TestsNeedChanges) ([]byte, error) {
 		body = &jsonTestsNeedChangesTransport{
 			CheckedAt: &in.CheckedAt,
 		}
-		body.Findings = make([]string, len(in.Findings))
-		for i, val := range in.Findings {
-			body.Findings[i] = val
-		}
+		findingCount := changeBuildIntTransport(in.FindingCount)
+		body.FindingCount = &findingCount
 	}
 	if err := validatejsonTestsNeedChangesTransport(body); err != nil {
 		return nil, fmt.Errorf("validate TestsNeedChanges JSON: %w", err)
@@ -19136,10 +19415,8 @@ func ValidateTestsNeedChangesValue(in *TestsNeedChanges) error {
 		body = &jsonTestsNeedChangesTransport{
 			CheckedAt: &in.CheckedAt,
 		}
-		body.Findings = make([]string, len(in.Findings))
-		for i, val := range in.Findings {
-			body.Findings[i] = val
-		}
+		findingCount := changeBuildIntTransport(in.FindingCount)
+		body.FindingCount = &findingCount
 	}
 	if err := validatejsonTestsNeedChangesTransport(body); err != nil {
 		return fmt.Errorf("validate TestsNeedChanges value: %w", err)
@@ -19173,11 +19450,8 @@ func DecodeTestsNeedChanges(data []byte) (out *TestsNeedChanges, err error) {
 	}
 	{
 		out = &TestsNeedChanges{
-			CheckedAt: *body.CheckedAt,
-		}
-		out.Findings = make([]string, len(body.Findings))
-		for i, val := range body.Findings {
-			out.Findings[i] = val
+			FindingCount: int(*body.FindingCount),
+			CheckedAt:    *body.CheckedAt,
 		}
 	}
 	return out, nil
@@ -21790,6 +22064,7 @@ func decodeTestsAcceptedTransportToTestsAccepted(v *jsonTestsAcceptedTransport) 
 	res := &TestsAccepted{
 		Commit:    *v.Commit,
 		CheckedAt: *v.CheckedAt,
+		NotJudged: *v.NotJudged,
 	}
 
 	return res
@@ -21813,11 +22088,8 @@ func decodeTestsCouldNotRunTransportToTestsCouldNotRun(v *jsonTestsCouldNotRunTr
 
 func decodeTestsNeedChangesTransportToTestsNeedChanges(v *jsonTestsNeedChangesTransport) *TestsNeedChanges {
 	res := &TestsNeedChanges{
-		CheckedAt: *v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: int(*v.FindingCount),
+		CheckedAt:    *v.CheckedAt,
 	}
 
 	return res
@@ -22735,7 +23007,7 @@ func encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(v *TestWr
 		RequestRevision: &v.RequestRevision,
 		InForce:         &v.InForce,
 	}
-	res.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(v.Progress)
+	res.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(v.Progress)
 
 	return res
 }
@@ -22876,78 +23148,11 @@ func encodeTestWriterProgressToTestWriterProgressTransport2(v *TestWriterProgres
 	return res
 }
 
-func encodeTestWriterProgressToTestWriterProgressTransport3(v *TestWriterProgress) *jsonTestWriterProgressTransport {
-	res := &jsonTestWriterProgressTransport{
-		Read: &v.Read,
-	}
-	report := changeBuildIntTransport(v.Report)
-	res.Report = &report
-	var testsValue jsonTestsTransport
-	switch string(v.Tests.Kind()) {
-	case "not_used":
-		actual, _ := v.Tests.AsNotUsed()
-		var obj *jsonTestsNotUsedTransport
-		if actual != nil {
-			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
-		}
-		u := testsValue
-		u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
-		testsValue = u
-	case "assigned":
-		actual, _ := v.Tests.AsAssigned()
-		var obj *jsonTestsAssignedTransport
-		if actual != nil {
-			obj = encodeTestsAssignedToTestsAssignedTransport(actual)
-		}
-		u := testsValue
-		u.SetAssigned((*jsonTestsAssignedTransport)(obj))
-		testsValue = u
-	case "reported":
-		actual, _ := v.Tests.AsReported()
-		var obj *jsonTestsReportedTransport
-		if actual != nil {
-			obj = encodeTestsReportedToTestsReportedTransport(actual)
-		}
-		u := testsValue
-		u.SetReported((*jsonTestsReportedTransport)(obj))
-		testsValue = u
-	case "needs_changes":
-		actual, _ := v.Tests.AsNeedsChanges()
-		var obj *jsonTestsNeedChangesTransport
-		if actual != nil {
-			obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
-		}
-		u := testsValue
-		u.SetNeedsChanges((*jsonTestsNeedChangesTransport)(obj))
-		testsValue = u
-	case "accepted":
-		actual, _ := v.Tests.AsAccepted()
-		var obj *jsonTestsAcceptedTransport
-		if actual != nil {
-			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
-		}
-		u := testsValue
-		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
-		testsValue = u
-	case "could_not_run":
-		actual, _ := v.Tests.AsCouldNotRun()
-		var obj *jsonTestsCouldNotRunTransport
-		if actual != nil {
-			obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
-		}
-		u := testsValue
-		u.SetCouldNotRun((*jsonTestsCouldNotRunTransport)(obj))
-		testsValue = u
-	}
-	res.Tests = &testsValue
-
-	return res
-}
-
 func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *jsonTestsAcceptedTransport {
 	res := &jsonTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -22973,10 +23178,8 @@ func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *jso
 	res := &jsonTestsNeedChangesTransport{
 		CheckedAt: &v.CheckedAt,
 	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
-	}
+	findingCount := changeBuildIntTransport(v.FindingCount)
+	res.FindingCount = &findingCount
 
 	return res
 }
@@ -24641,10 +24844,18 @@ func validateBuilderAssignmentJSONValue5(path string, value any, description str
 			); err != nil {
 				return err
 			}
+		case "not_judged":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What Surla's check did not judge, always the same sentence.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"checked_at",
 				"commit",
+				"not_judged",
 			})
 		}
 	}
@@ -25743,14 +25954,14 @@ func validateChangeBuildJSONValue4(path string, value any, description string) e
 		case "report":
 			if err := validateAgentPolicyItemJSONValue4(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+				typed[key], "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 			); err != nil {
 				return err
 			}
 		case "tests":
 			if err := validateChangeBuildJSONValue5(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -25800,7 +26011,7 @@ func validateChangeBuildJSONValue5(path string, value any, description string) e
 	case "accepted":
 		return validateBuilderAssignmentJSONValue5(path, branch, "")
 	case "could_not_run":
-		return validateChangeBuildJSONValue10(path, branch, "")
+		return validateChangeBuildJSONValue9(path, branch, "")
 	default:
 		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
 	}
@@ -25887,17 +26098,17 @@ func validateChangeBuildJSONValue8(path string, value any, description string) e
 			); err != nil {
 				return err
 			}
-		case "findings":
-			if err := validateChangeBuildJSONValue9(
+		case "finding_count":
+			if err := validateAgentPolicyItemJSONValue4(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+				typed[key], "Number of problems Surla found.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"checked_at",
-				"findings",
+				"finding_count",
 			})
 		}
 	}
@@ -25906,30 +26117,6 @@ func validateChangeBuildJSONValue8(path string, value any, description string) e
 
 // validateChangeBuildJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
 func validateChangeBuildJSONValue9(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateChangeBuildJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeBuildJSONValue10(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -30038,6 +30225,106 @@ func validateTeamSpaceConflictJSONValue(path string, value any, description stri
 	return nil
 }
 
+// validateTestFindingsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestFindingsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier.",
+			); err != nil {
+				return err
+			}
+		case "checked_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When Surla's check reached this verdict.",
+			); err != nil {
+				return err
+			}
+		case "findings":
+			if err := validateTestFindingsJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What Surla found, one problem per item, with no absolute path.",
+			); err != nil {
+				return err
+			}
+		case "report":
+			if err := validateAgentPolicyItemJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Number of the test writer's report that Surla checked, as get_build reports it; 0 when Surla found the problems while writing the required tests as the build started, before any report.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the build is for.",
+			); err != nil {
+				return err
+			}
+		case "started_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the user started the build, as get_build reports it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"checked_at",
+				"findings",
+				"report",
+				"request_revision",
+				"started_at",
+			})
+		}
+	}
+	return nil
+}
+
+// validateTestFindingsJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestFindingsJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateTestWriterAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateTestWriterAssignmentJSONValue(path string, value any, description string) error {
 	field := path
@@ -30072,6 +30359,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
+		case "findings":
+			if err := validateTestWriterAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
+			); err != nil {
+				return err
+			}
 		case "in_force":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
@@ -30082,7 +30376,7 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 		case "progress":
 			if err := validateChangeBuildJSONValue4(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where this assignment stands, including Surla's findings when it needs changes.",
+				typed[key], "Where this assignment stands.",
 			); err != nil {
 				return err
 			}
@@ -30094,14 +30388,14 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 				return err
 			}
 		case "required_tests":
-			if err := validateTestWriterAssignmentJSONValue2(
+			if err := validateTestWriterAssignmentJSONValue3(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "One test per finished flow of stories, in declaration order; unfinished flows require none.",
 			); err != nil {
 				return err
 			}
 		case "stories":
-			if err := validateTestWriterAssignmentJSONValue3(
+			if err := validateTestWriterAssignmentJSONValue4(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
 			); err != nil {
@@ -30118,6 +30412,7 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
 				"design_source",
+				"findings",
 				"in_force",
 				"progress",
 				"request_revision",
@@ -30144,6 +30439,30 @@ func validateTestWriterAssignmentJSONValue2(path string, value any, description 
 		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
 	}
 	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
 		if item == nil {
 			continue
 		}
@@ -30157,8 +30476,8 @@ func validateTestWriterAssignmentJSONValue2(path string, value any, description 
 	return nil
 }
 
-// validateTestWriterAssignmentJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestWriterAssignmentJSONValue3(path string, value any, description string) error {
+// validateTestWriterAssignmentJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue4(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -31879,6 +32198,9 @@ func checkBuilderAssignmentTestsAcceptedValue(in *TestsAccepted, field string, a
 		if !utf8.ValidString(string(in.CheckedAt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "checked_at", false))
 		}
+		if !utf8.ValidString(string(in.NotJudged)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "not_judged", false))
+		}
 	}
 	return nil
 }
@@ -32495,13 +32817,6 @@ func checkChangeBuildTestsNeedChangesValue(in *TestsNeedChanges, field string, a
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
-		for index1, item1 := range in.Findings {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "findings", false), strconv.Itoa(index1), true))
-			}
-		}
 		if !utf8.ValidString(string(in.CheckedAt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "checked_at", false))
 		}
@@ -34893,6 +35208,52 @@ func checkTeamSpaceConflictTeamSpaceConflictValue(in *TeamSpaceConflict, field s
 	return nil
 }
 
+// checkTestFindingsValue checks text and cycles before conversion.
+func checkTestFindingsValue(in *TestFindings) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTestFindingsTestFindingsValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestFindingsTestFindingsValue checks one generated value on the active path.
+func checkTestFindingsTestFindingsValue(in *TestFindings, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if !utf8.ValidString(string(in.StartedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "started_at", false))
+		}
+		if !utf8.ValidString(string(in.CheckedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "checked_at", false))
+		}
+		for index1, item1 := range in.Findings {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "findings", false), strconv.Itoa(index1), true))
+			}
+		}
+	}
+	return nil
+}
+
 // checkTestWriterAssignmentValue checks text and cycles before conversion.
 func checkTestWriterAssignmentValue(in *TestWriterAssignment) error {
 	if in == nil {
@@ -34924,6 +35285,13 @@ func checkTestWriterAssignmentTestWriterAssignmentValue(in *TestWriterAssignment
 		}
 		if err := checkChangeBuildTestWriterProgressValue(in.Progress, generatedJSONChildPath(field, "progress", false), active); err != nil {
 			return err
+		}
+		for index1, item1 := range in.Findings {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "findings", false), strconv.Itoa(index1), true))
+			}
 		}
 		if !utf8.ValidString(string(in.WorkingFolder)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "working_folder", false))

@@ -168,9 +168,10 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	rawResources, ok := resourcesRes["resources"].([]any)
 	require.True(t, ok)
 	assert.Len(t, rawResources, 1)
-	// Waiting, starting builds, reading the model choice, and the three team
+	// Waiting, starting builds, reading the model choice, reading a build's
+	// findings, and the three team
 	// operations are HTTP-only.
-	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-6)
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-7)
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)

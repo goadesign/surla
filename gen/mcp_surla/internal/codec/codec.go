@@ -2368,15 +2368,16 @@ func ValidateGetBuildResultStartedBuildTransport(value *GetBuildResultStartedBui
 // GetBuildResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type GetBuildResultTestWriterProgressTransport struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *GetBuildResulttestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *int `json:"report"`
 }
 
@@ -2440,6 +2441,8 @@ type GetBuildResultTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // ValidateGetBuildResultTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -2453,11 +2456,19 @@ func ValidateGetBuildResultTestsAcceptedTransport(value *GetBuildResultTestsAcce
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -2523,9 +2534,8 @@ func ValidateGetBuildResultTestsCouldNotRunTransport(value *GetBuildResultTestsC
 
 // GetBuildResultTestsNeedChangesTransport stores JSON fields until they have been validated.
 type GetBuildResultTestsNeedChangesTransport struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `json:"findings"`
+	// Number of problems Surla found.
+	FindingCount *int `json:"finding_count"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
 }
@@ -2535,14 +2545,16 @@ func ValidateGetBuildResultTestsNeedChangesTransport(value *GetBuildResultTestsN
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
-	if value.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if value.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(value.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	if value.FindingCount != nil {
+		if *value.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *value.FindingCount, 1, true))
+		}
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
@@ -2645,6 +2657,8 @@ type GetBuilderAssignmentResultTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // ValidateGetBuilderAssignmentResultTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -2658,11 +2672,19 @@ func ValidateGetBuilderAssignmentResultTestsAcceptedTransport(value *GetBuilderA
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -4055,15 +4077,16 @@ func ValidateGetTestWriterAssignmentResultStorySummaryItemTransport(value *GetTe
 // GetTestWriterAssignmentResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type GetTestWriterAssignmentResultTestWriterProgressTransport struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *GetTestWriterAssignmentResulttestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *int `json:"report"`
 }
 
@@ -4127,6 +4150,8 @@ type GetTestWriterAssignmentResultTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // ValidateGetTestWriterAssignmentResultTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -4140,11 +4165,19 @@ func ValidateGetTestWriterAssignmentResultTestsAcceptedTransport(value *GetTestW
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -4210,9 +4243,8 @@ func ValidateGetTestWriterAssignmentResultTestsCouldNotRunTransport(value *GetTe
 
 // GetTestWriterAssignmentResultTestsNeedChangesTransport stores JSON fields until they have been validated.
 type GetTestWriterAssignmentResultTestsNeedChangesTransport struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `json:"findings"`
+	// Number of problems Surla found.
+	FindingCount *int `json:"finding_count"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
 }
@@ -4222,14 +4254,16 @@ func ValidateGetTestWriterAssignmentResultTestsNeedChangesTransport(value *GetTe
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
-	if value.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if value.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(value.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	if value.FindingCount != nil {
+		if *value.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *value.FindingCount, 1, true))
+		}
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
@@ -4275,9 +4309,12 @@ type GetTestWriterAssignmentResultTransport struct {
 	// proposed revision or confirmed another revision: the assignment then stays
 	// for this earlier revision until the user builds again.
 	InForce *bool `json:"in_force"`
-	// Where this assignment stands, including Surla's findings when it needs
-	// changes.
+	// Where this assignment stands.
 	Progress *GetTestWriterAssignmentResultTestWriterProgressTransport `json:"progress"`
+	// Surla's findings, one problem per item, with no absolute path: as many as
+	// progress gives in finding_count when its state is needs_changes, and none in
+	// any other state. Fix them in working_folder, then report again.
+	Findings []string `json:"findings"`
 	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder *string `json:"working_folder"`
 	// The canonical design source as agreed at request_revision, copied when this
@@ -4307,6 +4344,9 @@ func ValidateGetTestWriterAssignmentResultTransport(value *GetTestWriterAssignme
 	}
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
 	if value.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
@@ -4811,6 +4851,8 @@ type ListBuilderAssignmentsResultTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // ValidateListBuilderAssignmentsResultTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -4824,11 +4866,19 @@ func ValidateListBuilderAssignmentsResultTestsAcceptedTransport(value *ListBuild
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -5053,15 +5103,16 @@ func ValidateListTestWriterAssignmentsResultTestWriterAssignmentItemTransport(va
 // ListTestWriterAssignmentsResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type ListTestWriterAssignmentsResultTestWriterProgressTransport struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *ListTestWriterAssignmentsResulttestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *int `json:"report"`
 }
 
@@ -5125,6 +5176,8 @@ type ListTestWriterAssignmentsResultTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // ValidateListTestWriterAssignmentsResultTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -5138,11 +5191,19 @@ func ValidateListTestWriterAssignmentsResultTestsAcceptedTransport(value *ListTe
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -5208,9 +5269,8 @@ func ValidateListTestWriterAssignmentsResultTestsCouldNotRunTransport(value *Lis
 
 // ListTestWriterAssignmentsResultTestsNeedChangesTransport stores JSON fields until they have been validated.
 type ListTestWriterAssignmentsResultTestsNeedChangesTransport struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `json:"findings"`
+	// Number of problems Surla found.
+	FindingCount *int `json:"finding_count"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
 }
@@ -5220,14 +5280,16 @@ func ValidateListTestWriterAssignmentsResultTestsNeedChangesTransport(value *Lis
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
-	if value.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if value.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(value.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	if value.FindingCount != nil {
+		if *value.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *value.FindingCount, 1, true))
+		}
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
@@ -7280,15 +7342,16 @@ func ValidateReportTestsFinishedPayloadTransport(value *ReportTestsFinishedPaylo
 // ReportTestsFinishedResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type ReportTestsFinishedResultTestWriterProgressTransport struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *ReportTestsFinishedResulttestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *int `json:"report"`
 }
 
@@ -7352,6 +7415,8 @@ type ReportTestsFinishedResultTestsAcceptedTransport struct {
 	Commit *string `json:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `json:"not_judged"`
 }
 
 // ValidateReportTestsFinishedResultTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -7365,11 +7430,19 @@ func ValidateReportTestsFinishedResultTestsAcceptedTransport(value *ReportTestsF
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if value.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	if value.NotJudged != nil {
+		if !(*value.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *value.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return err
 }
@@ -7435,9 +7508,8 @@ func ValidateReportTestsFinishedResultTestsCouldNotRunTransport(value *ReportTes
 
 // ReportTestsFinishedResultTestsNeedChangesTransport stores JSON fields until they have been validated.
 type ReportTestsFinishedResultTestsNeedChangesTransport struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `json:"findings"`
+	// Number of problems Surla found.
+	FindingCount *int `json:"finding_count"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `json:"checked_at"`
 }
@@ -7447,14 +7519,16 @@ func ValidateReportTestsFinishedResultTestsNeedChangesTransport(value *ReportTes
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
-	if value.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if value.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if value.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(value.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	if value.FindingCount != nil {
+		if *value.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *value.FindingCount, 1, true))
+		}
 	}
 	if value.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
@@ -11569,6 +11643,10 @@ func EncodeGetTestWriterAssignmentResult(in *surla.TestWriterAssignment) ([]byte
 			DesignSource:    &in.DesignSource,
 		}
 		body.Progress = encodeTestWriterProgressToGetTestWriterAssignmentResultTestWriterProgressTransport(in.Progress)
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
 		body.Stories = make([]*GetTestWriterAssignmentResultStorySummaryItemTransport, len(in.Stories))
 		for i, val := range in.Stories {
 			if val == nil {
@@ -15653,6 +15731,7 @@ func encodeTestsAcceptedToGetBuildResultTestsAcceptedTransport(v *surla.TestsAcc
 	res := &GetBuildResultTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -15662,6 +15741,7 @@ func encodeTestsAcceptedToGetBuilderAssignmentResultTestsAcceptedTransport(v *su
 	res := &GetBuilderAssignmentResultTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -15671,6 +15751,7 @@ func encodeTestsAcceptedToGetTestWriterAssignmentResultTestsAcceptedTransport(v 
 	res := &GetTestWriterAssignmentResultTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -15680,6 +15761,7 @@ func encodeTestsAcceptedToListBuilderAssignmentsResultTestsAcceptedTransport(v *
 	res := &ListBuilderAssignmentsResultTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -15689,6 +15771,7 @@ func encodeTestsAcceptedToListTestWriterAssignmentsResultTestsAcceptedTransport(
 	res := &ListTestWriterAssignmentsResultTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -15698,6 +15781,7 @@ func encodeTestsAcceptedToReportTestsFinishedResultTestsAcceptedTransport(v *sur
 	res := &ReportTestsFinishedResultTestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -15769,11 +15853,8 @@ func encodeTestsCouldNotRunToReportTestsFinishedResultTestsCouldNotRunTransport(
 
 func encodeTestsNeedChangesToGetBuildResultTestsNeedChangesTransport(v *surla.TestsNeedChanges) *GetBuildResultTestsNeedChangesTransport {
 	res := &GetBuildResultTestsNeedChangesTransport{
-		CheckedAt: &v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: &v.FindingCount,
+		CheckedAt:    &v.CheckedAt,
 	}
 
 	return res
@@ -15781,11 +15862,8 @@ func encodeTestsNeedChangesToGetBuildResultTestsNeedChangesTransport(v *surla.Te
 
 func encodeTestsNeedChangesToGetTestWriterAssignmentResultTestsNeedChangesTransport(v *surla.TestsNeedChanges) *GetTestWriterAssignmentResultTestsNeedChangesTransport {
 	res := &GetTestWriterAssignmentResultTestsNeedChangesTransport{
-		CheckedAt: &v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: &v.FindingCount,
+		CheckedAt:    &v.CheckedAt,
 	}
 
 	return res
@@ -15793,11 +15871,8 @@ func encodeTestsNeedChangesToGetTestWriterAssignmentResultTestsNeedChangesTransp
 
 func encodeTestsNeedChangesToListTestWriterAssignmentsResultTestsNeedChangesTransport(v *surla.TestsNeedChanges) *ListTestWriterAssignmentsResultTestsNeedChangesTransport {
 	res := &ListTestWriterAssignmentsResultTestsNeedChangesTransport{
-		CheckedAt: &v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: &v.FindingCount,
+		CheckedAt:    &v.CheckedAt,
 	}
 
 	return res
@@ -15805,11 +15880,8 @@ func encodeTestsNeedChangesToListTestWriterAssignmentsResultTestsNeedChangesTran
 
 func encodeTestsNeedChangesToReportTestsFinishedResultTestsNeedChangesTransport(v *surla.TestsNeedChanges) *ReportTestsFinishedResultTestsNeedChangesTransport {
 	res := &ReportTestsFinishedResultTestsNeedChangesTransport{
-		CheckedAt: &v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: &v.FindingCount,
+		CheckedAt:    &v.CheckedAt,
 	}
 
 	return res

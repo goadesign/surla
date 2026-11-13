@@ -74,7 +74,7 @@ func TestConfigureServeWorkspacePinsSuiteCommits(t *testing.T) {
 	require.ErrorContains(t, err, "restart surla after committing the starter, or call init_project")
 
 	// Simulate builder advancing HEAD with a second commit that edits eval/.
-	require.NoError(t, os.WriteFile(filepath.Join(childRepo, "eval", "cmd", "shop-evals", "main.go"), []byte("package main\n// builder edit\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(childRepo, "eval", "gen", "cmd", "shop-evals", "main.go"), []byte("package main\n// builder edit\n"), 0o644))
 	builderCommit := gitCommitAll(t, childRepo, "Builder commit")
 	require.NotEqual(t, initialCommit, builderCommit)
 

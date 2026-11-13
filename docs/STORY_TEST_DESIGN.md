@@ -229,8 +229,10 @@ registered, no suite-count rule is applied, and `StoryGeneration.Files`
 equals `Evaluator.Generate(ctx, files)`'s output.
 
 Generation only regenerates `gen/`: the suite's hook interface (`Hooks` in
-`gen/evals/<suite>/suite.go`) gains one method per included flow, while the
-starter owns the runner command at `cmd/<name>-evals/main.go`. No create-once
+`gen/evals/<suite>/suite.go`) gains one method per included flow, and the
+module's program at `gen/cmd/<name>-evals/main.go`, which builds the suite from
+those hooks and the author's `acceptance` package, is generated with it when the
+module has that package (a Surla test module; see the reference). No create-once
 stub file is written. Until the author's hand-written hooks implement every
 method, the evaluator module fails to compile naming the missing methods; that
 compile failure is the unimplemented state. When a later revision removes or

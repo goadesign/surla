@@ -569,8 +569,8 @@ var _ = Suite("second_suite", func() {
 				},
 			},
 			wantErr: []string{
-				"Story scenario generation requires one evaluation suite, but the design declares none",
-				"declare a single Suite(...) in design/",
+				"Story scenario generation needs exactly one evaluation suite, but the design declares 0",
+				"keep exactly one Suite(...) in design/",
 			},
 		},
 		{
@@ -583,8 +583,8 @@ var _ = Suite("second_suite", func() {
 				},
 			},
 			wantErr: []string{
-				"Story scenario generation requires a single evaluation suite, but the design declares 2 suites",
-				"keep only one Suite(...) in design/",
+				"Story scenario generation needs exactly one evaluation suite, but the design declares 2",
+				"keep exactly one Suite(...) in design/",
 			},
 		},
 	}
@@ -706,9 +706,10 @@ func TestGenerateWithStoriesFailsAfterClose(t *testing.T) {
 // starterEvalModule renders the starter evaluator templates from
 // internal/scaffold/templates/eval for module example.com/shop/eval, tidies
 // the module against Surla's own dependency versions, and returns both the
-// generator input snapshot (go.mod, go.sum, design/design.go) and the complete
-// hand-written module tree (including acceptance/, scripted/, and
-// cmd/shop-evals/).
+// generator input snapshot (go.mod, go.sum, design/design.go and the
+// acceptance package, as surla init generates with it) and the complete
+// hand-written module tree (acceptance/ and scripted/); the module's program,
+// gen/cmd/shop-evals, comes from the generator.
 func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	t.Helper()
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -728,6 +729,10 @@ func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	evalInput = testmodule.Module(t, "example.com/shop/eval", "", map[string]string{
 		"design/design.go": designSrc,
 	})
+	// The acceptance package imports code generation writes, so it joins the
+	// input after tidying; generation loads only the design packages.
+	evalInput["acceptance/acceptance.go"] = readRendered("acceptance/acceptance.go.tmpl")
+	evalInput["acceptance/forwarder.go"] = readRendered("acceptance/forwarder.go.tmpl")
 	initGen, err := testEvaluator.Generate(t.Context(), evalInput)
 	require.NoError(t, err)
 
@@ -741,7 +746,6 @@ func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 		"acceptance/acceptance.go": readRendered("acceptance/acceptance.go.tmpl"),
 		"acceptance/forwarder.go":  readRendered("acceptance/forwarder.go.tmpl"),
 		"scripted/scripted.go":     readRendered("scripted/scripted.go.tmpl"),
-		"cmd/shop-evals/main.go":   readRendered("cmd/_name_-evals/main.go.tmpl"),
 	}
 	withGen := maps.Clone(fullTree)
 	for path, content := range initGen {
@@ -773,13 +777,13 @@ func stageStarterEvalTree(t *testing.T, baseFiles map[string]string, generatedFi
 	return dir
 }
 
-// buildEvalCommand runs `go build -mod=readonly` on ./cmd/shop-evals in dir
-// and returns the output binary path, combined compiler output, and build
-// error.
+// buildEvalCommand runs `go build -mod=readonly` on the generated program,
+// ./gen/cmd/shop-evals, in dir and returns the output binary path, combined
+// compiler output, and build error.
 func buildEvalCommand(t *testing.T, dir string) (string, string, error) {
 	t.Helper()
 	bin := filepath.Join(dir, "shop-evals")
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-mod=readonly", "-o", bin, "./cmd/shop-evals")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-mod=readonly", "-o", bin, "./gen/cmd/shop-evals")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()

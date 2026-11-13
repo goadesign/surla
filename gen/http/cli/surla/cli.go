@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|ensure-team|stop|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|get-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|get-model-connection|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|get-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|get-model-connection|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|get-test-findings|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -172,6 +172,9 @@ func ParseEndpoint(
 		surlaGetBuildFlags        = flag.NewFlagSet("get-build", flag.ExitOnError)
 		surlaGetBuildChangeIDFlag = new(cliStringFlag)
 
+		surlaGetTestFindingsFlags        = flag.NewFlagSet("get-test-findings", flag.ExitOnError)
+		surlaGetTestFindingsChangeIDFlag = new(cliStringFlag)
+
 		surlaListBuilderAssignmentsFlags = flag.NewFlagSet("list-builder-assignments", flag.ExitOnError)
 
 		surlaGetBuilderAssignmentFlags        = flag.NewFlagSet("get-builder-assignment", flag.ExitOnError)
@@ -211,6 +214,7 @@ func ParseEndpoint(
 	surlaStartBuildFlags.Var(surlaStartBuildBodyFlag, "body", "")
 	surlaStartBuildFlags.Var(surlaStartBuildChangeIDFlag, "change-id", "Confirmed Change Card identifier.")
 	surlaGetBuildFlags.Var(surlaGetBuildChangeIDFlag, "change-id", "Change Card identifier.")
+	surlaGetTestFindingsFlags.Var(surlaGetTestFindingsChangeIDFlag, "change-id", "Change Card identifier.")
 	surlaGetBuilderAssignmentFlags.Var(surlaGetBuilderAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_builder_assignments.")
 	surlaGetTestWriterAssignmentFlags.Var(surlaGetTestWriterAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_test_writer_assignments.")
 	surlaReportTestsFinishedFlags.Var(surlaReportTestsFinishedBodyFlag, "body", "")
@@ -257,6 +261,7 @@ func ParseEndpoint(
 	surlaWaitForChangesFlags.Usage = surlaWaitForChangesUsage
 	surlaStartBuildFlags.Usage = surlaStartBuildUsage
 	surlaGetBuildFlags.Usage = surlaGetBuildUsage
+	surlaGetTestFindingsFlags.Usage = surlaGetTestFindingsUsage
 	surlaListBuilderAssignmentsFlags.Usage = surlaListBuilderAssignmentsUsage
 	surlaGetBuilderAssignmentFlags.Usage = surlaGetBuilderAssignmentUsage
 	surlaListTestWriterAssignmentsFlags.Usage = surlaListTestWriterAssignmentsUsage
@@ -417,6 +422,9 @@ func ParseEndpoint(
 			case "get-build":
 				epf = surlaGetBuildFlags
 
+			case "get-test-findings":
+				epf = surlaGetTestFindingsFlags
+
 			case "list-builder-assignments":
 				epf = surlaListBuilderAssignmentsFlags
 
@@ -560,6 +568,9 @@ func ParseEndpoint(
 			case "get-build":
 				endpoint = c.GetBuild()
 				data, err = surlac.BuildGetBuildPayload(surlaGetBuildChangeIDFlag.value)
+			case "get-test-findings":
+				endpoint = c.GetTestFindings()
+				data, err = surlac.BuildGetTestFindingsPayload(surlaGetTestFindingsChangeIDFlag.value)
 			case "list-builder-assignments":
 				endpoint = c.ListBuilderAssignments()
 			case "get-builder-assignment":
@@ -716,12 +727,13 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
 	fmt.Fprintln(os.Stderr, `    start-build: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.`)
-	fmt.Fprintln(os.Stderr, `    get-build: Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-build: Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state (with the number of Surla's findings, never their text) and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-test-findings: Return the text of Surla's findings on the tests of a change's build, which get_build only counts, with the build's revision and start time, the number of the report Surla checked and when it reached the verdict. A build whose tests do not need changes is refused. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    list-builder-assignments: List the builder's assignments, one per change the user built, most recently started first, each with its change, revision and whether it was read. Reading the list records nothing.`)
 	fmt.Fprintln(os.Stderr, `    get-builder-assignment: Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
 	fmt.Fprintln(os.Stderr, `    list-test-writer-assignments: List the test writer's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
-	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.`)
-	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.`)
+	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished. Every report raises the build's report number by one and makes the state reported, from any state, clearing an earlier verdict, and returns at once. Surla then checks the tests in the working folder against the build's Story; its verdict, needs_changes, accepted or could_not_run, replaces reported in the test writer's assignment, which then counts as unread. A report for another revision, or in a project that verifies with its stored evaluator, where no test writer is used, is refused and changes nothing.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -1296,7 +1308,7 @@ func surlaGetBuildUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state (with the number of Surla's findings, never their text) and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
@@ -1304,6 +1316,24 @@ func surlaGetBuildUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-build --change-id \"svp\"")
+}
+
+func surlaGetTestFindingsUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-test-findings", os.Args[0])
+	fmt.Fprint(os.Stderr, " -change-id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return the text of Surla's findings on the tests of a change's build, which get_build only counts, with the build's revision and start time, the number of the report Surla checked and when it reached the verdict. A build whose tests do not need changes is refused. Reading changes nothing.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-test-findings --change-id \"oi\"")
 }
 
 func surlaListBuilderAssignmentsUsage() {
@@ -1364,7 +1394,7 @@ func surlaGetTestWriterAssignmentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.`)
+	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_test_writer_assignments.`)
@@ -1383,7 +1413,7 @@ func surlaReportTestsFinishedUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `The test writer reports that its tests for a change at the build's revision are finished. Every report raises the build's report number by one and makes the state reported, from any state, clearing an earlier verdict, and returns at once. Surla then checks the tests in the working folder against the build's Story; its verdict, needs_changes, accepted or could_not_run, replaces reported in the test writer's assignment, which then counts as unread. A report for another revision, or in a project that verifies with its stored evaluator, where no test writer is used, is refused and changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)

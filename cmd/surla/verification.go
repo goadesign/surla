@@ -334,7 +334,7 @@ func starterVerificationFromRepoCommit(
 	}
 	for _, tree := range []string{
 		path.Join(candidateModule, layout.CandidatePackage),
-		path.Join(suiteModule, layout.SuiteCommand),
+		path.Join(suiteModule, layout.GeneratedSuiteCommand()),
 	} {
 		if err := requireGitTree(ctx, repoRoot, suiteCommit, tree, dir); err != nil {
 			return nil, err
@@ -354,7 +354,7 @@ func starterVerificationFromRepoCommit(
 			SuiteRepo:       repoRoot,
 			SuiteCommit:     suiteCommit,
 			SuiteModule:     suiteModule,
-			SuiteCommand:    layout.SuiteCommand,
+			SuiteCommand:    layout.GeneratedSuiteCommand(),
 			ReportDir:       reportDir,
 		},
 		Command: self,

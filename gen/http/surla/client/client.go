@@ -148,6 +148,10 @@ type Client struct {
 	// endpoint.
 	GetBuildDoer goahttp.Doer
 
+	// GetTestFindings Doer is the HTTP client used to make requests to the
+	// get_test_findings endpoint.
+	GetTestFindingsDoer goahttp.Doer
+
 	// ListBuilderAssignments Doer is the HTTP client used to make requests to the
 	// list_builder_assignments endpoint.
 	ListBuilderAssignmentsDoer goahttp.Doer
@@ -221,6 +225,7 @@ func NewClient(
 		WaitForChangesDoer:            doer,
 		StartBuildDoer:                doer,
 		GetBuildDoer:                  doer,
+		GetTestFindingsDoer:           doer,
 		ListBuilderAssignmentsDoer:    doer,
 		GetBuilderAssignmentDoer:      doer,
 		ListTestWriterAssignmentsDoer: doer,
@@ -946,6 +951,25 @@ func (c *Client) GetBuild() goa.Endpoint {
 		resp, err := c.GetBuildDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_build", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// GetTestFindings returns an endpoint that makes HTTP requests to the surla
+// service get_test_findings server.
+func (c *Client) GetTestFindings() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGetTestFindingsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGetTestFindingsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GetTestFindingsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "get_test_findings", err)
 		}
 		return decodeResponse(resp)
 	}

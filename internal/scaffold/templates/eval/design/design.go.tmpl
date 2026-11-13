@@ -64,10 +64,9 @@ var _ = Service("[[.Name]]", func() {
 })
 
 // This starter suite lives in the same repository as the [[.Name]], so anyone who
-// can read the [[.Name]]'s code can read these scenarios too. The "holdout" tag
-// only hides a scenario's details in the report view surla verify gives to
-// builders (verify.Report.ForBuilders); it is not a secret test. Keep real
-// holdout scenarios in an evaluator repository builders cannot read.
+// can read the [[.Name]]'s code can read these scenarios too; none of them is
+// hidden. Surla generates the suite's program, gen/cmd/[[.Name]]-evals, from this
+// suite and the acceptance package.
 var _ = Suite("[[.Name]]_acceptance", func() {
 	Description("Proves through the public API that the helper agent prices items with its lookup_price tool, and that override_prompt changes the prompt the next model request carries.")
 	Timeout("1m")
@@ -82,6 +81,6 @@ var _ = Suite("[[.Name]]_acceptance", func() {
 	})
 	Scenario("unknown_item", func() {
 		Description("Asking about coffee, which the catalog does not price, makes the agent call lookup_price and report that it found no price.")
-		Tags("holdout")
+		Tags("repair")
 	})
 })

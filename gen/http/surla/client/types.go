@@ -884,6 +884,25 @@ type GetBuildResponseBody struct {
 	Build *BuildResponseBody `form:"build,omitempty" json:"build,omitempty" xml:"build,omitempty"`
 }
 
+// GetTestFindingsResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body.
+type GetTestFindingsResponseBody struct {
+	// Change Card identifier.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Change Card revision the build is for.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// When the user started the build, as get_build reports it.
+	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	// Number of the test writer's report that Surla checked, as get_build reports
+	// it; 0 when Surla found the problems while writing the required tests as the
+	// build started, before any report.
+	Report *int `form:"report,omitempty" json:"report,omitempty" xml:"report,omitempty"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
+	// What Surla found, one problem per item, with no absolute path.
+	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+}
+
 // ListBuilderAssignmentsResponseBody is the type of the "surla" service
 // "list_builder_assignments" endpoint HTTP response body.
 type ListBuilderAssignmentsResponseBody struct {
@@ -935,9 +954,12 @@ type GetTestWriterAssignmentResponseBody struct {
 	// proposed revision or confirmed another revision: the assignment then stays
 	// for this earlier revision until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
-	// Where this assignment stands, including Surla's findings when it needs
-	// changes.
+	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`
+	// Surla's findings, one problem per item, with no absolute path: as many as
+	// progress gives in finding_count when its state is needs_changes, and none in
+	// any other state. Fix them in working_folder, then report again.
+	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
 	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder *string `form:"working_folder,omitempty" json:"working_folder,omitempty" xml:"working_folder,omitempty"`
 	// The canonical design source as agreed at request_revision, copied when this
@@ -2926,6 +2948,60 @@ type GetBuildForbiddenResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// GetTestFindingsNotFoundResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "not_found" error.
+type GetTestFindingsNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GetTestFindingsConflictResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "conflict" error.
+type GetTestFindingsConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GetTestFindingsForbiddenResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "forbidden" error.
+type GetTestFindingsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // ListBuilderAssignmentsForbiddenResponseBody is the type of the "surla"
 // service "list_builder_assignments" endpoint HTTP response body for the
 // "forbidden" error.
@@ -3649,15 +3725,16 @@ type BuilderProgressResponseBody struct {
 // types.
 type TestWriterProgressResponseBody struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *TestsResponseBody `form:"tests,omitempty" json:"tests,omitempty" xml:"tests,omitempty"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *int `form:"report,omitempty" json:"report,omitempty" xml:"report,omitempty"`
 }
 
@@ -3675,9 +3752,8 @@ type TestsReportedResponseBody struct {
 
 // TestsNeedChangesResponseBody is used to define fields on response body types.
 type TestsNeedChangesResponseBody struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+	// Number of problems Surla found.
+	FindingCount *int `form:"finding_count,omitempty" json:"finding_count,omitempty" xml:"finding_count,omitempty"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
 }
@@ -3689,6 +3765,8 @@ type TestsAcceptedResponseBody struct {
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `form:"not_judged,omitempty" json:"not_judged,omitempty" xml:"not_judged,omitempty"`
 }
 
 // TestsCouldNotRunResponseBody is used to define fields on response body types.
@@ -8757,6 +8835,69 @@ func NewGetBuildForbidden(body *GetBuildForbiddenResponseBody) *goa.ServiceError
 	return v
 }
 
+// NewGetTestFindingsTestFindingsOK builds a "surla" service
+// "get_test_findings" endpoint result from a HTTP "OK" response.
+func NewGetTestFindingsTestFindingsOK(body *GetTestFindingsResponseBody) *surla.TestFindings {
+	v := &surla.TestFindings{
+		ChangeID:        *body.ChangeID,
+		RequestRevision: *body.RequestRevision,
+		StartedAt:       *body.StartedAt,
+		Report:          *body.Report,
+		CheckedAt:       *body.CheckedAt,
+	}
+	v.Findings = make([]string, len(body.Findings))
+	for i, val := range body.Findings {
+		v.Findings[i] = val
+	}
+
+	return v
+}
+
+// NewGetTestFindingsNotFound builds a surla service get_test_findings endpoint
+// not_found error.
+func NewGetTestFindingsNotFound(body *GetTestFindingsNotFoundResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGetTestFindingsConflict builds a surla service get_test_findings endpoint
+// conflict error.
+func NewGetTestFindingsConflict(body *GetTestFindingsConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGetTestFindingsForbidden builds a surla service get_test_findings
+// endpoint forbidden error.
+func NewGetTestFindingsForbidden(body *GetTestFindingsForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // NewListBuilderAssignmentsBuilderAssignmentListOK builds a "surla" service
 // "list_builder_assignments" endpoint result from a HTTP "OK" response.
 func NewListBuilderAssignmentsBuilderAssignmentListOK(body *ListBuilderAssignmentsResponseBody) *surla.BuilderAssignmentList {
@@ -8903,6 +9044,10 @@ func NewGetTestWriterAssignmentTestWriterAssignmentOK(body *GetTestWriterAssignm
 		DesignSource:    *body.DesignSource,
 	}
 	v.Progress = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(body.Progress)
+	v.Findings = make([]string, len(body.Findings))
+	for i, val := range body.Findings {
+		v.Findings[i] = val
+	}
 	v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
 	for i, val := range body.Stories {
 		if val == nil {
@@ -10181,6 +10326,44 @@ func ValidateGetBuildResponseBody(body *GetBuildResponseBody) (err error) {
 	return
 }
 
+// ValidateGetTestFindingsResponseBody runs the validations defined on
+// GetTestFindingsResponseBody
+func ValidateGetTestFindingsResponseBody(body *GetTestFindingsResponseBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
+	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
+	if body.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *body.Report, 0, true))
+		}
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if len(body.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
+	}
+	return
+}
+
 // ValidateListBuilderAssignmentsResponseBody runs the validations defined on
 // ListBuilderAssignmentsResponseBody
 func ValidateListBuilderAssignmentsResponseBody(body *ListBuilderAssignmentsResponseBody) (err error) {
@@ -10265,6 +10448,9 @@ func ValidateGetTestWriterAssignmentResponseBody(body *GetTestWriterAssignmentRe
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if body.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
 	if body.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
@@ -12908,6 +13094,78 @@ func ValidateGetBuildForbiddenResponseBody(body *GetBuildForbiddenResponseBody) 
 	return
 }
 
+// ValidateGetTestFindingsNotFoundResponseBody runs the validations defined on
+// GetTestFindingsNotFoundResponseBody
+func ValidateGetTestFindingsNotFoundResponseBody(body *GetTestFindingsNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGetTestFindingsConflictResponseBody runs the validations defined on
+// GetTestFindingsConflictResponseBody
+func ValidateGetTestFindingsConflictResponseBody(body *GetTestFindingsConflictResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGetTestFindingsForbiddenResponseBody runs the validations defined on
+// GetTestFindingsForbiddenResponseBody
+func ValidateGetTestFindingsForbiddenResponseBody(body *GetTestFindingsForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateListBuilderAssignmentsForbiddenResponseBody runs the validations
 // defined on ListBuilderAssignmentsForbiddenResponseBody
 func ValidateListBuilderAssignmentsForbiddenResponseBody(body *ListBuilderAssignmentsForbiddenResponseBody) (err error) {
@@ -15090,14 +15348,16 @@ func validateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 // ValidateTestsNeedChangesResponseBody runs the validations defined on
 // TestsNeedChanges
 func ValidateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody) (err error) {
-	if body.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if body.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(body.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
+	if body.FindingCount != nil {
+		if *body.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *body.FindingCount, 1, true))
+		}
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
@@ -15108,14 +15368,16 @@ func ValidateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody) (e
 // validateTestsNeedChangesResponseBody checks TestsNeedChanges and reports
 // errors using the path supplied by its caller
 func validateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody, path string) (err error) {
-	if body.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", path))
+	if body.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", path))
 	}
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
 	}
-	if len(body.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError(path+".findings", body.Findings, len(body.Findings), 1, true))
+	if body.FindingCount != nil {
+		if *body.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError(path+".finding_count", *body.FindingCount, 1, true))
+		}
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
@@ -15132,11 +15394,19 @@ func ValidateTestsAcceptedResponseBody(body *TestsAcceptedResponseBody) (err err
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if body.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if body.NotJudged != nil {
+		if !(*body.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *body.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return
 }
@@ -15150,11 +15420,19 @@ func validateTestsAcceptedResponseBody(body *TestsAcceptedResponseBody, path str
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
 	}
+	if body.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", path))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern(path+".commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if body.NotJudged != nil {
+		if !(*body.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".not_judged", *body.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return
 }

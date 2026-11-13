@@ -36,7 +36,8 @@ The builder generates/checks code, updates dependencies, starts live targets,
 drafts prompts, and requests verification. The user and builder can stop a live
 target. User, guide, and builder share change, architecture, diff, verification,
 trace, check-output, and Story-refresh reads. Only the user session starts a
-build; all four read a change's build. The builder reads its own build
+build; all four read a change's build, and only the user session reads the
+text of Surla's findings on its tests. The builder reads its own build
 assignments, and the test writer reads its own test assignments and reports
 them finished (see [Builds and assignments](#builds-and-assignments)).
 Management operations are not MCP tools. A refused
@@ -219,21 +220,60 @@ to finish preparation.
 | `working_copy_busy` | 409 | Start the build again after the current build or test check ends. |
 | `sandbox_unavailable` | 501 | Use a system with Surla's candidate sandbox. |
 
+**Judging reports.** Surla, not the test writer, decides whether the tests
+count. Each `report_tests_finished` raises the build's report number and wakes
+the server's *report checker*, which judges the test writer's working copy
+against the Story saved with the build, without running any of the copy's code
+outside the sandbox:
+
+1. It writes the required tests into the copy again from the build's Story.
+2. It checks that only files inside the test module changed since the copy's
+   base, regenerates the generated folder in a private snapshot, builds the
+   generated test program `./gen/cmd/<name>-evals` in the build sandbox
+   (within 10 minutes), and lists its scenarios in the candidate sandbox
+   (within 60 seconds). The whole judgment has 15 minutes.
+3. Its verdict replaces `reported` and marks the test writer's assignment
+   unread:
+   - `needs_changes`: the copy has findings, such as a missing hook method,
+     a file changed outside the test module, a scenario tagged `holdout`, a
+     module that does not declare exactly one evaluation suite, or a build or
+     listing that reached its limit;
+   - `accepted`: the tests are committed on the copy's `surla/tests` branch,
+     and the builder's assignment is marked unread too;
+   - `could_not_run`: a cause the test writer cannot fix, with the user's
+     step.
+
+The check runs in the project's working-copy turn, one judgment at a time, so
+a build start during a judgment is refused as busy. A newer report during a
+judgment makes the server discard that judgment's verdict and judge the newer
+report next. A report waits while the checker commits accepted tests, so it
+keeps its number. Builds found reported when the checker starts are judged
+then, and a build whose verdict could not be saved is judged again a minute
+later, up to three times in a row; after that it stays `reported` until the
+next report or the next server start. Findings and reasons contain no absolute path. A saved build has report
+number 0 while its tests are assigned and at least 1 while they are reported.
+The report checker runs for as long as the project server does; stopping the
+server ends a judgment in progress without saving it, and the next server
+judges the build again.
+
 - **`get_build`** (`GET /changes/{change_id}/build`; user, guide, builder, test writer)
   - **Input:** `change_id` → **Output:** `ChangeBuild` (`change_id`, `build`).
   - `build.state` is `not_started` when no usable build exists, otherwise `started` with the saved build fields above. A build started with only a builder is usable while the server uses its stored evaluator. If those settings are removed, it has no test-writer copy: the read returns `not_started`, no assignment from that build is listed or returned, and the user builds again. This does not delete the saved record.
   - `in_force` stays true while a proposal waits beside the agreed revision, and becomes false when the user adopts or confirms another revision. An older usable build keeps its assignments until the user builds again; it is not rebuilt automatically.
-  - `builder` reports whether its assignment was read. `test_writer` reports `tests`, `read` and `report`. Test states are `not_used`, `assigned`, `reported`, `needs_changes` (findings), `accepted` (commit), or `could_not_run` (reason and step). Each verdict carries `checked_at`. `not_used` is derived from current stored verification settings, never saved as a verdict. `report` is the counted report number, zero until reports are counted.
+  - `builder` reports whether its assignment was read. `test_writer` reports `tests`, `read` and `report`. Test states are `not_used`, `assigned`, `reported`, `needs_changes` (the `finding_count` of Surla's findings, never their text), `accepted` (the `commit`, and `not_judged`, always the sentence "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."), or `could_not_run` (reason and step). Each verdict carries `checked_at`. `not_used` is derived from current stored verification settings, never saved as a verdict. `report` is the number of the test writer's latest report of the build: 0 until its first, and one more with each `report_tests_finished`.
+- **`get_test_findings`** (`GET /changes/{change_id}/build/findings`; HTTP only, user session only)
+  - **Input:** `change_id` → **Output:** `TestFindings` (`change_id`, `request_revision`, `started_at`, `report`, `checked_at`, `findings`)
+  - Returns the text of Surla's findings when the build's tests are `needs_changes`, with the build they belong to (`request_revision` and `started_at`, as `get_build` reports them), the number of the `report` checked (0 when the problems were found as the build started, before any report) and when the verdict was reached, for the views page. `get_build` carries only their number. Returns `conflict` (HTTP `409`) in any other state, naming it, and `not_found` when no usable build exists. Reading changes nothing.
 - **`list_builder_assignments`** (`GET /assignments/builder`) and **`get_builder_assignment`** (`GET /assignments/builder/{change_id}`; builder only)
   - **Output:** `BuilderAssignmentList` (`assignments`, most recently started first) or one `BuilderAssignment` (`change_id`, `request_revision`, `in_force`, `read`, `written_tests`). `written_tests.state` is `not_used`, `not_yet_accepted`, or `accepted` with its commit and verdict time.
   - The builder works in the control plane's active workspace, which may be the child project made by `init_project`. Reading an assignment marks it read; listing changes nothing. `not_found` means there is no usable build, and names the build-again step.
 - **`list_test_writer_assignments`** (`GET /assignments/test-writer`) and **`get_test_writer_assignment`** (`GET /assignments/test-writer/{change_id}`; test writer only)
-  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `working_folder`, `design_source`, `stories` and `required_tests`.
-  - Only builds started with a test writer have its assignment. `working_folder` is the project's folder inside the linked working copy, not necessarily the repository checkout's root. The saved design and Story stay paired with the built revision after later changes.
+  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `findings`, `working_folder`, `design_source`, `stories` and `required_tests`. `findings` holds the text of Surla's findings when `progress` is `needs_changes`, as many as its `finding_count`, and is empty otherwise; the list carries only their number.
+  - Only builds started with a test writer have its assignment. `working_folder` is the project's folder inside the linked working copy, not necessarily the repository checkout's root. Surla writes the test module's generated code, with the required tests, when the build starts and again at each report, so the test writer never regenerates it: `generate_code` is the builder's, and `surla gen` without the Story would drop the required tests. After changing the test module's design, the test writer reports, and Surla generates the module again. It checks its work with `go build ./...` in `eval/` of `working_folder`, which fails naming any required method not yet written, before `report_tests_finished`. The saved design and Story stay paired with the built revision after later changes.
   - `required_tests` holds one entry per finished flow (`story`, `flow_key`, `scenario`, `hook`): flow `refund-over-limit` requires scenario `refund_over_limit` and method `RefundOverLimit`. Unfinished flows require none; the test program must still build when the list is empty. Reading an assignment marks it read; listing changes nothing. No successful full assignment returns an empty working folder.
 - **`report_tests_finished`** (`POST /assignments/test-writer/{change_id}/finished`; test writer only)
   - **Input:** `change_id`, `request_revision` → **Output:** `TestWriterAssignmentItem`.
-  - Records `reported` for that assignment's revision and clears earlier findings or a recorded commit. Returns `conflict` (409) for another revision and `not_found` when no usable test-writer assignment exists; a refused report changes nothing. The server currently records the report without running its acceptance check.
+  - Records `reported` for that assignment's revision from any state, raises `report` by one even when the tests are already `reported`, and clears an earlier verdict. It returns at once and wakes the report checker, whose verdict replaces `reported` (see **Judging reports** above). Returns `conflict` (409) for another revision and in a project that now verifies with its stored evaluator, where no test writer is used, and `not_found` when no usable test-writer assignment exists; a refused report changes nothing.
 
 ### Live target prompt contract
 
@@ -367,7 +407,7 @@ Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate ev
 - `-dir <path>` — Directory to create; it must not exist *(required)*. `surla init` never replaces an existing directory, file, or symlink, including one created while generation runs. Command logs, Go temporary files, and the unpublished tree stay in protected storage. A failed command keeps its log. A canceled or failed command removes its stage once its processes stop, or retains the stage and logs and reports their paths when cleanup cannot be confirmed. If Surla cannot find protected storage on the destination filesystem, it stops before building; choose a destination with room outside its parent for that storage.
 - `-module <path>` — Go module path of the candidate service, such as `example.com/shop` *(required)*. Its last path element names the service and must be a lowercase Go identifier (`^[a-z][a-z0-9]*$`, excluding Go keywords and `main`).
 - `-surla-version <version>` — Exact canonical semantic version (`golang.org/x/mod/semver`) of `github.com/goadesign/surla` required by `<dir>/eval/go.mod` (default: the build-info `Main.Version` stamped into the `surla` binary; required explicitly when running from a `(devel)` or `+dirty` build, and mutable labels such as `latest` or `main` are rejected).
-- **Starter scope & visible-suite note:** The generated candidate (`cmd/<name>`) runs an in-memory Goa-AI `helper` agent (`RunPolicy`, `BindTo("price")`, and C4 `System`/`Container` model) connecting to `-model-gateway <host:port>`, registering `helper.SystemPrompt()` (`<name>.helper.system`, version `"v1"`) on each question's runtime and attaching `PromptRefs: []prompt.PromptRef{system.Ref}` on every model request. The generated `<dir>/eval/` module runs a scripted `goa-ai` model gateway and three starter scenarios: `prices_tea` tagged `"repair"` and `unknown_item` tagged `"holdout"`, checking the correlated `catalog.lookup_price` tool call and `ToolResultPart` exchange plus `pinned.Evidence("<name>")`, and `prompt_override_reaches_model` tagged `"repair"`, checking that `override_prompt` rejects a wrong key and that the next model request carries the new prompt text. Because `eval/` lives inside the same repository as the starter code, its `"holdout"` tag demonstrates `Report.ForBuilders()` redaction only; real unseen holdouts belong in an evaluator repository that builder agents cannot read.
+- **Starter scope & visible-suite note:** The generated candidate (`cmd/<name>`) runs an in-memory Goa-AI `helper` agent (`RunPolicy`, `BindTo("price")`, and C4 `System`/`Container` model) connecting to `-model-gateway <host:port>`, registering `helper.SystemPrompt()` (`<name>.helper.system`, version `"v1"`) on each question's runtime and attaching `PromptRefs: []prompt.PromptRef{system.Ref}` on every model request. The generated `<dir>/eval/` module runs a scripted `goa-ai` model gateway and three starter scenarios, all tagged `"repair"`: `prices_tea` and `unknown_item`, checking the correlated `catalog.lookup_price` tool call and `ToolResultPart` exchange plus `pinned.Evidence("<name>")`, and `prompt_override_reaches_model`, checking that `override_prompt` rejects a wrong key and that the next model request carries the new prompt text. The suite's program, `eval/gen/cmd/<name>-evals`, is generated with the rest of `eval/gen/`: it builds the suite from the generated tests and the `eval/acceptance` package, so the author writes only that package. Because `eval/` lives inside the same repository as the starter code, none of its scenarios is hidden; scenarios that must stay hidden from builders belong in an evaluator repository that builder agents cannot read.
 
 ### `surla preview`
 Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum`, and non-test `.go` files; run `go mod tidy` first if `go.sum` is missing), evaluates it inside the sandboxed Goa/Goa-AI/Model compiler (`designeval.Evaluator`) at **0 LLM tokens**, and prints the indented JSON `designeval.Result` (`system_name`, `declarations`, C4 `containers` and `edges`, `agent_policies`, and `tools`) to `stdout`, which holds nothing else. After the JSON, it writes one summary line to `stderr`, such as `surla: "orders": 3 container(s), 2 boundary edge(s), 1 agent policy(s), 4 tool contract(s)`, with the system name quoted; the `preview_architecture` `banner` carries the same summary without the `surla: ` prefix. Needs no running server, no Change Card, and no LLM API key. SIGINT and SIGTERM cancel the evaluation. Before the command exits, it removes its compiler workspace and evaluation temporary directories, which it creates in protected storage outside the current working directory and inspected module, including when `TMPDIR` points inside either; a build whose processes cannot be confirmed stopped keeps it, and the error names it.
@@ -633,6 +673,8 @@ Regenerates the `gen/` directory of a design module from its `design/`, inside S
 - `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
 
 When the design declares agents, Goa-AI also writes `AGENTS_QUICKSTART.md` at the module root, a guide to the design's agents and tools for coding agents. With `goa.design/goa-ai` `v0.90.1-0.20261110011046-f32bd628f2bf` or later, Surla replaces the guide's parts that name commands to run (its header, first-run steps, and codegen rules) with steps that use Surla's MCP tools, and replaces its evaluation section when the design declares no evaluation suite; Goa-AI's description of the design is unchanged. When the design declares evaluation suites, Goa-AI's evaluation section is kept, including its `goa example` and `go run ./cmd/<suite>-evals` instructions. A Goa-AI release before named sections writes its guide unchanged. The generation program reads declared suites through `goa.design/goa-ai/eval/expr`, as evaluation already does, so generation also needs a Goa-AI that has that package. `generate_code` writes the same guide.
+
+For a Surla test module, generation also writes the suite's program at `gen/cmd/<service>-evals/main.go`. Three facts make a module a Surla test module, and all three are needed: its path is `<service module>/eval`; its design declares exactly one evaluation suite; and it has an `acceptance` package, which provides the five names the program calls: `Name`, `Hooks`, `New`, `Live` and `LiveThroughGateway`. Any other module gets no program, so a module that only shares the path keeps building. The program builds the suite from the generated tests and the `acceptance` package; a missing scenario method on `Hooks` therefore does not compile. A test writer who deletes the `acceptance` package gets no program, and the check of its report says so. Every run declares the environment `scripted-model`. Generation also adds a section naming those five names to `AGENTS_QUICKSTART.md`, and writes that guide with only this section when the design declares no agent. A hand-written `cmd/<service>-evals` from an earlier starter is left in place, but Surla never builds it; delete it.
 
 `surla gen` reads the module as `surla preview` does, then builds and runs a generation program with the module's own dependency versions. That program calls Goa's `generator.CompleteSources`, so the module must select `goa.design/goa/v3` `v3.35.1-0.20261103205041-35e789e8f9b1` or later. With an older Goa, the build fails, and the error shows the compiler output and the Goa version the module uses; update the module's `goa.design/goa/v3` requirement and `go.sum`, then run it again. A design with gRPC transports is refused, because protoc compiles its `.proto` files after generation and cannot run in the sandbox; generate those designs with the module-pinned `go run goa.design/goa/v3/cmd/goa gen <module>/design`.
 

@@ -100,18 +100,27 @@ func TestQuickstartSectionsKeepGoaAIsLayout(t *testing.T) {
 }
 
 // TestGenerateProgramCompilesThePluginAsMain checks the files the sandboxed
-// generation program is built from: the plugin with its package clause
-// changed to main, and the section texts as Go literals equal to this
-// package's embedded files.
+// generation program is built from: both plugins and the layout rule with
+// their package clauses changed to main, registered in that order, and the
+// section texts as Go literals equal to this package's embedded files.
 func TestGenerateProgramCompilesThePluginAsMain(t *testing.T) {
-	program := generateProgram()
-	require.Len(t, program, 3)
-	assert.Contains(t, program["main.go"], `codegen.RegisterPluginLast("surla-quickstart", "gen", nil, surlaQuickstart)`)
+	program := generateProgram(true)
+	require.Len(t, program, 5)
+	quickstart := `codegen.RegisterPluginLast("surla-quickstart", "gen", nil, surlaQuickstart)`
+	suiteCommand := `codegen.RegisterPluginLast("surla-suite-command", "gen", nil, surlaSuiteCommand(true))`
+	assert.Contains(t, generateProgram(false)["main.go"], "surlaSuiteCommand(false)", "the program is told the module has no acceptance package")
+	assert.Contains(t, program["main.go"], quickstart)
+	assert.Contains(t, program["main.go"], suiteCommand)
+	assert.Less(t, strings.Index(program["main.go"], quickstart), strings.Index(program["main.go"], suiteCommand),
+		"the suite command's section is added after Surla's quickstart sections are replaced")
 
 	fset := token.NewFileSet()
-	plugin, err := parser.ParseFile(fset, "quickstart.go", program["quickstart.go"], 0)
-	require.NoError(t, err)
-	assert.Equal(t, "main", plugin.Name.Name)
+	for _, name := range []string{"quickstart.go", "suite_command.go", "test_layout.go"} {
+		plugin, err := parser.ParseFile(fset, name, program[name], 0)
+		require.NoError(t, err, name)
+		assert.Equal(t, "main", plugin.Name.Name, name)
+	}
+	assert.Contains(t, program["quickstart_sections.go"], "var testProgramSection = "+strconv.Quote(testProgramSection))
 
 	sections, err := parser.ParseFile(fset, "quickstart_sections.go", program["quickstart_sections.go"], 0)
 	require.NoError(t, err)
@@ -132,14 +141,14 @@ func namedGuide(names []string) *codegen.File {
 }
 
 func TestGenerateProgramWithStoriesParsesAsMain(t *testing.T) {
-	assert.Equal(t, generateProgram(), generateProgramWithStories(nil))
+	assert.Equal(t, generateProgram(true), generateProgramWithStories(nil, true))
 
 	specs := []storyScenarioSpec{
 		{name: "refund_over_limit", description: "Line 1: \"quoted\" `backtick` \\backslash\\\nLine 2"},
 		{name: "blank_title_flow", description: "blank-title-flow"},
 	}
-	program := generateProgramWithStories(specs)
-	require.Len(t, program, 5)
+	program := generateProgramWithStories(specs, true)
+	require.Len(t, program, 7)
 
 	fset := token.NewFileSet()
 	for _, name := range []string{"story_scenarios.go", "story_scenarios_data.go"} {
