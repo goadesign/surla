@@ -318,7 +318,10 @@ the page closes.
 
 The section shows saved assignment reads, test-writer progress and the required
 Story test count, including zero. An accepted test-writer result does not mean
-verification passed. Team and working-copy results from a start are dated
+verification passed: the page shows the checker's explicit notice that it did
+not judge the tests' assertions. When tests need changes, their findings load
+through the user's separate read for that exact build and report; a failed
+read offers Retry without discarding the saved build. Team and working-copy results from a start are dated
 receipts of that action, not current health checks. A later successful **Start
 agents** clears the earlier build's team receipt.
 

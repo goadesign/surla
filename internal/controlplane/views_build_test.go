@@ -96,6 +96,7 @@ await control(origin, "act", { key: "new-attention" });
 await until(() => page.$("#surla-team-attention-builder"), "the independent Team update did not arrive");
 expect(page.text("#surla-build-action-error").includes("Start the build after it ends."), "a later status update hid the refusal");
 expect(page.sent("POST", path).length === 1, "a recovery read or Team update retried the effect");
+await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").disabled, "the background build read did not settle before retry");
 page.$("#surla-build-start").click();
 await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "an explicit retry did not build");
 expect(!page.$("#surla-build-action-error"), "an explicit successful retry retained the refusal");
