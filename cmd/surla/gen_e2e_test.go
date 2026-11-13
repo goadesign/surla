@@ -81,15 +81,13 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	provider := &scriptedModelProvider{}
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
-	cfg := serveConfig{
-
-		gatewayAddr: gatewayAddr,
-	}
-	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ(), workspace)
+	opts, err := serveOptions(func(string) string { return "" }, os.Environ(), workspace)
 	require.NoError(t, err)
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)
+	require.NoError(t, err)
+	_, err = cp.ConfigureModel(controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: "operator@example.com", CallerID: "user", Kind: controlplane.CallerUser}), &gensurla.ConfigureModelPayload{GatewayAddr: &gatewayAddr})
 	require.NoError(t, err)
 	// Registered after the temporary directories, so it runs before they
 	// are removed.
@@ -186,11 +184,13 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	}
 	srv.Close()
 	require.NoError(t, cp.Close())
-	opts, err = serveOptions(cfg, func(string) string { return "" }, os.Environ(), dir)
+	opts, err = serveOptions(func(string) string { return "" }, os.Environ(), dir)
 	require.NoError(t, err)
 	assert.Equal(t, state.CardsDir(), opts.CardsDir)
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err = controlplane.New(opts)
+	require.NoError(t, err)
+	_, err = cp.ConfigureModel(controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: "operator@example.com", CallerID: "user", Kind: controlplane.CallerUser}), &gensurla.ConfigureModelPayload{GatewayAddr: &gatewayAddr})
 	require.NoError(t, err)
 	srv = httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
 	t.Cleanup(srv.Close)

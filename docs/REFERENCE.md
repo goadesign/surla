@@ -127,7 +127,7 @@ Surla cannot judge whether an analysis is complete or correct; the requester doe
   - Requires a configured verification target (stored verification settings or a committed starter workspace): the server builds the commit with that configuration's candidate repository, binaries, and evaluator suite, exactly as `CP4` builds a candidate. It then runs the suite's `--live` mode (see [the suite contract](#surla-verify)) and binds `draft_override` to the running candidate. `url` is the candidate's loopback origin, for trying its own API.
   - The server runs at most one live target, so a second start stops the first before it starts the new one. A target runs until `stop_live_target`, its own exit, or the server's shutdown. The build continues if the caller disconnects, and is bounded by the configuration's `timeout`.
   - Starting a target first stops the one already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.
-  - Live targets get their own directories under `<cards-dir>/live`, which the cards directory's lock reserves for one the Surla project server. If the server crashes, its executor kills the target's processes, and the directory stays. At startup the Surla project server names directories an earlier server using the same cards directory left; it does not check their processes or remove them.
+  - Live targets get their own directories under `<cards-dir>/live`, which the cards directory's lock reserves for one Surla project server. If the server crashes, its executor kills the target's processes, and the directory stays. At startup the Surla project server names directories an earlier server using the same cards directory left; it does not check their processes or remove them.
   - Errors: `live_target_unavailable` (HTTP 501) when verification is not configured, and `live_target_failed` (HTTP 422) with a builder-safe summary of the step that failed.
 - **`stop_live_target`** (`DELETE /live-target`)
   - **Output:** `StopLiveTargetResult` (`stopped`, `message`). Stops the running live target and unbinds `draft_override`. `stopped` is `false` when none was running.
@@ -142,7 +142,7 @@ A live target serves one operation for `draft_override`. Surla calls it with a c
 - `PUT /prompts/{prompt_id}` with body `{"template": "<Go text/template>"}` and header `X-Live-Target-Key: <key>` → `200` with `{"prompt_id": "...", "version": "..."}`.
 - `401` (`unauthorized`) for a missing or wrong key, `404` (`unknown_prompt`) for an unregistered prompt, and `422` (`invalid_prompt`) for a template that does not render with the prompt's registered spec. The target renders the template before it saves it, so a rejected template leaves the text in use unchanged.
 - The key is minted by the Surla project server for each `start_live_target`. It reaches the suite in `SURLA_LIVE_TARGET_KEY`, and the suite's `Live` function passes it to the candidate through `candidate.Spec.Env`. It lives as long as that target.
-- the Surla project server also passes its active model configuration—from startup `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` auto-detection, or the most recent `configure_model` call—so a suite's `Live` function can plan with the same model: `SURLA_LIVE_MODEL_PROVIDER` and `SURLA_LIVE_MODEL_NAME` for a direct provider (the provider's key stays in the variable the Surla project server read it from, such as `ANTHROPIC_API_KEY`), or `SURLA_LIVE_MODEL_GATEWAY` for a model gateway. Nothing is set when the Surla project server has no model configured. Suites decide whether they need a model; `start_live_target` itself does not.
+- The Surla project server also passes its active model configuration—from startup `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` auto-detection, or the most recent `configure_model` call—so a suite's `Live` function can plan with the same model: `SURLA_LIVE_MODEL_PROVIDER` and `SURLA_LIVE_MODEL_NAME` for a direct provider (the provider's key stays in the variable the Surla project server read it from, such as `ANTHROPIC_API_KEY`), or `SURLA_LIVE_MODEL_GATEWAY` for a model gateway. Nothing is set when the Surla project server has no model configured. Suites decide whether they need a model; `start_live_target` itself does not.
 - The evaluator suite that `surla init` generates implements this contract. Its `override_prompt` reads the key from `SURLA_LIVE_TARGET_KEY` and replaces `<name>.helper.system`. Its `Live` function serves a direct provider through its own loopback model gateway, keeping the provider key in the suite process. It passes a literal loopback gateway address, such as `127.0.0.1:9090` or `[::1]:9090`, to the candidate directly. It reaches any other gateway, including a hostname such as `localhost`, through a byte-only forwarder it owns on a loopback port, which resolves and dials the address outside the sandbox, because the candidate sandbox allows only loopback connections and resolves no names. In every case the candidate's environment holds only the live key.
 
 Changing this contract is a breaking change for every target that implements it.
@@ -216,7 +216,7 @@ stop Surla before removing `traces.jsonl`.
 
 ## CLI Reference
 
-Running `surla`, `surla help`, `surla -h`, or `surla --help` prints top-level usage to `stdout` and exits `0`. Running `surla help <command>` or `surla <command> -h` prints that subcommand's flags to `stderr` and exits `0`. Every subcommand rejects unexpected positional arguments (`unexpected arguments [...]`), so a stray non-flag token never causes Go's `flag` parser to silently ignore flags that follow it.
+Running `surla help`, `surla -h`, or `surla --help` prints top-level usage to `stdout` and exits `0`. Running `surla help <command>` or `surla <command> -h` prints that subcommand's flags to `stderr` and exits `0`. Every subcommand rejects unexpected positional arguments (`unexpected arguments [...]`), so a stray non-flag token never causes Go's `flag` parser to silently ignore flags that follow it.
 
 ### `surla init`
 Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate evaluator module in `<dir>/eval`. It resolves dependencies, generates each module's code inside Surla's sandbox with the same generator as [`surla gen`](#surla-gen) (the design code never runs on the host), checks both modules with `go vet ./...` and `go test ./...`, and prints the commands to commit, preview, and verify the project. Both module files start with the Go and library versions saved in the `surla` binary (`surla.GoMod()`). `surla init` builds one project tree in protected temporary storage outside the current working directory and destination parent, on the destination filesystem. It moves that completed tree to `<dir>` only after every step, including generation, has succeeded. A failure or interrupt leaves `<dir>` absent; publication is the final step and never replaces a directory, file, or symlink created meanwhile. Before generating the evaluator, `surla init` pins its exact Surla dependency with `go get github.com/goadesign/surla@<version>`; Go may select newer library versions required by that dependency.
@@ -233,8 +233,10 @@ Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum
 ### `surla` and `surla stop`
 
 Run `surla` in a project folder to start or attach to its server and open the
-views page. Herdr (`hc`) must be installed. The server runs in its own parentless
+views page. Install Herdr `hc` with `curl -fsSL https://releases.herdr.dev/core/install.sh | sh` ([official instructions](https://herdr.dev/core/)). The server runs in its own parentless
 Herdr terminal, so closing the initiating terminal leaves it running.
+
+At startup, `ANTHROPIC_API_KEY` selects Anthropic with `claude-sonnet-4-6`; otherwise `OPENAI_API_KEY` selects OpenAI with `gpt-5.4-mini`, and the user can change the choice through `configure_model`.
 
 A project is a folder, independent of Git. Surla resolves physical path aliases
 and uses the nearest project record in that folder or its parents. Starting
@@ -247,6 +249,8 @@ tree, under `<UserConfigDir>/surla/operator/`. It contains the immutable operati
 system account owner, one saved numeric `127.0.0.1` port, changes, runs, reports,
 agent credentials, settings, and the running-server record. There are no
 caller-selected identity, address, token, or storage paths.
+
+Port selection briefly binds and releases an available port; that check is a snapshot, and another process can take the port before the server binds it. If that happens, startup fails and retains the saved port and credentials.
 
 A start lock serializes simultaneous commands. The existing card-store writer
 lock determines whether a server owns the project: a held lock attaches only

@@ -28,7 +28,11 @@ import (
 // init enables production launch effects only in the explicitly tagged test binary.
 // TestMain still requires the isolated configuration root before starting its helper.
 func init() {
-	herdrTestRuntime = productionProjectRuntime
+	herdrTestRuntime = func() projectRuntime {
+		runtime := productionProjectRuntime()
+		runtime.configRoot = testProjectRuntime().configRoot
+		return runtime
+	}
 }
 
 // TestHC isolates the Herdr core, starts only the real server, and cleans up exact terminals.
@@ -69,9 +73,7 @@ func TestHC(t *testing.T) {
 	config := filepath.Join(scratch, "surla-config")
 	require.NoError(t, os.Mkdir(config, 0o700))
 	t.Setenv("SURLA_TEST_USER_CONFIG_DIR", config)
-	prior := userConfigDir
-	userConfigDir = func() (string, error) { return config, nil }
-	t.Cleanup(func() { userConfigDir = prior })
+
 	workspace := filepath.Join(scratch, "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	t.Chdir(workspace)
@@ -159,7 +161,7 @@ func TestHC(t *testing.T) {
 	client, err := projectClient(state)
 	require.NoError(t, err)
 	launch := func(ctx context.Context, state *project.State) (string, error) {
-		return startProjectTerminal(ctx, state, nil)
+		return startProjectTerminal(ctx, state)
 	}
 
 	current = state

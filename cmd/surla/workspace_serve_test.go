@@ -21,32 +21,24 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	require.NoError(t, os.MkdirAll(wsDir, 0o755))
 	t.Chdir(wsDir)
 
-	priorConfigDir := userConfigDir
-	t.Cleanup(func() { userConfigDir = priorConfigDir })
-
-	// 1. When userConfigDir fails, configureServeWorkspace fails without falling back to TMPDIR or sibling dirs.
-	userConfigDir = func() (string, error) {
-		return "", os.ErrNotExist
-	}
-	_, err := configureServeWorkspace()
+	// 1. When the injected config root fails, configureServeWorkspace fails without falling back to TMPDIR or sibling dirs.
+	runtime := testProjectRuntime()
+	runtime.configRoot = func() (string, error) { return "", os.ErrNotExist }
+	_, err := runtime.operatorRoot(wsDir)
 	require.ErrorIs(t, err, os.ErrNotExist)
 
-	// 2. When userConfigDir points inside the bound workspace, configureServeWorkspace fails without falling back.
-	userConfigDir = func() (string, error) {
-		return filepath.Join(wsDir, ".config"), nil
-	}
-	_, err = configureServeWorkspace()
+	// 2. When the injected config root points inside the bound workspace, configureServeWorkspace fails without falling back.
+	runtime.configRoot = func() (string, error) { return filepath.Join(wsDir, ".config"), nil }
+	_, err = runtime.operatorRoot(wsDir)
 	require.ErrorContains(t, err, "must be outside the workspace")
 
-	// 3. When <userConfigDir>/surla/operator already exists with permissive 0755 mode, configureServeWorkspace fails.
+	// 3. When <configRoot>/surla/operator already exists with permissive 0755 mode, configureServeWorkspace fails.
 	cfgRoot := filepath.Join(root, "user-config")
 	opRoot := filepath.Join(cfgRoot, "surla", "operator")
 	require.NoError(t, os.MkdirAll(opRoot, 0o755))
 	require.NoError(t, os.Chmod(opRoot, 0o755))
-	userConfigDir = func() (string, error) {
-		return cfgRoot, nil
-	}
-	_, err = configureServeWorkspace()
+	runtime.configRoot = func() (string, error) { return cfgRoot, nil }
+	_, err = runtime.operatorRoot(wsDir)
 	require.ErrorContains(t, err, "has permissions 0755, want 0o700")
 
 }
@@ -61,9 +53,7 @@ func TestConfigureServeWorkspacePinsSuiteCommits(t *testing.T) {
 	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
 	require.NoError(t, os.MkdirAll(wsSub, 0o755))
 
-	priorConfigDir := userConfigDir
-	userConfigDir = func() (string, error) { return cfgRoot, nil }
-	t.Cleanup(func() { userConfigDir = priorConfigDir })
+	t.Setenv("SURLA_TEST_USER_CONFIG_DIR", cfgRoot)
 	t.Chdir(wsDir)
 
 	alias := filepath.Join(root, "alias")
@@ -122,7 +112,7 @@ func initCommittedStarterRepo(t *testing.T, dir string) (string, string) {
 	return physDir, commit
 }
 
-// isolateServeWorkspace points userConfigDir at a new 0700 temporary directory
+// isolateServeWorkspace supplies a new 0700 test configuration root
 // and changes the working directory to a new empty workspace directory,
 // returning that workspace directory path.
 func isolateServeWorkspace(t *testing.T) string {
@@ -132,9 +122,7 @@ func isolateServeWorkspace(t *testing.T) string {
 	wsDir := filepath.Join(root, "workspace")
 	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
 	require.NoError(t, os.MkdirAll(wsDir, 0o755))
-	prior := userConfigDir
-	userConfigDir = func() (string, error) { return cfgRoot, nil }
-	t.Cleanup(func() { userConfigDir = prior })
+	t.Setenv("SURLA_TEST_USER_CONFIG_DIR", cfgRoot)
 	t.Chdir(wsDir)
 	return wsDir
 }
@@ -170,7 +158,6 @@ func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *tes
 		name   string
 		starts []start
 	}{
-		{name: "alternate path from the parent", starts: []start{{chdir: ".", project: "WORKSPACE"}, {chdir: ".", project: "workspace"}}},
 		{name: "started inside the workspace", starts: []start{{chdir: "Workspace"}, {chdir: "workspace"}, {chdir: "WORKSPACE"}}},
 	}
 	for _, tc := range cases {
@@ -183,9 +170,7 @@ func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *tes
 			if _, err := os.Stat(filepath.Join(root, "WORKSPACE")); err != nil {
 				t.Skip("needs a case-insensitive volume")
 			}
-			priorConfigDir := userConfigDir
-			userConfigDir = func() (string, error) { return cfgRoot, nil }
-			t.Cleanup(func() { userConfigDir = priorConfigDir })
+			t.Setenv("SURLA_TEST_USER_CONFIG_DIR", cfgRoot)
 			alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: controlplane.CallerUser})
 
 			var first workspaceServeConfig

@@ -22,7 +22,7 @@ import (
 
 type (
 	// workspaceServeConfig holds the resolved control-plane options for a
-	// workspace-bound the project server instance.
+	// workspace-bound project server instance.
 	workspaceServeConfig struct {
 		// workspaceDir is the physical initial workspace directory.
 		workspaceDir string
@@ -197,12 +197,12 @@ func joinPreservingRawSegments(baseDir, p string) string {
 	return strings.TrimRight(baseDir, string(filepath.Separator)) + string(filepath.Separator) + p
 }
 
-// defaultOperatorRoot returns the single deterministic operator-only storage
+// operatorRoot returns the single deterministic operator-only storage
 // root (`<UserConfigDir>/surla/operator`) strictly outside initialWorkspaceRoot
 // and any extraDirs, failing if unavailable, inside the workspace grant, or not
 // owned by the current effective user with 0o700 permissions.
-func defaultOperatorRoot(initialWorkspaceRoot string, extraDirs ...string) (string, error) {
-	cfgRoot, err := userConfigDir()
+func (runtime projectRuntime) operatorRoot(initialWorkspaceRoot string, extraDirs ...string) (string, error) {
+	cfgRoot, err := runtime.configRoot()
 	if err != nil {
 		return "", fmt.Errorf("determine user configuration directory for operator storage: %w", err)
 	}

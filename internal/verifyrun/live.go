@@ -112,7 +112,7 @@ const (
 	// summaryLiveSuite describes a suite that did not report a ready target
 	// and what the operator can check.
 	summaryLiveSuite = "The evaluator suite did not start a live target. Check that its suite.Command sets Live " +
-		"and that surla serve's environment has the model provider settings the suite reads."
+		"and that the project server's environment has the model provider settings the suite reads."
 	// maxLiveDetail bounds the executor log excerpt kept in a
 	// LiveStartError after its directory is removed.
 	maxLiveDetail = 8 << 10

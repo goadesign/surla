@@ -21,7 +21,7 @@ import (
 // coding agents, written at the module root.
 const quickstartGuide = "AGENTS_QUICKSTART.md"
 
-// runGen regenerates the gen/ directory of the design module in -dir from its
+// gen regenerates the gen/ directory of the design module in -dir from its
 // design, inside Surla's sandbox, and replaces gen/ in one atomic exchange.
 //
 // It reads the module through one os.Root handle that it keeps until
@@ -37,7 +37,7 @@ const quickstartGuide = "AGENTS_QUICKSTART.md"
 // success point: afterwards the command returns nil, and writing the agent
 // guide, removing the old tree and reporting the changes only print
 // warnings. go.mod and go.sum are never written.
-func runGen(args []string, stdout, stderr io.Writer) (err error) {
+func (runtime projectRuntime) gen(args []string, stdout, stderr io.Writer) (err error) {
 	fs := flag.NewFlagSet("gen", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	if err := fs.Parse(args); err != nil {
@@ -70,7 +70,7 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	evalWorkDir, err := localEvalWorkDir(cleanDir)
+	evalWorkDir, err := runtime.localEvalWorkDir(cleanDir)
 	if err != nil {
 		return err
 	}

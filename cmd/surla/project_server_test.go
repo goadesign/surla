@@ -11,9 +11,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	runtimepkg "runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
+
+	genproject "github.com/goadesign/surla/gen/project"
+	goahttp "goa.design/goa/v3/http"
 	"testing"
 	"time"
 
@@ -23,7 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestProjectStartSerializesAndRecovers proves actual writer-lock and authenticated HTTP attach decisions.
+// TestProjectStartSerializesAndRecovers proves writer-lock and authenticated HTTP attach decisions.
+// Ephemeral port selection is a bind/release snapshot; another listener can take it before launch.
 func TestProjectStartSerializesAndRecovers(t *testing.T) {
 	root, dir := t.TempDir(), t.TempDir()
 	var starts atomic.Int32
@@ -244,7 +250,7 @@ func TestProjectSettingsRejectsWorkspaceAndRepositoryPaths(t *testing.T) {
 func TestProjectStartPreflightPrecedesState(t *testing.T) {
 	runtime := testProjectRuntime()
 	runtime.preflight = func() error { return errors.New("install required platform program") }
-	runtime.stateRoot = func(string, ...string) (string, error) { t.Fatal("state reached before preflight"); return "", nil }
+	runtime.configRoot = func() (string, error) { t.Fatal("state reached before preflight"); return "", nil }
 	assert.ErrorContains(t, runWithRuntime(nil, io.Discard, runtime), "install required platform program")
 }
 
@@ -259,7 +265,7 @@ func TestProjectStartPortTakeoverRemovesOnlyFailedTerminal(t *testing.T) {
 	require.NoError(t, err)
 	runtime := testProjectRuntime()
 	runtime.preflight = func() error { return nil }
-	runtime.startTerminal = func(ctx context.Context, state *project.State, args []string) (string, error) {
+	runtime.startTerminal = func(ctx context.Context, state *project.State) (string, error) {
 		// attachOrStartProject's precheck already closed its socket. Another owner now takes it.
 		listener, err := net.Listen("tcp", state.Address())
 		require.NoError(t, err)
@@ -296,33 +302,111 @@ func TestInternalServerAcceptsNoCallerOptions(t *testing.T) {
 func TestMissingBrowserOpenerFailsBeforeProjectCreation(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	runtime := productionProjectRuntime()
-	runtime.stateRoot = func(string, ...string) (string, error) { t.Fatal("state must remain untouched"); return "", nil }
+	runtime.preflight = func() error { return preflightProjectStart(func() (string, error) { return "owned-hc-stand-in", nil }) }
+	runtime.configRoot = func() (string, error) { t.Fatal("state must remain untouched"); return "", nil }
 	var output bytes.Buffer
 	err := runWithRuntime(nil, &output, runtime)
-	require.ErrorContains(t, err, "required")
+	opener := "xdg-open"
+	if runtimepkg.GOOS == "darwin" {
+		opener = "open"
+	}
+	require.ErrorContains(t, err, opener+" is required to open Surla views")
 	assert.Empty(t, output.String(), "never print a browser link on setup failure")
 }
 
-// TestReadinessRejectsAnotherProjectWithoutRetry proves a mismatched identity
-// receives only the initial authenticated probe, never repeated credentials.
-func TestReadinessRejectsAnotherProjectWithoutRetry(t *testing.T) {
+// TestReadinessStopsOnAnyReceivedHTTPResponse proves credentials are never resent
+// after a response, including redirects, refusals, and malformed identity bodies.
+func TestReadinessStopsOnAnyReceivedHTTPResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"wrong project", http.StatusOK, `{"project_id":"another-project","directory":"/another","owner":"another"}`},
+		{"unauthorized", http.StatusUnauthorized, `{"message":"refused"}`},
+		{"not found", http.StatusNotFound, "not found"},
+		{"non JSON", http.StatusOK, "not JSON"},
+		{"redirect", http.StatusFound, "redirect"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			var probes atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				probes.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Location", "/redirected")
+				w.WriteHeader(tc.status)
+				_, err := io.WriteString(w, tc.body)
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+			state.Record.Port = server.Listener.Addr().(*net.TCPAddr).Port
+			client, err := projectClient(state)
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.Error(t, waitForProject(ctx, state, client))
+			assert.EqualValues(t, 1, probes.Load(), "no redirect or retry may resend the credential")
+			assert.NoError(t, ctx.Err(), "a reply ends polling before the deadline")
+		})
+	}
+}
+
+// TestReadinessRetriesConnectionFailures proves a transport failure can recover
+// while response and identity failures remain terminal in the consumer above.
+func TestReadinessRetriesConnectionFailures(t *testing.T) {
 	isolateServeWorkspace(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
-	var probes atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		probes.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_, err := io.WriteString(w, `{"project_id":"another-project","directory":"/another","owner":"another"}`)
-		assert.NoError(t, err)
-	}))
-	t.Cleanup(server.Close)
-	state.Record.Port = server.Listener.Addr().(*net.TCPAddr).Port
-	client, err := projectClient(state)
-	require.NoError(t, err)
+	probes := 0
+	client := &genproject.Client{IdentityEndpoint: func(context.Context, any) (any, error) {
+		probes++
+		if probes == 1 {
+			return nil, goahttp.ErrRequestError("project", "identity", &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED})
+		}
+		return &genproject.ProjectIdentity{ProjectID: state.Record.ID, Directory: state.Record.Directory, Owner: state.Record.Owner}, nil
+	}}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	require.ErrorIs(t, waitForProject(ctx, state, client), errWrongProject)
-	assert.EqualValues(t, 1, probes.Load())
-	assert.NoError(t, ctx.Err())
+	require.NoError(t, waitForProject(ctx, state, client))
+	assert.Equal(t, 2, probes)
+}
+
+// TestRuntimeRootsAreIndependent verifies local work and project management
+// retain each runtime's injected root even when the test environment changes.
+func TestRuntimeRootsAreIndependent(t *testing.T) {
+	workspace := t.TempDir()
+	t.Chdir(workspace)
+	firstRoot, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	secondRoot, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	runtimes := []projectRuntime{testProjectRuntimeAt(firstRoot), testProjectRuntimeAt(secondRoot)}
+	t.Setenv("SURLA_TEST_USER_CONFIG_DIR", t.TempDir())
+	input := filepath.Join(t.TempDir(), "verification.json")
+	content := `{"candidate_repo":"/candidate.git","candidate_module":".","binaries":{"app":"./cmd/app"},"suite_repo":"/suite.git","suite_commit":"` + strings.Repeat("b", 40) + `","suite_module":".","suite_command":"./cmd/evals","timeout":"30m"}`
+	require.NoError(t, os.WriteFile(input, []byte(content), 0o600))
+	var identities []string
+	for index, runtime := range runtimes {
+		expected := []string{firstRoot, secondRoot}[index]
+		evaluation, err := runtime.localEvalWorkDir(workspace)
+		require.NoError(t, err)
+		staging, err := runtime.localInitWorkDir(workspace)
+		require.NoError(t, err)
+		for _, work := range []string{evaluation, staging} {
+			assert.True(t, strings.HasPrefix(work, expected+string(os.PathSeparator)), work)
+		}
+		require.NoError(t, runtime.settings("verification", []string{"set", input}, io.Discard))
+		state, err := runtime.discover()
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(state.Dir, expected+string(os.PathSeparator)))
+		assert.NotEmpty(t, state.Record.ID)
+		identities = append(identities, state.Record.ID)
+		raw, err := state.ReadSettings("verification")
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "/candidate.git")
+	}
+	assert.NotEqual(t, identities[0], identities[1])
 }

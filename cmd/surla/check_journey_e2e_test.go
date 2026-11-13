@@ -118,14 +118,13 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	}
 	gatewayAddr := startModelGateway(t, &scriptedModelProvider{})
 	workspace := t.TempDir()
-	opts, err := serveOptions(serveConfig{
-
-		gatewayAddr: gatewayAddr,
-	}, func(string) string { return "" }, os.Environ(), workspace)
+	opts, err := serveOptions(func(string) string { return "" }, os.Environ(), workspace)
 	require.NoError(t, err)
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)
+	require.NoError(t, err)
+	_, err = cp.ConfigureModel(controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: "operator@example.com", CallerID: "user", Kind: controlplane.CallerUser}), &gensurla.ConfigureModelPayload{GatewayAddr: &gatewayAddr})
 	require.NoError(t, err)
 	// Registered after the temporary directories, so it runs before they
 	// are removed.

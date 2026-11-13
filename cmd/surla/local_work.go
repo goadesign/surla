@@ -15,13 +15,9 @@ import (
 	"github.com/goadesign/surla/internal/abspath"
 )
 
-// userConfigDir obtains the platform configuration parent. Command tests
-// replace it with test-owned storage rather than writing into a user's home.
-var userConfigDir = os.UserConfigDir
-
 // localEvalWorkDir chooses a protected parent for a command's evaluator.
 // roots are existing modules the command reads; startup is protected as well.
-func localEvalWorkDir(roots ...string) (string, error) {
+func (runtime projectRuntime) localEvalWorkDir(roots ...string) (string, error) {
 	startup, err := abspath.Eval(".")
 	if err != nil {
 		return "", err
@@ -31,7 +27,7 @@ func localEvalWorkDir(roots ...string) (string, error) {
 		return "", err
 	}
 	var failures []error
-	for _, candidate := range localOperatorCandidates(startup) {
+	for _, candidate := range runtime.localOperatorCandidates(startup) {
 		work, err := createProtectedDir(filepath.Join(candidate, "designeval-work"), protected)
 		if err == nil {
 			return work, nil
@@ -43,7 +39,7 @@ func localEvalWorkDir(roots ...string) (string, error) {
 
 // localInitWorkDir chooses protected staging on the destination filesystem.
 // targetParent may be anywhere; the CLI does not impose MCP's child-name rule.
-func localInitWorkDir(targetParent string) (string, error) {
+func (runtime projectRuntime) localInitWorkDir(targetParent string) (string, error) {
 	startup, err := abspath.Eval(".")
 	if err != nil {
 		return "", err
@@ -53,7 +49,7 @@ func localInitWorkDir(targetParent string) (string, error) {
 		return "", err
 	}
 	parent := protected[0]
-	candidates := localOperatorCandidates(startup)
+	candidates := runtime.localOperatorCandidates(startup)
 	// A different destination mount may need protected storage beside its
 	// parent, after every standard location has failed the complete check.
 	candidates = append(candidates, filepath.Join(filepath.Dir(parent), fmt.Sprintf(".surla-operator-%d", os.Getuid())))
@@ -73,9 +69,9 @@ func localInitWorkDir(targetParent string) (string, error) {
 
 // localOperatorCandidates lists the existing operator locations in preference
 // order. Each owner applies all its requirements before selecting a location.
-func localOperatorCandidates(startup string) []string {
+func (runtime projectRuntime) localOperatorCandidates(startup string) []string {
 	var candidates []string
-	if config, err := userConfigDir(); err == nil {
+	if config, err := runtime.configRoot(); err == nil {
 		candidates = append(candidates, filepath.Join(config, "surla", "operator"))
 	}
 	return append(candidates,

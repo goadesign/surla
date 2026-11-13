@@ -463,8 +463,6 @@ func cleanGitEnv() []string {
 
 // verificationConfig validates one settings snapshot and derives all storage paths from its project owner.
 func verificationConfig(f verificationFile, runsDir, reportDir string) (*controlplane.VerificationConfig, error) {
-	path := "stored settings"
-
 	var missing []string
 	for _, field := range []struct{ name, value string }{
 		{"candidate_repo", f.CandidateRepo},
@@ -479,11 +477,11 @@ func verificationConfig(f verificationFile, runsDir, reportDir string) (*control
 		missing = append(missing, "binaries")
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("verification settings %s is missing %s", path, strings.Join(missing, ", "))
+		return nil, fmt.Errorf("verification settings are missing %s", strings.Join(missing, ", "))
 	}
 	timeout, err := time.ParseDuration(f.Timeout)
 	if err != nil || timeout <= 0 {
-		return nil, fmt.Errorf("verification settings %s: timeout %q must be a positive duration such as 30m", path, f.Timeout)
+		return nil, fmt.Errorf("verification timeout %q must be a positive duration such as 30m", f.Timeout)
 	}
 	self, err := selfCommand()
 	if err != nil {

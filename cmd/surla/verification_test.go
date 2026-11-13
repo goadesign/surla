@@ -43,7 +43,7 @@ func TestVerificationSettingsReadsTheOperatorsPlanStrictly(t *testing.T) {
 	assert.Equal(t, 30*time.Minute, cfg.Timeout)
 	for _, tc := range []struct{ name, content, wantErr string }{
 		{"unknown field", `{"runs_dir":"x","suite":"y"}`, "unknown field"},
-		{"missing fields", `{}`, "is missing candidate_repo, candidate_module, suite_repo, suite_commit, suite_module, suite_command, timeout, binaries"},
+		{"missing fields", `{}`, "are missing candidate_repo, candidate_module, suite_repo, suite_commit, suite_module, suite_command, timeout, binaries"},
 		{"trailing data", complete + `{}`, "data after the configuration"},
 		{"bad timeout", strings.Replace(complete, `"30m"`, `"soon"`, 1), "must be a positive duration"},
 	} {
@@ -391,7 +391,6 @@ func TestStoredVerificationSupportsIndependentEvaluatorRepositories(t *testing.T
 	t.Chdir(shopDir)
 	require.NoError(t, runProjectSettings("verification", []string{"set", verPath}, io.Discard))
 	opts, err := serveOptions(
-		serveConfig{},
 		func(string) string { return "" },
 		nil,
 	)

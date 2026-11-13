@@ -44,7 +44,7 @@ func startSharedServerSession(t *testing.T, principal string) *sharedServerSessi
 	if principal == "" {
 		principal = "operator@example.com"
 	}
-	opts, err := serveOptions(serveConfig{}, func(string) string { return "" }, nil)
+	opts, err := serveOptions(func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	provider, err := newTraceProvider(context.Background(), io.Discard, func(string) string { return "" })
 	require.NoError(t, err)
@@ -413,8 +413,8 @@ func (s *sharedServerSession) callToolError(id, name string, arguments any) stri
 // while detached verification continues, then reads its result after restart.
 func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 	wsDir := isolateServeWorkspace(t)
-	cfgDir, err := userConfigDir()
-	require.NoError(t, err)
+	cfgDir := os.Getenv("SURLA_TEST_USER_CONFIG_DIR")
+	require.NotEmpty(t, cfgDir)
 	defaultPrincipal := fmt.Sprintf("uid:%d", os.Geteuid())
 
 	opsDir := filepath.Join(t.TempDir(), "ops")

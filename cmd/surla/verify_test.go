@@ -261,7 +261,6 @@ func TestRunPrintsHelpAndDispatchesCommands(t *testing.T) {
 		{name: "help for init", args: []string{"help", "init"}},
 		{name: "init with a mutable version", args: []string{"init", "-dir", "x", "-module", "example.com/x", "-surla-version", "latest"}, wantErr: "not an exact module version"},
 
-		{name: "serve with a stray argument before a flag", args: []string{"serve", "-principal", "op", "x", "-promotion-config", "p.json"}, wantErr: "flag provided but not defined"},
 		{name: "diff with a stray argument", args: []string{"diff", "-old-dir", "a", "-new-dir", "b", "c"}, wantErr: `unexpected arguments ["c"]`},
 		{name: "preview with a bad flag", args: []string{"preview", "-nope"}, wantErr: "flag provided but not defined"},
 	}
@@ -341,14 +340,12 @@ func without(args []string, name string) []string {
 func projectDispatchRuntime(t *testing.T) projectRuntime {
 	t.Helper()
 	root := t.TempDir()
-	runtime := testProjectRuntime()
+	runtime := testProjectRuntimeAt(root)
 	runtime.preflight = func() error { return nil }
 	runtime.waitTerminal = func(ctx context.Context, id string) (bool, error) { <-ctx.Done(); return false, nil }
-	runtime.stateRoot = func(string, ...string) (string, error) { return root, nil }
 	starts, opens := 0, 0
-	runtime.startTerminal = func(ctx context.Context, state *project.State, args []string) (string, error) {
+	runtime.startTerminal = func(ctx context.Context, state *project.State) (string, error) {
 		starts++
-		assert.Empty(t, args)
 		cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
 		if err != nil {
 			return "", err
@@ -381,9 +378,9 @@ func projectDispatchRuntime(t *testing.T) projectRuntime {
 // user config, real terminals, or the browser when a test omits its stand-ins.
 func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
 	runtime := testProjectRuntime()
-	_, err := runtime.stateRoot(t.TempDir())
+	_, err := runtime.configRoot()
 	require.ErrorContains(t, err, "test-owned configuration directory")
-	_, err = runtime.startTerminal(t.Context(), nil, nil)
+	_, err = runtime.startTerminal(t.Context(), nil)
 	require.ErrorContains(t, err, "cannot start real")
 	require.ErrorContains(t, runtime.openViews(t.Context(), "unused"), "cannot open real")
 	require.ErrorContains(t, run(nil, io.Discard), "cannot start real")

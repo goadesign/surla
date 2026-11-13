@@ -70,7 +70,7 @@ type approveSummary struct {
 	Counts verify.Counts `json:"counts"`
 }
 
-// usage is the text `surla`, `surla help`, `surla -h` and `surla --help`
+// usage is the text `surla help`, `surla -h` and `surla --help`
 // print. Each subcommand prints its own flags with `surla <subcommand> -h`.
 const usage = `Surla checks changes to a Goa/Goa-AI service design before code is
 written, and checks the built service against an evaluator suite before it is
@@ -142,7 +142,7 @@ func main() {
 // command or a bad flag returns an error.
 func runWithRuntime(args []string, stdout io.Writer, runtime projectRuntime) error {
 	if len(args) == 0 {
-		return runtime.start(nil, stdout)
+		return runtime.start(stdout)
 	}
 	sub, rest := args[0], args[1:]
 	if slices.Contains(helpWords, sub) {
@@ -168,19 +168,22 @@ func runWithRuntime(args []string, stdout io.Writer, runtime projectRuntime) err
 func dispatch(sub string, args []string, stdout io.Writer, runtime projectRuntime) error {
 	switch sub {
 	case "init":
-		return runInit(args, stdout)
+		return runtime.init(args, stdout)
 	case "serve":
-		return runtime.serve(args)
+		if err := parseProjectArgs("serve", args); err != nil {
+			return err
+		}
+		return runtime.serve()
 	case "stop":
 		return runtime.stop(args, stdout)
 	case "verification", "promotion":
 		return runtime.settings(sub, args, stdout)
 	case "preview":
-		return runPreview(args, stdout, os.Stderr)
+		return runtime.preview(args, stdout, os.Stderr)
 	case "diff":
-		return runDiff(args)
+		return runtime.diff(args)
 	case "gen":
-		return runGen(args, stdout, os.Stderr)
+		return runtime.gen(args, stdout, os.Stderr)
 	case "verify":
 		return runVerify(args)
 	case "approve":
@@ -243,13 +246,13 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project strin
 	}
 }
 
-// runPreview reads the design module in -dir (default: the current directory)
+// preview reads the design module in -dir (default: the current directory)
 // with designeval.ReadModuleSnapshot, evaluates it with a design evaluator it owns, and
 // writes the result with writePreviewResult: indented JSON to w and a one-line
 // summary to stderr. It records nothing and calls no model. SIGINT and SIGTERM
 // cancel the evaluation. On every return it closes the evaluator, which
 // removes its build workspace, and returns that error with any other.
-func runPreview(args []string, w, stderr io.Writer) (err error) {
+func (runtime projectRuntime) preview(args []string, w, stderr io.Writer) (err error) {
 	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	if err := fs.Parse(args); err != nil {
@@ -264,7 +267,7 @@ func runPreview(args []string, w, stderr io.Writer) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	evalWorkDir, err := localEvalWorkDir(*dir)
+	evalWorkDir, err := runtime.localEvalWorkDir(*dir)
 	if err != nil {
 		return err
 	}
@@ -292,12 +295,12 @@ func writePreviewResult(stdout, stderr io.Writer, res designeval.Result) error {
 	return nil
 }
 
-// runDiff compares two design modules on disk, each read into a snapshot with
+// diff compares two design modules on disk, each read into a snapshot with
 // designeval.ReadModuleSnapshot, and writes the structured diff JSON report to stdout.
 // Both evaluations share one design evaluator it owns. SIGINT and SIGTERM
 // cancel them. On every return it closes the evaluator, which removes its
 // build workspace, and returns that error with any other.
-func runDiff(args []string) (err error) {
+func (runtime projectRuntime) diff(args []string) (err error) {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	oldDir := fs.String("old-dir", "", "root directory of the previous design module (holding go.mod and design/)")
 	newDir := fs.String("new-dir", "", "root directory of the candidate design module (holding go.mod and design/)")
@@ -320,7 +323,7 @@ func runDiff(args []string) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	evalWorkDir, err := localEvalWorkDir(*oldDir, *newDir)
+	evalWorkDir, err := runtime.localEvalWorkDir(*oldDir, *newDir)
 	if err != nil {
 		return err
 	}
@@ -561,14 +564,10 @@ func isSHA256Hex(s string) bool {
 // later model choices; no caller supplies project identity or storage paths.
 func projectServeOptions(
 	state *project.State,
-	cfg serveConfig,
 	getenv func(string) string,
 	environ []string,
 ) (controlplane.Options, error) {
-	resolvedCfg := resolveStartupModelConfig(cfg, getenv)
-	if err := validateModelConfig(resolvedCfg, getenv); err != nil {
-		return controlplane.Options{}, err
-	}
+	resolvedCfg := resolveStartupModelConfig(getenv)
 
 	ws, err := configureProjectWorkspace(state)
 	if err != nil {
@@ -640,12 +639,9 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 	return env, nil
 }
 
-// resolveStartupModelConfig preserves a constructed choice or selects the default
-// direct provider from an operator API key. Production startup supplies no choice.
-func resolveStartupModelConfig(cfg serveConfig, getenv func(string) string) serveConfig {
-	if cfg.gatewayAddr != "" || cfg.provider != "" || cfg.modelName != "" {
-		return cfg
-	}
+// resolveStartupModelConfig selects the default direct provider from an operator API key.
+func resolveStartupModelConfig(getenv func(string) string) serveConfig {
+	var cfg serveConfig
 	switch {
 	case strings.TrimSpace(getenv("ANTHROPIC_API_KEY")) != "":
 		cfg.provider = "anthropic"
@@ -728,27 +724,4 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 	for _, dir := range dirs {
 		fmt.Fprintf(w, "surla: CP3: an earlier project server using this cards directory left live target directory %s; its files were kept\n", dir)
 	}
-}
-
-// validateModelConfig checks a constructed direct-provider or gateway choice.
-// Key values never appear in errors.
-func validateModelConfig(cfg serveConfig, getenv func(string) string) error {
-	switch {
-	case cfg.gatewayAddr != "" && (cfg.provider != "" || cfg.modelName != ""):
-		return errors.New("gateway_addr cannot be combined with provider or model_name; the gateway chooses the model")
-	case cfg.gatewayAddr != "":
-		return nil
-	case cfg.provider == "" && cfg.modelName == "":
-		return nil
-	case cfg.provider == "" || cfg.modelName == "":
-		return errors.New("provider and model_name must be set together")
-	}
-	env, ok := apiKeyEnv[cfg.provider]
-	if !ok {
-		return fmt.Errorf("unsupported provider %q (expected \"anthropic\" or \"openai\")", cfg.provider)
-	}
-	if getenv(env) == "" {
-		return fmt.Errorf("provider %s requires %s", cfg.provider, env)
-	}
-	return nil
 }

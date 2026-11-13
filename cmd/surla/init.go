@@ -49,11 +49,11 @@ architecture and evaluator guide at surla://golden-path. Tool inputs and results
 https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#mcp-tools
 `
 
-// runInit creates a starter project with scaffold.Init and prints the
+// init creates a starter project with scaffold.Init and prints the
 // commands that preview and verify it. The evaluator module requires the
 // Surla version this binary was built from unless -surla-version names
 // another exact version. SIGINT and SIGTERM cancel it, leaving -dir unchanged.
-func runInit(args []string, stdout io.Writer) error {
+func (runtime projectRuntime) init(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	dir := fs.String("dir", "", "directory to create; it must not exist (required)")
 	modulePath := fs.String("module", "", "Go module path of the new service, such as example.com/shop; its last element names the service (required)")
@@ -79,11 +79,11 @@ func runInit(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	workDir, err := localInitWorkDir(filepath.Dir(target))
+	workDir, err := runtime.localInitWorkDir(filepath.Dir(target))
 	if err != nil {
 		return err
 	}
-	evalWorkDir, err := localEvalWorkDir(filepath.Dir(target))
+	evalWorkDir, err := runtime.localEvalWorkDir(filepath.Dir(target))
 	if err != nil {
 		return err
 	}

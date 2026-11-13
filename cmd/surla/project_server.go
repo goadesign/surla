@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -30,9 +31,10 @@ import (
 // projectRuntime binds project state and process effects at the CLI composition root.
 // Tests provide an owned state root and stand-ins without starting terminals or browsers.
 type projectRuntime struct {
-	stateRoot      func(string, ...string) (string, error)
+	// configRoot is supplied by the process composition root, never a package global.
+	configRoot     func() (string, error)
 	preflight      func() error
-	startTerminal  func(context.Context, *project.State, []string) (string, error)
+	startTerminal  func(context.Context, *project.State) (string, error)
 	openViews      func(context.Context, string) error
 	waitTerminal   func(context.Context, string) (bool, error)
 	removeTerminal func(context.Context, string) error
@@ -41,8 +43,8 @@ type projectRuntime struct {
 // productionProjectRuntime is selected only by the executable's composition root.
 func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
-		stateRoot:      defaultOperatorRoot,
-		preflight:      preflightProjectStart,
+		configRoot:     os.UserConfigDir,
+		preflight:      func() error { return preflightProjectStart(projectHerdrProgram) },
 		startTerminal:  startProjectTerminal,
 		openViews:      openProjectViews,
 		waitTerminal:   waitProjectTerminal,
@@ -51,11 +53,7 @@ func productionProjectRuntime() projectRuntime {
 }
 
 // start serializes discovery and starts at most one server, then opens a one-use views link.
-func (runtime projectRuntime) start(args []string, stdout io.Writer) (err error) {
-	err = parseProjectArgs("surla", args)
-	if err != nil {
-		return err
-	}
+func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 	if err := runtime.preflight(); err != nil {
 		return err
 	}
@@ -73,7 +71,7 @@ func (runtime projectRuntime) start(args []string, stdout io.Writer) (err error)
 	terminal := ""
 	finished := make(chan terminalResult, 1)
 	client, created, err := attachOrStartProject(ctx, state, func(ctx context.Context, state *project.State) (string, error) {
-		id, err := runtime.startTerminal(ctx, state, args)
+		id, err := runtime.startTerminal(ctx, state)
 		if err != nil {
 			return "", err
 		}
@@ -230,10 +228,7 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 }
 
 // serve is the Herdr program entry, with project identity and address derived from private state.
-func (runtime projectRuntime) serve(args []string) (err error) {
-	if err := parseProjectArgs("serve", args); err != nil {
-		return err
-	}
+func (runtime projectRuntime) serve() (err error) {
 	state, err := runtime.discover()
 	if err != nil {
 		return err
@@ -253,7 +248,7 @@ func (runtime projectRuntime) serve(args []string) (err error) {
 		err = errors.Join(err, provider.Shutdown(ctx))
 		otel.SetTracerProvider(previous)
 	}()
-	opts, err := projectServeOptions(state, serveConfig{}, os.Getenv, os.Environ())
+	opts, err := projectServeOptions(state, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
@@ -328,7 +323,7 @@ func (runtime projectRuntime) discover() (*project.State, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := runtime.stateRoot(cwd)
+	root, err := runtime.operatorRoot(cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +336,7 @@ func projectClient(state *project.State) (*genproject.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	doer := &managementDoer{token: token, client: &http.Client{Timeout: time.Second}}
+	doer := &managementDoer{token: token, client: &http.Client{Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	transport := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 	return genproject.NewClient(transport.Identity(), transport.Stop(), transport.AddAgent(), transport.RemoveAgent(), transport.BrowserLink(), transport.ExchangeBrowserLink()), nil
 }
@@ -372,13 +367,17 @@ func confirmProject(ctx context.Context, state *project.State, client *genprojec
 	return nil
 }
 
-// waitForProject bounds readiness polling and treats a different answering identity as a terminal failure.
+// waitForProject retries connection failures until readiness or deadline.
+// Any received HTTP response other than this project's identity ends polling.
 func waitForProject(ctx context.Context, state *project.State, client *genproject.Client) error {
 	for {
 		if err := confirmProject(ctx, state, client); err == nil {
 			return nil
-		} else if errors.Is(err, errWrongProject) {
-			return err
+		} else {
+			var clientError *goahttp.ClientError
+			if !errors.As(err, &clientError) || clientError.Name != "request_error" || !isConnectionFailure(clientError.Err) {
+				return err
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -389,7 +388,7 @@ func waitForProject(ctx context.Context, state *project.State, client *genprojec
 }
 
 // startProjectTerminal delegates process lifetime to a parentless Herdr terminal; Surla never detaches a process itself.
-func startProjectTerminal(ctx context.Context, state *project.State, args []string) (string, error) {
+func startProjectTerminal(ctx context.Context, state *project.State) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -399,7 +398,6 @@ func startProjectTerminal(ctx context.Context, state *project.State, args []stri
 		return "", err
 	}
 	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve"}
-	argv = append(argv, args...)
 	command := exec.CommandContext(ctx, hc, argv...)
 	command.Stdin = nil
 	var stderr strings.Builder
@@ -430,15 +428,15 @@ func projectHerdrProgram() (string, error) {
 		}
 		hc = filepath.Join(home, ".local", "bin", "hc")
 		if _, executableErr := exec.LookPath(hc); executableErr != nil {
-			return "", errors.New("Herdr is required to start Surla; install Herdr and make hc available")
+			return "", errors.New("Herdr hc is required to start Surla; install it with: curl -fsSL https://releases.herdr.dev/core/install.sh | sh (https://herdr.dev/core/)")
 		}
 	}
 	return hc, nil
 }
 
 // preflightProjectStart refuses unavailable launch effects before creating project state.
-func preflightProjectStart() error {
-	if _, err := projectHerdrProgram(); err != nil {
+func preflightProjectStart(findHerdr func() (string, error)) error {
+	if _, err := findHerdr(); err != nil {
 		return err
 	}
 	if _, err := projectBrowserProgram(); err != nil {
@@ -510,4 +508,15 @@ func removeProjectTerminal(ctx context.Context, terminal string) error {
 		return fmt.Errorf("remove failed Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// isConnectionFailure identifies transport failures before a usable HTTP response.
+// Decoder errors and HTTP status responses are terminal ownership failures.
+func isConnectionFailure(err error) bool {
+	var addressError *url.Error
+	if errors.As(err, &addressError) {
+		err = addressError.Err
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }

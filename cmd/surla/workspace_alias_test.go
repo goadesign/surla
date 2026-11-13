@@ -37,10 +37,8 @@ func TestWorkspaceCaseAliasAdmission(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, insideCards, "implicit card storage must recognize the actual builder directory")
 	}
-	priorConfigDir := userConfigDir
-	userConfigDir = func() (string, error) { return filepath.Join(alias, "config"), nil }
-	t.Cleanup(func() { userConfigDir = priorConfigDir })
-	_, err = defaultOperatorRoot(workspace)
+	runtime := testProjectRuntimeAt(filepath.Join(alias, "config"))
+	_, err = runtime.operatorRoot(workspace)
 	require.ErrorContains(t, err, "must be outside the workspace")
 	assert.NoDirExists(t, filepath.Join(workspace, "config"))
 	assert.NoDirExists(t, filepath.Join(workspace, "missing"))

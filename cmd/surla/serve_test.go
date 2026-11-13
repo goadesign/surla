@@ -39,70 +39,9 @@ type (
 	noopTargetUpdater struct{}
 )
 
-// TestValidateConstructedModelChoice checks internal model choices and required
-// provider keys; key values never appear in errors.
-func TestValidateConstructedModelChoice(t *testing.T) {
-	env := map[string]string{
-		"ANTHROPIC_API_KEY": "test-anthropic-key",
-		"OPENAI_API_KEY":    "test-openai-key",
-	}
-	cases := []struct {
-		name    string
-		cfg     serveConfig
-		env     map[string]string
-		wantErr string
-	}{
-		{name: "no model choice", cfg: serveConfig{}, env: env},
-		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"}, env: env},
-		{name: "anthropic", cfg: serveConfig{provider: "anthropic", modelName: "claude-test"}, env: env},
-		{name: "openai", cfg: serveConfig{provider: "openai", modelName: "gpt-test"}, env: env},
-		{
-			name:    "gateway with model name",
-			cfg:     serveConfig{gatewayAddr: "127.0.0.1:9090", modelName: "claude-test"},
-			env:     env,
-			wantErr: "gateway_addr cannot be combined",
-		},
-		{
-			name:    "gateway with provider",
-			cfg:     serveConfig{gatewayAddr: "127.0.0.1:9090", provider: "anthropic"},
-			env:     env,
-			wantErr: "gateway_addr cannot be combined",
-		},
-		{name: "provider without model", cfg: serveConfig{provider: "anthropic"}, env: env, wantErr: "must be set together"},
-		{name: "model without provider", cfg: serveConfig{modelName: "claude-test"}, env: env, wantErr: "must be set together"},
-		{
-			name:    "unknown provider",
-			cfg:     serveConfig{provider: "Anthropic", modelName: "claude-test"},
-			env:     env,
-			wantErr: `unsupported provider "Anthropic"`,
-		},
-		{
-			name:    "missing api key",
-			cfg:     serveConfig{provider: "openai", modelName: "gpt-test"},
-			env:     map[string]string{"ANTHROPIC_API_KEY": "test-anthropic-key"},
-			wantErr: "provider openai requires OPENAI_API_KEY",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateModelConfig(tc.cfg, func(k string) string { return tc.env[k] })
-			if tc.wantErr == "" {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.wantErr)
-			assert.NotContains(t, err.Error(), "test-anthropic-key")
-			assert.NotContains(t, err.Error(), "test-openai-key")
-		})
-	}
-}
-
-// TestNewLiveModelEnvBuildsTheLiveTargetEnvironment verifies the callback
-// configure_model uses on the project server: a gateway or a provider whose key is
-// in serve's environment yields serve's environment, without its bearer
-// token, plus the SURLA_LIVE_MODEL_* choice; a provider whose key is missing
-// is refused as unprocessable and names the key, never its value.
+// TestNewLiveModelEnvBuildsTheLiveTargetEnvironment verifies configure_model's
+// inherited provider keys and selected model variables. A missing key is refused
+// as unprocessable and names the variable without revealing its value.
 func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
 	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k"}
 	env := map[string]string{"ANTHROPIC_API_KEY": "ant-k"}
@@ -131,7 +70,7 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
 	require.NoError(t, runProjectSettings("verification", []string{"set", path}, io.Discard))
-	opts, err := serveOptions(serveConfig{}, func(string) string { return "" },
+	opts, err := serveOptions(func(string) string { return "" },
 		[]string{"PATH=/bin", "ANTHROPIC_API_KEY=k"})
 	require.NoError(t, err)
 	defer closeServeOptions(t, opts)
@@ -139,7 +78,7 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
-	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "serve's own bearer token never reaches a live target")
+	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "project credentials never enter the live-target environment")
 }
 
 // TestServeOptionsBindsTheCheckHelperOnEveryServePath checks that both ways
@@ -155,10 +94,9 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
 	cases := []struct {
 		name string
-		cfg  serveConfig
 	}{
-		{name: "verification config", cfg: serveConfig{}},
-		{name: "workspace starter", cfg: serveConfig{}},
+		{name: "verification config"},
+		{name: "workspace starter"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,7 +104,7 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 			if tc.name == "verification config" {
 				require.NoError(t, runProjectSettings("verification", []string{"set", verificationPath}, io.Discard))
 			}
-			opts, err := serveOptions(tc.cfg, func(string) string { return "" }, nil)
+			opts, err := serveOptions(func(string) string { return "" }, nil)
 			require.NoError(t, err)
 			defer closeServeOptions(t, opts)
 			require.NotNil(t, opts.Checker)
@@ -189,7 +127,7 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
 		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
-		{name: "no model", cfg: serveConfig{},
+		{name: "no model",
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}},
 	}
 	for _, tc := range cases {
@@ -202,24 +140,31 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	isolateServeWorkspace(t)
 	opts, err := serveOptions(
-		serveConfig{provider: "openai", modelName: "gpt-test"},
-		func(string) string { return "test-key" },
+		func(key string) string {
+			if key == "OPENAI_API_KEY" {
+				return "test-key"
+			}
+			return ""
+		},
 		nil,
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
 	assert.Nil(t, opts.TargetUpdater)
 	require.NotNil(t, opts.Live)
-	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=gpt-test"}, opts.Live.Env)
+	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + defaultOpenAIModel}, opts.Live.Env)
 	closeServeOptions(t, opts)
 
-	opts, err = serveOptions(serveConfig{gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
+	opts, err = serveOptions(func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	require.NotNil(t, opts.Live)
-	assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, opts.Live.Env)
+	gateway := "127.0.0.1:9090"
+	configured, err := opts.LiveModelEnv(&gensurla.ConfigureModelPayload{GatewayAddr: &gateway})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, configured)
 	closeServeOptions(t, opts)
 
-	opts, err = serveOptions(serveConfig{}, func(string) string { return "" }, nil)
+	opts, err = serveOptions(func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
 	assert.Nil(t, opts.Verification)
@@ -227,7 +172,7 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	require.NotNil(t, opts.Live)
 	assert.Len(t, opts.Live.Command, 1)
 	assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
-	assert.Empty(t, opts.Live.Env, "no model flags and no keys pass no model choice to live targets")
+	assert.Empty(t, opts.Live.Env, "no provider keys leave live targets without a model choice")
 	closeServeOptions(t, opts)
 
 }
@@ -236,17 +181,14 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 	baseEnviron := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k"}
 	cases := []struct {
 		name        string
-		cfg         serveConfig
 		env         map[string]string
 		wantCfg     serveConfig
 		wantLiveEnv []string
 	}{
 		{
 			name: "anthropic key auto-detects claude-sonnet-4-6 without verification config",
-			cfg:  serveConfig{},
 			env:  map[string]string{"ANTHROPIC_API_KEY": "ant-k"},
 			wantCfg: serveConfig{
-
 				provider:  "anthropic",
 				modelName: defaultAnthropicModel,
 			},
@@ -260,10 +202,8 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "openai key auto-detects gpt-5.4-mini when anthropic key is absent",
-			cfg:  serveConfig{},
 			env:  map[string]string{"OPENAI_API_KEY": "oai-k"},
 			wantCfg: serveConfig{
-
 				provider:  "openai",
 				modelName: defaultOpenAIModel,
 			},
@@ -276,14 +216,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			},
 		},
 		{
-			name: "both keys prefer anthropic claude-sonnet-4-6 when model flags are omitted",
-			cfg:  serveConfig{},
+			name: "both keys prefer anthropic claude-sonnet-4-6 at startup",
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "ant-k",
 				"OPENAI_API_KEY":    "oai-k",
 			},
 			wantCfg: serveConfig{
-
 				provider:  "anthropic",
 				modelName: defaultAnthropicModel,
 			},
@@ -296,32 +234,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			},
 		},
 		{
-			name: "explicit model flags override auto-detection when both keys are present",
-			cfg: serveConfig{
-
-				provider:  "openai",
-				modelName: "gpt-5.4",
-			},
-			env: map[string]string{
-				"ANTHROPIC_API_KEY": "ant-k",
-				"OPENAI_API_KEY":    "oai-k",
-			},
-			wantCfg: serveConfig{
-
-				provider:  "openai",
-				modelName: "gpt-5.4",
-			},
-			wantLiveEnv: []string{
-				"PATH=/bin",
-				"ANTHROPIC_API_KEY=ant-k",
-				"OPENAI_API_KEY=oai-k",
-				"SURLA_LIVE_MODEL_PROVIDER=openai",
-				"SURLA_LIVE_MODEL_NAME=gpt-5.4",
-			},
-		},
-		{
 			name: "whitespace-only keys leave live targets without a model choice",
-			cfg:  serveConfig{},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "   ",
 				"OPENAI_API_KEY":    "\t\n",
@@ -338,8 +251,8 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			getenv := func(k string) string { return tc.env[k] }
-			assert.Equal(t, tc.wantCfg, resolveStartupModelConfig(tc.cfg, getenv))
-			opts, err := serveOptions(tc.cfg, getenv, baseEnviron)
+			assert.Equal(t, tc.wantCfg, resolveStartupModelConfig(getenv))
+			opts, err := serveOptions(getenv, baseEnviron)
 			require.NoError(t, err)
 			assert.Nil(t, opts.Verification, "no verification config was supplied and empty workspace has no committed starter")
 			assert.NotNil(t, opts.ResolveVerification)
@@ -367,7 +280,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 }
 
 // TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel
-// starts serve with no model flags and no provider keys, proposes a change
+// starts the server without provider keys, proposes a change
 // over authenticated HTTP with the caller's analysis (no model is needed),
 // then switches the live-target model with POST /cp1/model: a provider whose
 // key is missing is refused with 422, and a gateway or a provider whose key
@@ -376,7 +289,6 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	isolateServeWorkspace(t)
 	env := map[string]string{}
 	opts, err := serveOptions(
-		serveConfig{},
 		func(k string) string { return env[k] },
 		[]string{"PATH=/bin"},
 	)
