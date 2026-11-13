@@ -1,4 +1,4 @@
-// This file maps the team owner's immediate outcome after a build is saved.
+// This file owns build admission through the copy, saved assignments and team.
 package controlplane
 
 import (
@@ -74,11 +74,13 @@ func (c *ControlPlane) StartBuild(
 	if _, _, err := designeval.StoryScenarios(record.stories); err != nil {
 		return nil, gensurla.MakeUnprocessable(fmt.Errorf("the agreed Story cannot name its required tests: %w", err))
 	}
-	source, layout, err := c.projectTestLayout(work)
+	source, layout, workspace, err := c.projectTestLayout(work)
 	if err != nil {
 		return nil, recordBuildError(span, buildStartError(work, "", err), "read test source")
 	}
-	workspace, _, _ := c.currentWorkspaceTarget()
+	if workspace == "" {
+		return nil, gensurla.MakeNotImplemented(errors.New("No project working folder is bound. Start this project with surla to build it."))
+	}
 	var copy buildCopy
 	refresh := gensurla.NewWorkingCopyNotUsed(&gensurla.BuildCopyNotUsed{})
 	if source != testSourceStoredEvaluator {
@@ -201,7 +203,13 @@ func (c *ControlPlane) saveBuildPreparation(saved buildFile, prepareErr error) (
 			tw.Findings = []string{author.Finding.Message + "\nCorrect the problem in the test module, then report_tests_finished."}
 		} else {
 			tw.State = testsCouldNotRun
-			tw.Reason = boundedBuildReason(designeval.GenerationDiagnostic(prepareErr))
+			reason := designeval.GenerationDiagnostic(prepareErr)
+			if errors.Is(prepareErr, context.DeadlineExceeded) {
+				reason = "The build-start time limit ended before the required tests could be prepared."
+			} else if errors.Is(prepareErr, context.Canceled) {
+				reason = "The server stopped before the required tests could be prepared."
+			}
+			tw.Reason = boundedBuildReason(reason)
 			tw.Step = "Build this change again on the views page."
 		}
 		if err := c.cards.saveBuild(current); err != nil {
@@ -290,11 +298,11 @@ func (c *ControlPlane) admitBuildStart(ctx context.Context) (context.Context, fu
 // buildStartDeadline bounds only the work under the copy turn. Team start uses
 // the server-owned admission context after this phase, with its own limit.
 func (c *ControlPlane) buildStartDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
-	limit := defaultBuildStartTimeout
-	if c.buildStartTimeout > 0 {
-		limit = c.buildStartTimeout
+	withTimeout := c.buildStartWithTimeout
+	if withTimeout == nil {
+		withTimeout = context.WithTimeout
 	}
-	return context.WithTimeout(ctx, limit)
+	return withTimeout(ctx, defaultBuildStartTimeout)
 }
 
 // buildTeamOutcome preserves a saved build when its team cannot become ready.

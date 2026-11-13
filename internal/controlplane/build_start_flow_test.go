@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -231,47 +232,176 @@ func TestStartBuildOwnerPrecedesTheTurn(t *testing.T) {
 	assertNoBuildSaved(t, cp, "chg")
 }
 
-// TestStartBuildDeadlineBoundaries uses a short seam around the same phase:
-// before the deadline succeeds, its signal and later work save could_not_run.
-// No test waits for the production five-minute limit.
-func TestStartBuildDeadlineBoundaries(t *testing.T) {
-	for _, when := range []string{"below", "at", "above"} {
-		t.Run(when, func(t *testing.T) {
-			cp := newBuildControlPlane(t, Options{})
-			cp.buildStartTimeout = 50 * time.Millisecond
+// TestStartBuildStoredEvaluatorBypassesWriterPrerequisites starts with only the
+// builder even when every writer prerequisite would fail, and takes the same turn.
+func TestStartBuildStoredEvaluatorBypassesWriterPrerequisites(t *testing.T) {
+	f := &teamServiceFixture{}
+	cp := newBuildControlPlane(t, Options{
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Team:         &TeamBinding{Owner: "alice@example.com", Service: f},
+	})
+	card := confirmedChange(t, cp, "chg")
+	cp.buildIdentityCheck = func(context.Context, string) error {
+		t.Error("stored evaluator checked writer identity")
+		return testwriter.ErrIdentityMissing
+	}
+	cp.buildSandboxCheck = func() error {
+		t.Error("stored evaluator checked writer sandbox")
+		return candidate.ErrIsolationUnavailable
+	}
+	cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) {
+		t.Error("stored evaluator opened a writer copy")
+		return nil, testwriter.ErrNotRepository
+	}
+	f.register = func(_ context.Context, folders BuildFolders) error {
+		workspace, _, _ := cp.currentWorkspaceTarget()
+		assert.Equal(t, BuilderOnly{BuilderFolder: workspace}, folders)
+		return nil
+	}
+	cp.workingCopyTurn <- struct{}{}
+	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	assertRefused(t, err, "working_copy_busy")
+	assert.NotContains(t, err.Error(), "test check")
+	assertNoBuildSaved(t, cp, "chg")
+	<-cp.workingCopyTurn
+	result, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	require.NoError(t, err)
+	assert.Equal(t, gensurla.WorkingCopyKindNotUsed, result.WorkingCopy.Kind())
+	assert.Equal(t, gensurla.TestsKindNotUsed, result.Build.TestWriter.Tests.Kind())
+	assert.Equal(t, []string{"register", "start"}, f.calls)
+}
+
+// TestStartBuildTeamWarningsKeepTheSavedBuild checks the typed window boundary
+// after registration and confirms no transient dialog state enters the build file.
+func TestStartBuildTeamWarningsKeepTheSavedBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		kind gensurla.TeamKind
+	}{
+		{"busy", gensurla.MakeWindowBusy(errors.New("fixture busy")), gensurla.TeamKindWindowBusy},
+		{"ambiguous", &gensurla.TeamSpaceConflict{Name: "ambiguous_space", Count: 2}, gensurla.TeamKindAmbiguousSpace},
+		{"unavailable", gensurla.MakeTeamUnavailable(errors.New("fixture unavailable")), gensurla.TeamKindUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &teamServiceFixture{start: func(context.Context) (*gensurla.ProjectTeam, error) { return nil, tc.err }}
+			cp := newBuildControlPlane(t, Options{Team: &TeamBinding{Owner: "alice@example.com", Service: f}})
 			card := confirmedChange(t, cp, "chg")
-			copy := &buildCopyFixture{folder: t.TempDir()}
-			cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return copy, nil }
-			copy.prepare = func(ctx context.Context, _ []designeval.StorySummary) error {
-				if when == "below" {
-					return nil
-				}
-				select {
-				case <-ctx.Done():
-				case <-time.After(time.Second):
-					return errors.New("deadline was not enforced")
-				}
-				if when == "above" {
-					// An additional phase after the deadline must not turn the
-					// saved build into a pre-save refusal.
-					_, err := cp.GetBuild(asCaller("alice@example.com", CallerUser), &gensurla.GetBuildPayload{ChangeID: "chg"})
-					require.NoError(t, err)
-				}
-				return ctx.Err()
-			}
 			result, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 			require.NoError(t, err)
-			want := gensurla.TestsKindCouldNotRun
-			if when == "below" {
-				want = gensurla.TestsKindAssigned
-			}
-			assert.Equal(t, want, result.Build.TestWriter.Tests.Kind())
-			assert.Equal(t, []string{"register", "start"}, cp.team.Service.(*teamServiceFixture).calls, "registration survives the phase limit and team start has its own lifetime")
+			assert.Equal(t, tc.kind, result.Team.Kind())
+			assert.Equal(t, []string{"register", "start"}, f.calls)
+			assert.Equal(t, result.Build, mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg"))
+			assert.NotContains(t, string(readBuildFile(t, cp, "chg")), "dialog")
 		})
 	}
-	// The same limit before the save is a retryable refusal and leaves nothing.
+}
+
+// TestStartBuildOwnsItsAcceptedLifetime drives the real start while its client
+// disconnects or the server stops after saving. Close drains the start before
+// stores close; reopening proves the interrupted verdict and role mode persisted.
+func TestStartBuildOwnsItsAcceptedLifetime(t *testing.T) {
+	for _, stopServer := range []bool{false, true} {
+		t.Run(fmt.Sprint("server_stop=", stopServer), func(t *testing.T) {
+			cards := t.TempDir()
+			cp := newBuildControlPlane(t, Options{CardsDir: cards})
+			card := confirmedChange(t, cp, "chg")
+			entered := make(chan context.Context, 1)
+			release := make(chan struct{})
+			copy := &buildCopyFixture{folder: t.TempDir(), prepare: func(ctx context.Context, _ []designeval.StorySummary) error {
+				entered <- ctx
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-release:
+					return nil
+				case <-time.After(3 * time.Second):
+					return errors.New("fixture generation was not released")
+				}
+			}}
+			cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return copy, nil }
+			request, disconnect := context.WithCancel(asCaller("alice@example.com", CallerUser))
+			defer disconnect()
+			type outcome struct {
+				result *gensurla.StartBuildResult
+				err    error
+			}
+			finished := make(chan outcome, 1)
+			go func() {
+				result, err := cp.StartBuild(request, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+				finished <- outcome{result: result, err: err}
+			}()
+			var accepted context.Context
+			select {
+			case accepted = <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("start did not reach generation")
+			}
+			disconnect()
+			assert.NoError(t, accepted.Err(), "client disconnection does not cancel accepted generation")
+			if stopServer {
+				require.NoError(t, cp.Close())
+			} else {
+				close(release)
+			}
+			select {
+			case got := <-finished:
+				require.NoError(t, got.err)
+				if stopServer {
+					assert.Equal(t, gensurla.TestsKindCouldNotRun, got.result.Build.TestWriter.Tests.Kind())
+					assert.Equal(t, gensurla.TeamKindUnavailable, got.result.Team.Kind())
+					reopened := newBuildControlPlane(t, Options{CardsDir: cards})
+					persisted := mustStartedBuild(t, reopened, asCaller("alice@example.com", CallerUser), "chg")
+					assert.Equal(t, got.result.Build, persisted)
+				} else {
+					assert.Equal(t, gensurla.TeamKindReady, got.result.Team.Kind())
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("accepted start did not drain")
+			}
+		})
+	}
+}
+
+// TestStartBuildDeadlineBoundaries advances virtual time one nanosecond below,
+// at and above the production five-minute deadline. Real filesystem effects and
+// the ordinary context timer still run; no real deadline sleep occurs.
+func TestStartBuildDeadlineBoundaries(t *testing.T) {
+	for _, elapsed := range []time.Duration{defaultBuildStartTimeout - time.Nanosecond, defaultBuildStartTimeout, defaultBuildStartTimeout + time.Nanosecond} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cp := newBuildControlPlane(t, Options{})
+				cp.buildStartWithTimeout = func(ctx context.Context, limit time.Duration) (context.Context, context.CancelFunc) {
+					assert.Equal(t, 5*time.Minute, limit)
+					return context.WithTimeout(ctx, limit)
+				}
+				card := confirmedChange(t, cp, "chg")
+				copy := &buildCopyFixture{folder: t.TempDir()}
+				cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return copy, nil }
+				copy.prepare = func(ctx context.Context, _ []designeval.StorySummary) error {
+					time.Sleep(elapsed)
+					synctest.Wait()
+					return ctx.Err()
+				}
+				result, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+				require.NoError(t, err)
+				want := gensurla.TestsKindCouldNotRun
+				if elapsed < defaultBuildStartTimeout {
+					want = gensurla.TestsKindAssigned
+				}
+				assert.Equal(t, want, result.Build.TestWriter.Tests.Kind())
+				assert.Equal(t, []string{"register", "start"}, cp.team.Service.(*teamServiceFixture).calls, "registration survives the phase limit and team start has its own lifetime")
+			})
+		})
+	}
+	// A phase that ends before saving is a retryable refusal and leaves nothing.
 	cp := newBuildControlPlane(t, Options{})
-	cp.buildStartTimeout = time.Nanosecond
+	cp.buildStartWithTimeout = func(ctx context.Context, limit time.Duration) (context.Context, context.CancelFunc) {
+		assert.Equal(t, 5*time.Minute, limit)
+		ended, cancel := context.WithCancel(ctx)
+		cancel()
+		return ended, cancel
+	}
 	card := confirmedChange(t, cp, "chg")
 	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	assertRefused(t, err, "unavailable")

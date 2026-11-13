@@ -58,25 +58,6 @@ func TestBuildStartAdmissionOwnsCancellation(t *testing.T) {
 	assertRefused(t, err, "unavailable")
 }
 
-// TestBuildStartLimitUsesTheDeadlineSeam expires accepted work with a short
-// limit while retaining the one production default of five minutes.
-func TestBuildStartLimitUsesTheDeadlineSeam(t *testing.T) {
-	cp := newControlPlane(t, Options{})
-	cp.buildStartTimeout = time.Millisecond
-	accepted, finish, err := cp.admitBuildStart(t.Context())
-	require.NoError(t, err)
-	defer finish()
-	phase, cancel := cp.buildStartDeadline(accepted)
-	defer cancel()
-	select {
-	case <-phase.Done():
-		assert.ErrorIs(t, phase.Err(), context.DeadlineExceeded)
-		assert.NoError(t, accepted.Err(), "the team phase retains the server-owned lifetime")
-	case <-time.After(time.Second):
-		t.Fatal("accepted start did not reach its limit")
-	}
-}
-
 // TestBuildTeamOutcomeUsesTypedConditions keeps peer-authored messages out of
 // every warning and returns the original team result when admission succeeds.
 func TestBuildTeamOutcomeUsesTypedConditions(t *testing.T) {

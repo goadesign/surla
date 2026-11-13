@@ -386,8 +386,8 @@ type (
 		// buildStartOps counts accepted starts, admitted through workspaceMu's
 		// existing shutdown barrier and drained before stores and evaluators close.
 		buildStartOps sync.WaitGroup
-		// buildStartTimeout replaces defaultBuildStartTimeout in focused tests.
-		buildStartTimeout time.Duration
+		// buildStartWithTimeout injects the phase deadline in deterministic tests.
+		buildStartWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		// team is the single injected owner; teamWorker drains before stores close.
 		team       *TeamBinding
 		teamWorker sync.WaitGroup
