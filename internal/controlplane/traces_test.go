@@ -3,6 +3,7 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -545,4 +546,176 @@ func TestWaitingReadBoundaryExportsWithoutRecording(t *testing.T) {
 	history, err := cp.traces.List("owner", "all", 20, nil)
 	require.NoError(t, err)
 	assert.Empty(t, history.Spans)
+}
+
+// TestHistoryLeavesOutOnlyTheUsersSuccessfulReads sends one call through the
+// real HTTP handler or MCP server and compares the records the history gains.
+// A read the user's session sends with GET and that succeeds adds none,
+// including reading the history itself. A read by the user that fails, a
+// change by the user, and a read by an agent over HTTP or MCP are recorded.
+// The waiting read stays out even when it ends with an error. Every call
+// keeps its exported spans and their status.
+func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
+	const (
+		owner = "alice@example.com"
+		// user, guide and builder are workflowAuthenticator's credentials;
+		// generationDoer sends builder.
+		user  = "generation-token"
+		guide = "generation-token-guide"
+	)
+	// get returns a call sending a GET for path with token.
+	get := func(path, token string) func(*testing.T, *ControlPlane, *httptest.Server, *gensurla.ChangeCardResult) int {
+		return func(t *testing.T, _ *ControlPlane, srv *httptest.Server, _ *gensurla.ChangeCardResult) int {
+			return sendHistoryRequest(t, t.Context(), srv, http.MethodGet, path, token, nil)
+		}
+	}
+	for _, test := range []struct {
+		name string
+		// call sends the request and returns its HTTP status, or 0 when the
+		// caller gave up before an answer.
+		call       func(*testing.T, *ControlPlane, *httptest.Server, *gensurla.ChangeCardResult) int
+		wantStatus int
+		// saved lists the records the call adds as "name caller_kind status".
+		saved []string
+		// exported gives the status of each span the exporter must hold.
+		exported map[string]codes.Code
+	}{
+		{
+			name: "user reads a change", call: get("/changes/chg-history", user), wantStatus: http.StatusOK,
+			saved:    []string{},
+			exported: map[string]codes.Code{"surla.request.get_change": codes.Unset},
+		},
+		{
+			name: "user lists changes", call: get("/changes", user), wantStatus: http.StatusOK,
+			saved:    []string{},
+			exported: map[string]codes.Code{"surla.request.list_changes": codes.Unset, "surla.controlplane.list_changes": codes.Unset},
+		},
+		{
+			name: "user reads the history", call: get("/traces?status=all&limit=100", user), wantStatus: http.StatusOK,
+			saved:    []string{},
+			exported: map[string]codes.Code{"surla.request.list_traces": codes.Unset, "surla.controlplane.list_traces": codes.Unset},
+		},
+		{
+			name: "user read fails",
+			call: func(t *testing.T, cp *ControlPlane, srv *httptest.Server, _ *gensurla.ChangeCardResult) int {
+				require.NoError(t, os.WriteFile(cp.cards.path("chg-broken"), []byte("{"), 0o600))
+				return sendHistoryRequest(t, t.Context(), srv, http.MethodGet, "/changes/chg-broken", user, nil)
+			},
+			wantStatus: http.StatusInternalServerError,
+			saved:      []string{"surla.request.get_change user error"},
+			exported:   map[string]codes.Code{"surla.request.get_change": codes.Error},
+		},
+		{
+			name: "user confirms a change",
+			call: func(t *testing.T, _ *ControlPlane, srv *httptest.Server, card *gensurla.ChangeCardResult) int {
+				raw, err := gensurla.EncodeConfirmIntentPayload(&gensurla.ConfirmIntentPayload{
+					ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples,
+				})
+				require.NoError(t, err)
+				return sendHistoryRequest(t, t.Context(), srv, http.MethodPost, "/changes/confirm", user, raw)
+			},
+			wantStatus: http.StatusOK,
+			saved:      []string{"surla.request.confirm_intent user unset"},
+			exported:   map[string]codes.Code{"surla.request.confirm_intent": codes.Unset},
+		},
+		{
+			name: "guide reads a change over HTTP", call: get("/changes/chg-history", guide), wantStatus: http.StatusOK,
+			saved:    []string{"surla.request.get_change guide unset"},
+			exported: map[string]codes.Code{"surla.request.get_change": codes.Unset},
+		},
+		{
+			name: "builder reads a change over MCP",
+			call: func(t *testing.T, _ *ControlPlane, srv *httptest.Server, card *gensurla.ChangeCardResult) int {
+				origin, err := url.Parse(srv.URL)
+				require.NoError(t, err)
+				transport := genmcpclient.NewClient(origin.Scheme, origin.Host, generationDoer{client: srv.Client()},
+					goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+				mcp := &genmcpsurla.Client{ToolsCallEndpoint: transport.ToolsCall()}
+				read := callMCPTool(t, mcp, "get_change", `{"change_id":"`+card.ChangeID+`"}`, gensurlatools.UnmarshalGetChangeResult)
+				assert.Equal(t, card.ChangeID, read.ChangeID)
+				return http.StatusOK
+			},
+			wantStatus: http.StatusOK,
+			saved:      []string{"surla.request.get_change builder unset"},
+			exported:   map[string]codes.Code{"surla.request.get_change": codes.Unset},
+		},
+		{
+			name: "user's waiting read ends with an error",
+			call: func(t *testing.T, cp *ControlPlane, srv *httptest.Server, _ *gensurla.ChangeCardResult) int {
+				// The current version keeps the read waiting; reading it starts no span.
+				list, err := cp.changeList(t.Context(), trace.SpanFromContext(t.Context()), owner)
+				require.NoError(t, err)
+				// The caller leaves while the server waits, as a closing page does.
+				ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+				defer cancel()
+				return sendHistoryRequest(t, ctx, srv, http.MethodGet, "/change-updates?since="+list.Version, user, nil)
+			},
+			wantStatus: 0,
+			saved:      []string{},
+			exported:   map[string]codes.Code{"surla.request.wait_for_changes": codes.Error, waitForChangesSpan: codes.Unset},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			exporter := tracetest.NewInMemoryExporter()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+			cp := newControlPlane(t, Options{TracerProvider: provider})
+			card := mustPropose(t, cp, WithPrincipal(t.Context(), Principal{ID: owner, CallerID: "guide", Kind: CallerGuide}),
+				"chg-history", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
+			srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{user: {ID: owner}})))
+			t.Cleanup(srv.Close)
+			saved := func() map[string]string {
+				page, err := cp.traces.List(owner, "all", 100, nil)
+				require.NoError(t, err)
+				records := map[string]string{}
+				for _, span := range page.Spans {
+					records[span.SpanID] = span.Name + " " + span.Attributes["surla.caller_kind"] + " " + span.Status
+				}
+				return records
+			}
+			before := saved()
+
+			assert.Equal(t, test.wantStatus, test.call(t, cp, srv, card))
+			// Close returns once every request's handler, and so every span, has ended.
+			srv.Close()
+
+			added := []string{}
+			for id, record := range saved() {
+				if _, ok := before[id]; !ok {
+					added = append(added, record)
+				}
+			}
+			assert.ElementsMatch(t, test.saved, added)
+			exported := map[string]codes.Code{}
+			for _, span := range exporter.GetSpans() {
+				if _, ok := test.exported[span.Name]; ok {
+					exported[span.Name] = span.Status.Code
+				}
+			}
+			assert.Equal(t, test.exported, exported)
+		})
+	}
+}
+
+// sendHistoryRequest sends one request with token to srv and returns its
+// status, or 0 when ctx ended before an answer.
+func sendHistoryRequest(
+	t *testing.T,
+	ctx context.Context,
+	srv *httptest.Server,
+	method, path, token string,
+	body []byte,
+) int {
+	t.Helper()
+	request, err := http.NewRequestWithContext(ctx, method, srv.URL+path, bytes.NewReader(body))
+	require.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := srv.Client().Do(request)
+	if ctx.Err() != nil {
+		return 0
+	}
+	require.NoError(t, err)
+	assert.NoError(t, response.Body.Close())
+	return response.StatusCode
 }
