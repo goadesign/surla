@@ -23,8 +23,3 @@ func RunStatusOrdersPath(runID string) string {
 func ApproveRefundOrdersPath(runID string) string {
 	return fmt.Sprintf("/runs/%v/approval", runID)
 }
-
-// OverridePromptOrdersPath returns the URL path to the orders service override_prompt HTTP endpoint.
-func OverridePromptOrdersPath(promptID string) string {
-	return fmt.Sprintf("/prompts/%v", promptID)
-}

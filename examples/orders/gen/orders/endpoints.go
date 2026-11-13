@@ -19,7 +19,6 @@ type Endpoints struct {
 	Chat             goa.Endpoint
 	RunStatus        goa.Endpoint
 	ApproveRefund    goa.Endpoint
-	OverridePrompt   goa.Endpoint
 	ListOrders       goa.Endpoint
 	IssueStoreCredit goa.Endpoint
 	RequestRefund    goa.Endpoint
@@ -33,7 +32,6 @@ func NewEndpoints(s Service) *Endpoints {
 		Chat:             NewChatEndpoint(s, a.JWTAuth),
 		RunStatus:        NewRunStatusEndpoint(s, a.JWTAuth),
 		ApproveRefund:    NewApproveRefundEndpoint(s, a.JWTAuth),
-		OverridePrompt:   NewOverridePromptEndpoint(s, a.JWTAuth),
 		ListOrders:       NewListOrdersEndpoint(s),
 		IssueStoreCredit: NewIssueStoreCreditEndpoint(s),
 		RequestRefund:    NewRequestRefundEndpoint(s),
@@ -45,7 +43,6 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Chat = m(e.Chat)
 	e.RunStatus = m(e.RunStatus)
 	e.ApproveRefund = m(e.ApproveRefund)
-	e.OverridePrompt = m(e.OverridePrompt)
 	e.ListOrders = m(e.ListOrders)
 	e.IssueStoreCredit = m(e.IssueStoreCredit)
 	e.RequestRefund = m(e.RequestRefund)
@@ -59,7 +56,7 @@ func NewChatEndpoint(s Service, authJWTFn security.AuthJWTFunc) goa.Endpoint {
 		var err error
 		sc := security.JWTScheme{
 			Name:           "jwt",
-			Scopes:         []string{"orders:chat", "refunds:approve", "prompts:manage"},
+			Scopes:         []string{"orders:chat", "refunds:approve"},
 			RequiredScopes: []string{"orders:chat"},
 		}
 		ctx, err = authJWTFn(ctx, string(p.Token), &sc)
@@ -78,7 +75,7 @@ func NewRunStatusEndpoint(s Service, authJWTFn security.AuthJWTFunc) goa.Endpoin
 		var err error
 		sc := security.JWTScheme{
 			Name:           "jwt",
-			Scopes:         []string{"orders:chat", "refunds:approve", "prompts:manage"},
+			Scopes:         []string{"orders:chat", "refunds:approve"},
 			RequiredScopes: []string{"orders:chat"},
 		}
 		ctx, err = authJWTFn(ctx, string(p.Token), &sc)
@@ -97,7 +94,7 @@ func NewApproveRefundEndpoint(s Service, authJWTFn security.AuthJWTFunc) goa.End
 		var err error
 		sc := security.JWTScheme{
 			Name:           "jwt",
-			Scopes:         []string{"orders:chat", "refunds:approve", "prompts:manage"},
+			Scopes:         []string{"orders:chat", "refunds:approve"},
 			RequiredScopes: []string{"refunds:approve"},
 		}
 		ctx, err = authJWTFn(ctx, string(p.Token), &sc)
@@ -105,25 +102,6 @@ func NewApproveRefundEndpoint(s Service, authJWTFn security.AuthJWTFunc) goa.End
 			return nil, err
 		}
 		return s.ApproveRefund(ctx, p)
-	}
-}
-
-// NewOverridePromptEndpoint returns an endpoint function that calls the method
-// "override_prompt" of service "orders".
-func NewOverridePromptEndpoint(s Service, authJWTFn security.AuthJWTFunc) goa.Endpoint {
-	return func(ctx context.Context, req any) (any, error) {
-		p := req.(*OverridePromptPayload)
-		var err error
-		sc := security.JWTScheme{
-			Name:           "jwt",
-			Scopes:         []string{"orders:chat", "refunds:approve", "prompts:manage"},
-			RequiredScopes: []string{"prompts:manage"},
-		}
-		ctx, err = authJWTFn(ctx, string(p.Token), &sc)
-		if err != nil {
-			return nil, err
-		}
-		return s.OverridePrompt(ctx, p)
 	}
 }
 

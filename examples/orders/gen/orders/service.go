@@ -30,11 +30,6 @@ type Service interface {
 	RunStatus(context.Context, *RunStatusPayload) (res *RunView, err error)
 	// Approve or deny a refund that is waiting for a manager.
 	ApproveRefund(context.Context, *ApproveRefundPayload) (res *RunView, err error)
-	// Replace the text of a registered prompt for every tenant served by this
-	// orders process. The agent's next model request planned by this process uses
-	// the new text. The change lasts until the process restarts, which restores
-	// the built-in text; other running orders processes keep their own prompts.
-	OverridePrompt(context.Context, *OverridePromptPayload) (res *PromptVersion, err error)
 	// List one page of the customer's orders.
 	ListOrders(context.Context, *ListOrdersPayload) (res *ListOrdersResult, err error)
 	// Refund an order of $50.00 or less, tax and shipping included, as store
@@ -64,7 +59,7 @@ const ServiceName = "orders"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [7]string{"chat", "run_status", "approve_refund", "override_prompt", "list_orders", "issue_store_credit", "request_refund"}
+var MethodNames = [6]string{"chat", "run_status", "approve_refund", "list_orders", "issue_store_credit", "request_refund"}
 
 // ApproveRefundPayload is the payload type of the orders service
 // approve_refund method.
@@ -126,27 +121,6 @@ type Order struct {
 	ShippingCents int64
 	// Total charged in cents, including tax and shipping.
 	TotalCents int64
-}
-
-// OverridePromptPayload is the payload type of the orders service
-// override_prompt method.
-type OverridePromptPayload struct {
-	// Operator bearer token.
-	Token string
-	// Registered prompt to replace.
-	PromptID string
-	// New prompt text, as a Go text/template. It must render with no template data.
-	Template string
-}
-
-// PromptVersion is the result type of the orders service override_prompt
-// method.
-type PromptVersion struct {
-	// Prompt that was replaced.
-	PromptID string
-	// Version of the accepted text: "sha256:" followed by the hex SHA-256 of the
-	// template. Model requests that use this text carry this version.
-	Version string
 }
 
 // RefundCommand is the payload type of the orders service issue_store_credit
@@ -217,16 +191,6 @@ func MakeInvalidRefund(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "invalid_refund", false, false, false)
 }
 
-// MakeUnknownPrompt builds a goa.ServiceError from an error.
-func MakeUnknownPrompt(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "unknown_prompt", false, false, false)
-}
-
-// MakeInvalidPrompt builds a goa.ServiceError from an error.
-func MakeInvalidPrompt(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "invalid_prompt", false, false, false)
-}
-
 // jsonOrderTransport stores JSON fields until they have been validated.
 type jsonOrderTransport struct {
 	// Order identifier.
@@ -293,29 +257,6 @@ func validatejsonOrderTransport(value *jsonOrderTransport) (err error) {
 		if int64(*value.TotalCents) < 0 {
 			err = goa.MergeErrors(err, goa.InvalidRangeError("body.total_cents", int64(*value.TotalCents), 0, true))
 		}
-	}
-	return err
-}
-
-// jsonPromptVersionTransport stores JSON fields until they have been validated.
-type jsonPromptVersionTransport struct {
-	// Prompt that was replaced.
-	PromptID *string `json:"prompt_id"`
-	// Version of the accepted text: "sha256:" followed by the hex SHA-256 of the
-	// template. Model requests that use this text carry this version.
-	Version *string `json:"version"`
-}
-
-// validatejsonPromptVersionTransport checks decoded JSON before it becomes a service value.
-func validatejsonPromptVersionTransport(value *jsonPromptVersionTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.PromptID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("prompt_id", "body"))
-	}
-	if value.Version == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
 	}
 	return err
 }
@@ -630,86 +571,6 @@ func DecodeOrder(data []byte) (out *Order, err error) {
 			TaxCents:      int64(*body.TaxCents),
 			ShippingCents: int64(*body.ShippingCents),
 			TotalCents:    int64(*body.TotalCents),
-		}
-	}
-	return out, nil
-}
-
-// EncodePromptVersion turns a service value into JSON using the field names in the Goa design.
-func EncodePromptVersion(in *PromptVersion) ([]byte, error) {
-	if err := checkPromptVersionValue(in); err != nil {
-		return nil, fmt.Errorf("encode PromptVersion JSON: %w", err)
-	}
-	var body *jsonPromptVersionTransport
-	{
-		body = &jsonPromptVersionTransport{
-			PromptID: &in.PromptID,
-			Version:  &in.Version,
-		}
-	}
-	if err := validatejsonPromptVersionTransport(body); err != nil {
-		return nil, fmt.Errorf("validate PromptVersion JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode PromptVersion JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidatePromptVersionValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidatePromptVersionValue(in *PromptVersion) error {
-	if err := checkPromptVersionValue(in); err != nil {
-		return fmt.Errorf("validate PromptVersion value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "PromptVersion")
-	}
-
-	var body *jsonPromptVersionTransport
-	{
-		body = &jsonPromptVersionTransport{
-			PromptID: &in.PromptID,
-			Version:  &in.Version,
-		}
-	}
-	if err := validatejsonPromptVersionTransport(body); err != nil {
-		return fmt.Errorf("validate PromptVersion value: %w", err)
-	}
-	return nil
-}
-
-// DecodePromptVersion checks JSON field names from the Goa design and returns a service value.
-func DecodePromptVersion(data []byte) (out *PromptVersion, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode PromptVersion JSON: %w", err)
-	}
-	if err := validatePromptVersionJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode PromptVersion JSON: %w", err)
-	}
-	var body *jsonPromptVersionTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode PromptVersion JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode PromptVersion JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode PromptVersion JSON after first value: %w", err)
-	}
-	if err := validatejsonPromptVersionTransport(body); err != nil {
-		return out, fmt.Errorf("validate PromptVersion JSON: %w", err)
-	}
-	{
-		out = &PromptVersion{
-			PromptID: *body.PromptID,
-			Version:  *body.Version,
 		}
 	}
 	return out, nil
@@ -1111,50 +972,6 @@ func validateOrderJSONValue3(path string, value any, description string) error {
 	return nil
 }
 
-// validatePromptVersionJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validatePromptVersionJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "prompt_id":
-			if err := validateOrderJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Prompt that was replaced.",
-			); err != nil {
-				return err
-			}
-		case "version":
-			if err := validateOrderJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Version of the accepted text: \"sha256:\" followed by the hex SHA-256 of the template. Model requests that use this text carry this version.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"prompt_id",
-				"version",
-			})
-		}
-	}
-	return nil
-}
-
 // validateRefundCommandJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateRefundCommandJSONValue(path string, value any, description string) error {
 	field := path
@@ -1528,39 +1345,6 @@ func checkOrderOrderValue(in *Order, field string, active map[any]bool) error {
 		}
 		if !utf8.ValidString(string(in.PlacedAt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "placed_at", false))
-		}
-	}
-	return nil
-}
-
-// checkPromptVersionValue checks text and cycles before conversion.
-func checkPromptVersionValue(in *PromptVersion) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkPromptVersionPromptVersionValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkPromptVersionPromptVersionValue checks one generated value on the active path.
-func checkPromptVersionPromptVersionValue(in *PromptVersion, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.PromptID)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt_id", false))
-		}
-		if !utf8.ValidString(string(in.Version)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "version", false))
 		}
 	}
 	return nil

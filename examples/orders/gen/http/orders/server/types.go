@@ -30,13 +30,6 @@ type ApproveRefundRequestBody struct {
 	Approved *bool `form:"approved,omitempty" json:"approved,omitempty" xml:"approved,omitempty"`
 }
 
-// OverridePromptRequestBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP request body.
-type OverridePromptRequestBody struct {
-	// New prompt text, as a Go text/template. It must render with no template data.
-	Template *string `form:"template,omitempty" json:"template,omitempty" xml:"template,omitempty"`
-}
-
 // ChatResponseBody is the type of the "orders" service "chat" endpoint HTTP
 // response body.
 type ChatResponseBody struct {
@@ -80,16 +73,6 @@ type ApproveRefundResponseBody struct {
 	ApprovalID *string `form:"approval_id,omitempty" json:"approval_id,omitempty" xml:"approval_id,omitempty"`
 	// What the manager is asked to approve.
 	ApprovalPrompt *string `form:"approval_prompt,omitempty" json:"approval_prompt,omitempty" xml:"approval_prompt,omitempty"`
-}
-
-// OverridePromptResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body.
-type OverridePromptResponseBody struct {
-	// Prompt that was replaced.
-	PromptID string `form:"prompt_id" json:"prompt_id" xml:"prompt_id"`
-	// Version of the accepted text: "sha256:" followed by the hex SHA-256 of the
-	// template. Model requests that use this text carry this version.
-	Version string `form:"version" json:"version" xml:"version"`
 }
 
 // ChatUnauthorizedResponseBody is the type of the "orders" service "chat"
@@ -308,114 +291,6 @@ type ApproveRefundInvalidRefundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// OverridePromptUnknownPromptResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body for the "unknown_prompt" error.
-type OverridePromptUnknownPromptResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// OverridePromptNotFoundResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body for the "not_found" error.
-type OverridePromptNotFoundResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// OverridePromptInvalidPromptResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body for the "invalid_prompt" error.
-type OverridePromptInvalidPromptResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// OverridePromptInvalidRefundResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body for the "invalid_refund" error.
-type OverridePromptInvalidRefundResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// OverridePromptUnauthorizedResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body for the "unauthorized" error.
-type OverridePromptUnauthorizedResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// OverridePromptForbiddenResponseBody is the type of the "orders" service
-// "override_prompt" endpoint HTTP response body for the "forbidden" error.
-type OverridePromptForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // NewChatResponseBody builds the HTTP response body from the result of the
 // "chat" endpoint of the "orders" service.
 func NewChatResponseBody(res *orders.RunView) *ChatResponseBody {
@@ -451,16 +326,6 @@ func NewApproveRefundResponseBody(res *orders.RunView) *ApproveRefundResponseBod
 		Reply:          res.Reply,
 		ApprovalID:     res.ApprovalID,
 		ApprovalPrompt: res.ApprovalPrompt,
-	}
-	return body
-}
-
-// NewOverridePromptResponseBody builds the HTTP response body from the result
-// of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptResponseBody(res *orders.PromptVersion) *OverridePromptResponseBody {
-	body := &OverridePromptResponseBody{
-		PromptID: res.PromptID,
-		Version:  res.Version,
 	}
 	return body
 }
@@ -633,90 +498,6 @@ func NewApproveRefundInvalidRefundResponseBody(res *goa.ServiceError) *ApproveRe
 	return body
 }
 
-// NewOverridePromptUnknownPromptResponseBody builds the HTTP response body
-// from the result of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptUnknownPromptResponseBody(res *goa.ServiceError) *OverridePromptUnknownPromptResponseBody {
-	body := &OverridePromptUnknownPromptResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewOverridePromptNotFoundResponseBody builds the HTTP response body from the
-// result of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptNotFoundResponseBody(res *goa.ServiceError) *OverridePromptNotFoundResponseBody {
-	body := &OverridePromptNotFoundResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewOverridePromptInvalidPromptResponseBody builds the HTTP response body
-// from the result of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptInvalidPromptResponseBody(res *goa.ServiceError) *OverridePromptInvalidPromptResponseBody {
-	body := &OverridePromptInvalidPromptResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewOverridePromptInvalidRefundResponseBody builds the HTTP response body
-// from the result of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptInvalidRefundResponseBody(res *goa.ServiceError) *OverridePromptInvalidRefundResponseBody {
-	body := &OverridePromptInvalidRefundResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewOverridePromptUnauthorizedResponseBody builds the HTTP response body from
-// the result of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptUnauthorizedResponseBody(res *goa.ServiceError) *OverridePromptUnauthorizedResponseBody {
-	body := &OverridePromptUnauthorizedResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewOverridePromptForbiddenResponseBody builds the HTTP response body from
-// the result of the "override_prompt" endpoint of the "orders" service.
-func NewOverridePromptForbiddenResponseBody(res *goa.ServiceError) *OverridePromptForbiddenResponseBody {
-	body := &OverridePromptForbiddenResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewChatPayload builds a orders service chat endpoint payload.
 func NewChatPayload(body *ChatRequestBody, token string) *orders.ChatPayload {
 	v := &orders.ChatPayload{
@@ -749,18 +530,6 @@ func NewApproveRefundPayload(body *ApproveRefundRequestBody, runID string, token
 	return v
 }
 
-// NewOverridePromptPayload builds a orders service override_prompt endpoint
-// payload.
-func NewOverridePromptPayload(body *OverridePromptRequestBody, promptID string, token string) *orders.OverridePromptPayload {
-	v := &orders.OverridePromptPayload{
-		Template: *body.Template,
-	}
-	v.PromptID = promptID
-	v.Token = token
-
-	return v
-}
-
 // ValidateChatRequestBody runs the validations defined on ChatRequestBody
 func ValidateChatRequestBody(body *ChatRequestBody) (err error) {
 	if body.Message == nil {
@@ -786,20 +555,6 @@ func ValidateApproveRefundRequestBody(body *ApproveRefundRequestBody) (err error
 	if body.ApprovalID != nil {
 		if utf8.RuneCountInString(*body.ApprovalID) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.approval_id", *body.ApprovalID, utf8.RuneCountInString(*body.ApprovalID), 1, true))
-		}
-	}
-	return
-}
-
-// ValidateOverridePromptRequestBody runs the validations defined on
-// OverridePromptRequestBody
-func ValidateOverridePromptRequestBody(body *OverridePromptRequestBody) (err error) {
-	if body.Template == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("template", "body"))
-	}
-	if body.Template != nil {
-		if utf8.RuneCountInString(*body.Template) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.template", *body.Template, utf8.RuneCountInString(*body.Template), 1, true))
 		}
 	}
 	return

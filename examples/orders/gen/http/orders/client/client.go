@@ -28,10 +28,6 @@ type Client struct {
 	// approve_refund endpoint.
 	ApproveRefundDoer goahttp.Doer
 
-	// OverridePrompt Doer is the HTTP client used to make requests to the
-	// override_prompt endpoint.
-	OverridePromptDoer goahttp.Doer
-
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -55,7 +51,6 @@ func NewClient(
 		ChatDoer:            doer,
 		RunStatusDoer:       doer,
 		ApproveRefundDoer:   doer,
-		OverridePromptDoer:  doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
 		host:                host,
@@ -131,30 +126,6 @@ func (c *Client) ApproveRefund() goa.Endpoint {
 		resp, err := c.ApproveRefundDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("orders", "approve_refund", err)
-		}
-		return decodeResponse(resp)
-	}
-}
-
-// OverridePrompt returns an endpoint that makes HTTP requests to the orders
-// service override_prompt server.
-func (c *Client) OverridePrompt() goa.Endpoint {
-	var (
-		encodeRequest  = EncodeOverridePromptRequest(c.encoder)
-		decodeResponse = DecodeOverridePromptResponse(c.decoder, c.RestoreResponseBody)
-	)
-	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildOverridePromptRequest(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		err = encodeRequest(req, v)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := c.OverridePromptDoer.Do(req)
-		if err != nil {
-			return nil, goahttp.ErrRequestError("orders", "override_prompt", err)
 		}
 		return decodeResponse(resp)
 	}

@@ -38,7 +38,7 @@ func TestJWTAuth(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			svc := New(nil, nil, nil, nil, testKey)
+			svc := New(nil, nil, nil, testKey)
 			ctx, err := svc.JWTAuth(context.Background(), c.token, approve)
 			if c.wantErr != "" {
 				var se *goa.ServiceError
@@ -69,7 +69,7 @@ func TestApproveRefund(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			conv := &fakeConversations{run: c.run}
-			svc := New(nil, nil, conv, nil, testKey)
+			svc := New(nil, nil, conv, testKey)
 			ctx := context.WithValue(context.Background(), principalKey{}, Principal{TenantID: c.tenantID, Subject: "m1"})
 			_, err := svc.ApproveRefund(ctx, &genorders.ApproveRefundPayload{RunID: "run-1", ApprovalID: c.approvalID, Approved: true})
 			if c.wantErr != "" {
@@ -87,7 +87,7 @@ func TestApproveRefund(t *testing.T) {
 
 func TestRunStatusHidesOtherCustomersRuns(t *testing.T) {
 	conv := &fakeConversations{run: RunState{RunID: "run-1", TenantID: "t1", CustomerID: "c1", Status: "running"}}
-	svc := New(nil, nil, conv, nil, testKey)
+	svc := New(nil, nil, conv, testKey)
 	ctx := context.WithValue(context.Background(), principalKey{}, Principal{TenantID: "t1", Subject: "c2"})
 	_, err := svc.RunStatus(ctx, &genorders.RunStatusPayload{RunID: "run-1"})
 	var se *goa.ServiceError
