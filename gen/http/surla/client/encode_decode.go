@@ -3680,7 +3680,18 @@ func EncodeStartBuildRequest(encoder func(*http.Request) goahttp.Encoder) func(*
 // DecodeStartBuildResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "not_repository" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "no_commit" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "no_test_layout" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "git_identity_missing" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "copy_folder_in_use" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "tests_branch_in_use" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "working_copy_busy" (type *surla.BuildStartRefusal): http.StatusConflict
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "sandbox_unavailable" (type *surla.BuildStartRefusal): http.StatusNotImplemented
+//   - "go_tools_missing" (type *surla.BuildStartRefusal): http.StatusNotImplemented
+//   - "unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
 func DecodeStartBuildResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
@@ -3717,7 +3728,7 @@ func DecodeStartBuildResponse(decoder func(*http.Response) goahttp.Decoder, rest
 			if err != nil {
 				return nil, goahttp.ErrValidationError("surla", "start_build", err)
 			}
-			res := NewStartBuildStartedBuildOK(&body)
+			res := NewStartBuildResultOK(&body)
 			return res, nil
 		case http.StatusNotFound:
 			var (
@@ -3734,19 +3745,127 @@ func DecodeStartBuildResponse(decoder func(*http.Response) goahttp.Decoder, rest
 			}
 			return nil, NewStartBuildNotFound(&body)
 		case http.StatusConflict:
-			var (
-				body StartBuildConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "conflict":
+				var (
+					body StartBuildConflictResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildConflictResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildConflict(&body)
+			case "not_repository":
+				var (
+					body StartBuildNotRepositoryResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildNotRepositoryResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildNotRepository(&body)
+			case "no_commit":
+				var (
+					body StartBuildNoCommitResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildNoCommitResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildNoCommit(&body)
+			case "no_test_layout":
+				var (
+					body StartBuildNoTestLayoutResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildNoTestLayoutResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildNoTestLayout(&body)
+			case "git_identity_missing":
+				var (
+					body StartBuildGitIdentityMissingResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildGitIdentityMissingResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildGitIdentityMissing(&body)
+			case "copy_folder_in_use":
+				var (
+					body StartBuildCopyFolderInUseResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildCopyFolderInUseResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildCopyFolderInUse(&body)
+			case "tests_branch_in_use":
+				var (
+					body StartBuildTestsBranchInUseResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildTestsBranchInUseResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildTestsBranchInUse(&body)
+			case "working_copy_busy":
+				var (
+					body StartBuildWorkingCopyBusyResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildWorkingCopyBusyResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildWorkingCopyBusy(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "start_build", resp.StatusCode, string(body))
 			}
-			err = ValidateStartBuildConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "start_build", err)
-			}
-			return nil, NewStartBuildConflict(&body)
 		case http.StatusUnprocessableEntity:
 			var (
 				body StartBuildUnprocessableResponseBody
@@ -3761,6 +3880,72 @@ func DecodeStartBuildResponse(decoder func(*http.Response) goahttp.Decoder, rest
 				return nil, goahttp.ErrValidationError("surla", "start_build", err)
 			}
 			return nil, NewStartBuildUnprocessable(&body)
+		case http.StatusNotImplemented:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "not_implemented":
+				var (
+					body StartBuildNotImplementedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildNotImplementedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildNotImplemented(&body)
+			case "sandbox_unavailable":
+				var (
+					body StartBuildSandboxUnavailableResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildSandboxUnavailableResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildSandboxUnavailable(&body)
+			case "go_tools_missing":
+				var (
+					body StartBuildGoToolsMissingResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				err = ValidateStartBuildGoToolsMissingResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_build", err)
+				}
+				return nil, NewStartBuildGoToolsMissing(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "start_build", resp.StatusCode, string(body))
+			}
+		case http.StatusServiceUnavailable:
+			var (
+				body StartBuildUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_build", err)
+			}
+			err = ValidateStartBuildUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_build", err)
+			}
+			return nil, NewStartBuildUnavailable(&body)
 		case http.StatusForbidden:
 			var (
 				body StartBuildForbiddenResponseBody
@@ -5324,6 +5509,21 @@ func unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem(v 
 	return res
 }
 
+// unmarshalStartedBuildResponseBodyToSurlaStartedBuild builds a value of type
+// *surla.StartedBuild from a value of type *StartedBuildResponseBody.
+func unmarshalStartedBuildResponseBodyToSurlaStartedBuild(v *StartedBuildResponseBody) *surla.StartedBuild {
+	res := &surla.StartedBuild{
+		RequestRevision:   *v.RequestRevision,
+		StartedAt:         *v.StartedAt,
+		InForce:           *v.InForce,
+		RequiredTestCount: *v.RequiredTestCount,
+	}
+	res.Builder = unmarshalBuilderProgressResponseBodyToSurlaBuilderProgress(v.Builder)
+	res.TestWriter = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(v.TestWriter)
+
+	return res
+}
+
 // unmarshalBuilderProgressResponseBodyToSurlaBuilderProgress builds a value of
 // type *surla.BuilderProgress from a value of type
 // *BuilderProgressResponseBody.
@@ -5466,25 +5666,106 @@ func unmarshalTestsCouldNotRunResponseBodyToSurlaTestsCouldNotRun(v *TestsCouldN
 	return res
 }
 
+// unmarshalProjectTeamResponseBodyToSurlaProjectTeam builds a value of type
+// *surla.ProjectTeam from a value of type *ProjectTeamResponseBody.
+func unmarshalProjectTeamResponseBodyToSurlaProjectTeam(v *ProjectTeamResponseBody) *surla.ProjectTeam {
+	res := &surla.ProjectTeam{
+		Team:   *v.Team,
+		Space:  *v.Space,
+		Dialog: *v.Dialog,
+	}
+	res.Roles = make([]*surla.ProjectTeamRole, len(v.Roles))
+	for i, val := range v.Roles {
+		if val == nil {
+			res.Roles[i] = nil
+			continue
+		}
+		res.Roles[i] = unmarshalProjectTeamRoleResponseBodyToSurlaProjectTeamRole(val)
+	}
+
+	return res
+}
+
+// unmarshalBuildTeamWindowBusyResponseBodyToSurlaBuildTeamWindowBusy builds a
+// value of type *surla.BuildTeamWindowBusy from a value of type
+// *BuildTeamWindowBusyResponseBody.
+func unmarshalBuildTeamWindowBusyResponseBodyToSurlaBuildTeamWindowBusy(v *BuildTeamWindowBusyResponseBody) *surla.BuildTeamWindowBusy {
+	res := &surla.BuildTeamWindowBusy{
+		Step: surla.BuildStartStep(*v.Step),
+	}
+
+	return res
+}
+
+// unmarshalBuildTeamAmbiguousSpaceResponseBodyToSurlaBuildTeamAmbiguousSpace
+// builds a value of type *surla.BuildTeamAmbiguousSpace from a value of type
+// *BuildTeamAmbiguousSpaceResponseBody.
+func unmarshalBuildTeamAmbiguousSpaceResponseBodyToSurlaBuildTeamAmbiguousSpace(v *BuildTeamAmbiguousSpaceResponseBody) *surla.BuildTeamAmbiguousSpace {
+	res := &surla.BuildTeamAmbiguousSpace{
+		Count: *v.Count,
+		Step:  surla.BuildStartStep(*v.Step),
+	}
+
+	return res
+}
+
+// unmarshalBuildTeamUnavailableResponseBodyToSurlaBuildTeamUnavailable builds
+// a value of type *surla.BuildTeamUnavailable from a value of type
+// *BuildTeamUnavailableResponseBody.
+func unmarshalBuildTeamUnavailableResponseBodyToSurlaBuildTeamUnavailable(v *BuildTeamUnavailableResponseBody) *surla.BuildTeamUnavailable {
+	res := &surla.BuildTeamUnavailable{
+		Step: surla.BuildStartStep(*v.Step),
+	}
+
+	return res
+}
+
+// unmarshalBuildCopyNotUsedResponseBodyToSurlaBuildCopyNotUsed builds a value
+// of type *surla.BuildCopyNotUsed from a value of type
+// *BuildCopyNotUsedResponseBody.
+func unmarshalBuildCopyNotUsedResponseBodyToSurlaBuildCopyNotUsed(v *BuildCopyNotUsedResponseBody) *surla.BuildCopyNotUsed {
+	res := &surla.BuildCopyNotUsed{}
+
+	return res
+}
+
+// unmarshalBuildCopyAtProjectCommitResponseBodyToSurlaBuildCopyAtProjectCommit
+// builds a value of type *surla.BuildCopyAtProjectCommit from a value of type
+// *BuildCopyAtProjectCommitResponseBody.
+func unmarshalBuildCopyAtProjectCommitResponseBodyToSurlaBuildCopyAtProjectCommit(v *BuildCopyAtProjectCommitResponseBody) *surla.BuildCopyAtProjectCommit {
+	res := &surla.BuildCopyAtProjectCommit{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+
+// unmarshalBuildCopyNotContainedResponseBodyToSurlaBuildCopyNotContained
+// builds a value of type *surla.BuildCopyNotContained from a value of type
+// *BuildCopyNotContainedResponseBody.
+func unmarshalBuildCopyNotContainedResponseBodyToSurlaBuildCopyNotContained(v *BuildCopyNotContainedResponseBody) *surla.BuildCopyNotContained {
+	res := &surla.BuildCopyNotContained{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+
+// unmarshalBuildCopyDirtyResponseBodyToSurlaBuildCopyDirty builds a value of
+// type *surla.BuildCopyDirty from a value of type *BuildCopyDirtyResponseBody.
+func unmarshalBuildCopyDirtyResponseBodyToSurlaBuildCopyDirty(v *BuildCopyDirtyResponseBody) *surla.BuildCopyDirty {
+	res := &surla.BuildCopyDirty{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+
 // unmarshalBuildNotStartedResponseBodyToSurlaBuildNotStarted builds a value of
 // type *surla.BuildNotStarted from a value of type
 // *BuildNotStartedResponseBody.
 func unmarshalBuildNotStartedResponseBodyToSurlaBuildNotStarted(v *BuildNotStartedResponseBody) *surla.BuildNotStarted {
 	res := &surla.BuildNotStarted{}
-
-	return res
-}
-
-// unmarshalStartedBuildResponseBodyToSurlaStartedBuild builds a value of type
-// *surla.StartedBuild from a value of type *StartedBuildResponseBody.
-func unmarshalStartedBuildResponseBodyToSurlaStartedBuild(v *StartedBuildResponseBody) *surla.StartedBuild {
-	res := &surla.StartedBuild{
-		RequestRevision: *v.RequestRevision,
-		StartedAt:       *v.StartedAt,
-		InForce:         *v.InForce,
-	}
-	res.Builder = unmarshalBuilderProgressResponseBodyToSurlaBuilderProgress(v.Builder)
-	res.TestWriter = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(v.TestWriter)
 
 	return res
 }

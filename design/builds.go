@@ -98,7 +98,8 @@ var StartedBuild = Type("StartedBuild", func() {
 	Attribute("in_force", Boolean, "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.")
 	Attribute("builder", BuilderProgress, "The builder's assignment.")
 	Attribute("test_writer", TestWriterProgress, "The test writer's assignment.")
-	Required("request_revision", "started_at", "in_force", "builder", "test_writer")
+	Attribute("required_test_count", Int, "Number of finished flows in the agreed Story. Zero means no test of this change's Story was required.", func() { Minimum(0) })
+	Required("request_revision", "started_at", "in_force", "builder", "test_writer", "required_test_count")
 })
 
 // BuildNotStarted is the build state of a change the user never built.
@@ -177,23 +178,27 @@ var TestWriterAssignment = Type("TestWriterAssignment", func() {
 	Attribute("request_revision", String, "Change Card revision the tests are for; report_tests_finished takes it.")
 	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.")
 	Attribute("progress", TestWriterProgress, "Where this assignment stands, including Surla's findings when it needs changes.")
-	Attribute("working_folder", String, "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.")
+	Attribute("working_folder", String, "Folder to write the tests in: your own working copy of the project.")
+	Attribute("design_source", String, "The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.")
 	Attribute("required_tests", ArrayOf(RequiredTest), "One test per finished flow of stories, in declaration order; unfinished flows require none.")
-	Required("change_id", "request_revision", "in_force", "progress", "working_folder", "stories", "required_tests")
+	Required("change_id", "request_revision", "in_force", "progress", "working_folder", "design_source", "stories", "required_tests")
 })
 
 // buildMethods exposes starting and reading builds and the role-limited
 // assignment operations of the builder and the test writer.
 func buildMethods() {
 	Method("start_build", func() {
-		Description("The user starts building a confirmed change at its agreed revision, the one in force; a revision the guide proposed beside it is built only after the user adopts it. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the agreed revision (such as a waiting proposal's), is refused and nothing changes.")
+		Description("The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design before generating required tests or admitting roles to the team. Stored verification settings use only the builder. Building again replaces the build and both unread assignments. A refused start saves no build and admits no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server, survives client disconnection, and has a five-minute limit; get_build reads the saved build without this start's transient team or copy outcome.")
 		Payload(func() {
 			Attribute("change_id", String, "Confirmed Change Card identifier.", func() { MinLength(1) })
 			Attribute("request_revision", String, "The Change Card's agreed revision, the one in force (not a waiting proposal's).", func() { MinLength(1) })
 			Required("change_id", "request_revision")
 		})
-		Result(StartedBuild)
+		Result(StartBuildResult)
+		buildStartRefusals()
+		Error("not_implemented", ErrorResult, "Start this project with surla to bind the team; nothing was saved.")
+		Error("unavailable", ErrorResult, "The server is stopping or the start's time limit ended before saving; call again on a running server. Nothing was saved.")
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or request_revision is not its agreed revision (a waiting proposal's revision cannot be built); nothing changed.")
 		Error("unprocessable", ErrorResult, "The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.")
@@ -203,6 +208,9 @@ func buildMethods() {
 			Response("not_found", StatusNotFound)
 			Response("conflict", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
+			Response("unavailable", StatusServiceUnavailable)
+			buildStartRefusalResponses()
 		})
 	})
 
@@ -259,14 +267,14 @@ func buildMethods() {
 	})
 
 	Method("get_test_writer_assignment", func() {
-		Description("Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.")
+		Description("Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier from list_test_writer_assignments.", func() { MinLength(1) })
 			Required("change_id")
 		})
 		Result(TestWriterAssignment)
 		Error("not_found", ErrorResult, "You have no test assignment for this change_id.")
-		Tool("get_test_writer_assignment", "Read your test assignment for a change: the working folder, the Story as agreed, one required test per finished flow, and your state with any findings to fix. When your tests are finished, call report_tests_finished with change_id and request_revision.")
+		Tool("get_test_writer_assignment", "Read your test assignment for a change: the working folder, the design and Story as agreed, one required test per finished flow, and your state with any findings to fix. Align the service interface in your copy with the agreed design and write tests inside its test module. When your tests are finished, call report_tests_finished with change_id and request_revision.")
 		HTTP(func() {
 			GET("/assignments/test-writer/{change_id}")
 			Response(StatusOK)

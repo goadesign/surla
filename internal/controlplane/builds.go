@@ -93,6 +93,9 @@ type (
 		// card when the build started, because the test writer's work is
 		// judged against it and not against a later revision's Story.
 		Stories []designeval.StorySummary `json:"stories"`
+		// DesignSource is the canonical design as agreed at RequestRevision,
+		// copied from the card at the same second check as Stories.
+		DesignSource string `json:"design_source"`
 		// Builder is the builder's assignment.
 		Builder builderAssignment `json:"builder"`
 		// TestWriter is the test writer's assignment.
@@ -227,6 +230,7 @@ func (c *ControlPlane) StartBuild(ctx context.Context, p *gensurla.StartBuildPay
 		RequestRevision: p.RequestRevision,
 		StartedAt:       time.Now().UTC(),
 		Stories:         cloneStorySummaries(record.stories),
+		DesignSource:    record.designSource,
 		Builder:         builderAssignment{},
 		TestWriter:      testWriterAssignment{State: testsAssigned, WorkingFolder: folder},
 	}
@@ -353,6 +357,7 @@ func (c *ControlPlane) GetTestWriterAssignment(
 		InForce:         item.InForce,
 		Progress:        item.Progress,
 		WorkingFolder:   held.file.TestWriter.WorkingFolder,
+		DesignSource:    held.file.DesignSource,
 		Stories:         storySummaryItems(held.file.Stories),
 		RequiredTests:   required,
 	}, nil
@@ -414,12 +419,21 @@ func buildInForce(saved buildFile, record storedChangeCard) bool {
 
 // startedBuild converts a held build into its transport form.
 func startedBuild(held heldBuild) *gensurla.StartedBuild {
+	required := 0
+	for _, story := range held.file.Stories {
+		for _, flow := range story.Flows {
+			if flow.Complete {
+				required++
+			}
+		}
+	}
 	return &gensurla.StartedBuild{
-		RequestRevision: held.file.RequestRevision,
-		StartedAt:       held.file.StartedAt.UTC().Format(time.RFC3339Nano),
-		InForce:         held.inForce,
-		Builder:         builderProgress(held.file.Builder),
-		TestWriter:      testWriterProgress(held),
+		RequestRevision:   held.file.RequestRevision,
+		StartedAt:         held.file.StartedAt.UTC().Format(time.RFC3339Nano),
+		InForce:           held.inForce,
+		Builder:           builderProgress(held.file.Builder),
+		TestWriter:        testWriterProgress(held),
+		RequiredTestCount: required,
 	}
 }
 

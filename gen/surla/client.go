@@ -538,18 +538,29 @@ func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (
 
 // StartBuild calls the "start_build" endpoint of the "surla" service.
 // StartBuild may return the following errors:
+//   - "not_repository" (type *BuildStartRefusal): The project folder is not in a Git repository; nothing was saved.
+//   - "no_commit" (type *BuildStartRefusal): The project repository has no commit; nothing was saved.
+//   - "no_test_layout" (type *BuildStartRefusal): This project has neither stored verification settings nor Surla's test layout; nothing was saved.
+//   - "git_identity_missing" (type *BuildStartRefusal): Git has no configured name and address; nothing was saved.
+//   - "copy_folder_in_use" (type *BuildStartRefusal): The test-writer copy's folder is occupied; nothing was saved.
+//   - "tests_branch_in_use" (type *BuildStartRefusal): The tests branch is checked out elsewhere; nothing was saved.
+//   - "working_copy_busy" (type *BuildStartRefusal): A build start or test check holds the project's working-copy turn; nothing was saved.
+//   - "sandbox_unavailable" (type *BuildStartRefusal): This system has no candidate sandbox; nothing was saved.
+//   - "go_tools_missing" (type *BuildStartRefusal): This system cannot resolve the required Go tools; nothing was saved.
+//   - "not_implemented" (type *goa.ServiceError): Start this project with surla to bind the team; nothing was saved.
+//   - "unavailable" (type *goa.ServiceError): The server is stopping or the start's time limit ended before saving; call again on a running server. Nothing was saved.
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
 //   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or request_revision is not its agreed revision (a waiting proposal's revision cannot be built); nothing changed.
 //   - "unprocessable" (type *goa.ServiceError): The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
-func (c *Client) StartBuild(ctx context.Context, p *StartBuildPayload) (res *StartedBuild, err error) {
+func (c *Client) StartBuild(ctx context.Context, p *StartBuildPayload) (res *StartBuildResult, err error) {
 	var ires any
 	ires, err = c.StartBuildEndpoint(ctx, p)
 	if err != nil {
 		return
 	}
-	return ires.(*StartedBuild), nil
+	return ires.(*StartBuildResult), nil
 }
 
 // GetBuild calls the "get_build" endpoint of the "surla" service.

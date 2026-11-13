@@ -2598,7 +2598,7 @@ func EncodeWaitForChangesError(encoder func(context.Context, http.ResponseWriter
 // surla start_build endpoint.
 func EncodeStartBuildResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
 	return func(ctx context.Context, w http.ResponseWriter, v any) error {
-		res, _ := v.(*surla.StartedBuild)
+		res, _ := v.(*surla.StartBuildResult)
 		enc := encoder(ctx, w)
 		body := NewStartBuildResponseBody(res)
 		w.WriteHeader(http.StatusOK)
@@ -2685,6 +2685,97 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
+		case "not_repository":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildNotRepositoryResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "no_commit":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildNoCommitResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "no_test_layout":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildNoTestLayoutResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "git_identity_missing":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildGitIdentityMissingResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "copy_folder_in_use":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildCopyFolderInUseResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "tests_branch_in_use":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildTestsBranchInUseResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "working_copy_busy":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildWorkingCopyBusyResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
 		case "unprocessable":
 			var res *goa.ServiceError
 			errors.As(v, &res)
@@ -2697,6 +2788,58 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			}
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "not_implemented":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildNotImplementedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		case "sandbox_unavailable":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildSandboxUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		case "go_tools_missing":
+			var res *surla.BuildStartRefusal
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildGoToolsMissingResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		case "unavailable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return enc.Encode(body)
 		case "forbidden":
 			var res *goa.ServiceError
@@ -3909,6 +4052,25 @@ func marshalSurlaLatestVerificationItemToLatestVerificationItemResponseBody(v *s
 	return res
 }
 
+// marshalSurlaStartedBuildToStartedBuildResponseBody builds a value of type
+// *StartedBuildResponseBody from a value of type *surla.StartedBuild.
+func marshalSurlaStartedBuildToStartedBuildResponseBody(v *surla.StartedBuild) *StartedBuildResponseBody {
+	res := &StartedBuildResponseBody{
+		RequestRevision:   v.RequestRevision,
+		StartedAt:         v.StartedAt,
+		InForce:           v.InForce,
+		RequiredTestCount: v.RequiredTestCount,
+	}
+	if v.Builder != nil {
+		res.Builder = marshalSurlaBuilderProgressToBuilderProgressResponseBody(v.Builder)
+	}
+	if v.TestWriter != nil {
+		res.TestWriter = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v.TestWriter)
+	}
+
+	return res
+}
+
 // marshalSurlaBuilderProgressToBuilderProgressResponseBody builds a value of
 // type *BuilderProgressResponseBody from a value of type
 // *surla.BuilderProgress.
@@ -4057,29 +4219,110 @@ func marshalSurlaTestsCouldNotRunToTestsCouldNotRunResponseBody(v *surla.TestsCo
 	return res
 }
 
+// marshalSurlaProjectTeamToProjectTeamResponseBody builds a value of type
+// *ProjectTeamResponseBody from a value of type *surla.ProjectTeam.
+func marshalSurlaProjectTeamToProjectTeamResponseBody(v *surla.ProjectTeam) *ProjectTeamResponseBody {
+	res := &ProjectTeamResponseBody{
+		Team:   v.Team,
+		Space:  v.Space,
+		Dialog: v.Dialog,
+	}
+	if v.Roles != nil {
+		res.Roles = make([]*ProjectTeamRoleResponseBody, len(v.Roles))
+		for i, val := range v.Roles {
+			if val == nil {
+				res.Roles[i] = nil
+				continue
+			}
+			res.Roles[i] = marshalSurlaProjectTeamRoleToProjectTeamRoleResponseBody(val)
+		}
+	} else {
+		res.Roles = []*ProjectTeamRoleResponseBody{}
+	}
+
+	return res
+}
+
+// marshalSurlaBuildTeamWindowBusyToBuildTeamWindowBusyResponseBody builds a
+// value of type *BuildTeamWindowBusyResponseBody from a value of type
+// *surla.BuildTeamWindowBusy.
+func marshalSurlaBuildTeamWindowBusyToBuildTeamWindowBusyResponseBody(v *surla.BuildTeamWindowBusy) *BuildTeamWindowBusyResponseBody {
+	res := &BuildTeamWindowBusyResponseBody{
+		Step: string(v.Step),
+	}
+
+	return res
+}
+
+// marshalSurlaBuildTeamAmbiguousSpaceToBuildTeamAmbiguousSpaceResponseBody
+// builds a value of type *BuildTeamAmbiguousSpaceResponseBody from a value of
+// type *surla.BuildTeamAmbiguousSpace.
+func marshalSurlaBuildTeamAmbiguousSpaceToBuildTeamAmbiguousSpaceResponseBody(v *surla.BuildTeamAmbiguousSpace) *BuildTeamAmbiguousSpaceResponseBody {
+	res := &BuildTeamAmbiguousSpaceResponseBody{
+		Count: v.Count,
+		Step:  string(v.Step),
+	}
+
+	return res
+}
+
+// marshalSurlaBuildTeamUnavailableToBuildTeamUnavailableResponseBody builds a
+// value of type *BuildTeamUnavailableResponseBody from a value of type
+// *surla.BuildTeamUnavailable.
+func marshalSurlaBuildTeamUnavailableToBuildTeamUnavailableResponseBody(v *surla.BuildTeamUnavailable) *BuildTeamUnavailableResponseBody {
+	res := &BuildTeamUnavailableResponseBody{
+		Step: string(v.Step),
+	}
+
+	return res
+}
+
+// marshalSurlaBuildCopyNotUsedToBuildCopyNotUsedResponseBody builds a value of
+// type *BuildCopyNotUsedResponseBody from a value of type
+// *surla.BuildCopyNotUsed.
+func marshalSurlaBuildCopyNotUsedToBuildCopyNotUsedResponseBody(v *surla.BuildCopyNotUsed) *BuildCopyNotUsedResponseBody {
+	res := &BuildCopyNotUsedResponseBody{}
+
+	return res
+}
+
+// marshalSurlaBuildCopyAtProjectCommitToBuildCopyAtProjectCommitResponseBody
+// builds a value of type *BuildCopyAtProjectCommitResponseBody from a value of
+// type *surla.BuildCopyAtProjectCommit.
+func marshalSurlaBuildCopyAtProjectCommitToBuildCopyAtProjectCommitResponseBody(v *surla.BuildCopyAtProjectCommit) *BuildCopyAtProjectCommitResponseBody {
+	res := &BuildCopyAtProjectCommitResponseBody{
+		Commit: v.Commit,
+	}
+
+	return res
+}
+
+// marshalSurlaBuildCopyNotContainedToBuildCopyNotContainedResponseBody builds
+// a value of type *BuildCopyNotContainedResponseBody from a value of type
+// *surla.BuildCopyNotContained.
+func marshalSurlaBuildCopyNotContainedToBuildCopyNotContainedResponseBody(v *surla.BuildCopyNotContained) *BuildCopyNotContainedResponseBody {
+	res := &BuildCopyNotContainedResponseBody{
+		Commit: v.Commit,
+	}
+
+	return res
+}
+
+// marshalSurlaBuildCopyDirtyToBuildCopyDirtyResponseBody builds a value of
+// type *BuildCopyDirtyResponseBody from a value of type *surla.BuildCopyDirty.
+func marshalSurlaBuildCopyDirtyToBuildCopyDirtyResponseBody(v *surla.BuildCopyDirty) *BuildCopyDirtyResponseBody {
+	res := &BuildCopyDirtyResponseBody{
+		Commit: v.Commit,
+	}
+
+	return res
+}
+
 // marshalSurlaBuildNotStartedToBuildNotStartedResponseBody builds a value of
 // type *BuildNotStartedResponseBody from a value of type
 // *surla.BuildNotStarted.
 func marshalSurlaBuildNotStartedToBuildNotStartedResponseBody(v *surla.BuildNotStarted) *BuildNotStartedResponseBody {
 	res := &BuildNotStartedResponseBody{}
-
-	return res
-}
-
-// marshalSurlaStartedBuildToStartedBuildResponseBody builds a value of type
-// *StartedBuildResponseBody from a value of type *surla.StartedBuild.
-func marshalSurlaStartedBuildToStartedBuildResponseBody(v *surla.StartedBuild) *StartedBuildResponseBody {
-	res := &StartedBuildResponseBody{
-		RequestRevision: v.RequestRevision,
-		StartedAt:       v.StartedAt,
-		InForce:         v.InForce,
-	}
-	if v.Builder != nil {
-		res.Builder = marshalSurlaBuilderProgressToBuilderProgressResponseBody(v.Builder)
-	}
-	if v.TestWriter != nil {
-		res.TestWriter = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v.TestWriter)
-	}
 
 	return res
 }
