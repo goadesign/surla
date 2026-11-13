@@ -7,7 +7,13 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # team-start is the integration branch that pull requests target until it
+    # merges into main. A pull request can restore a Go cache only from its
+    # own earlier runs, its base branch and main, so the base branch has to
+    # run to have one; without it every pull request whose go.sum differs
+    # from main's compiles from scratch. Remove team-start here when it has
+    # merged into main.
+    branches: [main, team-start]
   schedule:
     - cron: '17 7 * * *'
   workflow_dispatch:
@@ -72,13 +78,24 @@ jobs:
       - name: Vet and short race tests
         # Full vet checks share the race build with tests instead of compiling
         # a separate plain build. JSON retains individual test durations.
-        # In the root module, the page tests run in their own job instead.
+        # In the root module, the page tests run in their own job instead,
+        # and only packages that have tests are named: ./... would also
+        # compile the generated packages that nothing imports, one of which
+        # pulls in several hundred dependencies, and with the race detector
+        # and no cache that alone took about five minutes. The Linux build
+        # jobs build and vet every package of the root module, and none of
+        # the packages left out here has code for one operating system.
         env:
           MODULE: ${{ matrix.module }}
+          TESTED: '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}'
         run: |
           skip=
-          if [ "$MODULE" = . ]; then skip=$ROOT_PAGE_TESTS; fi
-          go test -race -vet=all -short -timeout 3m -json -skip "$skip" ./... </dev/null
+          packages=./...
+          if [ "$MODULE" = . ]; then
+            skip=$ROOT_PAGE_TESTS
+            packages=$(go list -f "$TESTED" ./... </dev/null)
+          fi
+          go test -race -vet=all -short -timeout 3m -json -skip "$skip" $packages </dev/null
 
   pages:
     name: Go (., page tests)
@@ -102,8 +119,13 @@ jobs:
         run: |
           npm ci --prefix ui/checkpoint --no-audit --no-fund </dev/null
       - name: Vet and short race tests (page tests)
+        # The same packages as "Go (.)": those of the root module that have
+        # tests.
+        env:
+          TESTED: '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}'
         run: |
-          go test -race -vet=all -short -timeout 3m -json -run "$ROOT_PAGE_TESTS" ./... </dev/null
+          packages=$(go list -f "$TESTED" ./... </dev/null)
+          go test -race -vet=all -short -timeout 3m -json -run "$ROOT_PAGE_TESTS" $packages </dev/null
       - name: Vet the opt-in real-browser test
         # The views page's real-browser test builds only with the browser tag
         # and runs only on request; vetting it here keeps it compiling. This
@@ -150,9 +172,8 @@ jobs:
       - name: Vet and short race tests (packages that need no sandbox)
         # Only packages with tests are listed. The others, the generated
         # packages among them, have nothing to run, and compiling them and
-        # their large dependencies with the race detector here, without a
-        # cache, took much of this job; the build-and-vet jobs above compile
-        # and vet them for Linux.
+        # their large dependencies with the race detector took much of this
+        # job; the build-and-vet jobs above compile and vet them for Linux.
         run: |
           go test -race -vet=all -short -timeout 3m -json \
             ./cmd/surla \
