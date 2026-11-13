@@ -262,6 +262,89 @@ func TestExcerptIsBoundedAndReportsTruncation(t *testing.T) {
 	assert.True(t, strings.HasSuffix(full, tail))
 }
 
+// TestOutputKeepsStandardOutputApart runs the probe through Output while it
+// prints noise, including a JSON object, on standard error: the returned
+// standard output holds exactly the probe's result lines, and the log holds
+// only the noise. A limit below the output fails without returning a part.
+func TestOutputKeepsStandardOutputApart(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
+	}
+	probe := buildProbe(t)
+	const noise = `{"id":"noise","scenarios":[]}`
+	args := []string{"stderr:" + noise, "env:GIVEN", "stderr:after"}
+	cases := []struct {
+		name     string
+		maxBytes int
+		// wantErr is the expected error; nil means success.
+		wantErr error
+	}{
+		{name: "within the limit", maxBytes: 1 << 20},
+		{name: "a limit below the output", maxBytes: 10, wantErr: ErrOutputTooLarge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logFile := filepath.Join(t.TempDir(), "probe.log")
+			out, err := Output(t.Context(), probe, Spec{
+				Args:     args,
+				Env:      []string{"GIVEN=explicit"},
+				StateDir: t.TempDir(),
+				LogFile:  logFile,
+			}, tc.maxBytes)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				assert.Nil(t, out)
+				return
+			}
+			require.NoError(t, err)
+			var got []probeResult
+			dec := json.NewDecoder(strings.NewReader(string(out)))
+			for dec.More() {
+				var r probeResult
+				require.NoError(t, dec.Decode(&r), "standard output holds only the probe's results:\n%s", out)
+				got = append(got, r)
+			}
+			assert.Equal(t, []probeResult{
+				{Action: "stderr:" + noise, Allowed: true},
+				{Action: "env:GIVEN", Allowed: true, Detail: "explicit"},
+				{Action: "stderr:after", Allowed: true},
+			}, got)
+			logged, err := os.ReadFile(logFile)
+			require.NoError(t, err)
+			assert.Equal(t, noise+"\nafter\n", string(logged), "the log holds standard error only")
+		})
+	}
+}
+
+// TestOutputEnforcesTheSandbox runs the probe through Output: writing outside
+// its state directory and starting a child process are denied as under Exec,
+// and an unsuccessful exit is returned with what the probe printed first.
+func TestOutputEnforcesTheSandbox(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
+	}
+	outside := filepath.Join(t.TempDir(), "out.txt")
+	out, err := Output(t.Context(), buildProbe(t), Spec{
+		Args:     []string{"write:" + outside, "spawn", "exit:3"},
+		StateDir: t.TempDir(),
+		LogFile:  filepath.Join(t.TempDir(), "probe.log"),
+	}, 1<<20)
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	assert.Equal(t, 3, exitErr.ExitCode())
+	var got []probeResult
+	dec := json.NewDecoder(strings.NewReader(string(out)))
+	for dec.More() {
+		var r probeResult
+		require.NoError(t, dec.Decode(&r))
+		got = append(got, r)
+	}
+	require.Len(t, got, 2, "both results printed before the exit are returned:\n%s", out)
+	assert.False(t, got[0].Allowed, "write outside the state directory: %s", got[0].Detail)
+	assert.False(t, got[1].Allowed, "child process: %s", got[1].Detail)
+	assert.NoFileExists(t, outside)
+}
+
 func TestExecRejectsALogFileInsideTheState(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")

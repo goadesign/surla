@@ -10,11 +10,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"syscall"
 
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/scaffold"
+	"github.com/goadesign/surla/internal/shquote"
 )
 
 // initNextSteps is what `surla init` prints after creating a project; the
@@ -87,7 +87,7 @@ func (runtime projectRuntime) init(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stdout, initNextSteps, shellQuote(*dir), name)
+	_, err = fmt.Fprintf(stdout, initNextSteps, shquote.Quote(*dir), name)
 	return err
 }
 
@@ -108,13 +108,6 @@ func runVersion(args []string, stdout io.Writer) error {
 	}
 	_, err := fmt.Fprintln(stdout, v)
 	return err
-}
-
-// shellQuote quotes s as one POSIX shell word: it wraps s in single quotes
-// and writes each single quote inside s as a closing quote, an escaped quote
-// and an opening quote. For example, my dir becomes 'my dir'.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // buildVersion returns the module version this binary was built from, such

@@ -3,7 +3,8 @@
 // per line reporting whether the operating system allowed it.
 //
 // Actions: read:<path>, write:<path>, env:<name>, connect:<host:port>,
-// listen:<host:port>, stat:<path>, spawn.
+// listen:<host:port>, stat:<path>, spawn, stderr:<text> (prints text on
+// standard error), exit:<code> (exits with code at once).
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -76,6 +78,16 @@ func attempt(kind, target string, r *result) error {
 		return err
 	case "spawn":
 		return exec.Command("/bin/echo", "spawned").Run()
+	case "stderr":
+		_, err := fmt.Fprintln(os.Stderr, target)
+		return err
+	case "exit":
+		code, err := strconv.Atoi(target)
+		if err != nil {
+			return err
+		}
+		os.Exit(code)
+		return nil
 	default:
 		return fmt.Errorf("unknown action %q", kind)
 	}
