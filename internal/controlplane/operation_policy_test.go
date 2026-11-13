@@ -3,7 +3,9 @@ package controlplane
 import (
 	"context"
 	"errors"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,12 +13,15 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	goa "goa.design/goa/v3/pkg"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
 )
 
 // TestOperationPolicyCoversEveryTool proves every invocation permission, including denial before mutation.
 func TestOperationPolicyCoversEveryTool(t *testing.T) {
+	published := append(slices.Clone(gensurla.MethodNames), genproject.MethodNames...)
+	assert.ElementsMatch(t, published, slices.Collect(maps.Keys(operationRoles)), "only published operations have a policy")
 	roles := []CallerKind{CallerUser, CallerGuide, CallerBuilder, CallerTestWriter, CallerManagement, ""}
 	common := []CallerKind{CallerUser, CallerGuide, CallerBuilder}
 	expected := map[string][]CallerKind{

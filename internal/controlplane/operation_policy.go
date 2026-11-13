@@ -32,7 +32,7 @@ const (
 
 // operationRoles is the only role-to-operation table. Missing operations are refused.
 var operationRoles = map[string][]CallerKind{
-	"ensure_team": {CallerManagement}, "identity": {CallerManagement}, "stop": {CallerManagement}, "add_agent": {CallerManagement}, "remove_agent": {CallerManagement}, "browser_link": {CallerManagement},
+	"ensure_team": {CallerManagement}, "identity": {CallerManagement}, "stop": {CallerManagement}, "browser_link": {CallerManagement},
 	"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
 	"propose_change": {CallerGuide}, "revise_change": {CallerGuide}, "refresh_story": {CallerGuide},
 	"get_story_refresh": {CallerUser, CallerGuide, CallerBuilder}, "init_project": {CallerGuide},
