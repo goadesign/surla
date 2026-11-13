@@ -37,16 +37,26 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "draft_override", gensurla.SpecDraftOverride())
 		case gensurla.GenerateCode:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "generate_code", gensurla.SpecGenerateCode())
+		case gensurla.GetBuild:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "get_build", gensurla.SpecGetBuild())
+		case gensurla.GetBuilderAssignment:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "get_builder_assignment", gensurla.SpecGetBuilderAssignment())
 		case gensurla.GetChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_change", gensurla.SpecGetChange())
 		case gensurla.GetStoryRefresh:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_story_refresh", gensurla.SpecGetStoryRefresh())
+		case gensurla.GetTestWriterAssignment:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "get_test_writer_assignment", gensurla.SpecGetTestWriterAssignment())
 		case gensurla.GetVerification:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_verification", gensurla.SpecGetVerification())
 		case gensurla.InitProject:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "init_project", gensurla.SpecInitProject())
+		case gensurla.ListBuilderAssignments:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "list_builder_assignments", gensurla.SpecListBuilderAssignments())
 		case gensurla.ListChanges:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "list_changes", gensurla.SpecListChanges())
+		case gensurla.ListTestWriterAssignments:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "list_test_writer_assignments", gensurla.SpecListTestWriterAssignments())
 		case gensurla.ListTraces:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "list_traces", gensurla.SpecListTraces())
 		case gensurla.ListVerifications:
@@ -59,6 +69,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "read_check_output", gensurla.SpecReadCheckOutput())
 		case gensurla.RefreshStory:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "refresh_story", gensurla.SpecRefreshStory())
+		case gensurla.ReportTestsFinished:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "report_tests_finished", gensurla.SpecReportTestsFinished())
 		case gensurla.ReviseChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "revise_change", gensurla.SpecReviseChange())
 		case gensurla.StartLiveTarget:

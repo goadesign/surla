@@ -351,6 +351,77 @@ func ValidateGenerateCodeResultTransport(body *GenerateCodeResultTransport) (err
 	return
 }
 
+// ValidateGetBuildPayloadTransport runs the validations defined on GetBuildPayloadTransport.
+func ValidateGetBuildPayloadTransport(body *GetBuildPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateGetBuildResultTransport runs the validations defined on GetBuildResultTransport.
+func ValidateGetBuildResultTransport(body *GetBuildResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Build == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("build", "body"))
+	}
+	if body.Build != nil {
+
+		if err2 := body.Build.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.Build.Kind()) {
+			case "started":
+				actual, _ := body.Build.AsStarted()
+				if actual != nil {
+					if err2 := ValidateStartedBuildTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
+// ValidateGetBuilderAssignmentPayloadTransport runs the validations defined on GetBuilderAssignmentPayloadTransport.
+func ValidateGetBuilderAssignmentPayloadTransport(body *GetBuilderAssignmentPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateGetBuilderAssignmentResultTransport runs the validations defined on GetBuilderAssignmentResultTransport.
+func ValidateGetBuilderAssignmentResultTransport(body *GetBuilderAssignmentResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if body.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	return
+}
+
 // ValidateGetChangePayloadTransport runs the validations defined on GetChangePayloadTransport.
 func ValidateGetChangePayloadTransport(body *GetChangePayloadTransport) (err error) {
 	if body.ChangeID == nil {
@@ -445,6 +516,64 @@ func ValidateGetStoryRefreshResultTransport(body *GetStoryRefreshResultTransport
 	for _, e := range body.Stories {
 		if e != nil {
 			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateGetTestWriterAssignmentPayloadTransport runs the validations defined on GetTestWriterAssignmentPayloadTransport.
+func ValidateGetTestWriterAssignmentPayloadTransport(body *GetTestWriterAssignmentPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateGetTestWriterAssignmentResultTransport runs the validations defined on GetTestWriterAssignmentResultTransport.
+func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmentResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if body.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if body.WorkingFolder == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
+	}
+	if body.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if body.RequiredTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
+	}
+	if body.Progress != nil {
+		if err2 := ValidateTestWriterProgressTransport(body.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.RequiredTests {
+		if e != nil {
+			if err2 := ValidateRequiredTestTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -553,6 +682,21 @@ func ValidateInitProjectResultTransport(body *InitProjectResultTransport) (err e
 	return
 }
 
+// ValidateListBuilderAssignmentsResultTransport runs the validations defined on ListBuilderAssignmentsResultTransport.
+func ValidateListBuilderAssignmentsResultTransport(body *ListBuilderAssignmentsResultTransport) (err error) {
+	if body.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
+	}
+	for _, e := range body.Assignments {
+		if e != nil {
+			if err2 := ValidateBuilderAssignmentTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateListChangesResultTransport runs the validations defined on ListChangesResultTransport.
 func ValidateListChangesResultTransport(body *ListChangesResultTransport) (err error) {
 	if body.Changes == nil {
@@ -567,6 +711,21 @@ func ValidateListChangesResultTransport(body *ListChangesResultTransport) (err e
 	for _, e := range body.Changes {
 		if e != nil {
 			if err2 := ValidateChangeListItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateListTestWriterAssignmentsResultTransport runs the validations defined on ListTestWriterAssignmentsResultTransport.
+func ValidateListTestWriterAssignmentsResultTransport(body *ListTestWriterAssignmentsResultTransport) (err error) {
+	if body.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
+	}
+	for _, e := range body.Assignments {
+		if e != nil {
+			if err2 := ValidateTestWriterAssignmentItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -841,6 +1000,49 @@ func ValidateRefreshStoryResultTransport(body *RefreshStoryResultTransport) (err
 			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	return
+}
+
+// ValidateReportTestsFinishedPayloadTransport runs the validations defined on ReportTestsFinishedPayloadTransport.
+func ValidateReportTestsFinishedPayloadTransport(body *ReportTestsFinishedPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	if body.RequestRevision != nil {
+		if utf8.RuneCountInString(*body.RequestRevision) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.request_revision", *body.RequestRevision, utf8.RuneCountInString(*body.RequestRevision), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateReportTestsFinishedResultTransport runs the validations defined on ReportTestsFinishedResultTransport.
+func ValidateReportTestsFinishedResultTransport(body *ReportTestsFinishedResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if body.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if body.Progress != nil {
+		if err2 := ValidateTestWriterProgressTransport(body.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return
@@ -1130,6 +1332,31 @@ func ValidateApprovalItemTransport(body *ApprovalItemTransport) (err error) {
 	}
 	if body.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	return
+}
+
+// ValidateBuilderAssignmentTransport runs the validations defined on BuilderAssignmentTransport.
+func ValidateBuilderAssignmentTransport(body *BuilderAssignmentTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if body.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	return
+}
+
+// ValidateBuilderProgressTransport runs the validations defined on BuilderProgressTransport.
+func ValidateBuilderProgressTransport(body *BuilderProgressTransport) (err error) {
+	if body.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
 	return
 }
@@ -1491,6 +1718,56 @@ func ValidateLatestVerificationItemTransport(body *LatestVerificationItemTranspo
 	return
 }
 
+// ValidateRequiredTestTransport runs the validations defined on RequiredTestTransport.
+func ValidateRequiredTestTransport(body *RequiredTestTransport) (err error) {
+	if body.Story == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("story", "body"))
+	}
+	if body.FlowKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flow_key", "body"))
+	}
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if body.Hook == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("hook", "body"))
+	}
+	return
+}
+
+// ValidateStartedBuildTransport runs the validations defined on StartedBuildTransport.
+func ValidateStartedBuildTransport(body *StartedBuildTransport) (err error) {
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if body.Builder == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("builder", "body"))
+	}
+	if body.TestWriter == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "body"))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	if body.Builder != nil {
+		if err2 := ValidateBuilderProgressTransport(body.Builder); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.TestWriter != nil {
+		if err2 := ValidateTestWriterProgressTransport(body.TestWriter); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
 // ValidateStoryActorItemTransport runs the validations defined on StoryActorItemTransport.
 func ValidateStoryActorItemTransport(body *StoryActorItemTransport) (err error) {
 	if body.Key == nil {
@@ -1606,6 +1883,85 @@ func ValidateStorySummaryItemTransport(body *StorySummaryItemTransport) (err err
 				err = goa.MergeErrors(err, err2)
 			}
 		}
+	}
+	return
+}
+
+// ValidateTestWriterAssignmentItemTransport runs the validations defined on TestWriterAssignmentItemTransport.
+func ValidateTestWriterAssignmentItemTransport(body *TestWriterAssignmentItemTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if body.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if body.Progress != nil {
+		if err2 := ValidateTestWriterProgressTransport(body.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateTestWriterProgressTransport runs the validations defined on TestWriterProgressTransport.
+func ValidateTestWriterProgressTransport(body *TestWriterProgressTransport) (err error) {
+	if body.Tests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("tests", "body"))
+	}
+	if body.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if body.Tests != nil {
+
+		if err2 := body.Tests.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.Tests.Kind()) {
+			case "needs_changes":
+				actual, _ := body.Tests.AsNeedsChanges()
+				if actual != nil {
+					if err2 := ValidateTestsNeedChangesTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "accepted":
+				actual, _ := body.Tests.AsAccepted()
+				if actual != nil {
+					if err2 := ValidateTestsAcceptedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
+// ValidateTestsAcceptedTransport runs the validations defined on TestsAcceptedTransport.
+func ValidateTestsAcceptedTransport(body *TestsAcceptedTransport) (err error) {
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if body.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return
+}
+
+// ValidateTestsNeedChangesTransport runs the validations defined on TestsNeedChangesTransport.
+func ValidateTestsNeedChangesTransport(body *TestsNeedChangesTransport) (err error) {
+	if body.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	}
+	if len(body.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
 	}
 	return
 }

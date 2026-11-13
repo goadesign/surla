@@ -561,9 +561,117 @@ func (a *MCPAdapter) invokeMCPMethod22(ctx context.Context) (*surla.ChangeList, 
 	return result, nil
 }
 
-// invokeMCPMethod23 sends validated input to the configured GoldenPath endpoint
+// invokeMCPMethod23 sends validated input to the configured GetBuild endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod23(ctx context.Context) (string, error) {
+func (a *MCPAdapter) invokeMCPMethod23(ctx context.Context, payload *surla.GetBuildPayload) (*surla.ChangeBuild, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "get_build")
+	raw, err := a.endpoints.GetBuild(ctx, payload)
+	var zero *surla.ChangeBuild
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.ChangeBuild)
+	if !ok {
+		return zero, &endpointResultError{method: "GetBuild"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod24 sends validated input to the configured ListBuilderAssignments endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod24(ctx context.Context) (*surla.BuilderAssignmentList, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "list_builder_assignments")
+	raw, err := a.endpoints.ListBuilderAssignments(ctx, nil)
+	var zero *surla.BuilderAssignmentList
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.BuilderAssignmentList)
+	if !ok {
+		return zero, &endpointResultError{method: "ListBuilderAssignments"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod25 sends validated input to the configured GetBuilderAssignment endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod25(ctx context.Context, payload *surla.GetBuilderAssignmentPayload) (*surla.BuilderAssignment, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "get_builder_assignment")
+	raw, err := a.endpoints.GetBuilderAssignment(ctx, payload)
+	var zero *surla.BuilderAssignment
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.BuilderAssignment)
+	if !ok {
+		return zero, &endpointResultError{method: "GetBuilderAssignment"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod26 sends validated input to the configured ListTestWriterAssignments endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod26(ctx context.Context) (*surla.TestWriterAssignmentList, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "list_test_writer_assignments")
+	raw, err := a.endpoints.ListTestWriterAssignments(ctx, nil)
+	var zero *surla.TestWriterAssignmentList
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.TestWriterAssignmentList)
+	if !ok {
+		return zero, &endpointResultError{method: "ListTestWriterAssignments"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod27 sends validated input to the configured GetTestWriterAssignment endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod27(ctx context.Context, payload *surla.GetTestWriterAssignmentPayload) (*surla.TestWriterAssignment, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "get_test_writer_assignment")
+	raw, err := a.endpoints.GetTestWriterAssignment(ctx, payload)
+	var zero *surla.TestWriterAssignment
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.TestWriterAssignment)
+	if !ok {
+		return zero, &endpointResultError{method: "GetTestWriterAssignment"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod28 sends validated input to the configured ReportTestsFinished endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod28(ctx context.Context, payload *surla.ReportTestsFinishedPayload) (*surla.TestWriterAssignmentItem, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "report_tests_finished")
+	raw, err := a.endpoints.ReportTestsFinished(ctx, payload)
+	var zero *surla.TestWriterAssignmentItem
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.TestWriterAssignmentItem)
+	if !ok {
+		return zero, &endpointResultError{method: "ReportTestsFinished"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod29 sends validated input to the configured GoldenPath endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod29(ctx context.Context) (string, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "golden_path")
@@ -645,6 +753,18 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			OutputSchema: json.RawMessage("{\"$defs\":{\"GenerateCodeResult\":{\"description\":\"Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.\",\"properties\":{\"files_written\":{\"description\":\"Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"target\":{\"description\":\"Module that received the generated files.\",\"enum\":[\"candidate\",\"eval\"],\"type\":\"string\"},\"warnings\":{\"description\":\"Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"target\",\"files_written\",\"warnings\"],\"title\":\"GenerateCodeResult\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.\",\"properties\":{\"files_written\":{\"description\":\"Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"target\":{\"description\":\"Module that received the generated files.\",\"enum\":[\"candidate\",\"eval\"],\"type\":\"string\"},\"warnings\":{\"description\":\"Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"target\",\"files_written\",\"warnings\"],\"title\":\"GenerateCodeResult\",\"type\":\"object\"}"),
 		},
 		{
+			Name:         "get_build",
+			Description:  stringPtr("Read a change's build: whether the user started one, the revision built, whether each role read its assignment, the test writer's state, and whether the build is for the change's revision in force."),
+			InputSchema:  json.RawMessage("{\"$defs\":{\"GetBuildPayload\":{\"properties\":{\"change_id\":{\"description\":\"Change Card identifier.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetBuildPayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{\"change_id\":{\"description\":\"Change Card identifier.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetBuildPayload\",\"type\":\"object\"}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"BuilderProgress\":{\"additionalProperties\":false,\"description\":\"The builder's assignment for one build. It exists from the moment the user starts the build; verification of the build's revision, not the assignment, judges the builder's work.\",\"properties\":{\"read\":{\"description\":\"True once the builder read this assignment in full with get_builder_assignment.\",\"type\":\"boolean\"}},\"required\":[\"read\"],\"title\":\"BuilderProgress\",\"type\":\"object\"},\"ChangeBuild\":{\"description\":\"A change's build as get_build reports it.\",\"properties\":{\"build\":{\"description\":\"not_started until the user starts a build of this change; started with the build afterwards.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"The user has not started a build of this change.\",\"properties\":{\"state\":{\"enum\":[\"not_started\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"The build the user started for a change, with both assignments.\",\"properties\":{\"builder\":{\"$ref\":\"#/$defs/BuilderProgress\",\"description\":\"The builder's assignment.\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.\",\"type\":\"boolean\"},\"request_revision\":{\"description\":\"Change Card revision the user built.\",\"type\":\"string\"},\"started_at\":{\"description\":\"When the user started this build.\",\"format\":\"date-time\",\"type\":\"string\"},\"state\":{\"enum\":[\"started\"],\"type\":\"string\"},\"test_writer\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"The test writer's assignment.\"}},\"required\":[\"request_revision\",\"started_at\",\"in_force\",\"builder\",\"test_writer\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"},\"change_id\":{\"description\":\"Change Card identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"build\"],\"title\":\"ChangeBuild\",\"type\":\"object\"},\"TestWriterProgress\":{\"additionalProperties\":false,\"description\":\"Where the test writer's assignment for one build stands.\",\"properties\":{\"read\":{\"description\":\"True once the test writer read this assignment in full with get_test_writer_assignment.\",\"type\":\"boolean\"},\"tests\":{\"description\":\"The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"Surla assigned the tests for this build; the test writer has not reported them finished.\",\"properties\":{\"state\":{\"enum\":[\"assigned\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"The test writer reported its tests finished at this build's revision; Surla has not checked them.\",\"properties\":{\"state\":{\"enum\":[\"reported\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and found problems the test writer must fix before reporting again.\",\"properties\":{\"findings\":{\"description\":\"What Surla found, one problem per item: a test that does not build or a required test that is not declared.\",\"items\":{\"type\":\"string\"},\"minItems\":1,\"type\":\"array\"},\"state\":{\"enum\":[\"needs_changes\"],\"type\":\"string\"}},\"required\":[\"findings\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and recorded them as a commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"state\":{\"enum\":[\"accepted\"],\"type\":\"string\"}},\"required\":[\"commit\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"}},\"required\":[\"tests\",\"read\"],\"title\":\"TestWriterProgress\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"A change's build as get_build reports it.\",\"properties\":{\"build\":{\"description\":\"not_started until the user starts a build of this change; started with the build afterwards.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"The user has not started a build of this change.\",\"properties\":{\"state\":{\"enum\":[\"not_started\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"The build the user started for a change, with both assignments.\",\"properties\":{\"builder\":{\"$ref\":\"#/$defs/BuilderProgress\",\"description\":\"The builder's assignment.\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.\",\"type\":\"boolean\"},\"request_revision\":{\"description\":\"Change Card revision the user built.\",\"type\":\"string\"},\"started_at\":{\"description\":\"When the user started this build.\",\"format\":\"date-time\",\"type\":\"string\"},\"state\":{\"enum\":[\"started\"],\"type\":\"string\"},\"test_writer\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"The test writer's assignment.\"}},\"required\":[\"request_revision\",\"started_at\",\"in_force\",\"builder\",\"test_writer\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"},\"change_id\":{\"description\":\"Change Card identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"build\"],\"title\":\"ChangeBuild\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "get_builder_assignment",
+			Description:  stringPtr("Read your build assignment for a change: the change_id and request_revision to build in the project folder. Verification of that revision judges the work: pass both to verify_change."),
+			InputSchema:  json.RawMessage("{\"$defs\":{\"GetBuilderAssignmentPayload\":{\"properties\":{\"change_id\":{\"description\":\"Change Card identifier from list_builder_assignments.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetBuilderAssignmentPayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{\"change_id\":{\"description\":\"Change Card identifier from list_builder_assignments.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetBuilderAssignmentPayload\",\"type\":\"object\"}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"BuilderAssignment\":{\"description\":\"The builder's assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.\",\"properties\":{\"change_id\":{\"description\":\"Change Card to build; get_change takes it.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.\",\"type\":\"boolean\"},\"read\":{\"description\":\"True once you read this assignment in full with get_builder_assignment.\",\"type\":\"boolean\"},\"request_revision\":{\"description\":\"Change Card revision to build; verify_change takes it.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"read\"],\"title\":\"BuilderAssignment\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The builder's assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.\",\"properties\":{\"change_id\":{\"description\":\"Change Card to build; get_change takes it.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.\",\"type\":\"boolean\"},\"read\":{\"description\":\"True once you read this assignment in full with get_builder_assignment.\",\"type\":\"boolean\"},\"request_revision\":{\"description\":\"Change Card revision to build; verify_change takes it.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"read\"],\"title\":\"BuilderAssignment\",\"type\":\"object\"}"),
+		},
+		{
 			Name:         "get_change",
 			Description:  stringPtr("Read the current Checkpoint 1 Change Card and its request_revision."),
 			InputSchema:  json.RawMessage("{\"$defs\":{\"GetChangePayload\":{\"description\":\"Identifies the Change Card the authenticated owner wants to read.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetChangePayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Identifies the Change Card the authenticated owner wants to read.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetChangePayload\",\"type\":\"object\"}"),
@@ -655,6 +775,12 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			Description:  stringPtr("Read the current Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, stories, or diagnostic. Takes no input. When state is none, call refresh_story first."),
 			InputSchema:  json.RawMessage("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"),
 			OutputSchema: json.RawMessage("{\"$defs\":{\"StoryActorItem\":{\"additionalProperties\":false,\"description\":\"Domain role declared in a Story in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer explanation of the actor role.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped actor key.\",\"type\":\"string\"},\"title\":{\"description\":\"Human-facing actor label.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\"],\"title\":\"StoryActorItem\",\"type\":\"object\"},\"StoryFlowItem\":{\"additionalProperties\":false,\"description\":\"Ordered timeline path through a domain Story in declaration order.\",\"properties\":{\"complete\":{\"description\":\"True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.\",\"type\":\"boolean\"},\"description\":{\"description\":\"Optional longer explanation of the flow.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped flow key.\",\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved flow-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"steps\":{\"description\":\"Starting, intermediate, and outcome steps in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryStepItem\"},\"type\":\"array\"},\"title\":{\"description\":\"Human-facing flow title.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\",\"complete\",\"steps\",\"questions\"],\"title\":\"StoryFlowItem\",\"type\":\"object\"},\"StoryQuestionItem\":{\"additionalProperties\":false,\"description\":\"Unresolved decision attached to a Story flow or step in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer context for the question.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped question key.\",\"type\":\"string\"},\"options\":{\"description\":\"Suggested choices in declaration order.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Human-facing question text.\",\"type\":\"string\"}},\"required\":[\"key\",\"prompt\",\"options\"],\"title\":\"StoryQuestionItem\",\"type\":\"object\"},\"StoryRefreshResult\":{\"description\":\"Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.\",\"properties\":{\"diagnostic\":{\"description\":\"Safe failure or timeout diagnostic when state is failed; omitted otherwise.\",\"type\":\"string\"},\"message\":{\"description\":\"Summary of the current Story refresh state and next action.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.\",\"type\":\"string\"},\"snapshot_digest\":{\"description\":\"Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.\",\"type\":\"string\"},\"state\":{\"description\":\"Current operation state: none, running, succeeded, or failed.\",\"enum\":[\"none\",\"running\",\"succeeded\",\"failed\"],\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"}},\"required\":[\"state\",\"stories\",\"message\"],\"title\":\"StoryRefreshResult\",\"type\":\"object\"},\"StoryStepItem\":{\"additionalProperties\":false,\"description\":\"Starting event, intermediate action, or outcome in a Story flow in declaration order.\",\"properties\":{\"actor_key\":{\"description\":\"Story-scoped key of the actor performing or observing the step.\",\"type\":\"string\"},\"description\":{\"description\":\"Optional longer explanation of the step.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped step key.\",\"type\":\"string\"},\"kind\":{\"description\":\"Step position in the flow: start, step, or outcome.\",\"enum\":[\"start\",\"step\",\"outcome\"],\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved step-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Timeline sticky-note sentence for the step.\",\"type\":\"string\"}},\"required\":[\"key\",\"actor_key\",\"summary\",\"kind\",\"questions\"],\"title\":\"StoryStepItem\",\"type\":\"object\"},\"StorySummaryItem\":{\"additionalProperties\":false,\"description\":\"Evaluated domain Story extracted from the bound workspace design in declaration order.\",\"properties\":{\"actors\":{\"description\":\"Domain roles declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryActorItem\"},\"type\":\"array\"},\"description\":{\"description\":\"Optional longer explanation of the Story.\",\"type\":\"string\"},\"flows\":{\"description\":\"Timeline paths declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryFlowItem\"},\"type\":\"array\"},\"name\":{\"description\":\"Human-facing Story title.\",\"type\":\"string\"}},\"required\":[\"name\",\"actors\",\"flows\"],\"title\":\"StorySummaryItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.\",\"properties\":{\"diagnostic\":{\"description\":\"Safe failure or timeout diagnostic when state is failed; omitted otherwise.\",\"type\":\"string\"},\"message\":{\"description\":\"Summary of the current Story refresh state and next action.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.\",\"type\":\"string\"},\"snapshot_digest\":{\"description\":\"Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.\",\"type\":\"string\"},\"state\":{\"description\":\"Current operation state: none, running, succeeded, or failed.\",\"enum\":[\"none\",\"running\",\"succeeded\",\"failed\"],\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"}},\"required\":[\"state\",\"stories\",\"message\"],\"title\":\"StoryRefreshResult\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "get_test_writer_assignment",
+			Description:  stringPtr("Read your test assignment for a change: the working folder, the Story as agreed, one required test per finished flow, and your state with any findings to fix. When your tests are finished, call report_tests_finished with change_id and request_revision."),
+			InputSchema:  json.RawMessage("{\"$defs\":{\"GetTestWriterAssignmentPayload\":{\"properties\":{\"change_id\":{\"description\":\"Change Card identifier from list_test_writer_assignments.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetTestWriterAssignmentPayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{\"change_id\":{\"description\":\"Change Card identifier from list_test_writer_assignments.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetTestWriterAssignmentPayload\",\"type\":\"object\"}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"RequiredTest\":{\"additionalProperties\":false,\"description\":\"One test the agreed Story requires: the evaluation scenario Surla generates for one finished flow and the hook method the test writer implements for it.\",\"properties\":{\"flow_key\":{\"description\":\"Key of the finished flow.\",\"type\":\"string\"},\"hook\":{\"description\":\"Hook method the test writer implements for the scenario.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Scenario name the evaluation suite declares for the flow.\",\"type\":\"string\"},\"story\":{\"description\":\"Name of the Story the flow belongs to.\",\"type\":\"string\"}},\"required\":[\"story\",\"flow_key\",\"scenario\",\"hook\"],\"title\":\"RequiredTest\",\"type\":\"object\"},\"StoryActorItem\":{\"additionalProperties\":false,\"description\":\"Domain role declared in a Story in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer explanation of the actor role.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped actor key.\",\"type\":\"string\"},\"title\":{\"description\":\"Human-facing actor label.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\"],\"title\":\"StoryActorItem\",\"type\":\"object\"},\"StoryFlowItem\":{\"additionalProperties\":false,\"description\":\"Ordered timeline path through a domain Story in declaration order.\",\"properties\":{\"complete\":{\"description\":\"True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.\",\"type\":\"boolean\"},\"description\":{\"description\":\"Optional longer explanation of the flow.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped flow key.\",\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved flow-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"steps\":{\"description\":\"Starting, intermediate, and outcome steps in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryStepItem\"},\"type\":\"array\"},\"title\":{\"description\":\"Human-facing flow title.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\",\"complete\",\"steps\",\"questions\"],\"title\":\"StoryFlowItem\",\"type\":\"object\"},\"StoryQuestionItem\":{\"additionalProperties\":false,\"description\":\"Unresolved decision attached to a Story flow or step in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer context for the question.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped question key.\",\"type\":\"string\"},\"options\":{\"description\":\"Suggested choices in declaration order.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Human-facing question text.\",\"type\":\"string\"}},\"required\":[\"key\",\"prompt\",\"options\"],\"title\":\"StoryQuestionItem\",\"type\":\"object\"},\"StoryStepItem\":{\"additionalProperties\":false,\"description\":\"Starting event, intermediate action, or outcome in a Story flow in declaration order.\",\"properties\":{\"actor_key\":{\"description\":\"Story-scoped key of the actor performing or observing the step.\",\"type\":\"string\"},\"description\":{\"description\":\"Optional longer explanation of the step.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped step key.\",\"type\":\"string\"},\"kind\":{\"description\":\"Step position in the flow: start, step, or outcome.\",\"enum\":[\"start\",\"step\",\"outcome\"],\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved step-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Timeline sticky-note sentence for the step.\",\"type\":\"string\"}},\"required\":[\"key\",\"actor_key\",\"summary\",\"kind\",\"questions\"],\"title\":\"StoryStepItem\",\"type\":\"object\"},\"StorySummaryItem\":{\"additionalProperties\":false,\"description\":\"Evaluated domain Story extracted from the bound workspace design in declaration order.\",\"properties\":{\"actors\":{\"description\":\"Domain roles declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryActorItem\"},\"type\":\"array\"},\"description\":{\"description\":\"Optional longer explanation of the Story.\",\"type\":\"string\"},\"flows\":{\"description\":\"Timeline paths declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryFlowItem\"},\"type\":\"array\"},\"name\":{\"description\":\"Human-facing Story title.\",\"type\":\"string\"}},\"required\":[\"name\",\"actors\",\"flows\"],\"title\":\"StorySummaryItem\",\"type\":\"object\"},\"TestWriterAssignment\":{\"description\":\"The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.\",\"properties\":{\"change_id\":{\"description\":\"Change Card the tests are for.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.\",\"type\":\"boolean\"},\"progress\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"Where this assignment stands, including Surla's findings when it needs changes.\"},\"request_revision\":{\"description\":\"Change Card revision the tests are for; report_tests_finished takes it.\",\"type\":\"string\"},\"required_tests\":{\"description\":\"One test per finished flow of stories, in declaration order; unfinished flows require none.\",\"items\":{\"$ref\":\"#/$defs/RequiredTest\"},\"type\":\"array\"},\"stories\":{\"description\":\"The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"},\"working_folder\":{\"description\":\"Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"progress\",\"working_folder\",\"stories\",\"required_tests\"],\"title\":\"TestWriterAssignment\",\"type\":\"object\"},\"TestWriterProgress\":{\"additionalProperties\":false,\"description\":\"Where the test writer's assignment for one build stands.\",\"properties\":{\"read\":{\"description\":\"True once the test writer read this assignment in full with get_test_writer_assignment.\",\"type\":\"boolean\"},\"tests\":{\"description\":\"The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"Surla assigned the tests for this build; the test writer has not reported them finished.\",\"properties\":{\"state\":{\"enum\":[\"assigned\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"The test writer reported its tests finished at this build's revision; Surla has not checked them.\",\"properties\":{\"state\":{\"enum\":[\"reported\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and found problems the test writer must fix before reporting again.\",\"properties\":{\"findings\":{\"description\":\"What Surla found, one problem per item: a test that does not build or a required test that is not declared.\",\"items\":{\"type\":\"string\"},\"minItems\":1,\"type\":\"array\"},\"state\":{\"enum\":[\"needs_changes\"],\"type\":\"string\"}},\"required\":[\"findings\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and recorded them as a commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"state\":{\"enum\":[\"accepted\"],\"type\":\"string\"}},\"required\":[\"commit\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"}},\"required\":[\"tests\",\"read\"],\"title\":\"TestWriterProgress\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.\",\"properties\":{\"change_id\":{\"description\":\"Change Card the tests are for.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.\",\"type\":\"boolean\"},\"progress\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"Where this assignment stands, including Surla's findings when it needs changes.\"},\"request_revision\":{\"description\":\"Change Card revision the tests are for; report_tests_finished takes it.\",\"type\":\"string\"},\"required_tests\":{\"description\":\"One test per finished flow of stories, in declaration order; unfinished flows require none.\",\"items\":{\"$ref\":\"#/$defs/RequiredTest\"},\"type\":\"array\"},\"stories\":{\"description\":\"The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"},\"working_folder\":{\"description\":\"Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"progress\",\"working_folder\",\"stories\",\"required_tests\"],\"title\":\"TestWriterAssignment\",\"type\":\"object\"}"),
 		},
 		{
 			Name:         "get_verification",
@@ -669,10 +795,22 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			OutputSchema: json.RawMessage("{\"$defs\":{\"InitProjectResult\":{\"description\":\"Newly initialized Surla starter project directory, derived service identity, and initial Git commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"dir\":{\"description\":\"Physical directory path of the newly created starter project (now the server's active workspace).\",\"type\":\"string\"},\"module_path\":{\"description\":\"Initialized Go module path.\",\"type\":\"string\"},\"service_name\":{\"description\":\"Derived service name.\",\"type\":\"string\"}},\"required\":[\"dir\",\"module_path\",\"service_name\",\"commit\"],\"title\":\"InitProjectResult\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Newly initialized Surla starter project directory, derived service identity, and initial Git commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"dir\":{\"description\":\"Physical directory path of the newly created starter project (now the server's active workspace).\",\"type\":\"string\"},\"module_path\":{\"description\":\"Initialized Go module path.\",\"type\":\"string\"},\"service_name\":{\"description\":\"Derived service name.\",\"type\":\"string\"}},\"required\":[\"dir\",\"module_path\",\"service_name\",\"commit\"],\"title\":\"InitProjectResult\",\"type\":\"object\"}"),
 		},
 		{
+			Name:         "list_builder_assignments",
+			Description:  stringPtr("List your build assignments: change_id, request_revision and whether you read each. Read one in full with get_builder_assignment(change_id)."),
+			InputSchema:  json.RawMessage("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"BuilderAssignment\":{\"additionalProperties\":false,\"description\":\"The builder's assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.\",\"properties\":{\"change_id\":{\"description\":\"Change Card to build; get_change takes it.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.\",\"type\":\"boolean\"},\"read\":{\"description\":\"True once you read this assignment in full with get_builder_assignment.\",\"type\":\"boolean\"},\"request_revision\":{\"description\":\"Change Card revision to build; verify_change takes it.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"read\"],\"title\":\"BuilderAssignment\",\"type\":\"object\"},\"BuilderAssignmentList\":{\"description\":\"The builder's assignments, one per change the user built, most recently started first.\",\"properties\":{\"assignments\":{\"description\":\"Assignments, most recently started first; empty when the user has built no change.\",\"items\":{\"$ref\":\"#/$defs/BuilderAssignment\"},\"type\":\"array\"}},\"required\":[\"assignments\"],\"title\":\"BuilderAssignmentList\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The builder's assignments, one per change the user built, most recently started first.\",\"properties\":{\"assignments\":{\"description\":\"Assignments, most recently started first; empty when the user has built no change.\",\"items\":{\"$ref\":\"#/$defs/BuilderAssignment\"},\"type\":\"array\"}},\"required\":[\"assignments\"],\"title\":\"BuilderAssignmentList\",\"type\":\"object\"}"),
+		},
+		{
 			Name:         "list_changes",
 			Description:  stringPtr("List this project's Change Cards, most recently saved first, with each card's summary, status, current request_revision, latest verification run state and last save time. Read one card with get_change(change_id)."),
 			InputSchema:  json.RawMessage("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"),
 			OutputSchema: json.RawMessage("{\"$defs\":{\"ChangeList\":{\"description\":\"The project's saved Change Cards, most recently saved first (tie-broken by change_id).\",\"properties\":{\"approval_available\":{\"description\":\"Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.\",\"type\":\"boolean\"},\"changes\":{\"description\":\"Saved Change Cards, most recently saved first.\",\"items\":{\"$ref\":\"#/$defs/ChangeListItem\"},\"type\":\"array\"},\"version\":{\"description\":\"Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.\",\"type\":\"string\"}},\"required\":[\"changes\",\"version\",\"approval_available\"],\"title\":\"ChangeList\",\"type\":\"object\"},\"ChangeListItem\":{\"additionalProperties\":false,\"description\":\"One saved Change Card of the project as list_changes reports it.\",\"properties\":{\"change_id\":{\"description\":\"Change Card identifier; get_change takes it.\",\"type\":\"string\"},\"latest_verification\":{\"$ref\":\"#/$defs/LatestVerificationItem\",\"description\":\"The Change Card's most recently accepted verification run; absent when none was started.\"},\"request_revision\":{\"description\":\"Current request_revision of the Change Card.\",\"type\":\"string\"},\"saved_at\":{\"description\":\"When the Change Card was last saved. It is not part of request_revision.\",\"format\":\"date-time\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status of the current revision.\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the current revision.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"summary\",\"status\",\"request_revision\",\"saved_at\"],\"title\":\"ChangeListItem\",\"type\":\"object\"},\"LatestVerificationItem\":{\"additionalProperties\":false,\"description\":\"The most recently accepted Checkpoint 4 verification run of a Change Card.\",\"properties\":{\"run_id\":{\"description\":\"Verification run identifier; get_verification takes it.\",\"type\":\"string\"},\"state\":{\"description\":\"running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.\",\"enum\":[\"running\",\"passed\",\"failed\",\"not_completed\"],\"type\":\"string\"}},\"required\":[\"run_id\",\"state\"],\"title\":\"LatestVerificationItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The project's saved Change Cards, most recently saved first (tie-broken by change_id).\",\"properties\":{\"approval_available\":{\"description\":\"Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.\",\"type\":\"boolean\"},\"changes\":{\"description\":\"Saved Change Cards, most recently saved first.\",\"items\":{\"$ref\":\"#/$defs/ChangeListItem\"},\"type\":\"array\"},\"version\":{\"description\":\"Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.\",\"type\":\"string\"}},\"required\":[\"changes\",\"version\",\"approval_available\"],\"title\":\"ChangeList\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "list_test_writer_assignments",
+			Description:  stringPtr("List your test assignments: change_id, request_revision, state and whether you read each. Read one in full with get_test_writer_assignment(change_id)."),
+			InputSchema:  json.RawMessage("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"TestWriterAssignmentItem\":{\"additionalProperties\":false,\"description\":\"One of the test writer's assignments as list_test_writer_assignments reports it.\",\"properties\":{\"change_id\":{\"description\":\"Change Card the tests are for; get_test_writer_assignment takes it.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.\",\"type\":\"boolean\"},\"progress\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"Where this assignment stands.\"},\"request_revision\":{\"description\":\"Change Card revision the tests are for.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"progress\"],\"title\":\"TestWriterAssignmentItem\",\"type\":\"object\"},\"TestWriterAssignmentList\":{\"description\":\"The test writer's assignments, one per change the user built, most recently started first.\",\"properties\":{\"assignments\":{\"description\":\"Assignments, most recently started first; empty when the user has built no change.\",\"items\":{\"$ref\":\"#/$defs/TestWriterAssignmentItem\"},\"type\":\"array\"}},\"required\":[\"assignments\"],\"title\":\"TestWriterAssignmentList\",\"type\":\"object\"},\"TestWriterProgress\":{\"additionalProperties\":false,\"description\":\"Where the test writer's assignment for one build stands.\",\"properties\":{\"read\":{\"description\":\"True once the test writer read this assignment in full with get_test_writer_assignment.\",\"type\":\"boolean\"},\"tests\":{\"description\":\"The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"Surla assigned the tests for this build; the test writer has not reported them finished.\",\"properties\":{\"state\":{\"enum\":[\"assigned\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"The test writer reported its tests finished at this build's revision; Surla has not checked them.\",\"properties\":{\"state\":{\"enum\":[\"reported\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and found problems the test writer must fix before reporting again.\",\"properties\":{\"findings\":{\"description\":\"What Surla found, one problem per item: a test that does not build or a required test that is not declared.\",\"items\":{\"type\":\"string\"},\"minItems\":1,\"type\":\"array\"},\"state\":{\"enum\":[\"needs_changes\"],\"type\":\"string\"}},\"required\":[\"findings\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and recorded them as a commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"state\":{\"enum\":[\"accepted\"],\"type\":\"string\"}},\"required\":[\"commit\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"}},\"required\":[\"tests\",\"read\"],\"title\":\"TestWriterProgress\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The test writer's assignments, one per change the user built, most recently started first.\",\"properties\":{\"assignments\":{\"description\":\"Assignments, most recently started first; empty when the user has built no change.\",\"items\":{\"$ref\":\"#/$defs/TestWriterAssignmentItem\"},\"type\":\"array\"}},\"required\":[\"assignments\"],\"title\":\"TestWriterAssignmentList\",\"type\":\"object\"}"),
 		},
 		{
 			Name:         "list_traces",
@@ -709,6 +847,12 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			Description:  stringPtr("Start or reuse a sandboxed Story evaluation of the bound workspace's current design files and return op_id, state, and snapshot_digest promptly. Takes no input. Poll get_story_refresh until state is succeeded or failed."),
 			InputSchema:  json.RawMessage("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"),
 			OutputSchema: json.RawMessage("{\"$defs\":{\"StoryActorItem\":{\"additionalProperties\":false,\"description\":\"Domain role declared in a Story in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer explanation of the actor role.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped actor key.\",\"type\":\"string\"},\"title\":{\"description\":\"Human-facing actor label.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\"],\"title\":\"StoryActorItem\",\"type\":\"object\"},\"StoryFlowItem\":{\"additionalProperties\":false,\"description\":\"Ordered timeline path through a domain Story in declaration order.\",\"properties\":{\"complete\":{\"description\":\"True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.\",\"type\":\"boolean\"},\"description\":{\"description\":\"Optional longer explanation of the flow.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped flow key.\",\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved flow-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"steps\":{\"description\":\"Starting, intermediate, and outcome steps in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryStepItem\"},\"type\":\"array\"},\"title\":{\"description\":\"Human-facing flow title.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\",\"complete\",\"steps\",\"questions\"],\"title\":\"StoryFlowItem\",\"type\":\"object\"},\"StoryQuestionItem\":{\"additionalProperties\":false,\"description\":\"Unresolved decision attached to a Story flow or step in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer context for the question.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped question key.\",\"type\":\"string\"},\"options\":{\"description\":\"Suggested choices in declaration order.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Human-facing question text.\",\"type\":\"string\"}},\"required\":[\"key\",\"prompt\",\"options\"],\"title\":\"StoryQuestionItem\",\"type\":\"object\"},\"StoryRefreshResult\":{\"description\":\"Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.\",\"properties\":{\"diagnostic\":{\"description\":\"Safe failure or timeout diagnostic when state is failed; omitted otherwise.\",\"type\":\"string\"},\"message\":{\"description\":\"Summary of the current Story refresh state and next action.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.\",\"type\":\"string\"},\"snapshot_digest\":{\"description\":\"Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.\",\"type\":\"string\"},\"state\":{\"description\":\"Current operation state: none, running, succeeded, or failed.\",\"enum\":[\"none\",\"running\",\"succeeded\",\"failed\"],\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"}},\"required\":[\"state\",\"stories\",\"message\"],\"title\":\"StoryRefreshResult\",\"type\":\"object\"},\"StoryStepItem\":{\"additionalProperties\":false,\"description\":\"Starting event, intermediate action, or outcome in a Story flow in declaration order.\",\"properties\":{\"actor_key\":{\"description\":\"Story-scoped key of the actor performing or observing the step.\",\"type\":\"string\"},\"description\":{\"description\":\"Optional longer explanation of the step.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped step key.\",\"type\":\"string\"},\"kind\":{\"description\":\"Step position in the flow: start, step, or outcome.\",\"enum\":[\"start\",\"step\",\"outcome\"],\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved step-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Timeline sticky-note sentence for the step.\",\"type\":\"string\"}},\"required\":[\"key\",\"actor_key\",\"summary\",\"kind\",\"questions\"],\"title\":\"StoryStepItem\",\"type\":\"object\"},\"StorySummaryItem\":{\"additionalProperties\":false,\"description\":\"Evaluated domain Story extracted from the bound workspace design in declaration order.\",\"properties\":{\"actors\":{\"description\":\"Domain roles declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryActorItem\"},\"type\":\"array\"},\"description\":{\"description\":\"Optional longer explanation of the Story.\",\"type\":\"string\"},\"flows\":{\"description\":\"Timeline paths declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryFlowItem\"},\"type\":\"array\"},\"name\":{\"description\":\"Human-facing Story title.\",\"type\":\"string\"}},\"required\":[\"name\",\"actors\",\"flows\"],\"title\":\"StorySummaryItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.\",\"properties\":{\"diagnostic\":{\"description\":\"Safe failure or timeout diagnostic when state is failed; omitted otherwise.\",\"type\":\"string\"},\"message\":{\"description\":\"Summary of the current Story refresh state and next action.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.\",\"type\":\"string\"},\"snapshot_digest\":{\"description\":\"Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.\",\"type\":\"string\"},\"state\":{\"description\":\"Current operation state: none, running, succeeded, or failed.\",\"enum\":[\"none\",\"running\",\"succeeded\",\"failed\"],\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"}},\"required\":[\"state\",\"stories\",\"message\"],\"title\":\"StoryRefreshResult\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "report_tests_finished",
+			Description:  stringPtr("Report that your tests for the assignment's change_id and request_revision are finished. Surla records the report as reported, without checking the tests, and returns the assignment's new state."),
+			InputSchema:  json.RawMessage("{\"$defs\":{\"ReportTestsFinishedPayload\":{\"properties\":{\"change_id\":{\"description\":\"Change Card identifier from your test assignment.\",\"minLength\":1,\"type\":\"string\"},\"request_revision\":{\"description\":\"request_revision of your test assignment.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\"],\"title\":\"ReportTestsFinishedPayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{\"change_id\":{\"description\":\"Change Card identifier from your test assignment.\",\"minLength\":1,\"type\":\"string\"},\"request_revision\":{\"description\":\"request_revision of your test assignment.\",\"minLength\":1,\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\"],\"title\":\"ReportTestsFinishedPayload\",\"type\":\"object\"}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"TestWriterAssignmentItem\":{\"description\":\"One of the test writer's assignments as list_test_writer_assignments reports it.\",\"properties\":{\"change_id\":{\"description\":\"Change Card the tests are for; get_test_writer_assignment takes it.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.\",\"type\":\"boolean\"},\"progress\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"Where this assignment stands.\"},\"request_revision\":{\"description\":\"Change Card revision the tests are for.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"progress\"],\"title\":\"TestWriterAssignmentItem\",\"type\":\"object\"},\"TestWriterProgress\":{\"additionalProperties\":false,\"description\":\"Where the test writer's assignment for one build stands.\",\"properties\":{\"read\":{\"description\":\"True once the test writer read this assignment in full with get_test_writer_assignment.\",\"type\":\"boolean\"},\"tests\":{\"description\":\"The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"Surla assigned the tests for this build; the test writer has not reported them finished.\",\"properties\":{\"state\":{\"enum\":[\"assigned\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"The test writer reported its tests finished at this build's revision; Surla has not checked them.\",\"properties\":{\"state\":{\"enum\":[\"reported\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and found problems the test writer must fix before reporting again.\",\"properties\":{\"findings\":{\"description\":\"What Surla found, one problem per item: a test that does not build or a required test that is not declared.\",\"items\":{\"type\":\"string\"},\"minItems\":1,\"type\":\"array\"},\"state\":{\"enum\":[\"needs_changes\"],\"type\":\"string\"}},\"required\":[\"findings\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"Surla checked the reported tests and recorded them as a commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"state\":{\"enum\":[\"accepted\"],\"type\":\"string\"}},\"required\":[\"commit\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"}},\"required\":[\"tests\",\"read\"],\"title\":\"TestWriterProgress\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One of the test writer's assignments as list_test_writer_assignments reports it.\",\"properties\":{\"change_id\":{\"description\":\"Change Card the tests are for; get_test_writer_assignment takes it.\",\"type\":\"string\"},\"in_force\":{\"description\":\"True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.\",\"type\":\"boolean\"},\"progress\":{\"$ref\":\"#/$defs/TestWriterProgress\",\"description\":\"Where this assignment stands.\"},\"request_revision\":{\"description\":\"Change Card revision the tests are for.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"in_force\",\"progress\"],\"title\":\"TestWriterAssignmentItem\",\"type\":\"object\"}"),
 		},
 		{
 			Name:         "revise_change",
@@ -969,6 +1113,66 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			Content:           []*ContentItem{},
 			StructuredContent: json.RawMessage(encoded),
 		})}, nil
+	case "get_build":
+		arguments := p.Arguments
+		if len(arguments) == 0 {
+			arguments = json.RawMessage("{}")
+		}
+		payload, err := mcpcodec.DecodeGetBuildPayload(arguments)
+		if err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod23(ctx, payload)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeGetBuildResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
+	case "get_builder_assignment":
+		arguments := p.Arguments
+		if len(arguments) == 0 {
+			arguments = json.RawMessage("{}")
+		}
+		payload, err := mcpcodec.DecodeGetBuilderAssignmentPayload(arguments)
+		if err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod25(ctx, payload)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeGetBuilderAssignmentResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
 	case "get_change":
 		arguments := p.Arguments
 		if len(arguments) == 0 {
@@ -1014,6 +1218,36 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			return toolCallError(failure.err.Error()), nil
 		}
 		encoded, err := mcpcodec.EncodeGetStoryRefreshResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
+	case "get_test_writer_assignment":
+		arguments := p.Arguments
+		if len(arguments) == 0 {
+			arguments = json.RawMessage("{}")
+		}
+		payload, err := mcpcodec.DecodeGetTestWriterAssignmentPayload(arguments)
+		if err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod27(ctx, payload)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeGetTestWriterAssignmentResult(result)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -1084,6 +1318,31 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			Content:           []*ContentItem{},
 			StructuredContent: json.RawMessage(encoded),
 		})}, nil
+	case "list_builder_assignments":
+		if err := validateNoArguments(p.Arguments); err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod24(ctx)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeListBuilderAssignmentsResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
 	case "list_changes":
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
@@ -1099,6 +1358,31 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			return toolCallError(failure.err.Error()), nil
 		}
 		encoded, err := mcpcodec.EncodeListChangesResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
+	case "list_test_writer_assignments":
+		if err := validateNoArguments(p.Arguments); err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod26(ctx)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeListTestWriterAssignmentsResult(result)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -1284,6 +1568,36 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			Content:           []*ContentItem{},
 			StructuredContent: json.RawMessage(encoded),
 		})}, nil
+	case "report_tests_finished":
+		arguments := p.Arguments
+		if len(arguments) == 0 {
+			arguments = json.RawMessage("{}")
+		}
+		payload, err := mcpcodec.DecodeReportTestsFinishedPayload(arguments)
+		if err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod28(ctx, payload)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeReportTestsFinishedResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
 	case "revise_change":
 		arguments := p.Arguments
 		if len(arguments) == 0 {
@@ -1455,7 +1769,7 @@ func (a *MCPAdapter) ResourcesRead(ctx context.Context, p *ResourcesReadPayload)
 
 	switch p.URI {
 	case "surla://golden-path":
-		result, err := a.invokeMCPMethod23(ctx)
+		result, err := a.invokeMCPMethod29(ctx)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

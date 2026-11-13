@@ -10,6 +10,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
@@ -173,6 +174,20 @@ type ReadCheckOutputRequestBody struct {
 	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
 	// Opaque next_cursor from the previous page; omit for the first page.
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty" xml:"cursor,omitempty"`
+}
+
+// StartBuildRequestBody is the type of the "surla" service "start_build"
+// endpoint HTTP request body.
+type StartBuildRequestBody struct {
+	// The Change Card's confirmed revision in force.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+}
+
+// ReportTestsFinishedRequestBody is the type of the "surla" service
+// "report_tests_finished" endpoint HTTP request body.
+type ReportTestsFinishedRequestBody struct {
+	// request_revision of your test assignment.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 }
 
 // ProposeChangeResponseBody is the type of the "surla" service
@@ -709,6 +724,107 @@ type WaitForChangesResponseBody struct {
 	// Version of the current change list; it equals since when nothing changed
 	// during the wait.
 	Version string `form:"version" json:"version" xml:"version"`
+}
+
+// StartBuildResponseBody is the type of the "surla" service "start_build"
+// endpoint HTTP response body.
+type StartBuildResponseBody struct {
+	// Change Card revision the user built.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// When the user started this build.
+	StartedAt string `form:"started_at" json:"started_at" xml:"started_at"`
+	// True when request_revision is the change's confirmed revision in force.
+	// False when the change was revised or confirmed again since: the assignments
+	// stay as they are, for this earlier revision, until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// The builder's assignment.
+	Builder *BuilderProgressResponseBody `form:"builder" json:"builder" xml:"builder"`
+	// The test writer's assignment.
+	TestWriter *TestWriterProgressResponseBody `form:"test_writer" json:"test_writer" xml:"test_writer"`
+}
+
+// GetBuildResponseBody is the type of the "surla" service "get_build" endpoint
+// HTTP response body.
+type GetBuildResponseBody struct {
+	// Change Card identifier.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// not_started until the user starts a build of this change; started with the
+	// build afterwards.
+	Build BuildResponseBody `form:"build" json:"build" xml:"build"`
+}
+
+// ListBuilderAssignmentsResponseBody is the type of the "surla" service
+// "list_builder_assignments" endpoint HTTP response body.
+type ListBuilderAssignmentsResponseBody struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*BuilderAssignmentResponseBody `form:"assignments" json:"assignments" xml:"assignments"`
+}
+
+// GetBuilderAssignmentResponseBody is the type of the "surla" service
+// "get_builder_assignment" endpoint HTTP response body.
+type GetBuilderAssignmentResponseBody struct {
+	// Change Card to build; get_change takes it.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision to build; verify_change takes it.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// True once you read this assignment in full with get_builder_assignment.
+	Read bool `form:"read" json:"read" xml:"read"`
+}
+
+// ListTestWriterAssignmentsResponseBody is the type of the "surla" service
+// "list_test_writer_assignments" endpoint HTTP response body.
+type ListTestWriterAssignmentsResponseBody struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*TestWriterAssignmentItemResponseBody `form:"assignments" json:"assignments" xml:"assignments"`
+}
+
+// GetTestWriterAssignmentResponseBody is the type of the "surla" service
+// "get_test_writer_assignment" endpoint HTTP response body.
+type GetTestWriterAssignmentResponseBody struct {
+	// Change Card the tests are for.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision the tests are for; report_tests_finished takes it.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// Where this assignment stands, including Surla's findings when it needs
+	// changes.
+	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
+	// Folder to write the tests in: your own working copy of the project. The
+	// project server does not prepare working copies yet, so it is empty.
+	WorkingFolder string `form:"working_folder" json:"working_folder" xml:"working_folder"`
+	// The Story as agreed at request_revision, in declaration order. It does not
+	// change when the change is revised later.
+	Stories []*StorySummaryItemResponseBody `form:"stories" json:"stories" xml:"stories"`
+	// One test per finished flow of stories, in declaration order; unfinished
+	// flows require none.
+	RequiredTests []*RequiredTestResponseBody `form:"required_tests" json:"required_tests" xml:"required_tests"`
+}
+
+// ReportTestsFinishedResponseBody is the type of the "surla" service
+// "report_tests_finished" endpoint HTTP response body.
+type ReportTestsFinishedResponseBody struct {
+	// Change Card the tests are for; get_test_writer_assignment takes it.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision the tests are for.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// Where this assignment stands.
+	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
 }
 
 // GoldenPathForbiddenResponseBody is the type of the "surla" service
@@ -2131,6 +2247,284 @@ type WaitForChangesForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// StartBuildNotFoundResponseBody is the type of the "surla" service
+// "start_build" endpoint HTTP response body for the "not_found" error.
+type StartBuildNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartBuildConflictResponseBody is the type of the "surla" service
+// "start_build" endpoint HTTP response body for the "conflict" error.
+type StartBuildConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartBuildUnprocessableResponseBody is the type of the "surla" service
+// "start_build" endpoint HTTP response body for the "unprocessable" error.
+type StartBuildUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartBuildForbiddenResponseBody is the type of the "surla" service
+// "start_build" endpoint HTTP response body for the "forbidden" error.
+type StartBuildForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetBuildNotFoundResponseBody is the type of the "surla" service "get_build"
+// endpoint HTTP response body for the "not_found" error.
+type GetBuildNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetBuildForbiddenResponseBody is the type of the "surla" service "get_build"
+// endpoint HTTP response body for the "forbidden" error.
+type GetBuildForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListBuilderAssignmentsForbiddenResponseBody is the type of the "surla"
+// service "list_builder_assignments" endpoint HTTP response body for the
+// "forbidden" error.
+type ListBuilderAssignmentsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetBuilderAssignmentNotFoundResponseBody is the type of the "surla" service
+// "get_builder_assignment" endpoint HTTP response body for the "not_found"
+// error.
+type GetBuilderAssignmentNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetBuilderAssignmentForbiddenResponseBody is the type of the "surla" service
+// "get_builder_assignment" endpoint HTTP response body for the "forbidden"
+// error.
+type GetBuilderAssignmentForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListTestWriterAssignmentsForbiddenResponseBody is the type of the "surla"
+// service "list_test_writer_assignments" endpoint HTTP response body for the
+// "forbidden" error.
+type ListTestWriterAssignmentsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetTestWriterAssignmentNotFoundResponseBody is the type of the "surla"
+// service "get_test_writer_assignment" endpoint HTTP response body for the
+// "not_found" error.
+type GetTestWriterAssignmentNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetTestWriterAssignmentForbiddenResponseBody is the type of the "surla"
+// service "get_test_writer_assignment" endpoint HTTP response body for the
+// "forbidden" error.
+type GetTestWriterAssignmentForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReportTestsFinishedNotFoundResponseBody is the type of the "surla" service
+// "report_tests_finished" endpoint HTTP response body for the "not_found"
+// error.
+type ReportTestsFinishedNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReportTestsFinishedConflictResponseBody is the type of the "surla" service
+// "report_tests_finished" endpoint HTTP response body for the "conflict" error.
+type ReportTestsFinishedConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReportTestsFinishedForbiddenResponseBody is the type of the "surla" service
+// "report_tests_finished" endpoint HTTP response body for the "forbidden"
+// error.
+type ReportTestsFinishedForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2521,6 +2915,110 @@ type LatestVerificationItemResponseBody struct {
 	State string `form:"state" json:"state" xml:"state"`
 }
 
+// BuilderProgressResponseBody is used to define fields on response body types.
+type BuilderProgressResponseBody struct {
+	// True once the builder read this assignment in full with
+	// get_builder_assignment.
+	Read bool `form:"read" json:"read" xml:"read"`
+}
+
+// TestWriterProgressResponseBody is used to define fields on response body
+// types.
+type TestWriterProgressResponseBody struct {
+	// The tests' state: assigned, reported, needs_changes with Surla's findings,
+	// or accepted with the commit Surla recorded.
+	Tests TestsResponseBody `form:"tests" json:"tests" xml:"tests"`
+	// True once the test writer read this assignment in full with
+	// get_test_writer_assignment.
+	Read bool `form:"read" json:"read" xml:"read"`
+}
+
+// TestsAssignedResponseBody is used to define fields on response body types.
+type TestsAssignedResponseBody struct {
+}
+
+// TestsReportedResponseBody is used to define fields on response body types.
+type TestsReportedResponseBody struct {
+}
+
+// TestsNeedChangesResponseBody is used to define fields on response body types.
+type TestsNeedChangesResponseBody struct {
+	// What Surla found, one problem per item: a test that does not build or a
+	// required test that is not declared.
+	Findings []string `form:"findings" json:"findings" xml:"findings"`
+}
+
+// TestsAcceptedResponseBody is used to define fields on response body types.
+type TestsAcceptedResponseBody struct {
+	// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
+	// characters).
+	Commit string `form:"commit" json:"commit" xml:"commit"`
+}
+
+// BuildNotStartedResponseBody is used to define fields on response body types.
+type BuildNotStartedResponseBody struct {
+}
+
+// StartedBuildResponseBody is used to define fields on response body types.
+type StartedBuildResponseBody struct {
+	// Change Card revision the user built.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// When the user started this build.
+	StartedAt string `form:"started_at" json:"started_at" xml:"started_at"`
+	// True when request_revision is the change's confirmed revision in force.
+	// False when the change was revised or confirmed again since: the assignments
+	// stay as they are, for this earlier revision, until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// The builder's assignment.
+	Builder *BuilderProgressResponseBody `form:"builder" json:"builder" xml:"builder"`
+	// The test writer's assignment.
+	TestWriter *TestWriterProgressResponseBody `form:"test_writer" json:"test_writer" xml:"test_writer"`
+}
+
+// BuilderAssignmentResponseBody is used to define fields on response body
+// types.
+type BuilderAssignmentResponseBody struct {
+	// Change Card to build; get_change takes it.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision to build; verify_change takes it.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: verify_change refuses
+	// this revision, and the assignment stays as it is until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// True once you read this assignment in full with get_builder_assignment.
+	Read bool `form:"read" json:"read" xml:"read"`
+}
+
+// TestWriterAssignmentItemResponseBody is used to define fields on response
+// body types.
+type TestWriterAssignmentItemResponseBody struct {
+	// Change Card the tests are for; get_test_writer_assignment takes it.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision the tests are for.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// True when request_revision is the change's confirmed revision in force, as
+	// get_build reports it. False when the user has since confirmed another
+	// revision or the change awaits confirmation of one: the assignment stays for
+	// this earlier revision until the user builds again.
+	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
+	// Where this assignment stands.
+	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
+}
+
+// RequiredTestResponseBody is used to define fields on response body types.
+type RequiredTestResponseBody struct {
+	// Name of the Story the flow belongs to.
+	Story string `form:"story" json:"story" xml:"story"`
+	// Key of the finished flow.
+	FlowKey string `form:"flow_key" json:"flow_key" xml:"flow_key"`
+	// Scenario name the evaluation suite declares for the flow.
+	Scenario string `form:"scenario" json:"scenario" xml:"scenario"`
+	// Hook method the test writer implements for the scenario.
+	Hook string `form:"hook" json:"hook" xml:"hook"`
+}
+
 // CP1AnalysisRequestBody is used to define fields on request body types.
 type CP1AnalysisRequestBody struct {
 	// Plain-English description of the requested behavior, including the details
@@ -2644,6 +3142,188 @@ type DesignSnapshotRequestBody struct {
 	// File contents keyed by module-relative path, such as design/design.go or
 	// go.mod.
 	Files map[string]string `form:"files,omitempty" json:"files,omitempty" xml:"files,omitempty"`
+}
+
+// BuildResponseBody holds exactly one of its branch values.
+type BuildResponseBody struct {
+	kind       BuildResponseBodyKind
+	notStarted *BuildNotStartedResponseBody
+	started    *StartedBuildResponseBody
+}
+
+// BuildResponseBodyKind records which BuildResponseBody branch is selected.
+type BuildResponseBodyKind string
+
+const (
+	// BuildResponseBodyKindNotStarted identifies the not_started branch.
+	BuildResponseBodyKindNotStarted BuildResponseBodyKind = "not_started"
+	// BuildResponseBodyKindStarted identifies the started branch.
+	BuildResponseBodyKindStarted BuildResponseBodyKind = "started"
+)
+
+// Kind returns the selected branch.
+func (u BuildResponseBody) Kind() BuildResponseBodyKind {
+	return u.kind
+}
+
+// NewBuildResponseBodyNotStarted constructs BuildResponseBody with the not_started branch set.
+func NewBuildResponseBodyNotStarted(v *BuildNotStartedResponseBody) BuildResponseBody {
+	return BuildResponseBody{
+		kind:       BuildResponseBodyKindNotStarted,
+		notStarted: v,
+	}
+}
+
+// AsNotStarted returns the value when the not_started branch is selected.
+func (u BuildResponseBody) AsNotStarted() (_ *BuildNotStartedResponseBody, ok bool) {
+	if u.kind != BuildResponseBodyKindNotStarted {
+		return
+	}
+	return u.notStarted, true
+}
+
+// SetNotStarted selects the not_started branch and stores v.
+func (u *BuildResponseBody) SetNotStarted(v *BuildNotStartedResponseBody) {
+	*u = BuildResponseBody{
+		kind:       BuildResponseBodyKindNotStarted,
+		notStarted: v,
+	}
+}
+
+// NewBuildResponseBodyStarted constructs BuildResponseBody with the started branch set.
+func NewBuildResponseBodyStarted(v *StartedBuildResponseBody) BuildResponseBody {
+	return BuildResponseBody{
+		kind:    BuildResponseBodyKindStarted,
+		started: v,
+	}
+}
+
+// AsStarted returns the value when the started branch is selected.
+func (u BuildResponseBody) AsStarted() (_ *StartedBuildResponseBody, ok bool) {
+	if u.kind != BuildResponseBodyKindStarted {
+		return
+	}
+	return u.started, true
+}
+
+// SetStarted selects the started branch and stores v.
+func (u *BuildResponseBody) SetStarted(v *StartedBuildResponseBody) {
+	*u = BuildResponseBody{
+		kind:    BuildResponseBodyKindStarted,
+		started: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u BuildResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u BuildResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(BuildResponseBodyKindNotStarted),
+			string(BuildResponseBodyKindStarted),
+		})
+	case BuildResponseBodyKindNotStarted:
+		if u.notStarted == nil {
+			return nil, goa.MissingFieldError("value", "BuildResponseBody")
+		}
+		return u.notStarted, nil
+	case BuildResponseBodyKindStarted:
+		if u.started == nil {
+			return nil, goa.MissingFieldError("value", "BuildResponseBody")
+		}
+		return u.started, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(BuildResponseBodyKindNotStarted),
+			string(BuildResponseBodyKindStarted),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u BuildResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("BuildResponseBody branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *BuildResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "BuildResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(BuildResponseBodyKindNotStarted):
+		var v *BuildNotStartedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotStarted(v)
+	case string(BuildResponseBodyKindStarted):
+		var v *StartedBuildResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetStarted(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "BuildResponseBody")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(BuildResponseBodyKindNotStarted),
+			string(BuildResponseBodyKindStarted),
+		})
+	}
+	return nil
 }
 
 // StateResponseBody holds exactly one of its branch values.
@@ -2840,6 +3520,270 @@ func (u *StateResponseBody) UnmarshalJSON(data []byte) error {
 			string(StateResponseBodyKindRunning),
 			string(StateResponseBodyKindCompleted),
 			string(StateResponseBodyKindNotCompleted),
+		})
+	}
+	return nil
+}
+
+// TestsResponseBody holds exactly one of its branch values.
+type TestsResponseBody struct {
+	kind         TestsResponseBodyKind
+	assigned     *TestsAssignedResponseBody
+	reported     *TestsReportedResponseBody
+	needsChanges *TestsNeedChangesResponseBody
+	accepted     *TestsAcceptedResponseBody
+}
+
+// TestsResponseBodyKind records which TestsResponseBody branch is selected.
+type TestsResponseBodyKind string
+
+const (
+	// TestsResponseBodyKindAssigned identifies the assigned branch.
+	TestsResponseBodyKindAssigned TestsResponseBodyKind = "assigned"
+	// TestsResponseBodyKindReported identifies the reported branch.
+	TestsResponseBodyKindReported TestsResponseBodyKind = "reported"
+	// TestsResponseBodyKindNeedsChanges identifies the needs_changes branch.
+	TestsResponseBodyKindNeedsChanges TestsResponseBodyKind = "needs_changes"
+	// TestsResponseBodyKindAccepted identifies the accepted branch.
+	TestsResponseBodyKindAccepted TestsResponseBodyKind = "accepted"
+)
+
+// Kind returns the selected branch.
+func (u TestsResponseBody) Kind() TestsResponseBodyKind {
+	return u.kind
+}
+
+// NewTestsResponseBodyAssigned constructs TestsResponseBody with the assigned branch set.
+func NewTestsResponseBodyAssigned(v *TestsAssignedResponseBody) TestsResponseBody {
+	return TestsResponseBody{
+		kind:     TestsResponseBodyKindAssigned,
+		assigned: v,
+	}
+}
+
+// AsAssigned returns the value when the assigned branch is selected.
+func (u TestsResponseBody) AsAssigned() (_ *TestsAssignedResponseBody, ok bool) {
+	if u.kind != TestsResponseBodyKindAssigned {
+		return
+	}
+	return u.assigned, true
+}
+
+// SetAssigned selects the assigned branch and stores v.
+func (u *TestsResponseBody) SetAssigned(v *TestsAssignedResponseBody) {
+	*u = TestsResponseBody{
+		kind:     TestsResponseBodyKindAssigned,
+		assigned: v,
+	}
+}
+
+// NewTestsResponseBodyReported constructs TestsResponseBody with the reported branch set.
+func NewTestsResponseBodyReported(v *TestsReportedResponseBody) TestsResponseBody {
+	return TestsResponseBody{
+		kind:     TestsResponseBodyKindReported,
+		reported: v,
+	}
+}
+
+// AsReported returns the value when the reported branch is selected.
+func (u TestsResponseBody) AsReported() (_ *TestsReportedResponseBody, ok bool) {
+	if u.kind != TestsResponseBodyKindReported {
+		return
+	}
+	return u.reported, true
+}
+
+// SetReported selects the reported branch and stores v.
+func (u *TestsResponseBody) SetReported(v *TestsReportedResponseBody) {
+	*u = TestsResponseBody{
+		kind:     TestsResponseBodyKindReported,
+		reported: v,
+	}
+}
+
+// NewTestsResponseBodyNeedsChanges constructs TestsResponseBody with the needs_changes branch set.
+func NewTestsResponseBodyNeedsChanges(v *TestsNeedChangesResponseBody) TestsResponseBody {
+	return TestsResponseBody{
+		kind:         TestsResponseBodyKindNeedsChanges,
+		needsChanges: v,
+	}
+}
+
+// AsNeedsChanges returns the value when the needs_changes branch is selected.
+func (u TestsResponseBody) AsNeedsChanges() (_ *TestsNeedChangesResponseBody, ok bool) {
+	if u.kind != TestsResponseBodyKindNeedsChanges {
+		return
+	}
+	return u.needsChanges, true
+}
+
+// SetNeedsChanges selects the needs_changes branch and stores v.
+func (u *TestsResponseBody) SetNeedsChanges(v *TestsNeedChangesResponseBody) {
+	*u = TestsResponseBody{
+		kind:         TestsResponseBodyKindNeedsChanges,
+		needsChanges: v,
+	}
+}
+
+// NewTestsResponseBodyAccepted constructs TestsResponseBody with the accepted branch set.
+func NewTestsResponseBodyAccepted(v *TestsAcceptedResponseBody) TestsResponseBody {
+	return TestsResponseBody{
+		kind:     TestsResponseBodyKindAccepted,
+		accepted: v,
+	}
+}
+
+// AsAccepted returns the value when the accepted branch is selected.
+func (u TestsResponseBody) AsAccepted() (_ *TestsAcceptedResponseBody, ok bool) {
+	if u.kind != TestsResponseBodyKindAccepted {
+		return
+	}
+	return u.accepted, true
+}
+
+// SetAccepted selects the accepted branch and stores v.
+func (u *TestsResponseBody) SetAccepted(v *TestsAcceptedResponseBody) {
+	*u = TestsResponseBody{
+		kind:     TestsResponseBodyKindAccepted,
+		accepted: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u TestsResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u TestsResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(TestsResponseBodyKindAssigned),
+			string(TestsResponseBodyKindReported),
+			string(TestsResponseBodyKindNeedsChanges),
+			string(TestsResponseBodyKindAccepted),
+		})
+	case TestsResponseBodyKindAssigned:
+		if u.assigned == nil {
+			return nil, goa.MissingFieldError("value", "TestsResponseBody")
+		}
+		return u.assigned, nil
+	case TestsResponseBodyKindReported:
+		if u.reported == nil {
+			return nil, goa.MissingFieldError("value", "TestsResponseBody")
+		}
+		return u.reported, nil
+	case TestsResponseBodyKindNeedsChanges:
+		if u.needsChanges == nil {
+			return nil, goa.MissingFieldError("value", "TestsResponseBody")
+		}
+		return u.needsChanges, nil
+	case TestsResponseBodyKindAccepted:
+		if u.accepted == nil {
+			return nil, goa.MissingFieldError("value", "TestsResponseBody")
+		}
+		return u.accepted, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(TestsResponseBodyKindAssigned),
+			string(TestsResponseBodyKindReported),
+			string(TestsResponseBodyKindNeedsChanges),
+			string(TestsResponseBodyKindAccepted),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u TestsResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("TestsResponseBody branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *TestsResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "TestsResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(TestsResponseBodyKindAssigned):
+		var v *TestsAssignedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAssigned(v)
+	case string(TestsResponseBodyKindReported):
+		var v *TestsReportedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetReported(v)
+	case string(TestsResponseBodyKindNeedsChanges):
+		var v *TestsNeedChangesResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNeedsChanges(v)
+	case string(TestsResponseBodyKindAccepted):
+		var v *TestsAcceptedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAccepted(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "TestsResponseBody")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(TestsResponseBodyKindAssigned),
+			string(TestsResponseBodyKindReported),
+			string(TestsResponseBodyKindNeedsChanges),
+			string(TestsResponseBodyKindAccepted),
 		})
 	}
 	return nil
@@ -3635,6 +4579,159 @@ func NewListChangesResponseBody(res *surla.ChangeList) *ListChangesResponseBody 
 func NewWaitForChangesResponseBody(res *surla.ChangeListVersion) *WaitForChangesResponseBody {
 	body := &WaitForChangesResponseBody{
 		Version: res.Version,
+	}
+	return body
+}
+
+// NewStartBuildResponseBody builds the HTTP response body from the result of
+// the "start_build" endpoint of the "surla" service.
+func NewStartBuildResponseBody(res *surla.StartedBuild) *StartBuildResponseBody {
+	body := &StartBuildResponseBody{
+		RequestRevision: res.RequestRevision,
+		StartedAt:       res.StartedAt,
+		InForce:         res.InForce,
+	}
+	if res.Builder != nil {
+		body.Builder = marshalSurlaBuilderProgressToBuilderProgressResponseBody(res.Builder)
+	}
+	if res.TestWriter != nil {
+		body.TestWriter = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(res.TestWriter)
+	}
+	return body
+}
+
+// NewGetBuildResponseBody builds the HTTP response body from the result of the
+// "get_build" endpoint of the "surla" service.
+func NewGetBuildResponseBody(res *surla.ChangeBuild) *GetBuildResponseBody {
+	body := &GetBuildResponseBody{
+		ChangeID: res.ChangeID,
+	}
+	if res.Build.Kind() != "" {
+		switch string(res.Build.Kind()) {
+		case "not_started":
+			actual, _ := res.Build.AsNotStarted()
+			var obj *BuildNotStartedResponseBody
+			if actual != nil {
+				obj = marshalSurlaBuildNotStartedToBuildNotStartedResponseBody(actual)
+			}
+			u := body.Build
+			u.SetNotStarted((*BuildNotStartedResponseBody)(obj))
+			body.Build = u
+		case "started":
+			actual, _ := res.Build.AsStarted()
+			var obj *StartedBuildResponseBody
+			if actual != nil {
+				obj = marshalSurlaStartedBuildToStartedBuildResponseBody(actual)
+			}
+			u := body.Build
+			u.SetStarted((*StartedBuildResponseBody)(obj))
+			body.Build = u
+		}
+	}
+	return body
+}
+
+// NewListBuilderAssignmentsResponseBody builds the HTTP response body from the
+// result of the "list_builder_assignments" endpoint of the "surla" service.
+func NewListBuilderAssignmentsResponseBody(res *surla.BuilderAssignmentList) *ListBuilderAssignmentsResponseBody {
+	body := &ListBuilderAssignmentsResponseBody{}
+	if res.Assignments != nil {
+		body.Assignments = make([]*BuilderAssignmentResponseBody, len(res.Assignments))
+		for i, val := range res.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = marshalSurlaBuilderAssignmentToBuilderAssignmentResponseBody(val)
+		}
+	} else {
+		body.Assignments = []*BuilderAssignmentResponseBody{}
+	}
+	return body
+}
+
+// NewGetBuilderAssignmentResponseBody builds the HTTP response body from the
+// result of the "get_builder_assignment" endpoint of the "surla" service.
+func NewGetBuilderAssignmentResponseBody(res *surla.BuilderAssignment) *GetBuilderAssignmentResponseBody {
+	body := &GetBuilderAssignmentResponseBody{
+		ChangeID:        res.ChangeID,
+		RequestRevision: res.RequestRevision,
+		InForce:         res.InForce,
+		Read:            res.Read,
+	}
+	return body
+}
+
+// NewListTestWriterAssignmentsResponseBody builds the HTTP response body from
+// the result of the "list_test_writer_assignments" endpoint of the "surla"
+// service.
+func NewListTestWriterAssignmentsResponseBody(res *surla.TestWriterAssignmentList) *ListTestWriterAssignmentsResponseBody {
+	body := &ListTestWriterAssignmentsResponseBody{}
+	if res.Assignments != nil {
+		body.Assignments = make([]*TestWriterAssignmentItemResponseBody, len(res.Assignments))
+		for i, val := range res.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = marshalSurlaTestWriterAssignmentItemToTestWriterAssignmentItemResponseBody(val)
+		}
+	} else {
+		body.Assignments = []*TestWriterAssignmentItemResponseBody{}
+	}
+	return body
+}
+
+// NewGetTestWriterAssignmentResponseBody builds the HTTP response body from
+// the result of the "get_test_writer_assignment" endpoint of the "surla"
+// service.
+func NewGetTestWriterAssignmentResponseBody(res *surla.TestWriterAssignment) *GetTestWriterAssignmentResponseBody {
+	body := &GetTestWriterAssignmentResponseBody{
+		ChangeID:        res.ChangeID,
+		RequestRevision: res.RequestRevision,
+		InForce:         res.InForce,
+		WorkingFolder:   res.WorkingFolder,
+	}
+	if res.Progress != nil {
+		body.Progress = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(res.Progress)
+	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
+	} else {
+		body.Stories = []*StorySummaryItemResponseBody{}
+	}
+	if res.RequiredTests != nil {
+		body.RequiredTests = make([]*RequiredTestResponseBody, len(res.RequiredTests))
+		for i, val := range res.RequiredTests {
+			if val == nil {
+				body.RequiredTests[i] = nil
+				continue
+			}
+			body.RequiredTests[i] = marshalSurlaRequiredTestToRequiredTestResponseBody(val)
+		}
+	} else {
+		body.RequiredTests = []*RequiredTestResponseBody{}
+	}
+	return body
+}
+
+// NewReportTestsFinishedResponseBody builds the HTTP response body from the
+// result of the "report_tests_finished" endpoint of the "surla" service.
+func NewReportTestsFinishedResponseBody(res *surla.TestWriterAssignmentItem) *ReportTestsFinishedResponseBody {
+	body := &ReportTestsFinishedResponseBody{
+		ChangeID:        res.ChangeID,
+		RequestRevision: res.RequestRevision,
+		InForce:         res.InForce,
+	}
+	if res.Progress != nil {
+		body.Progress = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(res.Progress)
 	}
 	return body
 }
@@ -4739,6 +5836,225 @@ func NewWaitForChangesForbiddenResponseBody(res *goa.ServiceError) *WaitForChang
 	return body
 }
 
+// NewStartBuildNotFoundResponseBody builds the HTTP response body from the
+// result of the "start_build" endpoint of the "surla" service.
+func NewStartBuildNotFoundResponseBody(res *goa.ServiceError) *StartBuildNotFoundResponseBody {
+	body := &StartBuildNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartBuildConflictResponseBody builds the HTTP response body from the
+// result of the "start_build" endpoint of the "surla" service.
+func NewStartBuildConflictResponseBody(res *goa.ServiceError) *StartBuildConflictResponseBody {
+	body := &StartBuildConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartBuildUnprocessableResponseBody builds the HTTP response body from
+// the result of the "start_build" endpoint of the "surla" service.
+func NewStartBuildUnprocessableResponseBody(res *goa.ServiceError) *StartBuildUnprocessableResponseBody {
+	body := &StartBuildUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartBuildForbiddenResponseBody builds the HTTP response body from the
+// result of the "start_build" endpoint of the "surla" service.
+func NewStartBuildForbiddenResponseBody(res *goa.ServiceError) *StartBuildForbiddenResponseBody {
+	body := &StartBuildForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetBuildNotFoundResponseBody builds the HTTP response body from the
+// result of the "get_build" endpoint of the "surla" service.
+func NewGetBuildNotFoundResponseBody(res *goa.ServiceError) *GetBuildNotFoundResponseBody {
+	body := &GetBuildNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetBuildForbiddenResponseBody builds the HTTP response body from the
+// result of the "get_build" endpoint of the "surla" service.
+func NewGetBuildForbiddenResponseBody(res *goa.ServiceError) *GetBuildForbiddenResponseBody {
+	body := &GetBuildForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListBuilderAssignmentsForbiddenResponseBody builds the HTTP response body
+// from the result of the "list_builder_assignments" endpoint of the "surla"
+// service.
+func NewListBuilderAssignmentsForbiddenResponseBody(res *goa.ServiceError) *ListBuilderAssignmentsForbiddenResponseBody {
+	body := &ListBuilderAssignmentsForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetBuilderAssignmentNotFoundResponseBody builds the HTTP response body
+// from the result of the "get_builder_assignment" endpoint of the "surla"
+// service.
+func NewGetBuilderAssignmentNotFoundResponseBody(res *goa.ServiceError) *GetBuilderAssignmentNotFoundResponseBody {
+	body := &GetBuilderAssignmentNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetBuilderAssignmentForbiddenResponseBody builds the HTTP response body
+// from the result of the "get_builder_assignment" endpoint of the "surla"
+// service.
+func NewGetBuilderAssignmentForbiddenResponseBody(res *goa.ServiceError) *GetBuilderAssignmentForbiddenResponseBody {
+	body := &GetBuilderAssignmentForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListTestWriterAssignmentsForbiddenResponseBody builds the HTTP response
+// body from the result of the "list_test_writer_assignments" endpoint of the
+// "surla" service.
+func NewListTestWriterAssignmentsForbiddenResponseBody(res *goa.ServiceError) *ListTestWriterAssignmentsForbiddenResponseBody {
+	body := &ListTestWriterAssignmentsForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetTestWriterAssignmentNotFoundResponseBody builds the HTTP response body
+// from the result of the "get_test_writer_assignment" endpoint of the "surla"
+// service.
+func NewGetTestWriterAssignmentNotFoundResponseBody(res *goa.ServiceError) *GetTestWriterAssignmentNotFoundResponseBody {
+	body := &GetTestWriterAssignmentNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetTestWriterAssignmentForbiddenResponseBody builds the HTTP response
+// body from the result of the "get_test_writer_assignment" endpoint of the
+// "surla" service.
+func NewGetTestWriterAssignmentForbiddenResponseBody(res *goa.ServiceError) *GetTestWriterAssignmentForbiddenResponseBody {
+	body := &GetTestWriterAssignmentForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReportTestsFinishedNotFoundResponseBody builds the HTTP response body
+// from the result of the "report_tests_finished" endpoint of the "surla"
+// service.
+func NewReportTestsFinishedNotFoundResponseBody(res *goa.ServiceError) *ReportTestsFinishedNotFoundResponseBody {
+	body := &ReportTestsFinishedNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReportTestsFinishedConflictResponseBody builds the HTTP response body
+// from the result of the "report_tests_finished" endpoint of the "surla"
+// service.
+func NewReportTestsFinishedConflictResponseBody(res *goa.ServiceError) *ReportTestsFinishedConflictResponseBody {
+	body := &ReportTestsFinishedConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReportTestsFinishedForbiddenResponseBody builds the HTTP response body
+// from the result of the "report_tests_finished" endpoint of the "surla"
+// service.
+func NewReportTestsFinishedForbiddenResponseBody(res *goa.ServiceError) *ReportTestsFinishedForbiddenResponseBody {
+	body := &ReportTestsFinishedForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -4938,6 +6254,53 @@ func NewListTracesPayload(status string, limit int, cursor *string) *surla.ListT
 func NewWaitForChangesPayload(since string) *surla.WaitForChangesPayload {
 	v := &surla.WaitForChangesPayload{}
 	v.Since = since
+
+	return v
+}
+
+// NewStartBuildPayload builds a surla service start_build endpoint payload.
+func NewStartBuildPayload(body *StartBuildRequestBody, changeID string) *surla.StartBuildPayload {
+	v := &surla.StartBuildPayload{
+		RequestRevision: *body.RequestRevision,
+	}
+	v.ChangeID = changeID
+
+	return v
+}
+
+// NewGetBuildPayload builds a surla service get_build endpoint payload.
+func NewGetBuildPayload(changeID string) *surla.GetBuildPayload {
+	v := &surla.GetBuildPayload{}
+	v.ChangeID = changeID
+
+	return v
+}
+
+// NewGetBuilderAssignmentPayload builds a surla service get_builder_assignment
+// endpoint payload.
+func NewGetBuilderAssignmentPayload(changeID string) *surla.GetBuilderAssignmentPayload {
+	v := &surla.GetBuilderAssignmentPayload{}
+	v.ChangeID = changeID
+
+	return v
+}
+
+// NewGetTestWriterAssignmentPayload builds a surla service
+// get_test_writer_assignment endpoint payload.
+func NewGetTestWriterAssignmentPayload(changeID string) *surla.GetTestWriterAssignmentPayload {
+	v := &surla.GetTestWriterAssignmentPayload{}
+	v.ChangeID = changeID
+
+	return v
+}
+
+// NewReportTestsFinishedPayload builds a surla service report_tests_finished
+// endpoint payload.
+func NewReportTestsFinishedPayload(body *ReportTestsFinishedRequestBody, changeID string) *surla.ReportTestsFinishedPayload {
+	v := &surla.ReportTestsFinishedPayload{
+		RequestRevision: *body.RequestRevision,
+	}
+	v.ChangeID = changeID
 
 	return v
 }
@@ -5162,6 +6525,34 @@ func ValidateGenerateCodeRequestBody(body *GenerateCodeRequestBody) (err error) 
 func ValidateReadCheckOutputRequestBody(body *ReadCheckOutputRequestBody) (err error) {
 	if body.OpID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
+	}
+	return
+}
+
+// ValidateStartBuildRequestBody runs the validations defined on
+// StartBuildRequestBody
+func ValidateStartBuildRequestBody(body *StartBuildRequestBody) (err error) {
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.RequestRevision != nil {
+		if utf8.RuneCountInString(*body.RequestRevision) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.request_revision", *body.RequestRevision, utf8.RuneCountInString(*body.RequestRevision), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateReportTestsFinishedRequestBody runs the validations defined on
+// ReportTestsFinishedRequestBody
+func ValidateReportTestsFinishedRequestBody(body *ReportTestsFinishedRequestBody) (err error) {
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.RequestRevision != nil {
+		if utf8.RuneCountInString(*body.RequestRevision) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.request_revision", *body.RequestRevision, utf8.RuneCountInString(*body.RequestRevision), 1, true))
+		}
 	}
 	return
 }

@@ -23,7 +23,8 @@ const (
 	CallerGuide CallerKind = "guide"
 	// CallerBuilder edits and verifies the application.
 	CallerBuilder CallerKind = "builder"
-	// CallerTestWriter currently reads only the Golden Path resource.
+	// CallerTestWriter writes the tests a build requires: it reads its own test
+	// assignments and reports them finished.
 	CallerTestWriter CallerKind = "test_writer"
 	// CallerManagement manages the server and credentials, never application decisions.
 	CallerManagement CallerKind = "management"
@@ -48,6 +49,10 @@ var operationRoles = map[string][]CallerKind{
 	"golden_path":          {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
 	"list_changes":         {CallerUser, CallerGuide, CallerBuilder},
 	"wait_for_changes":     {CallerUser},
+	"start_build":          {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
+	"list_builder_assignments": {CallerBuilder}, "get_builder_assignment": {CallerBuilder},
+	"list_test_writer_assignments": {CallerTestWriter}, "get_test_writer_assignment": {CallerTestWriter},
+	"report_tests_finished": {CallerTestWriter},
 }
 
 // OperationAllowed reports the same policy used by both transports and tool listing.
@@ -111,6 +116,13 @@ func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	e.GetStoryRefresh = wrap("get_story_refresh", e.GetStoryRefresh)
 	e.ListChanges = wrap("list_changes", e.ListChanges)
 	e.WaitForChanges = wrap("wait_for_changes", e.WaitForChanges)
+	e.StartBuild = wrap("start_build", e.StartBuild)
+	e.GetBuild = wrap("get_build", e.GetBuild)
+	e.ListBuilderAssignments = wrap("list_builder_assignments", e.ListBuilderAssignments)
+	e.GetBuilderAssignment = wrap("get_builder_assignment", e.GetBuilderAssignment)
+	e.ListTestWriterAssignments = wrap("list_test_writer_assignments", e.ListTestWriterAssignments)
+	e.GetTestWriterAssignment = wrap("get_test_writer_assignment", e.GetTestWriterAssignment)
+	e.ReportTestsFinished = wrap("report_tests_finished", e.ReportTestsFinished)
 }
 
 // filterMCPDiscovery derives each caller's catalog from the invocation policy.

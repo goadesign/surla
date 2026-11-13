@@ -271,6 +271,50 @@ type (
 		// or a guide that could not be written.
 		Warnings []string `json:"warnings"`
 	}
+	// GetBuildPayloadTransport is the internal JSON transport type for GetBuildPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetBuildPayloadTransport struct {
+		// Change Card identifier.
+		ChangeID *string `json:"change_id"`
+	}
+	// GetBuildResultTransport is the internal JSON transport type for GetBuildResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetBuildResultTransport struct {
+		// Change Card identifier.
+		ChangeID *string `json:"change_id"`
+		// not_started until the user starts a build of this change; started with the
+		// build afterwards.
+		Build *Build `json:"build"`
+	}
+	// GetBuilderAssignmentPayloadTransport is the internal JSON transport type for GetBuilderAssignmentPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetBuilderAssignmentPayloadTransport struct {
+		// Change Card identifier from list_builder_assignments.
+		ChangeID *string `json:"change_id"`
+	}
+	// GetBuilderAssignmentResultTransport is the internal JSON transport type for GetBuilderAssignmentResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetBuilderAssignmentResultTransport struct {
+		// Change Card to build; get_change takes it.
+		ChangeID *string `json:"change_id"`
+		// Change Card revision to build; verify_change takes it.
+		RequestRevision *string `json:"request_revision"`
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: verify_change refuses
+		// this revision, and the assignment stays as it is until the user builds again.
+		InForce *bool `json:"in_force"`
+		// True once you read this assignment in full with get_builder_assignment.
+		Read *bool `json:"read"`
+	}
 	// GetChangePayloadTransport is the internal JSON transport type for GetChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -360,6 +404,41 @@ type (
 		// Summary of the current Story refresh state and next action.
 		Message *string `json:"message"`
 	}
+	// GetTestWriterAssignmentPayloadTransport is the internal JSON transport type for GetTestWriterAssignmentPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetTestWriterAssignmentPayloadTransport struct {
+		// Change Card identifier from list_test_writer_assignments.
+		ChangeID *string `json:"change_id"`
+	}
+	// GetTestWriterAssignmentResultTransport is the internal JSON transport type for GetTestWriterAssignmentResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetTestWriterAssignmentResultTransport struct {
+		// Change Card the tests are for.
+		ChangeID *string `json:"change_id"`
+		// Change Card revision the tests are for; report_tests_finished takes it.
+		RequestRevision *string `json:"request_revision"`
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: the assignment stays for
+		// this earlier revision until the user builds again.
+		InForce *bool `json:"in_force"`
+		// Where this assignment stands, including Surla's findings when it needs
+		// changes.
+		Progress *TestWriterProgressTransport `json:"progress"`
+		// Folder to write the tests in: your own working copy of the project. The
+		// project server does not prepare working copies yet, so it is empty.
+		WorkingFolder *string `json:"working_folder"`
+		// The Story as agreed at request_revision, in declaration order. It does not
+		// change when the change is revised later.
+		Stories []*StorySummaryItemTransport `json:"stories"`
+		// One test per finished flow of stories, in declaration order; unfinished
+		// flows require none.
+		RequiredTests []*RequiredTestTransport `json:"required_tests"`
+	}
 	// GetVerificationPayloadTransport is the internal JSON transport type for GetVerificationPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -416,6 +495,21 @@ type (
 		// verify_change take this commit ID.
 		Commit *string `json:"commit"`
 	}
+	// ListBuilderAssignmentsPayloadTransport is the internal JSON transport type for ListBuilderAssignmentsPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListBuilderAssignmentsPayloadTransport struct {
+	}
+	// ListBuilderAssignmentsResultTransport is the internal JSON transport type for ListBuilderAssignmentsResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListBuilderAssignmentsResultTransport struct {
+		// Assignments, most recently started first; empty when the user has built no
+		// change.
+		Assignments []*BuilderAssignmentTransport `json:"assignments"`
+	}
 	// ListChangesPayloadTransport is the internal JSON transport type for ListChangesPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -439,6 +533,21 @@ type (
 		// one, store the project's promotion settings with surla promotion set, then
 		// restart Surla.
 		ApprovalAvailable *bool `json:"approval_available"`
+	}
+	// ListTestWriterAssignmentsPayloadTransport is the internal JSON transport type for ListTestWriterAssignmentsPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListTestWriterAssignmentsPayloadTransport struct {
+	}
+	// ListTestWriterAssignmentsResultTransport is the internal JSON transport type for ListTestWriterAssignmentsResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListTestWriterAssignmentsResultTransport struct {
+		// Assignments, most recently started first; empty when the user has built no
+		// change.
+		Assignments []*TestWriterAssignmentItemTransport `json:"assignments"`
 	}
 	// ListTracesPayloadTransport is the internal JSON transport type for ListTracesPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -643,6 +752,33 @@ type (
 		Diagnostic *string `json:"diagnostic,omitempty"`
 		// Summary of the current Story refresh state and next action.
 		Message *string `json:"message"`
+	}
+	// ReportTestsFinishedPayloadTransport is the internal JSON transport type for ReportTestsFinishedPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReportTestsFinishedPayloadTransport struct {
+		// Change Card identifier from your test assignment.
+		ChangeID *string `json:"change_id"`
+		// request_revision of your test assignment.
+		RequestRevision *string `json:"request_revision"`
+	}
+	// ReportTestsFinishedResultTransport is the internal JSON transport type for ReportTestsFinishedResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReportTestsFinishedResultTransport struct {
+		// Change Card the tests are for; get_test_writer_assignment takes it.
+		ChangeID *string `json:"change_id"`
+		// Change Card revision the tests are for.
+		RequestRevision *string `json:"request_revision"`
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: the assignment stays for
+		// this earlier revision until the user builds again.
+		InForce *bool `json:"in_force"`
+		// Where this assignment stands.
+		Progress *TestWriterProgressTransport `json:"progress"`
 	}
 	// ReviseChangePayloadTransport is the internal JSON transport type for ReviseChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -865,6 +1001,38 @@ type (
 		// Number of declared evaluator scenarios, every one of which passed.
 		ScenarioCount *int `json:"scenario_count"`
 	}
+	// BuildNotStartedTransport is the internal JSON transport type for BuildNotStartedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	BuildNotStartedTransport struct {
+	}
+	// BuilderAssignmentTransport is the internal JSON transport type for BuilderAssignmentTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	BuilderAssignmentTransport struct {
+		// Change Card to build; get_change takes it.
+		ChangeID *string `json:"change_id"`
+		// Change Card revision to build; verify_change takes it.
+		RequestRevision *string `json:"request_revision"`
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: verify_change refuses
+		// this revision, and the assignment stays as it is until the user builds again.
+		InForce *bool `json:"in_force"`
+		// True once you read this assignment in full with get_builder_assignment.
+		Read *bool `json:"read"`
+	}
+	// BuilderProgressTransport is the internal JSON transport type for BuilderProgressTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	BuilderProgressTransport struct {
+		// True once the builder read this assignment in full with
+		// get_builder_assignment.
+		Read *bool `json:"read"`
+	}
 	// BuilderVerificationReportTransport is the internal JSON transport type for BuilderVerificationReportTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1076,6 +1244,38 @@ type (
 		// report.
 		State *string `json:"state"`
 	}
+	// RequiredTestTransport is the internal JSON transport type for RequiredTestTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	RequiredTestTransport struct {
+		// Name of the Story the flow belongs to.
+		Story *string `json:"story"`
+		// Key of the finished flow.
+		FlowKey *string `json:"flow_key"`
+		// Scenario name the evaluation suite declares for the flow.
+		Scenario *string `json:"scenario"`
+		// Hook method the test writer implements for the scenario.
+		Hook *string `json:"hook"`
+	}
+	// StartedBuildTransport is the internal JSON transport type for StartedBuildTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StartedBuildTransport struct {
+		// Change Card revision the user built.
+		RequestRevision *string `json:"request_revision"`
+		// When the user started this build.
+		StartedAt *string `json:"started_at"`
+		// True when request_revision is the change's confirmed revision in force.
+		// False when the change was revised or confirmed again since: the assignments
+		// stay as they are, for this earlier revision, until the user builds again.
+		InForce *bool `json:"in_force"`
+		// The builder's assignment.
+		Builder *BuilderProgressTransport `json:"builder"`
+		// The test writer's assignment.
+		TestWriter *TestWriterProgressTransport `json:"test_writer"`
+	}
 	// StoryActorItemTransport is the internal JSON transport type for StoryActorItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1152,6 +1352,65 @@ type (
 		Actors []*StoryActorItemTransport `json:"actors"`
 		// Timeline paths declared in the Story in declaration order.
 		Flows []*StoryFlowItemTransport `json:"flows"`
+	}
+	// TestWriterAssignmentItemTransport is the internal JSON transport type for TestWriterAssignmentItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestWriterAssignmentItemTransport struct {
+		// Change Card the tests are for; get_test_writer_assignment takes it.
+		ChangeID *string `json:"change_id"`
+		// Change Card revision the tests are for.
+		RequestRevision *string `json:"request_revision"`
+		// True when request_revision is the change's confirmed revision in force, as
+		// get_build reports it. False when the user has since confirmed another
+		// revision or the change awaits confirmation of one: the assignment stays for
+		// this earlier revision until the user builds again.
+		InForce *bool `json:"in_force"`
+		// Where this assignment stands.
+		Progress *TestWriterProgressTransport `json:"progress"`
+	}
+	// TestWriterProgressTransport is the internal JSON transport type for TestWriterProgressTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestWriterProgressTransport struct {
+		// The tests' state: assigned, reported, needs_changes with Surla's findings,
+		// or accepted with the commit Surla recorded.
+		Tests *Tests `json:"tests"`
+		// True once the test writer read this assignment in full with
+		// get_test_writer_assignment.
+		Read *bool `json:"read"`
+	}
+	// TestsAcceptedTransport is the internal JSON transport type for TestsAcceptedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsAcceptedTransport struct {
+		// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
+		// characters).
+		Commit *string `json:"commit"`
+	}
+	// TestsAssignedTransport is the internal JSON transport type for TestsAssignedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsAssignedTransport struct {
+	}
+	// TestsNeedChangesTransport is the internal JSON transport type for TestsNeedChangesTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsNeedChangesTransport struct {
+		// What Surla found, one problem per item: a test that does not build or a
+		// required test that is not declared.
+		Findings []string `json:"findings"`
+	}
+	// TestsReportedTransport is the internal JSON transport type for TestsReportedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsReportedTransport struct {
 	}
 	// ToolContractItemTransport is the internal JSON transport type for ToolContractItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON

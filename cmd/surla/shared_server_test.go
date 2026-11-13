@@ -139,7 +139,7 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	for _, actor := range []struct {
 		token string
 		kind  controlplane.CallerKind
-	}{{"test-token-guide", controlplane.CallerGuide}, {"test-token-builder", controlplane.CallerBuilder}} {
+	}{{"test-token-guide", controlplane.CallerGuide}, {"test-token-builder", controlplane.CallerBuilder}, {"test-token-test-writer", controlplane.CallerTestWriter}} {
 		catalog := s1.callWithCredential(actor.token, "2-"+string(actor.kind), "tools/list", map[string]any{})
 		tools, ok := catalog["tools"].([]any)
 		require.True(t, ok)
@@ -169,8 +169,8 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	rawResources, ok := resourcesRes["resources"].([]any)
 	require.True(t, ok)
 	assert.Len(t, rawResources, 1)
-	// wait_for_changes is the views page's HTTP-only waiting read, not a tool.
-	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-1)
+	// wait_for_changes and start_build are the views page's HTTP-only operations, not tools.
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-2)
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)

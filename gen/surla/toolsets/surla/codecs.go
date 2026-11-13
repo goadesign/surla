@@ -134,6 +134,38 @@ func GenerateCodeResultCodec() tools.JSONCodec[*GenerateCodeResult] {
 	}
 }
 
+// GetBuildPayloadCodec returns a fresh codec for *GetBuildPayload.
+func GetBuildPayloadCodec() tools.JSONCodec[*GetBuildPayload] {
+	return tools.JSONCodec[*GetBuildPayload]{
+		ToJSON:   MarshalGetBuildPayload,
+		FromJSON: UnmarshalGetBuildPayload,
+	}
+}
+
+// GetBuildResultCodec returns a fresh codec for *GetBuildResult.
+func GetBuildResultCodec() tools.JSONCodec[*GetBuildResult] {
+	return tools.JSONCodec[*GetBuildResult]{
+		ToJSON:   MarshalGetBuildResult,
+		FromJSON: UnmarshalGetBuildResult,
+	}
+}
+
+// GetBuilderAssignmentPayloadCodec returns a fresh codec for *GetBuilderAssignmentPayload.
+func GetBuilderAssignmentPayloadCodec() tools.JSONCodec[*GetBuilderAssignmentPayload] {
+	return tools.JSONCodec[*GetBuilderAssignmentPayload]{
+		ToJSON:   MarshalGetBuilderAssignmentPayload,
+		FromJSON: UnmarshalGetBuilderAssignmentPayload,
+	}
+}
+
+// GetBuilderAssignmentResultCodec returns a fresh codec for *GetBuilderAssignmentResult.
+func GetBuilderAssignmentResultCodec() tools.JSONCodec[*GetBuilderAssignmentResult] {
+	return tools.JSONCodec[*GetBuilderAssignmentResult]{
+		ToJSON:   MarshalGetBuilderAssignmentResult,
+		FromJSON: UnmarshalGetBuilderAssignmentResult,
+	}
+}
+
 // GetChangePayloadCodec returns a fresh codec for *GetChangePayload.
 func GetChangePayloadCodec() tools.JSONCodec[*GetChangePayload] {
 	return tools.JSONCodec[*GetChangePayload]{
@@ -163,6 +195,22 @@ func GetStoryRefreshResultCodec() tools.JSONCodec[*GetStoryRefreshResult] {
 	return tools.JSONCodec[*GetStoryRefreshResult]{
 		ToJSON:   MarshalGetStoryRefreshResult,
 		FromJSON: UnmarshalGetStoryRefreshResult,
+	}
+}
+
+// GetTestWriterAssignmentPayloadCodec returns a fresh codec for *GetTestWriterAssignmentPayload.
+func GetTestWriterAssignmentPayloadCodec() tools.JSONCodec[*GetTestWriterAssignmentPayload] {
+	return tools.JSONCodec[*GetTestWriterAssignmentPayload]{
+		ToJSON:   MarshalGetTestWriterAssignmentPayload,
+		FromJSON: UnmarshalGetTestWriterAssignmentPayload,
+	}
+}
+
+// GetTestWriterAssignmentResultCodec returns a fresh codec for *GetTestWriterAssignmentResult.
+func GetTestWriterAssignmentResultCodec() tools.JSONCodec[*GetTestWriterAssignmentResult] {
+	return tools.JSONCodec[*GetTestWriterAssignmentResult]{
+		ToJSON:   MarshalGetTestWriterAssignmentResult,
+		FromJSON: UnmarshalGetTestWriterAssignmentResult,
 	}
 }
 
@@ -198,6 +246,22 @@ func InitProjectResultCodec() tools.JSONCodec[*InitProjectResult] {
 	}
 }
 
+// ListBuilderAssignmentsPayloadCodec returns a fresh codec for *ListBuilderAssignmentsPayload.
+func ListBuilderAssignmentsPayloadCodec() tools.JSONCodec[*ListBuilderAssignmentsPayload] {
+	return tools.JSONCodec[*ListBuilderAssignmentsPayload]{
+		ToJSON:   MarshalListBuilderAssignmentsPayload,
+		FromJSON: UnmarshalListBuilderAssignmentsPayload,
+	}
+}
+
+// ListBuilderAssignmentsResultCodec returns a fresh codec for *ListBuilderAssignmentsResult.
+func ListBuilderAssignmentsResultCodec() tools.JSONCodec[*ListBuilderAssignmentsResult] {
+	return tools.JSONCodec[*ListBuilderAssignmentsResult]{
+		ToJSON:   MarshalListBuilderAssignmentsResult,
+		FromJSON: UnmarshalListBuilderAssignmentsResult,
+	}
+}
+
 // ListChangesPayloadCodec returns a fresh codec for *ListChangesPayload.
 func ListChangesPayloadCodec() tools.JSONCodec[*ListChangesPayload] {
 	return tools.JSONCodec[*ListChangesPayload]{
@@ -211,6 +275,22 @@ func ListChangesResultCodec() tools.JSONCodec[*ListChangesResult] {
 	return tools.JSONCodec[*ListChangesResult]{
 		ToJSON:   MarshalListChangesResult,
 		FromJSON: UnmarshalListChangesResult,
+	}
+}
+
+// ListTestWriterAssignmentsPayloadCodec returns a fresh codec for *ListTestWriterAssignmentsPayload.
+func ListTestWriterAssignmentsPayloadCodec() tools.JSONCodec[*ListTestWriterAssignmentsPayload] {
+	return tools.JSONCodec[*ListTestWriterAssignmentsPayload]{
+		ToJSON:   MarshalListTestWriterAssignmentsPayload,
+		FromJSON: UnmarshalListTestWriterAssignmentsPayload,
+	}
+}
+
+// ListTestWriterAssignmentsResultCodec returns a fresh codec for *ListTestWriterAssignmentsResult.
+func ListTestWriterAssignmentsResultCodec() tools.JSONCodec[*ListTestWriterAssignmentsResult] {
+	return tools.JSONCodec[*ListTestWriterAssignmentsResult]{
+		ToJSON:   MarshalListTestWriterAssignmentsResult,
+		FromJSON: UnmarshalListTestWriterAssignmentsResult,
 	}
 }
 
@@ -307,6 +387,22 @@ func RefreshStoryResultCodec() tools.JSONCodec[*RefreshStoryResult] {
 	return tools.JSONCodec[*RefreshStoryResult]{
 		ToJSON:   MarshalRefreshStoryResult,
 		FromJSON: UnmarshalRefreshStoryResult,
+	}
+}
+
+// ReportTestsFinishedPayloadCodec returns a fresh codec for *ReportTestsFinishedPayload.
+func ReportTestsFinishedPayloadCodec() tools.JSONCodec[*ReportTestsFinishedPayload] {
+	return tools.JSONCodec[*ReportTestsFinishedPayload]{
+		ToJSON:   MarshalReportTestsFinishedPayload,
+		FromJSON: UnmarshalReportTestsFinishedPayload,
+	}
+}
+
+// ReportTestsFinishedResultCodec returns a fresh codec for *ReportTestsFinishedResult.
+func ReportTestsFinishedResultCodec() tools.JSONCodec[*ReportTestsFinishedResult] {
+	return tools.JSONCodec[*ReportTestsFinishedResult]{
+		ToJSON:   MarshalReportTestsFinishedResult,
+		FromJSON: UnmarshalReportTestsFinishedResult,
 	}
 }
 
@@ -573,6 +669,58 @@ var (
 			return UnmarshalGenerateCodeResult(data)
 		},
 	}
+	// getBuildPayloadCodec provides an untyped codec for *GetBuildPayload.
+	getBuildPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetBuildPayload); ok {
+				return MarshalGetBuildPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetBuildPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetBuildPayload(data)
+		},
+	}
+	// getBuildResultCodec provides an untyped codec for *GetBuildResult.
+	getBuildResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetBuildResult); ok {
+				return MarshalGetBuildResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetBuildResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetBuildResult(data)
+		},
+	}
+	// getBuilderAssignmentPayloadCodec provides an untyped codec for *GetBuilderAssignmentPayload.
+	getBuilderAssignmentPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetBuilderAssignmentPayload); ok {
+				return MarshalGetBuilderAssignmentPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetBuilderAssignmentPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetBuilderAssignmentPayload(data)
+		},
+	}
+	// getBuilderAssignmentResultCodec provides an untyped codec for *GetBuilderAssignmentResult.
+	getBuilderAssignmentResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetBuilderAssignmentResult); ok {
+				return MarshalGetBuilderAssignmentResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetBuilderAssignmentResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetBuilderAssignmentResult(data)
+		},
+	}
 	// getChangePayloadCodec provides an untyped codec for *GetChangePayload.
 	getChangePayloadCodec = tools.JSONCodec[any]{
 		ToJSON: func(v any) ([]byte, error) {
@@ -623,6 +771,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalGetStoryRefreshResult(data)
+		},
+	}
+	// getTestWriterAssignmentPayloadCodec provides an untyped codec for *GetTestWriterAssignmentPayload.
+	getTestWriterAssignmentPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetTestWriterAssignmentPayload); ok {
+				return MarshalGetTestWriterAssignmentPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetTestWriterAssignmentPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetTestWriterAssignmentPayload(data)
+		},
+	}
+	// getTestWriterAssignmentResultCodec provides an untyped codec for *GetTestWriterAssignmentResult.
+	getTestWriterAssignmentResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetTestWriterAssignmentResult); ok {
+				return MarshalGetTestWriterAssignmentResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetTestWriterAssignmentResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetTestWriterAssignmentResult(data)
 		},
 	}
 	// getVerificationPayloadCodec provides an untyped codec for *GetVerificationPayload.
@@ -677,6 +851,32 @@ var (
 			return UnmarshalInitProjectResult(data)
 		},
 	}
+	// listBuilderAssignmentsPayloadCodec provides an untyped codec for *ListBuilderAssignmentsPayload.
+	listBuilderAssignmentsPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListBuilderAssignmentsPayload); ok {
+				return MarshalListBuilderAssignmentsPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListBuilderAssignmentsPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListBuilderAssignmentsPayload(data)
+		},
+	}
+	// listBuilderAssignmentsResultCodec provides an untyped codec for *ListBuilderAssignmentsResult.
+	listBuilderAssignmentsResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListBuilderAssignmentsResult); ok {
+				return MarshalListBuilderAssignmentsResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListBuilderAssignmentsResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListBuilderAssignmentsResult(data)
+		},
+	}
 	// listChangesPayloadCodec provides an untyped codec for *ListChangesPayload.
 	listChangesPayloadCodec = tools.JSONCodec[any]{
 		ToJSON: func(v any) ([]byte, error) {
@@ -701,6 +901,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalListChangesResult(data)
+		},
+	}
+	// listTestWriterAssignmentsPayloadCodec provides an untyped codec for *ListTestWriterAssignmentsPayload.
+	listTestWriterAssignmentsPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListTestWriterAssignmentsPayload); ok {
+				return MarshalListTestWriterAssignmentsPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListTestWriterAssignmentsPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListTestWriterAssignmentsPayload(data)
+		},
+	}
+	// listTestWriterAssignmentsResultCodec provides an untyped codec for *ListTestWriterAssignmentsResult.
+	listTestWriterAssignmentsResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListTestWriterAssignmentsResult); ok {
+				return MarshalListTestWriterAssignmentsResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListTestWriterAssignmentsResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListTestWriterAssignmentsResult(data)
 		},
 	}
 	// listTracesPayloadCodec provides an untyped codec for *ListTracesPayload.
@@ -857,6 +1083,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalRefreshStoryResult(data)
+		},
+	}
+	// reportTestsFinishedPayloadCodec provides an untyped codec for *ReportTestsFinishedPayload.
+	reportTestsFinishedPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ReportTestsFinishedPayload); ok {
+				return MarshalReportTestsFinishedPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ReportTestsFinishedPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalReportTestsFinishedPayload(data)
+		},
+	}
+	// reportTestsFinishedResultCodec provides an untyped codec for *ReportTestsFinishedResult.
+	reportTestsFinishedResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ReportTestsFinishedResult); ok {
+				return MarshalReportTestsFinishedResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ReportTestsFinishedResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalReportTestsFinishedResult(data)
 		},
 	}
 	// reviseChangePayloadCodec provides an untyped codec for *ReviseChangePayload.
@@ -2178,6 +2430,307 @@ var generateCodeResultFields = []tools.FieldMetadata{
 		Description: "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
 	},
 }
+var getBuildPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card identifier.",
+	},
+}
+var getBuildResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "A change's build as get_build reports it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
+		JSONType:    "object",
+		Description: "not_started until the user starts a build of this change; started with the build afterwards.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"not_started",
+			"started",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
+		JSONType:    "object",
+		Description: "The user has not started a build of this change.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "not_started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
+		JSONType:    "object",
+		Description: "The build the user started for a change, with both assignments.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Change Card revision the user built.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("started_at")},
+		JSONType:    "string",
+		Description: "When the user started this build.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("builder")},
+		JSONType:    "object",
+		Description: "The builder's assignment.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("builder"), tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once the builder read this assignment in full with get_builder_assignment.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer")},
+		JSONType:    "object",
+		Description: "The test writer's assignment.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+		JSONType: "string",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+		DiscriminatorValues: []string{
+			"assigned",
+			"reported",
+			"needs_changes",
+			"accepted",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla assigned the tests for this build; the test writer has not reported them finished.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "assigned",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "reported",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("findings")},
+		JSONType:    "array",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and recorded them as a commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+}
+var getBuilderAssignmentPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card identifier from list_builder_assignments.",
+	},
+}
+var getBuilderAssignmentResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "The builder's assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card to build; get_change takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Change Card revision to build; verify_change takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once you read this assignment in full with get_builder_assignment.",
+	},
+}
 var getChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -2831,6 +3384,354 @@ var getStoryRefreshResultFields = []tools.FieldMetadata{
 		Description: "Summary of the current Story refresh state and next action.",
 	},
 }
+var getTestWriterAssignmentPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card identifier from list_test_writer_assignments.",
+	},
+}
+var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card the tests are for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Change Card revision the tests are for; report_tests_finished takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
+		JSONType:    "object",
+		Description: "Where this assignment stands, including Surla's findings when it needs changes.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"assigned",
+			"reported",
+			"needs_changes",
+			"accepted",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla assigned the tests for this build; the test writer has not reported them finished.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "assigned",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "reported",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
+		JSONType:    "array",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and recorded them as a commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("working_folder")},
+		JSONType:    "string",
+		Description: "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests")},
+		JSONType:    "array",
+		Description: "One test per finished flow of stories, in declaration order; unfinished flows require none.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "One test per finished flow of stories, in declaration order; unfinished flows require none.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests"), tools.DynamicField{}, tools.FixedField("story")},
+		JSONType:    "string",
+		Description: "Name of the Story the flow belongs to.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests"), tools.DynamicField{}, tools.FixedField("flow_key")},
+		JSONType:    "string",
+		Description: "Key of the finished flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Scenario name the evaluation suite declares for the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests"), tools.DynamicField{}, tools.FixedField("hook")},
+		JSONType:    "string",
+		Description: "Hook method the test writer implements for the scenario.",
+	},
+}
 var getVerificationPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -3253,6 +4154,47 @@ var initProjectResultFields = []tools.FieldMetadata{
 		Description: "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
 	},
 }
+var listBuilderAssignmentsPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "The builder's assignments, one per change the user built, most recently started first.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments")},
+		JSONType:    "array",
+		Description: "Assignments, most recently started first; empty when the user has built no change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Assignments, most recently started first; empty when the user has built no change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card to build; get_change takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Change Card revision to build; verify_change takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once you read this assignment in full with get_builder_assignment.",
+	},
+}
 var listChangesPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType: "object",
@@ -3322,6 +4264,144 @@ var listChangesResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval_available")},
 		JSONType:    "boolean",
 		Description: "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+	},
+}
+var listTestWriterAssignmentsPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "The test writer's assignments, one per change the user built, most recently started first.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments")},
+		JSONType:    "array",
+		Description: "Assignments, most recently started first; empty when the user has built no change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Assignments, most recently started first; empty when the user has built no change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card the tests are for; get_test_writer_assignment takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Change Card revision the tests are for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress")},
+		JSONType:    "object",
+		Description: "Where this assignment stands.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"assigned",
+			"reported",
+			"needs_changes",
+			"accepted",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla assigned the tests for this build; the test writer has not reported them finished.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "assigned",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "reported",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
+		JSONType:    "array",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and recorded them as a commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
 	},
 }
 var listTracesPayloadFields = []tools.FieldMetadata{
@@ -4868,6 +5948,144 @@ var refreshStoryResultFields = []tools.FieldMetadata{
 		Description: "Summary of the current Story refresh state and next action.",
 	},
 }
+var reportTestsFinishedPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card identifier from your test assignment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "request_revision of your test assignment.",
+	},
+}
+var reportTestsFinishedResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "One of the test writer's assignments as list_test_writer_assignments reports it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card the tests are for; get_test_writer_assignment takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Change Card revision the tests are for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
+		JSONType:    "boolean",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
+		JSONType:    "object",
+		Description: "Where this assignment stands.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"assigned",
+			"reported",
+			"needs_changes",
+			"accepted",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla assigned the tests for this build; the test writer has not reported them finished.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "assigned",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "reported",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
+		JSONType:    "array",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and recorded them as a commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("read")},
+		JSONType:    "boolean",
+		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
+	},
+}
 var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -6142,6 +7360,74 @@ func enrichGenerateCodeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichGetBuildPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getBuildPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGetBuildResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getBuildResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGetBuilderAssignmentPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getBuilderAssignmentPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGetBuilderAssignmentResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getBuilderAssignmentResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichGetChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -6188,6 +7474,40 @@ func enrichGetStoryRefreshResultValidationError(err error) error {
 	m := make(map[string]string)
 	for _, is := range issues {
 		if field, ok := tools.LookupFieldMetadata(getStoryRefreshResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGetTestWriterAssignmentPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getTestWriterAssignmentPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGetTestWriterAssignmentResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getTestWriterAssignmentResultFields, is.Field); ok && field.Description != "" {
 			m[is.Field] = field.Description
 		}
 	}
@@ -6261,6 +7581,23 @@ func enrichInitProjectResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichListBuilderAssignmentsResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(listBuilderAssignmentsResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichListChangesResultValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -6273,6 +7610,23 @@ func enrichListChangesResultValidationError(err error) error {
 	m := make(map[string]string)
 	for _, is := range issues {
 		if field, ok := tools.LookupFieldMetadata(listChangesResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichListTestWriterAssignmentsResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(listTestWriterAssignmentsResultFields, is.Field); ok && field.Description != "" {
 			m[is.Field] = field.Description
 		}
 	}
@@ -6460,6 +7814,40 @@ func enrichRefreshStoryResultValidationError(err error) error {
 	m := make(map[string]string)
 	for _, is := range issues {
 		if field, ok := tools.LookupFieldMetadata(refreshStoryResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichReportTestsFinishedPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(reportTestsFinishedPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichReportTestsFinishedResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(reportTestsFinishedResultFields, is.Field); ok && field.Description != "" {
 			m[is.Field] = field.Description
 		}
 	}
@@ -7035,6 +8423,130 @@ func invalidGenerateCodeResultFieldTypeError(err error) error {
 		nil,
 	)
 }
+func invalidGetBuildPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetBuildPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getBuildPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetBuildResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetBuildResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getBuildResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetBuilderAssignmentPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetBuilderAssignmentPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getBuilderAssignmentPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetBuilderAssignmentResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetBuilderAssignmentResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getBuilderAssignmentResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
 func invalidGetChangePayloadFieldTypeError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if !errors.As(err, &typeErr) {
@@ -7139,6 +8651,68 @@ func invalidGetStoryRefreshResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(getStoryRefreshResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetTestWriterAssignmentPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetTestWriterAssignmentPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getTestWriterAssignmentPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetTestWriterAssignmentResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetTestWriterAssignmentResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getTestWriterAssignmentResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -7283,6 +8857,68 @@ func invalidInitProjectResultFieldTypeError(err error) error {
 		nil,
 	)
 }
+func invalidListBuilderAssignmentsPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListBuilderAssignmentsPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listBuilderAssignmentsPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListBuilderAssignmentsResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListBuilderAssignmentsResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listBuilderAssignmentsResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
 func invalidListChangesPayloadFieldTypeError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if !errors.As(err, &typeErr) {
@@ -7325,6 +8961,68 @@ func invalidListChangesResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(listChangesResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListTestWriterAssignmentsPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListTestWriterAssignmentsPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listTestWriterAssignmentsPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListTestWriterAssignmentsResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListTestWriterAssignmentsResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listTestWriterAssignmentsResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -7697,6 +9395,68 @@ func invalidRefreshStoryResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(refreshStoryResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidReportTestsFinishedPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ReportTestsFinishedPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(reportTestsFinishedPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidReportTestsFinishedResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ReportTestsFinishedResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(reportTestsFinishedResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -8904,6 +10664,214 @@ func UnmarshalGenerateCodeResult(data []byte) (*GenerateCodeResult, error) {
 	return out, nil
 }
 
+// MarshalGetBuildPayload serializes *GetBuildPayload into JSON.
+func MarshalGetBuildPayload(v *GetBuildPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getBuildPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetBuildPayloadTransport
+	out = &toolhttp.GetBuildPayloadTransport{
+		ChangeID: &in.ChangeID,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetBuildPayload deserializes JSON into *GetBuildPayload.
+func UnmarshalGetBuildPayload(data []byte) (*GetBuildPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getBuildPayload JSON is empty")
+	}
+	var tv toolhttp.GetBuildPayloadTransport
+	if err := validateListVerificationsPayloadJSON(data); err != nil {
+		return nil, invalidGetBuildPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetBuildPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetBuildPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetBuildPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetBuildPayload
+	out = &GetBuildPayload{
+		ChangeID: *in.ChangeID,
+	}
+	return out, nil
+}
+
+// MarshalGetBuildResult serializes *GetBuildResult into JSON.
+func MarshalGetBuildResult(v *GetBuildResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getBuildResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetBuildResultTransport
+	out = &toolhttp.GetBuildResultTransport{
+		ChangeID: &in.ChangeID,
+	}
+	var buildValue toolhttp.Build
+	switch string(in.Build.Kind()) {
+	case "not_started":
+		actual, _ := in.Build.AsNotStarted()
+		var obj *toolhttp.BuildNotStartedTransport
+		if actual != nil {
+			obj = encodeBuildNotStartedToBuildNotStartedTransport(actual)
+		}
+		u := buildValue
+		u.SetNotStarted((*toolhttp.BuildNotStartedTransport)(obj))
+		buildValue = u
+	case "started":
+		actual, _ := in.Build.AsStarted()
+		var obj *toolhttp.StartedBuildTransport
+		if actual != nil {
+			obj = encodeStartedBuildToStartedBuildTransport(actual)
+		}
+		u := buildValue
+		u.SetStarted((*toolhttp.StartedBuildTransport)(obj))
+		buildValue = u
+	}
+	out.Build = &buildValue
+	return json.Marshal(out)
+}
+
+// UnmarshalGetBuildResult deserializes JSON into *GetBuildResult.
+func UnmarshalGetBuildResult(data []byte) (*GetBuildResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getBuildResult JSON is empty")
+	}
+	var tv toolhttp.GetBuildResultTransport
+	if err := validateGetBuildResultJSON(data); err != nil {
+		return nil, invalidGetBuildResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetBuildResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetBuildResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetBuildResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetBuildResult
+	out = &GetBuildResult{
+		ChangeID: *in.ChangeID,
+	}
+	switch string(in.Build.Kind()) {
+	case "not_started":
+		actual, _ := in.Build.AsNotStarted()
+		var obj *BuildNotStarted
+		if actual != nil {
+			obj = decodeBuildNotStartedTransportToBuildNotStarted(actual)
+		}
+		u := out.Build
+		u.SetNotStarted((*BuildNotStarted)(obj))
+		out.Build = u
+	case "started":
+		actual, _ := in.Build.AsStarted()
+		var obj *StartedBuild
+		if actual != nil {
+			obj = decodeStartedBuildTransportToStartedBuild(actual)
+		}
+		u := out.Build
+		u.SetStarted((*StartedBuild)(obj))
+		out.Build = u
+	}
+	return out, nil
+}
+
+// MarshalGetBuilderAssignmentPayload serializes *GetBuilderAssignmentPayload into JSON.
+func MarshalGetBuilderAssignmentPayload(v *GetBuilderAssignmentPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getBuilderAssignmentPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetBuilderAssignmentPayloadTransport
+	out = &toolhttp.GetBuilderAssignmentPayloadTransport{
+		ChangeID: &in.ChangeID,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetBuilderAssignmentPayload deserializes JSON into *GetBuilderAssignmentPayload.
+func UnmarshalGetBuilderAssignmentPayload(data []byte) (*GetBuilderAssignmentPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getBuilderAssignmentPayload JSON is empty")
+	}
+	var tv toolhttp.GetBuilderAssignmentPayloadTransport
+	if err := validateGetBuilderAssignmentPayloadJSON(data); err != nil {
+		return nil, invalidGetBuilderAssignmentPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetBuilderAssignmentPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetBuilderAssignmentPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetBuilderAssignmentPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetBuilderAssignmentPayload
+	out = &GetBuilderAssignmentPayload{
+		ChangeID: *in.ChangeID,
+	}
+	return out, nil
+}
+
+// MarshalGetBuilderAssignmentResult serializes *GetBuilderAssignmentResult into JSON.
+func MarshalGetBuilderAssignmentResult(v *GetBuilderAssignmentResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getBuilderAssignmentResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetBuilderAssignmentResultTransport
+	out = &toolhttp.GetBuilderAssignmentResultTransport{
+		ChangeID:        &in.ChangeID,
+		RequestRevision: &in.RequestRevision,
+		InForce:         &in.InForce,
+		Read:            &in.Read,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetBuilderAssignmentResult deserializes JSON into *GetBuilderAssignmentResult.
+func UnmarshalGetBuilderAssignmentResult(data []byte) (*GetBuilderAssignmentResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getBuilderAssignmentResult JSON is empty")
+	}
+	var tv toolhttp.GetBuilderAssignmentResultTransport
+	if err := validateGetBuilderAssignmentResultJSON(data); err != nil {
+		return nil, invalidGetBuilderAssignmentResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetBuilderAssignmentResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetBuilderAssignmentResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetBuilderAssignmentResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetBuilderAssignmentResult
+	out = &GetBuilderAssignmentResult{
+		ChangeID:        *in.ChangeID,
+		RequestRevision: *in.RequestRevision,
+		InForce:         *in.InForce,
+		Read:            *in.Read,
+	}
+	return out, nil
+}
+
 // MarshalGetChangePayload serializes *GetChangePayload into JSON.
 func MarshalGetChangePayload(v *GetChangePayload) ([]byte, error) {
 	if v == nil {
@@ -9188,6 +11156,126 @@ func UnmarshalGetStoryRefreshResult(data []byte) (*GetStoryRefreshResult, error)
 	return out, nil
 }
 
+// MarshalGetTestWriterAssignmentPayload serializes *GetTestWriterAssignmentPayload into JSON.
+func MarshalGetTestWriterAssignmentPayload(v *GetTestWriterAssignmentPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getTestWriterAssignmentPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetTestWriterAssignmentPayloadTransport
+	out = &toolhttp.GetTestWriterAssignmentPayloadTransport{
+		ChangeID: &in.ChangeID,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetTestWriterAssignmentPayload deserializes JSON into *GetTestWriterAssignmentPayload.
+func UnmarshalGetTestWriterAssignmentPayload(data []byte) (*GetTestWriterAssignmentPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getTestWriterAssignmentPayload JSON is empty")
+	}
+	var tv toolhttp.GetTestWriterAssignmentPayloadTransport
+	if err := validateGetTestWriterAssignmentPayloadJSON(data); err != nil {
+		return nil, invalidGetTestWriterAssignmentPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetTestWriterAssignmentPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetTestWriterAssignmentPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetTestWriterAssignmentPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetTestWriterAssignmentPayload
+	out = &GetTestWriterAssignmentPayload{
+		ChangeID: *in.ChangeID,
+	}
+	return out, nil
+}
+
+// MarshalGetTestWriterAssignmentResult serializes *GetTestWriterAssignmentResult into JSON.
+func MarshalGetTestWriterAssignmentResult(v *GetTestWriterAssignmentResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getTestWriterAssignmentResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetTestWriterAssignmentResultTransport
+	out = &toolhttp.GetTestWriterAssignmentResultTransport{
+		ChangeID:        &in.ChangeID,
+		RequestRevision: &in.RequestRevision,
+		InForce:         &in.InForce,
+		WorkingFolder:   &in.WorkingFolder,
+	}
+	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
+	out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
+	for i, val := range in.Stories {
+		if val == nil {
+			out.Stories[i] = nil
+			continue
+		}
+		out.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+	}
+	out.RequiredTests = make([]*toolhttp.RequiredTestTransport, len(in.RequiredTests))
+	for i, val := range in.RequiredTests {
+		if val == nil {
+			out.RequiredTests[i] = nil
+			continue
+		}
+		out.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetTestWriterAssignmentResult deserializes JSON into *GetTestWriterAssignmentResult.
+func UnmarshalGetTestWriterAssignmentResult(data []byte) (*GetTestWriterAssignmentResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getTestWriterAssignmentResult JSON is empty")
+	}
+	var tv toolhttp.GetTestWriterAssignmentResultTransport
+	if err := validateGetTestWriterAssignmentResultJSON(data); err != nil {
+		return nil, invalidGetTestWriterAssignmentResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetTestWriterAssignmentResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetTestWriterAssignmentResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetTestWriterAssignmentResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetTestWriterAssignmentResult
+	out = &GetTestWriterAssignmentResult{
+		ChangeID:        *in.ChangeID,
+		RequestRevision: *in.RequestRevision,
+		InForce:         *in.InForce,
+		WorkingFolder:   *in.WorkingFolder,
+	}
+	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
+	out.Stories = make([]*StorySummaryItem, len(in.Stories))
+	for i, val := range in.Stories {
+		if val == nil {
+			out.Stories[i] = nil
+			continue
+		}
+		out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+	}
+	out.RequiredTests = make([]*RequiredTest, len(in.RequiredTests))
+	for i, val := range in.RequiredTests {
+		if val == nil {
+			out.RequiredTests[i] = nil
+			continue
+		}
+		out.RequiredTests[i] = decodeRequiredTestTransportToRequiredTest(val)
+	}
+	return out, nil
+}
+
 // MarshalGetVerificationPayload serializes *GetVerificationPayload into JSON.
 func MarshalGetVerificationPayload(v *GetVerificationPayload) ([]byte, error) {
 	if v == nil {
@@ -9426,6 +11514,90 @@ func UnmarshalInitProjectResult(data []byte) (*InitProjectResult, error) {
 	return out, nil
 }
 
+// MarshalListBuilderAssignmentsPayload serializes *ListBuilderAssignmentsPayload into JSON.
+func MarshalListBuilderAssignmentsPayload(v *ListBuilderAssignmentsPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listBuilderAssignmentsPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListBuilderAssignmentsPayloadTransport
+	out = &toolhttp.ListBuilderAssignmentsPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalListBuilderAssignmentsPayload deserializes JSON into *ListBuilderAssignmentsPayload.
+func UnmarshalListBuilderAssignmentsPayload(data []byte) (*ListBuilderAssignmentsPayload, error) {
+	if len(data) == 0 {
+		var v *ListBuilderAssignmentsPayload
+		return v, nil
+	}
+	var tv toolhttp.ListBuilderAssignmentsPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidListBuilderAssignmentsPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListBuilderAssignmentsPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *ListBuilderAssignmentsPayload
+	out = &ListBuilderAssignmentsPayload{}
+	return out, nil
+}
+
+// MarshalListBuilderAssignmentsResult serializes *ListBuilderAssignmentsResult into JSON.
+func MarshalListBuilderAssignmentsResult(v *ListBuilderAssignmentsResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listBuilderAssignmentsResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListBuilderAssignmentsResultTransport
+	out = &toolhttp.ListBuilderAssignmentsResultTransport{}
+	out.Assignments = make([]*toolhttp.BuilderAssignmentTransport, len(in.Assignments))
+	for i, val := range in.Assignments {
+		if val == nil {
+			out.Assignments[i] = nil
+			continue
+		}
+		out.Assignments[i] = encodeBuilderAssignmentToBuilderAssignmentTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalListBuilderAssignmentsResult deserializes JSON into *ListBuilderAssignmentsResult.
+func UnmarshalListBuilderAssignmentsResult(data []byte) (*ListBuilderAssignmentsResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("listBuilderAssignmentsResult JSON is empty")
+	}
+	var tv toolhttp.ListBuilderAssignmentsResultTransport
+	if err := validateListBuilderAssignmentsResultJSON(data); err != nil {
+		return nil, invalidListBuilderAssignmentsResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListBuilderAssignmentsResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateListBuilderAssignmentsResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichListBuilderAssignmentsResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ListBuilderAssignmentsResult
+	out = &ListBuilderAssignmentsResult{}
+	out.Assignments = make([]*BuilderAssignment, len(in.Assignments))
+	for i, val := range in.Assignments {
+		if val == nil {
+			out.Assignments[i] = nil
+			continue
+		}
+		out.Assignments[i] = decodeBuilderAssignmentTransportToBuilderAssignment(val)
+	}
+	return out, nil
+}
+
 // MarshalListChangesPayload serializes *ListChangesPayload into JSON.
 func MarshalListChangesPayload(v *ListChangesPayload) ([]byte, error) {
 	if v == nil {
@@ -9512,6 +11684,90 @@ func UnmarshalListChangesResult(data []byte) (*ListChangesResult, error) {
 			continue
 		}
 		out.Changes[i] = decodeChangeListItemTransportToChangeListItem(val)
+	}
+	return out, nil
+}
+
+// MarshalListTestWriterAssignmentsPayload serializes *ListTestWriterAssignmentsPayload into JSON.
+func MarshalListTestWriterAssignmentsPayload(v *ListTestWriterAssignmentsPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listTestWriterAssignmentsPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListTestWriterAssignmentsPayloadTransport
+	out = &toolhttp.ListTestWriterAssignmentsPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalListTestWriterAssignmentsPayload deserializes JSON into *ListTestWriterAssignmentsPayload.
+func UnmarshalListTestWriterAssignmentsPayload(data []byte) (*ListTestWriterAssignmentsPayload, error) {
+	if len(data) == 0 {
+		var v *ListTestWriterAssignmentsPayload
+		return v, nil
+	}
+	var tv toolhttp.ListTestWriterAssignmentsPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidListTestWriterAssignmentsPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListTestWriterAssignmentsPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *ListTestWriterAssignmentsPayload
+	out = &ListTestWriterAssignmentsPayload{}
+	return out, nil
+}
+
+// MarshalListTestWriterAssignmentsResult serializes *ListTestWriterAssignmentsResult into JSON.
+func MarshalListTestWriterAssignmentsResult(v *ListTestWriterAssignmentsResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listTestWriterAssignmentsResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListTestWriterAssignmentsResultTransport
+	out = &toolhttp.ListTestWriterAssignmentsResultTransport{}
+	out.Assignments = make([]*toolhttp.TestWriterAssignmentItemTransport, len(in.Assignments))
+	for i, val := range in.Assignments {
+		if val == nil {
+			out.Assignments[i] = nil
+			continue
+		}
+		out.Assignments[i] = encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalListTestWriterAssignmentsResult deserializes JSON into *ListTestWriterAssignmentsResult.
+func UnmarshalListTestWriterAssignmentsResult(data []byte) (*ListTestWriterAssignmentsResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("listTestWriterAssignmentsResult JSON is empty")
+	}
+	var tv toolhttp.ListTestWriterAssignmentsResultTransport
+	if err := validateListTestWriterAssignmentsResultJSON(data); err != nil {
+		return nil, invalidListTestWriterAssignmentsResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListTestWriterAssignmentsResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateListTestWriterAssignmentsResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichListTestWriterAssignmentsResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ListTestWriterAssignmentsResult
+	out = &ListTestWriterAssignmentsResult{}
+	out.Assignments = make([]*TestWriterAssignmentItem, len(in.Assignments))
+	for i, val := range in.Assignments {
+		if val == nil {
+			out.Assignments[i] = nil
+			continue
+		}
+		out.Assignments[i] = decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(val)
 	}
 	return out, nil
 }
@@ -10253,6 +12509,94 @@ func UnmarshalRefreshStoryResult(data []byte) (*RefreshStoryResult, error) {
 		}
 		out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
 	}
+	return out, nil
+}
+
+// MarshalReportTestsFinishedPayload serializes *ReportTestsFinishedPayload into JSON.
+func MarshalReportTestsFinishedPayload(v *ReportTestsFinishedPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("reportTestsFinishedPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ReportTestsFinishedPayloadTransport
+	out = &toolhttp.ReportTestsFinishedPayloadTransport{
+		ChangeID:        &in.ChangeID,
+		RequestRevision: &in.RequestRevision,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalReportTestsFinishedPayload deserializes JSON into *ReportTestsFinishedPayload.
+func UnmarshalReportTestsFinishedPayload(data []byte) (*ReportTestsFinishedPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("reportTestsFinishedPayload JSON is empty")
+	}
+	var tv toolhttp.ReportTestsFinishedPayloadTransport
+	if err := validateReportTestsFinishedPayloadJSON(data); err != nil {
+		return nil, invalidReportTestsFinishedPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidReportTestsFinishedPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateReportTestsFinishedPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichReportTestsFinishedPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ReportTestsFinishedPayload
+	out = &ReportTestsFinishedPayload{
+		ChangeID:        *in.ChangeID,
+		RequestRevision: *in.RequestRevision,
+	}
+	return out, nil
+}
+
+// MarshalReportTestsFinishedResult serializes *ReportTestsFinishedResult into JSON.
+func MarshalReportTestsFinishedResult(v *ReportTestsFinishedResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("reportTestsFinishedResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ReportTestsFinishedResultTransport
+	out = &toolhttp.ReportTestsFinishedResultTransport{
+		ChangeID:        &in.ChangeID,
+		RequestRevision: &in.RequestRevision,
+		InForce:         &in.InForce,
+	}
+	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
+	return json.Marshal(out)
+}
+
+// UnmarshalReportTestsFinishedResult deserializes JSON into *ReportTestsFinishedResult.
+func UnmarshalReportTestsFinishedResult(data []byte) (*ReportTestsFinishedResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("reportTestsFinishedResult JSON is empty")
+	}
+	var tv toolhttp.ReportTestsFinishedResultTransport
+	if err := validateReportTestsFinishedResultJSON(data); err != nil {
+		return nil, invalidReportTestsFinishedResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidReportTestsFinishedResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateReportTestsFinishedResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichReportTestsFinishedResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ReportTestsFinishedResult
+	out = &ReportTestsFinishedResult{
+		ChangeID:        *in.ChangeID,
+		RequestRevision: *in.RequestRevision,
+		InForce:         *in.InForce,
+	}
+	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
 	return out, nil
 }
 
@@ -11194,6 +13538,96 @@ func validateListChangesResultJSON(data []byte) error {
 		return err
 	}
 	return validateListChangesResultJSONValue("", root, "")
+}
+
+// validateGetBuildResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGetBuildResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGetBuildResultJSONValue("", root, "")
+}
+
+// validateListBuilderAssignmentsResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateListBuilderAssignmentsResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListBuilderAssignmentsResultJSONValue("", root, "")
+}
+
+// validateGetBuilderAssignmentPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGetBuilderAssignmentPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGetBuilderAssignmentPayloadJSONValue("", root, "")
+}
+
+// validateGetBuilderAssignmentResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGetBuilderAssignmentResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue("", root, "")
+}
+
+// validateListTestWriterAssignmentsResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateListTestWriterAssignmentsResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListTestWriterAssignmentsResultJSONValue("", root, "")
+}
+
+// validateGetTestWriterAssignmentPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGetTestWriterAssignmentPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGetTestWriterAssignmentPayloadJSONValue("", root, "")
+}
+
+// validateGetTestWriterAssignmentResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGetTestWriterAssignmentResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGetTestWriterAssignmentResultJSONValue("", root, "")
+}
+
+// validateReportTestsFinishedPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateReportTestsFinishedPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateReportTestsFinishedPayloadJSONValue("", root, "")
+}
+
+// validateReportTestsFinishedResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateReportTestsFinishedResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSONValue("", root, "")
 }
 
 // readStrictToolJSON checks the complete JSON document for malformed text and
@@ -15879,6 +18313,866 @@ func validateListChangesResultLatestVerificationItemTransportJSONValue(path stri
 	return nil
 }
 
+// validateGetBuildResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "build":
+			if err := validateGetBuildResultRootBuildJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "not_started until the user starts a build of this change; started with the build afterwards.",
+			); err != nil {
+				return err
+			}
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"build",
+				"change_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuildResultRootBuildJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultRootBuildJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	rawDiscriminator, discriminatorPresent := typed["state"]
+	discriminator, ok := rawDiscriminator.(string)
+	if !ok {
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"not_started", "started"})
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "not_started":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "started":
+		return validateGetBuildResultStartedBuildTransportJSONValue(path, branch, "")
+	default:
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"not_started", "started"})
+	}
+}
+
+// validateGetBuildResultStartedBuildTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultStartedBuildTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "builder":
+			if err := validateGetBuildResultBuilderProgressTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The builder's assignment.",
+			); err != nil {
+				return err
+			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the user built.",
+			); err != nil {
+				return err
+			}
+		case "started_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the user started this build.",
+			); err != nil {
+				return err
+			}
+		case "test_writer":
+			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The test writer's assignment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"builder",
+				"in_force",
+				"request_revision",
+				"started_at",
+				"test_writer",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuildResultBuilderProgressTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultBuilderProgressTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "read":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True once the builder read this assignment in full with get_builder_assignment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"read",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuildResultTestWriterProgressTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "read":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True once the test writer read this assignment in full with get_test_writer_assignment.",
+			); err != nil {
+				return err
+			}
+		case "tests":
+			if err := validateGetBuildResultTestWriterProgressTransportTestsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"read",
+				"tests",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuildResultTestWriterProgressTransportTestsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultTestWriterProgressTransportTestsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	rawDiscriminator, discriminatorPresent := typed["state"]
+	discriminator, ok := rawDiscriminator.(string)
+	if !ok {
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"assigned", "reported", "needs_changes", "accepted"})
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "assigned":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "reported":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "needs_changes":
+		return validateGetBuildResultTestsNeedChangesTransportJSONValue(path, branch, "")
+	case "accepted":
+		return validateGetBuildResultTestsAcceptedTransportJSONValue(path, branch, "")
+	default:
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"assigned", "reported", "needs_changes", "accepted"})
+	}
+}
+
+// validateGetBuildResultTestsNeedChangesTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultTestsNeedChangesTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "findings":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"findings",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuildResultTestsAcceptedTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultTestsAcceptedTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListBuilderAssignmentsResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListBuilderAssignmentsResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "assignments":
+			if err := validateListBuilderAssignmentsResultRootAssignmentsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"assignments",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListBuilderAssignmentsResultRootAssignmentsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListBuilderAssignmentsResultRootAssignmentsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card to build; get_change takes it.",
+			); err != nil {
+				return err
+			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "read":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True once you read this assignment in full with get_builder_assignment.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision to build; verify_change takes it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"in_force",
+				"read",
+				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuilderAssignmentPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuilderAssignmentPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier from list_builder_assignments.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListTestWriterAssignmentsResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTestWriterAssignmentsResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "assignments":
+			if err := validateListTestWriterAssignmentsResultRootAssignmentsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"assignments",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListTestWriterAssignmentsResultRootAssignmentsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTestWriterAssignmentsResultRootAssignmentsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card the tests are for; get_test_writer_assignment takes it.",
+			); err != nil {
+				return err
+			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "progress":
+			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where this assignment stands.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the tests are for.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"in_force",
+				"progress",
+				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetTestWriterAssignmentPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetTestWriterAssignmentPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier from list_test_writer_assignments.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetTestWriterAssignmentResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetTestWriterAssignmentResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card the tests are for.",
+			); err != nil {
+				return err
+			}
+		case "in_force":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "progress":
+			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where this assignment stands, including Surla's findings when it needs changes.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the tests are for; report_tests_finished takes it.",
+			); err != nil {
+				return err
+			}
+		case "required_tests":
+			if err := validateGetTestWriterAssignmentResultRootRequiredTestsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "One test per finished flow of stories, in declaration order; unfinished flows require none.",
+			); err != nil {
+				return err
+			}
+		case "stories":
+			if err := validateProposeChangeResultRootStoriesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
+			); err != nil {
+				return err
+			}
+		case "working_folder":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"in_force",
+				"progress",
+				"request_revision",
+				"required_tests",
+				"stories",
+				"working_folder",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetTestWriterAssignmentResultRootRequiredTestsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetTestWriterAssignmentResultRootRequiredTestsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateGetTestWriterAssignmentResultRequiredTestTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateGetTestWriterAssignmentResultRequiredTestTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetTestWriterAssignmentResultRequiredTestTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "flow_key":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Key of the finished flow.",
+			); err != nil {
+				return err
+			}
+		case "hook":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Hook method the test writer implements for the scenario.",
+			); err != nil {
+				return err
+			}
+		case "scenario":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Scenario name the evaluation suite declares for the flow.",
+			); err != nil {
+				return err
+			}
+		case "story":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Name of the Story the flow belongs to.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"flow_key",
+				"hook",
+				"scenario",
+				"story",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReportTestsFinishedPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReportTestsFinishedPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier from your test assignment.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "request_revision of your test assignment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
 // generatedJSONChildPath keeps fixed object fields dotted. After an array index
 // or caller-defined map key, it uses slash-separated paths so later keys stay clear.
 func generatedJSONChildPath(path, key string, useSlashPath bool) string {
@@ -16332,6 +19626,216 @@ func encodeDesignSnapshotToDesignSnapshotTransport(v *DesignSnapshot) *toolhttp.
 
 	return res
 }
+func decodeBuildNotStartedTransportToBuildNotStarted(v *toolhttp.BuildNotStartedTransport) *BuildNotStarted {
+	res := &BuildNotStarted{}
+
+	return res
+}
+func decodeStartedBuildTransportToStartedBuild(v *toolhttp.StartedBuildTransport) *StartedBuild {
+	res := &StartedBuild{
+		RequestRevision: *v.RequestRevision,
+		StartedAt:       *v.StartedAt,
+		InForce:         *v.InForce,
+	}
+	res.Builder = decodeBuilderProgressTransportToBuilderProgress(v.Builder)
+	res.TestWriter = decodeTestWriterProgressTransportToTestWriterProgress(v.TestWriter)
+
+	return res
+}
+func decodeBuilderProgressTransportToBuilderProgress(v *toolhttp.BuilderProgressTransport) *BuilderProgress {
+	res := &BuilderProgress{
+		Read: *v.Read,
+	}
+
+	return res
+}
+func decodeTestWriterProgressTransportToTestWriterProgress(v *toolhttp.TestWriterProgressTransport) *TestWriterProgress {
+	res := &TestWriterProgress{
+		Read: *v.Read,
+	}
+	switch string(v.Tests.Kind()) {
+	case "assigned":
+		actual, _ := v.Tests.AsAssigned()
+		var obj *TestsAssigned
+		if actual != nil {
+			obj = decodeTestsAssignedTransportToTestsAssigned(actual)
+		}
+		u := res.Tests
+		u.SetAssigned((*TestsAssigned)(obj))
+		res.Tests = u
+	case "reported":
+		actual, _ := v.Tests.AsReported()
+		var obj *TestsReported
+		if actual != nil {
+			obj = decodeTestsReportedTransportToTestsReported(actual)
+		}
+		u := res.Tests
+		u.SetReported((*TestsReported)(obj))
+		res.Tests = u
+	case "needs_changes":
+		actual, _ := v.Tests.AsNeedsChanges()
+		var obj *TestsNeedChanges
+		if actual != nil {
+			obj = decodeTestsNeedChangesTransportToTestsNeedChanges(actual)
+		}
+		u := res.Tests
+		u.SetNeedsChanges((*TestsNeedChanges)(obj))
+		res.Tests = u
+	case "accepted":
+		actual, _ := v.Tests.AsAccepted()
+		var obj *TestsAccepted
+		if actual != nil {
+			obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+		}
+		u := res.Tests
+		u.SetAccepted((*TestsAccepted)(obj))
+		res.Tests = u
+	}
+
+	return res
+}
+func decodeTestsAssignedTransportToTestsAssigned(v *toolhttp.TestsAssignedTransport) *TestsAssigned {
+	res := &TestsAssigned{}
+
+	return res
+}
+func decodeTestsReportedTransportToTestsReported(v *toolhttp.TestsReportedTransport) *TestsReported {
+	res := &TestsReported{}
+
+	return res
+}
+func decodeTestsNeedChangesTransportToTestsNeedChanges(v *toolhttp.TestsNeedChangesTransport) *TestsNeedChanges {
+	res := &TestsNeedChanges{}
+	res.Findings = make([]string, len(v.Findings))
+	for i, val := range v.Findings {
+		res.Findings[i] = val
+	}
+
+	return res
+}
+func decodeTestsAcceptedTransportToTestsAccepted(v *toolhttp.TestsAcceptedTransport) *TestsAccepted {
+	res := &TestsAccepted{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+func encodeBuildNotStartedToBuildNotStartedTransport(v *BuildNotStarted) *toolhttp.BuildNotStartedTransport {
+	res := &toolhttp.BuildNotStartedTransport{}
+
+	return res
+}
+func encodeStartedBuildToStartedBuildTransport(v *StartedBuild) *toolhttp.StartedBuildTransport {
+	res := &toolhttp.StartedBuildTransport{
+		RequestRevision: &v.RequestRevision,
+		StartedAt:       &v.StartedAt,
+		InForce:         &v.InForce,
+	}
+	res.Builder = encodeBuilderProgressToBuilderProgressTransport(v.Builder)
+	res.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(v.TestWriter)
+
+	return res
+}
+func encodeBuilderProgressToBuilderProgressTransport(v *BuilderProgress) *toolhttp.BuilderProgressTransport {
+	res := &toolhttp.BuilderProgressTransport{
+		Read: &v.Read,
+	}
+
+	return res
+}
+func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress) *toolhttp.TestWriterProgressTransport {
+	res := &toolhttp.TestWriterProgressTransport{
+		Read: &v.Read,
+	}
+	var testsValue toolhttp.Tests
+	switch string(v.Tests.Kind()) {
+	case "assigned":
+		actual, _ := v.Tests.AsAssigned()
+		var obj *toolhttp.TestsAssignedTransport
+		if actual != nil {
+			obj = encodeTestsAssignedToTestsAssignedTransport(actual)
+		}
+		u := testsValue
+		u.SetAssigned((*toolhttp.TestsAssignedTransport)(obj))
+		testsValue = u
+	case "reported":
+		actual, _ := v.Tests.AsReported()
+		var obj *toolhttp.TestsReportedTransport
+		if actual != nil {
+			obj = encodeTestsReportedToTestsReportedTransport(actual)
+		}
+		u := testsValue
+		u.SetReported((*toolhttp.TestsReportedTransport)(obj))
+		testsValue = u
+	case "needs_changes":
+		actual, _ := v.Tests.AsNeedsChanges()
+		var obj *toolhttp.TestsNeedChangesTransport
+		if actual != nil {
+			obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
+		}
+		u := testsValue
+		u.SetNeedsChanges((*toolhttp.TestsNeedChangesTransport)(obj))
+		testsValue = u
+	case "accepted":
+		actual, _ := v.Tests.AsAccepted()
+		var obj *toolhttp.TestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := testsValue
+		u.SetAccepted((*toolhttp.TestsAcceptedTransport)(obj))
+		testsValue = u
+	}
+	res.Tests = &testsValue
+
+	return res
+}
+func encodeTestsAssignedToTestsAssignedTransport(v *TestsAssigned) *toolhttp.TestsAssignedTransport {
+	res := &toolhttp.TestsAssignedTransport{}
+
+	return res
+}
+func encodeTestsReportedToTestsReportedTransport(v *TestsReported) *toolhttp.TestsReportedTransport {
+	res := &toolhttp.TestsReportedTransport{}
+
+	return res
+}
+func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *toolhttp.TestsNeedChangesTransport {
+	res := &toolhttp.TestsNeedChangesTransport{}
+	res.Findings = make([]string, len(v.Findings))
+	for i, val := range v.Findings {
+		res.Findings[i] = val
+	}
+
+	return res
+}
+func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *toolhttp.TestsAcceptedTransport {
+	res := &toolhttp.TestsAcceptedTransport{
+		Commit: &v.Commit,
+	}
+
+	return res
+}
+func decodeRequiredTestTransportToRequiredTest(v *toolhttp.RequiredTestTransport) *RequiredTest {
+	res := &RequiredTest{
+		Story:    *v.Story,
+		FlowKey:  *v.FlowKey,
+		Scenario: *v.Scenario,
+		Hook:     *v.Hook,
+	}
+
+	return res
+}
+func encodeRequiredTestToRequiredTestTransport(v *RequiredTest) *toolhttp.RequiredTestTransport {
+	res := &toolhttp.RequiredTestTransport{
+		Story:    &v.Story,
+		FlowKey:  &v.FlowKey,
+		Scenario: &v.Scenario,
+		Hook:     &v.Hook,
+	}
+
+	return res
+}
 func decodeVerificationRunningTransportToVerificationRunning(v *toolhttp.VerificationRunningTransport) *VerificationRunning {
 	res := &VerificationRunning{
 		StartedAt: *v.StartedAt,
@@ -16496,6 +20000,26 @@ func encodeVerificationNotCompletedToVerificationNotCompletedTransport(v *Verifi
 
 	return res
 }
+func decodeBuilderAssignmentTransportToBuilderAssignment(v *toolhttp.BuilderAssignmentTransport) *BuilderAssignment {
+	res := &BuilderAssignment{
+		ChangeID:        *v.ChangeID,
+		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
+		Read:            *v.Read,
+	}
+
+	return res
+}
+func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *toolhttp.BuilderAssignmentTransport {
+	res := &toolhttp.BuilderAssignmentTransport{
+		ChangeID:        &v.ChangeID,
+		RequestRevision: &v.RequestRevision,
+		InForce:         &v.InForce,
+		Read:            &v.Read,
+	}
+
+	return res
+}
 func decodeChangeListItemTransportToChangeListItem(v *toolhttp.ChangeListItemTransport) *ChangeListItem {
 	res := &ChangeListItem{
 		ChangeID:        *v.ChangeID,
@@ -16537,6 +20061,26 @@ func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVeri
 		RunID: &v.RunID,
 		State: &v.State,
 	}
+
+	return res
+}
+func decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(v *toolhttp.TestWriterAssignmentItemTransport) *TestWriterAssignmentItem {
+	res := &TestWriterAssignmentItem{
+		ChangeID:        *v.ChangeID,
+		RequestRevision: *v.RequestRevision,
+		InForce:         *v.InForce,
+	}
+	res.Progress = decodeTestWriterProgressTransportToTestWriterProgress(v.Progress)
+
+	return res
+}
+func encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(v *TestWriterAssignmentItem) *toolhttp.TestWriterAssignmentItemTransport {
+	res := &toolhttp.TestWriterAssignmentItemTransport{
+		ChangeID:        &v.ChangeID,
+		RequestRevision: &v.RequestRevision,
+		InForce:         &v.InForce,
+	}
+	res.Progress = encodeTestWriterProgressToTestWriterProgressTransport(v.Progress)
 
 	return res
 }

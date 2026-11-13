@@ -10,9 +10,192 @@ package http
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 
 	goa "goa.design/goa/v3/pkg"
 )
+
+// Build holds exactly one of its branch values.
+type Build struct {
+	kind       BuildKind
+	notStarted *BuildNotStartedTransport
+	started    *StartedBuildTransport
+}
+
+// BuildKind records which Build branch is selected.
+type BuildKind string
+
+const (
+	// BuildKindNotStarted identifies the not_started branch.
+	BuildKindNotStarted BuildKind = "not_started"
+	// BuildKindStarted identifies the started branch.
+	BuildKindStarted BuildKind = "started"
+)
+
+// Kind returns the selected branch.
+func (u Build) Kind() BuildKind {
+	return u.kind
+}
+
+// NewBuildNotStarted constructs Build with the not_started branch set.
+func NewBuildNotStarted(v *BuildNotStartedTransport) Build {
+	return Build{
+		kind:       BuildKindNotStarted,
+		notStarted: v,
+	}
+}
+
+// AsNotStarted returns the value when the not_started branch is selected.
+func (u Build) AsNotStarted() (_ *BuildNotStartedTransport, ok bool) {
+	if u.kind != BuildKindNotStarted {
+		return
+	}
+	return u.notStarted, true
+}
+
+// SetNotStarted selects the not_started branch and stores v.
+func (u *Build) SetNotStarted(v *BuildNotStartedTransport) {
+	*u = Build{
+		kind:       BuildKindNotStarted,
+		notStarted: v,
+	}
+}
+
+// NewBuildStarted constructs Build with the started branch set.
+func NewBuildStarted(v *StartedBuildTransport) Build {
+	return Build{
+		kind:    BuildKindStarted,
+		started: v,
+	}
+}
+
+// AsStarted returns the value when the started branch is selected.
+func (u Build) AsStarted() (_ *StartedBuildTransport, ok bool) {
+	if u.kind != BuildKindStarted {
+		return
+	}
+	return u.started, true
+}
+
+// SetStarted selects the started branch and stores v.
+func (u *Build) SetStarted(v *StartedBuildTransport) {
+	*u = Build{
+		kind:    BuildKindStarted,
+		started: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u Build) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u Build) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(BuildKindNotStarted),
+			string(BuildKindStarted),
+		})
+	case BuildKindNotStarted:
+		if u.notStarted == nil {
+			return nil, goa.MissingFieldError("value", "Build")
+		}
+		return u.notStarted, nil
+	case BuildKindStarted:
+		if u.started == nil {
+			return nil, goa.MissingFieldError("value", "Build")
+		}
+		return u.started, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(BuildKindNotStarted),
+			string(BuildKindStarted),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u Build) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("Build branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *Build) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "Build")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(BuildKindNotStarted):
+		var v *BuildNotStartedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotStarted(v)
+	case string(BuildKindStarted):
+		var v *StartedBuildTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetStarted(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "Build")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(BuildKindNotStarted),
+			string(BuildKindStarted),
+		})
+	}
+	return nil
+}
 
 // State holds exactly one of its branch values.
 type State struct {
@@ -208,6 +391,270 @@ func (u *State) UnmarshalJSON(data []byte) error {
 			string(StateKindRunning),
 			string(StateKindCompleted),
 			string(StateKindNotCompleted),
+		})
+	}
+	return nil
+}
+
+// Tests holds exactly one of its branch values.
+type Tests struct {
+	kind         TestsKind
+	assigned     *TestsAssignedTransport
+	reported     *TestsReportedTransport
+	needsChanges *TestsNeedChangesTransport
+	accepted     *TestsAcceptedTransport
+}
+
+// TestsKind records which Tests branch is selected.
+type TestsKind string
+
+const (
+	// TestsKindAssigned identifies the assigned branch.
+	TestsKindAssigned TestsKind = "assigned"
+	// TestsKindReported identifies the reported branch.
+	TestsKindReported TestsKind = "reported"
+	// TestsKindNeedsChanges identifies the needs_changes branch.
+	TestsKindNeedsChanges TestsKind = "needs_changes"
+	// TestsKindAccepted identifies the accepted branch.
+	TestsKindAccepted TestsKind = "accepted"
+)
+
+// Kind returns the selected branch.
+func (u Tests) Kind() TestsKind {
+	return u.kind
+}
+
+// NewTestsAssigned constructs Tests with the assigned branch set.
+func NewTestsAssigned(v *TestsAssignedTransport) Tests {
+	return Tests{
+		kind:     TestsKindAssigned,
+		assigned: v,
+	}
+}
+
+// AsAssigned returns the value when the assigned branch is selected.
+func (u Tests) AsAssigned() (_ *TestsAssignedTransport, ok bool) {
+	if u.kind != TestsKindAssigned {
+		return
+	}
+	return u.assigned, true
+}
+
+// SetAssigned selects the assigned branch and stores v.
+func (u *Tests) SetAssigned(v *TestsAssignedTransport) {
+	*u = Tests{
+		kind:     TestsKindAssigned,
+		assigned: v,
+	}
+}
+
+// NewTestsReported constructs Tests with the reported branch set.
+func NewTestsReported(v *TestsReportedTransport) Tests {
+	return Tests{
+		kind:     TestsKindReported,
+		reported: v,
+	}
+}
+
+// AsReported returns the value when the reported branch is selected.
+func (u Tests) AsReported() (_ *TestsReportedTransport, ok bool) {
+	if u.kind != TestsKindReported {
+		return
+	}
+	return u.reported, true
+}
+
+// SetReported selects the reported branch and stores v.
+func (u *Tests) SetReported(v *TestsReportedTransport) {
+	*u = Tests{
+		kind:     TestsKindReported,
+		reported: v,
+	}
+}
+
+// NewTestsNeedsChanges constructs Tests with the needs_changes branch set.
+func NewTestsNeedsChanges(v *TestsNeedChangesTransport) Tests {
+	return Tests{
+		kind:         TestsKindNeedsChanges,
+		needsChanges: v,
+	}
+}
+
+// AsNeedsChanges returns the value when the needs_changes branch is selected.
+func (u Tests) AsNeedsChanges() (_ *TestsNeedChangesTransport, ok bool) {
+	if u.kind != TestsKindNeedsChanges {
+		return
+	}
+	return u.needsChanges, true
+}
+
+// SetNeedsChanges selects the needs_changes branch and stores v.
+func (u *Tests) SetNeedsChanges(v *TestsNeedChangesTransport) {
+	*u = Tests{
+		kind:         TestsKindNeedsChanges,
+		needsChanges: v,
+	}
+}
+
+// NewTestsAccepted constructs Tests with the accepted branch set.
+func NewTestsAccepted(v *TestsAcceptedTransport) Tests {
+	return Tests{
+		kind:     TestsKindAccepted,
+		accepted: v,
+	}
+}
+
+// AsAccepted returns the value when the accepted branch is selected.
+func (u Tests) AsAccepted() (_ *TestsAcceptedTransport, ok bool) {
+	if u.kind != TestsKindAccepted {
+		return
+	}
+	return u.accepted, true
+}
+
+// SetAccepted selects the accepted branch and stores v.
+func (u *Tests) SetAccepted(v *TestsAcceptedTransport) {
+	*u = Tests{
+		kind:     TestsKindAccepted,
+		accepted: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u Tests) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u Tests) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(TestsKindAssigned),
+			string(TestsKindReported),
+			string(TestsKindNeedsChanges),
+			string(TestsKindAccepted),
+		})
+	case TestsKindAssigned:
+		if u.assigned == nil {
+			return nil, goa.MissingFieldError("value", "Tests")
+		}
+		return u.assigned, nil
+	case TestsKindReported:
+		if u.reported == nil {
+			return nil, goa.MissingFieldError("value", "Tests")
+		}
+		return u.reported, nil
+	case TestsKindNeedsChanges:
+		if u.needsChanges == nil {
+			return nil, goa.MissingFieldError("value", "Tests")
+		}
+		return u.needsChanges, nil
+	case TestsKindAccepted:
+		if u.accepted == nil {
+			return nil, goa.MissingFieldError("value", "Tests")
+		}
+		return u.accepted, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(TestsKindAssigned),
+			string(TestsKindReported),
+			string(TestsKindNeedsChanges),
+			string(TestsKindAccepted),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u Tests) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("Tests branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *Tests) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "Tests")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(TestsKindAssigned):
+		var v *TestsAssignedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAssigned(v)
+	case string(TestsKindReported):
+		var v *TestsReportedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetReported(v)
+	case string(TestsKindNeedsChanges):
+		var v *TestsNeedChangesTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNeedsChanges(v)
+	case string(TestsKindAccepted):
+		var v *TestsAcceptedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAccepted(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "Tests")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(TestsKindAssigned),
+			string(TestsKindReported),
+			string(TestsKindNeedsChanges),
+			string(TestsKindAccepted),
 		})
 	}
 	return nil
