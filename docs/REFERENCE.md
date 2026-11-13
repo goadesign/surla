@@ -491,7 +491,7 @@ arguments, a fresh ownership check and an unread assignment or a watcher gone
 past the grace period. No reminder is eligible in the first 90 seconds after
 server start. Unknown facts never authorize input. Missing foreground information
 continues to count as running for pane safety, but cannot authorize a reminder.
-Surla never reads screen text or retains status messages or titles. Supervision
+Supervision never reads screen text or retains status messages or titles,
 issues no explicit service-start command and never takes focus without a user action.
 
 At startup, `ANTHROPIC_API_KEY` selects Anthropic with `claude-sonnet-4-6`; otherwise `OPENAI_API_KEY` selects OpenAI with `gpt-5.4-mini`.
@@ -517,6 +517,24 @@ server reports the failure and starts nothing. A free lock makes an old running
 record stale; a start removes it before launching. A held lock with no record
 waits within the command's deadline and sends nothing. A taken saved port reports
 an error and starts nothing.
+
+When the server's Herdr terminal ends before the server answers, for example
+because the server cannot read its saved settings or bind its port, Surla reads
+what that terminal printed, then removes the terminal. The error says the server
+stopped while starting and shows its last lines, where the server's own error
+is: at most 20 lines and 4 KiB, keeping the end, with escape sequences and
+control characters removed. For example:
+
+```text
+surla: the project server stopped while starting, and its last lines were:
+  surla: project port is occupied: listen tcp 127.0.0.1:52011: bind: address already in use
+```
+
+If the terminal's output cannot be read or holds no printable text, the error
+keeps the original failure and says the output could not be read. A server
+whose terminal is still running but has not answered within the command's
+deadline keeps its terminal, and the error names that Herdr terminal so you can
+look at the server's output there.
 
 `surla stop` requests authenticated ordered shutdown. Before its listener closes,
 the server permanently revokes its management credential and withdraws its
