@@ -42,6 +42,10 @@ type projectRuntime struct {
 	removeTerminal func(context.Context, string) error
 	// listen binds only the saved project address; tests observe the actual close boundary.
 	listen func(string, string) (net.Listener, error)
+	// teamDependencies binds the server login environment and accepted-work lifetime.
+	teamDependencies func(context.Context) (project.TeamDependencies, error)
+	// startTeamPrograms starts absent desktop/service dependencies after server readiness.
+	startTeamPrograms func(context.Context) error
 }
 
 // ownedProjectListener ends management authority before every underlying listener close,
@@ -59,7 +63,25 @@ type ownedProjectListener struct {
 func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
 		configRoot: os.UserConfigDir,
-		preflight:  func() error { return preflightProjectStart(projectHerdrProgram) },
+		preflight: func() error {
+			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			if err != nil {
+				return err
+			}
+			if err := preflightTeam(commands); err != nil {
+				return err
+			}
+			return preflightProjectStart(projectHerdrProgram)
+		},
+		teamDependencies: projectTeamDependencies,
+		startTeamPrograms: func(ctx context.Context) error {
+			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			if err != nil {
+				return err
+			}
+			commands.start = startDetachedTeamProgram
+			return startTeamPrograms(ctx, commands)
+		},
 		startTerminal: func(ctx context.Context, state *project.State) (string, error) {
 			return startProjectTerminal(ctx, state, projectHerdrProgram)
 		},
@@ -118,6 +140,26 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 	}
 	if created {
 		err = errors.Join(err, writeProjectCreatedNotice(stdout))
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := runtime.startTeamPrograms(context.Background()); err != nil {
+		return err
+	}
+	teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
+	defer stopTeam()
+	team, err := client.EnsureTeam(teamCtx)
+	if err != nil {
+		return err
+	}
+	if team.Dialog == "already_open" {
+		_, err = fmt.Fprintf(stdout, "Team %s.\nThe Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again\n", team.Team)
+	} else if team.Dialog == "not_needed" {
+		_, err = fmt.Fprintf(stdout, "Team %s is running.\n", team.Team)
+	} else {
+		_, err = fmt.Fprintf(stdout, "Team %s: choose an agent in the open Chorus dialog in Herdr.\n", team.Team)
 	}
 	if err != nil {
 		return err
@@ -306,7 +348,11 @@ func (runtime projectRuntime) serve() (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	management, err := project.NewServer(state, stop)
+	team, err := runtime.teamDependencies(ctx)
+	if err != nil {
+		return errors.Join(err, listener.Close())
+	}
+	management, err := project.NewServer(state, stop, team)
 	if err != nil {
 		return errors.Join(err, listener.Close())
 	}
@@ -389,12 +435,25 @@ func projectClient(state *project.State) *genproject.Client {
 	client := projectHTTPClient()
 	return genproject.NewClient(
 		managementEndpoint(state, client, (*genprojectclient.Client).Identity),
+		teamManagementEndpoint(state),
 		managementEndpoint(state, client, (*genprojectclient.Client).Stop),
 		managementEndpoint(state, client, (*genprojectclient.Client).AddAgent),
 		managementEndpoint(state, client, (*genprojectclient.Client).RemoveAgent),
 		managementEndpoint(state, client, (*genprojectclient.Client).BrowserLink),
 		managementEndpoint(state, client, (*genprojectclient.Client).ExchangeBrowserLink),
 	)
+}
+
+// teamManagementEndpoint gives only the team request's deadline its own concrete recovery step.
+func teamManagementEndpoint(state *project.State) goa.Endpoint {
+	next := managementEndpoint(state, teamHTTPClient(), (*genprojectclient.Client).EnsureTeam)
+	return func(ctx context.Context, payload any) (any, error) {
+		result, err := next(ctx, payload)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("project team request did not finish; check Herdr, then run surla again: %w", context.DeadlineExceeded)
+		}
+		return result, err
+	}
 }
 
 // managementEndpoint preserves generated transport behavior without printing peer-authored
@@ -423,11 +482,22 @@ func managementEndpoint(
 		}
 		var responseErr *goahttp.ClientError
 		if errors.As(err, &responseErr) && responseErr.Name == "invalid_response" {
+			if responseErr.Method == "ensure_team" && doer.lastStatus == http.StatusNotFound {
+				return nil, errors.New("this project’s server was started by another version; run surla stop, then surla")
+			}
 			return nil, goahttp.ErrInvalidResponse(responseErr.Service, responseErr.Method, doer.lastStatus, "")
+		}
+		var spaceConflict *genproject.TeamSpaceConflict
+		if errors.As(err, &spaceConflict) {
+			return nil, fmt.Errorf("%d Herdr spaces match this project; close duplicate spaces and run surla again (HTTP %d)", spaceConflict.Count, doer.lastStatus)
 		}
 		var serviceErr *goa.ServiceError
 		if errors.As(err, &serviceErr) {
 			switch serviceErr.Name {
+			case "window_busy":
+				return nil, fmt.Errorf("a dialog is open in Herdr; close it, then run surla again (HTTP %d)", doer.lastStatus)
+			case "team_unavailable":
+				return nil, fmt.Errorf("project team could not be prepared; check Herdr and run surla again (HTTP %d)", doer.lastStatus)
 			case "forbidden":
 				return nil, fmt.Errorf("project management operation is not permitted (HTTP %d); run surla again", doer.lastStatus)
 			case "conflict":
@@ -456,6 +526,13 @@ func projectHTTPClient() *http.Client {
 	}
 }
 
+// teamHTTPClient gives only the bounded team operation enough time for desktop commands.
+func teamHTTPClient() *http.Client {
+	client := projectHTTPClient()
+	client.Timeout = 50 * time.Second
+	return client
+}
+
 // managementDoer reads current authority per request and allows only one retry after
 // an explicit refusal and a changed credential. It never retries an unchanged credential.
 type managementDoer struct {
@@ -467,6 +544,7 @@ type managementDoer struct {
 	localErr error
 }
 
+// Do reads authority before opening a fresh connection for this invocation.
 func (d *managementDoer) Do(r *http.Request) (*http.Response, error) {
 	running, err := waitForRunning(r.Context(), d.state)
 	if err != nil {

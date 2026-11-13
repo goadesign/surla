@@ -20,7 +20,7 @@ func TestManagementLifetime(t *testing.T) {
 	state := testState(t)
 	_, err := os.Stat(filepath.Join(state.Dir, "management"))
 	assert.ErrorIs(t, err, os.ErrNotExist)
-	first, err := NewServer(state, func() {})
+	first, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
 	require.NoError(t, first.PublishRunning(os.Getpid(), "test"))
 	original, err := state.ReadRunning()
@@ -53,7 +53,7 @@ func TestManagementLifetime(t *testing.T) {
 	_, err = first.Authenticate(request)
 	assert.Error(t, err, "disk replacement cannot undo revocation")
 
-	second, err := NewServer(state, func() {})
+	second, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
 	require.NoError(t, second.PublishRunning(os.Getpid(), "test"))
 	current, err := state.ReadRunning()

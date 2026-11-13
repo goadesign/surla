@@ -131,6 +131,172 @@ func DecodeIdentityResponse(decoder func(*http.Response) goahttp.Decoder, restor
 	}
 }
 
+// BuildEnsureTeamRequest instantiates a HTTP request object with method and
+// path set to call the "project" service "ensure_team" endpoint
+func (c *Client) BuildEnsureTeamRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: EnsureTeamProjectPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("project", "ensure_team", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeEnsureTeamResponse returns a decoder for responses returned by the
+// project ensure_team endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeEnsureTeamResponse may return the following errors:
+//   - "window_busy" (type *goa.ServiceError): http.StatusConflict
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "ambiguous_space" (type *project.TeamSpaceConflict): http.StatusConflict
+//   - "team_unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - error: internal error
+func DecodeEnsureTeamResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("project", "ensure_team", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body EnsureTeamResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			err = ValidateEnsureTeamResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+			}
+			res := NewEnsureTeamProjectTeamOK(&body)
+			return res, nil
+		case http.StatusConflict:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "window_busy":
+				var (
+					body EnsureTeamWindowBusyResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+				}
+				err = ValidateEnsureTeamWindowBusyResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+				}
+				return nil, NewEnsureTeamWindowBusy(&body)
+			case "conflict":
+				var (
+					body EnsureTeamConflictResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+				}
+				err = ValidateEnsureTeamConflictResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+				}
+				return nil, NewEnsureTeamConflict(&body)
+			case "ambiguous_space":
+				var (
+					body EnsureTeamAmbiguousSpaceResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+				}
+				err = ValidateEnsureTeamAmbiguousSpaceResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+				}
+				return nil, NewEnsureTeamAmbiguousSpace(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("project", "ensure_team", resp.StatusCode, string(body))
+			}
+		case http.StatusServiceUnavailable:
+			var (
+				body EnsureTeamTeamUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			err = ValidateEnsureTeamTeamUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+			}
+			return nil, NewEnsureTeamTeamUnavailable(&body)
+		case http.StatusForbidden:
+			var (
+				body EnsureTeamForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			err = ValidateEnsureTeamForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+			}
+			return nil, NewEnsureTeamForbidden(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body EnsureTeamUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			err = ValidateEnsureTeamUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+			}
+			return nil, NewEnsureTeamUnprocessable(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("project", "ensure_team", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildStopRequest instantiates a HTTP request object with method and path set
 // to call the "project" service "stop" endpoint
 func (c *Client) BuildStopRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -703,4 +869,17 @@ func DecodeExchangeBrowserLinkResponse(decoder func(*http.Response) goahttp.Deco
 			return nil, goahttp.ErrInvalidResponse("project", "exchange_browser_link", resp.StatusCode, string(body))
 		}
 	}
+}
+
+// unmarshalProjectTeamRoleResponseBodyToProjectProjectTeamRole builds a value
+// of type *project.ProjectTeamRole from a value of type
+// *ProjectTeamRoleResponseBody.
+func unmarshalProjectTeamRoleResponseBodyToProjectProjectTeamRole(v *ProjectTeamRoleResponseBody) *project.ProjectTeamRole {
+	res := &project.ProjectTeamRole{
+		Role:    *v.Role,
+		Handle:  *v.Handle,
+		Running: *v.Running,
+	}
+
+	return res
 }

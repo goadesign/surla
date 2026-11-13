@@ -19,11 +19,35 @@ var ProjectAgent = Type("ProjectAgent", func() {
 	Required("actor_id", "role", "credential_file")
 })
 
+// ProjectTeamRole is the observed state of one server-owned role.
+var ProjectTeamRole = Type("ProjectTeamRole", func() {
+	Attribute("role", String, "Trusted role.", func() { Enum("guide", "builder", "test_writer") })
+	Attribute("handle", String, "Stable Chorus handle and Surla actor identity.")
+	Attribute("running", Boolean, "The matching live terminal is not reported as an idle shell; missing foreground information counts as running.")
+	Required("role", "handle", "running")
+})
+
+// ProjectTeam describes the server-owned team and the launcher's visible state.
+var ProjectTeam = Type("ProjectTeam", func() {
+	Attribute("team", String, "Stable Chorus team name.", func() { Pattern("^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$") })
+	Attribute("space", String, "Local Herdr space identifier.")
+	Attribute("roles", ArrayOf(ProjectTeamRole))
+	Attribute("dialog", String, "Launcher state after ensuring the team.", func() { Enum("opened", "already_open", "not_needed") })
+	Required("team", "space", "roles", "dialog")
+})
+
+// TeamSpaceConflict carries a safe count independently of peer-authored error messages.
+var TeamSpaceConflict = Type("TeamSpaceConflict", func() {
+	Attribute("name", String, "Error name.", func() { Meta("struct:error:name") })
+	Attribute("count", Int, "Number of local spaces matching the team's name and physical folder.", func() { Minimum(2) })
+	Required("name", "count")
+})
+
 var _ = Service("project", func() {
 	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.")
 	Error("forbidden", ErrorResult, "The trusted credential cannot perform this operation.")
 	Error("unprocessable", ErrorResult, "The requested credential exchange or agent does not exist or is invalid.")
-	Error("conflict", ErrorResult, "An agent with this identifier already exists.")
+	Error("conflict", ErrorResult, "An agent with this identifier or trusted role already exists.")
 	HTTP(func() {
 		Path("/project")
 		Response("forbidden", StatusForbidden)
@@ -35,12 +59,26 @@ var _ = Service("project", func() {
 		Result(ProjectIdentity)
 		HTTP(func() { GET("/identity"); Response(StatusOK) })
 	})
+	Method("ensure_team", func() {
+		Description("The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.")
+		Result(ProjectTeam)
+		Error("ambiguous_space", TeamSpaceConflict, "Several local spaces match the team name and folder; choose one before retrying.")
+		Error("window_busy", ErrorResult, "Another Herdr dialog is open; close it and run surla again.")
+		Error("team_unavailable", ErrorResult, "A bounded Herdr operation or roster write failed; run surla again.")
+		HTTP(func() {
+			POST("/team")
+			Response(StatusOK)
+			Response("ambiguous_space", StatusConflict)
+			Response("window_busy", StatusConflict)
+			Response("team_unavailable", StatusServiceUnavailable)
+		})
+	})
 	Method("stop", func() {
 		Description("The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.")
 		HTTP(func() { POST("/stop"); Response(StatusAccepted) })
 	})
 	Method("add_agent", func() {
-		Description("The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.")
+		Description("The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.")
 		Payload(func() {
 			Attribute("actor_id", String, "Agent identifier.", func() { Pattern("^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$") })
 			Attribute("role", String, "Agent purpose.", func() { Enum("guide", "builder", "test_writer") })

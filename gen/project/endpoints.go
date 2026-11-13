@@ -16,6 +16,7 @@ import (
 // Endpoints wraps the "project" service endpoints.
 type Endpoints struct {
 	Identity            goa.Endpoint
+	EnsureTeam          goa.Endpoint
 	Stop                goa.Endpoint
 	AddAgent            goa.Endpoint
 	RemoveAgent         goa.Endpoint
@@ -27,6 +28,7 @@ type Endpoints struct {
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
 		Identity:            NewIdentityEndpoint(s),
+		EnsureTeam:          NewEnsureTeamEndpoint(s),
 		Stop:                NewStopEndpoint(s),
 		AddAgent:            NewAddAgentEndpoint(s),
 		RemoveAgent:         NewRemoveAgentEndpoint(s),
@@ -38,6 +40,7 @@ func NewEndpoints(s Service) *Endpoints {
 // Use applies the given middleware to all the "project" service endpoints.
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Identity = m(e.Identity)
+	e.EnsureTeam = m(e.EnsureTeam)
 	e.Stop = m(e.Stop)
 	e.AddAgent = m(e.AddAgent)
 	e.RemoveAgent = m(e.RemoveAgent)
@@ -50,6 +53,14 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 func NewIdentityEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		return s.Identity(ctx)
+	}
+}
+
+// NewEnsureTeamEndpoint returns an endpoint function that calls the method
+// "ensure_team" of service "project".
+func NewEnsureTeamEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.EnsureTeam(ctx)
 	}
 }
 

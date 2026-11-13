@@ -24,7 +24,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"project (identity|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
+		"project (identity|ensure-team|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
 		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
@@ -68,6 +68,8 @@ func ParseEndpoint(
 		projectFlags = flag.NewFlagSet("project", flag.ContinueOnError)
 
 		projectIdentityFlags = flag.NewFlagSet("identity", flag.ExitOnError)
+
+		projectEnsureTeamFlags = flag.NewFlagSet("ensure-team", flag.ExitOnError)
 
 		projectStopFlags = flag.NewFlagSet("stop", flag.ExitOnError)
 
@@ -208,6 +210,7 @@ func ParseEndpoint(
 
 	projectFlags.Usage = projectUsage
 	projectIdentityFlags.Usage = projectIdentityUsage
+	projectEnsureTeamFlags.Usage = projectEnsureTeamUsage
 	projectStopFlags.Usage = projectStopUsage
 	projectAddAgentFlags.Usage = projectAddAgentUsage
 	projectRemoveAgentFlags.Usage = projectRemoveAgentUsage
@@ -286,6 +289,9 @@ func ParseEndpoint(
 			switch epn {
 			case "identity":
 				epf = projectIdentityFlags
+
+			case "ensure-team":
+				epf = projectEnsureTeamFlags
 
 			case "stop":
 				epf = projectStopFlags
@@ -429,6 +435,8 @@ func ParseEndpoint(
 			switch epn {
 			case "identity":
 				endpoint = c.Identity()
+			case "ensure-team":
+				endpoint = c.EnsureTeam()
 			case "stop":
 				endpoint = c.Stop()
 			case "add-agent":
@@ -549,8 +557,9 @@ func projectUsage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] project COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
 	fmt.Fprintln(os.Stderr, `    identity: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
+	fmt.Fprintln(os.Stderr, `    ensure-team: The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.`)
 	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.`)
-	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
 	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
 	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
 	fmt.Fprintln(os.Stderr, `    exchange-browser-link: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
@@ -572,6 +581,22 @@ func projectIdentityUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project identity")
+}
+
+func projectEnsureTeamUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project ensure-team", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project ensure-team")
 }
 
 func projectStopUsage() {
@@ -598,7 +623,7 @@ func projectAddAgentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+	fmt.Fprintln(os.Stderr, `The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)

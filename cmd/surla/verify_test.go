@@ -341,6 +341,7 @@ func projectDispatchRuntime(t *testing.T) projectRuntime {
 	t.Helper()
 	root := t.TempDir()
 	runtime := testProjectRuntimeAt(root)
+	bindFixtureTeamEffects(&runtime)
 	runtime.preflight = func() error { return nil }
 	runtime.waitTerminal = func(ctx context.Context, id string) (bool, error) { <-ctx.Done(); return false, nil }
 	starts, opens := 0, 0
@@ -355,7 +356,7 @@ func projectDispatchRuntime(t *testing.T) projectRuntime {
 		if err != nil {
 			return "", err
 		}
-		management, err := project.NewServer(state, func() {})
+		management, err := project.NewServer(state, func() {}, fixtureTeamDependencies(state))
 		require.NoError(t, err)
 		require.NoError(t, management.PublishRunning(os.Getpid(), "stand-in"))
 		server := &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
@@ -385,5 +386,8 @@ func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
 	_, err = runtime.startTerminal(t.Context(), nil)
 	require.ErrorContains(t, err, "cannot start real")
 	require.ErrorContains(t, runtime.openViews(t.Context(), "unused"), "cannot open real")
+	require.ErrorContains(t, runtime.startTeamPrograms(t.Context()), "cannot start real team")
+	_, err = runtime.teamDependencies(t.Context())
+	require.ErrorContains(t, err, "cannot resolve or change real project teams")
 	require.ErrorContains(t, run(nil, io.Discard), "cannot start real")
 }

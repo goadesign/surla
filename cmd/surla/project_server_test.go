@@ -43,7 +43,7 @@ func TestProjectStartSerializesAndRecovers(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		management, err := project.NewServer(state, func() {})
+		management, err := project.NewServer(state, func() {}, fixtureTeamDependencies(state))
 		if err != nil {
 			return "", err
 		}

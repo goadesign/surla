@@ -47,7 +47,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cp.Close()) })
-	server, err := NewServer(state, func() {})
+	server, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
 	api := httptest.NewUnstartedServer(server.Handler(controlplane.NewHTTPHandler(cp, server.Authenticate)))
 	require.NoError(t, api.Listener.Close())
@@ -229,6 +229,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 				for _, managementCall := range []struct{ method, path, body string }{
 					{http.MethodGet, "/project/identity", ""},
 					{http.MethodPost, "/project/stop", ""},
+					{http.MethodPost, "/project/team", ""},
 					{http.MethodPost, "/project/agents", `{"actor_id":"injected","role":"guide"}`},
 					{http.MethodDelete, "/project/agents/guide", ""},
 					{http.MethodPost, "/project/browser-link", ""},
@@ -304,7 +305,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 		})
 	}
 	// Restart discards user sessions while keeping the agent file and role.
-	fresh, err := NewServer(state, func() {})
+	fresh, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
 	oldSession := httptest.NewRequest(http.MethodGet, state.Origin()+"/changes/change", nil)
 	oldSession.Header.Set("Authorization", "Bearer "+session.Session)
@@ -336,7 +337,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 // TestBrowserLinkExpiryAndDiscovery proves path aliases and nearest parent project records select one identity.
 func TestBrowserLinkExpiryAndDiscovery(t *testing.T) {
 	state := testState(t)
-	server, err := NewServer(state, func() {})
+	server, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
 	management := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
 	now := time.Now()
@@ -377,7 +378,7 @@ func testState(t *testing.T) *State {
 }
 func testClient(state *State, client *http.Client, token string, browser bool) *genproject.Client {
 	transport := genprojectclient.NewClient("http", state.Address(), headerDoer{client: client, token: token, browser: browser}, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	return genproject.NewClient(transport.Identity(), transport.Stop(), transport.AddAgent(), transport.RemoveAgent(), transport.BrowserLink(), transport.ExchangeBrowserLink())
+	return genproject.NewClient(transport.Identity(), transport.EnsureTeam(), transport.Stop(), transport.AddAgent(), transport.RemoveAgent(), transport.BrowserLink(), transport.ExchangeBrowserLink())
 }
 func testRequest(t *testing.T, client *http.Client, method, target, body, token string, browser bool) *http.Response {
 	t.Helper()

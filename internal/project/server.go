@@ -34,6 +34,8 @@ type (
 		links map[string]time.Time
 		// sessions maps random session credentials to separately generated attribution caller IDs.
 		sessions map[string]string
+		// team owns serialized, bounded team effects.
+		team teamOperation
 		// now supplies the link-expiration clock; tests replace it deterministically.
 		now func() time.Time
 	}
@@ -41,13 +43,17 @@ type (
 
 // NewServer creates fresh management authority for one server lifetime.
 // The caller publishes it only after binding the listener and revokes it before closing that listener.
-func NewServer(state *State, stop func()) (*Server, error) {
+func NewServer(state *State, stop func(), team TeamDependencies) (*Server, error) {
+	if team.Lifetime == nil || team.Host == nil || team.TestWriterFolder == nil || !filepath.IsAbs(team.RosterDirectory) {
+		return nil, errors.New("project server requires team lifetime, host, test-writer folder reader and absolute roster directory")
+	}
 	credential, err := randomCredential()
 	if err != nil {
 		return nil, err
 	}
 	return &Server{
 		state:      state,
+		team:       teamOperation{dependencies: team},
 		stop:       stop,
 		management: credential,
 		links:      map[string]time.Time{},
@@ -177,15 +183,25 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// AddAgent publishes a credential file and its immutable role as one admitted management operation.
+// AddAgent publishes one credential per trusted role as one admitted management operation.
 func (s *Server) AddAgent(ctx context.Context, p *genproject.AddAgentPayload) (*genproject.ProjectAgent, error) {
 	if err := managementOnly(ctx, "add_agent"); err != nil {
 		return nil, err
 	}
+	return s.addAgent(p)
+}
+
+// addAgent admits one validated actor after its owning workflow has authorized entry.
+func (s *Server) addAgent(p *genproject.AddAgentPayload) (*genproject.ProjectAgent, error) {
 	s.state.mu.Lock()
 	defer s.state.mu.Unlock()
 	if _, exists := s.state.Record.Agents[p.ActorID]; exists {
 		return nil, genproject.MakeConflict(errors.New("agent already exists"))
+	}
+	for _, role := range s.state.Record.Agents {
+		if role == p.Role {
+			return nil, genproject.MakeConflict(errors.New("an agent already owns this role"))
+		}
 	}
 	token, err := randomCredential()
 	if err != nil {

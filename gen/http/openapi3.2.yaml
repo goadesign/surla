@@ -6579,7 +6579,7 @@ paths:
             tags:
                 - project
             summary: add_agent project
-            description: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.
+            description: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.
             operationId: project#add_agent
             requestBody:
                 description: Request body for add_agent.
@@ -6616,7 +6616,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6676,7 +6676,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6732,7 +6732,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6796,7 +6796,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6853,7 +6853,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6902,7 +6902,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6925,6 +6925,86 @@ paths:
                                 id: 123abc
                                 message: parameter 'p' must be an integer
                                 name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/team:
+        post:
+            tags:
+                - project
+            summary: ensure_team project
+            description: The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.
+            operationId: project#ensure_team
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectTeam'
+                            example:
+                                dialog: not_needed
+                                roles:
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                space: Ut et aut a tempora possimus.
+                                team: P
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "503":
+                    description: 'team_unavailable: A bounded Herdr operation or roster write failed; run surla again.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: team_unavailable
                                 temporary: false
                                 timeout: false
     /sandbox/draft:
@@ -12639,6 +12719,86 @@ components:
                 - project_id
                 - directory
                 - owner
+        ProjectTeam:
+            type: object
+            properties:
+                dialog:
+                    type: string
+                    description: Launcher state after ensuring the team.
+                    example: not_needed
+                    enum:
+                        - opened
+                        - already_open
+                        - not_needed
+                roles:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ProjectTeamRole'
+                    example:
+                        - handle: Quo a est cumque quae quod velit.
+                          role: builder
+                          running: true
+                        - handle: Quo a est cumque quae quod velit.
+                          role: builder
+                          running: true
+                        - handle: Quo a est cumque quae quod velit.
+                          role: builder
+                          running: true
+                space:
+                    type: string
+                    description: Local Herdr space identifier.
+                    example: Ut et aut a tempora possimus.
+                team:
+                    type: string
+                    description: Stable Chorus team name.
+                    example: P
+                    pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$
+            example:
+                dialog: not_needed
+                roles:
+                    - handle: Quo a est cumque quae quod velit.
+                      role: builder
+                      running: true
+                    - handle: Quo a est cumque quae quod velit.
+                      role: builder
+                      running: true
+                    - handle: Quo a est cumque quae quod velit.
+                      role: builder
+                      running: true
+                space: Ut et aut a tempora possimus.
+                team: P
+            required:
+                - team
+                - space
+                - roles
+                - dialog
+        ProjectTeamRole:
+            type: object
+            properties:
+                handle:
+                    type: string
+                    description: Stable Chorus handle and Surla actor identity.
+                    example: Quo a est cumque quae quod velit.
+                role:
+                    type: string
+                    description: Trusted role.
+                    example: builder
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+                running:
+                    type: boolean
+                    description: The matching live terminal is not reported as an idle shell; missing foreground information counts as running.
+                    example: true
+            example:
+                handle: Quo a est cumque quae quod velit.
+                role: builder
+                running: true
+            required:
+                - role
+                - handle
+                - running
         ProposeChangePayload:
             type: object
             properties:
@@ -15038,6 +15198,25 @@ components:
                 - name
                 - actors
                 - flows
+        TeamSpaceConflict:
+            type: object
+            properties:
+                count:
+                    type: integer
+                    description: Number of local spaces matching the team's name and physical folder.
+                    example: 5186046670494698814
+                    format: int64
+                    minimum: 2
+                name:
+                    type: string
+                    description: Error name.
+                    example: Distinctio aperiam facere quia sed.
+            example:
+                count: 5186046670494698814
+                name: Distinctio aperiam facere quia sed.
+            required:
+                - name
+                - count
         TestWriterAssignment:
             type: object
             properties:

@@ -289,8 +289,76 @@ Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum
 ### `surla` and `surla stop`
 
 Run `surla` in a project folder to start or attach to its server and open the
-views page. Install Herdr `hc` with `curl -fsSL https://releases.herdr.dev/core/install.sh | sh` ([official instructions](https://herdr.dev/core/)). The server runs in its own parentless
+views page and prepare its guide team in Herdr. Before creating state or starting
+anything, Surla requires `herdr-core`, `herdr-app`, Chorus v0.11.0 or newer, and
+the platform browser opener. Missing programs name their install command; an
+older Chorus names `chorus update -yes`. Install
+[Herdr core](https://herdr.dev/core/) with
+`curl -fsSL https://releases.herdr.dev/core/install.sh | sh`, the
+[Herdr app](https://herdr.dev/) with
+`curl -fsSL https://releases.herdr.dev/app/install.sh | sh`, and
+[Chorus](https://github.com/goadesign/chorus) with
+`curl -fsSL https://raw.githubusercontent.com/goadesign/chorus/main/scripts/install.sh | sh`.
+The server runs in its own parentless
 Herdr terminal, so closing the initiating terminal leaves it running.
+
+After the server answers, Surla starts an absent Chorus service and Herdr window
+in separate sessions without inherited output pipes. Each dependency has its
+own bounded readiness check; timing out stops polling and leaves the user's
+service or window running. Team preparation has a separate deadline. The server
+owns the stable team name, per-role
+handles, Herdr space, and complete atomic launcher roster. The roster lives at
+`<HERDR_APP_HOME>/data/chorus-launcher/rosters/<space>.json` (Herdr's default
+home is `~/.config/herdr-app`) and contains credential file paths, never tokens.
+The server uses its login environment to resolve Herdr when preparing the team;
+Chorus and Herdr need not be on that environment's PATH for the server to start
+or for other management operations. The roster home also comes from the
+server's login environment. It contains only roles whose working folders exist;
+existing role entries require valid credential files. Each trusted role has at most
+one agent; registering another actor for an occupied role returns `conflict`.
+Missing working folders are omitted from the launcher and reported as not
+running; they do not by themselves open the launcher.
+Starting again reuses the guide and saved space. If a space was closed, the
+server adopts exactly one local space matching its team name and physical
+folder, creates one if none matches, and refuses duplicates with their count.
+It removes only its own roster for a replaced space.
+
+When any role listed in the roster is missing or its pane holds only an idle
+shell, Surla focuses this project's space and opens the Chorus launcher so the
+user can choose an agent and model. A running guide with a listed builder
+whose pane is not running still opens the launcher. Surla reads open dialog
+names before changing the window. An already open launcher stays open and keeps its captured project; choose agents there only
+if it is for this project, otherwise close it and run Surla again. Another
+open dialog must be closed before retrying. If this project has no saved or
+matching space and any dialog is open, startup refuses without creating a
+space, adding an agent, or saving team state. When every listed role is running,
+no new dialog opens. Surla prints the team and launcher state, then opens its
+views page. The guide works through the Story and change with the user; only the user confirms and approves
+on the page. Starting a team does not require Git.
+
+<a id="idle-shell"></a>
+
+**Idle shell detection.** Surla treats a foreground program as an *idle shell*
+when both conditions hold:
+
+- Its executable basename, with leading dashes removed, is `sh`, `bash`, `zsh`,
+  `fish`, `dash`, `ksh`, `csh`, `tcsh`, `nu`, `pwsh`, `xonsh`, or `elvish`, or is
+  the basename of the user's own `$SHELL`, with leading dashes removed.
+- Neither of the first two arguments after the program is `-c` or a
+  single-dash flag group containing `c`, such as `-lic`.
+
+A shell wrapper with such a command flag counts as running. A live pane with
+unreported foreground information also counts as running.
+
+The HTTP-only `POST /project/team` management operation (`ensure_team`) takes
+no input. It returns `team`, `space`, `roles` (role, handle, running), and
+`dialog` (`opened`, `already_open`, or `not_needed`). Browser sessions and
+agents cannot call it, and it is absent from MCP discovery. Its accepted work
+has a bounded server lifetime independent of client disconnects. Named errors
+include `ambiguous_space` with its numeric count, `window_busy`, and
+`team_unavailable`; the CLI supplies its own messages without printing peer
+error text. If the answering project server lacks this operation, Surla tells
+you to run `surla stop`, then `surla`, to start the current server version.
 
 At startup, `ANTHROPIC_API_KEY` selects Anthropic with `claude-sonnet-4-6`; otherwise `OPENAI_API_KEY` selects OpenAI with `gpt-5.4-mini`.
 

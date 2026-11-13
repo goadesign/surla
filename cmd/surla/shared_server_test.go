@@ -501,7 +501,7 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	require.NoError(t, err)
 	require.NoError(t, lock.Close())
 	if _, exists := state.Record.Agents["guide"]; !exists {
-		server, err := project.NewServer(state, func() {})
+		server, err := project.NewServer(state, func() {}, fixtureTeamDependencies(state))
 		require.NoError(t, err)
 		_, err = server.AddAgent(controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement}), &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
 		require.NoError(t, err)

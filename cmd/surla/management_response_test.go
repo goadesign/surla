@@ -61,6 +61,11 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 					assert.NoError(t, err)
 					return
 				}
+				if r.URL.Path == "/project/team" {
+					_, err := io.WriteString(w, `{"team":"fixture-team","space":"fixture-space","roles":[{"role":"guide","handle":"guide-fixture","running":true}],"dialog":"not_needed"}`)
+					assert.NoError(t, err)
+					return
+				}
 				assert.Equal(t, "/project/browser-link", r.URL.Path)
 				w.WriteHeader(http.StatusCreated)
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"url": url, "expires_at": time.Now().Add(time.Minute).Format(time.RFC3339Nano)}))
@@ -72,6 +77,7 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 			t.Cleanup(api.Close)
 			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("b", 64)}))
 			runtime := testProjectRuntime()
+			bindFixtureTeamEffects(&runtime)
 			runtime.preflight = func() error { return nil }
 			opened := false
 			runtime.openViews = func(_ context.Context, address string) error {
@@ -114,6 +120,7 @@ func TestUnexpectedManagementResponseDoesNotEchoCredential(t *testing.T) {
 	t.Cleanup(api.Close)
 	require.NoError(t, state.SaveRunning(project.Running{Terminal: "owned-terminal", ManagementCredential: key}))
 	runtime := testProjectRuntime()
+	bindFixtureTeamEffects(&runtime)
 	runtime.preflight = func() error { return nil }
 	err = runWithRuntime(nil, io.Discard, runtime)
 	require.Error(t, err)
@@ -237,6 +244,7 @@ func TestServeWithdrawsRunningBeforeStoreRelease(t *testing.T) {
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	runtime := testProjectRuntime()
+	bindFixtureTeamEffects(&runtime)
 	closed := make(chan struct{})
 	runtime.listen = func(network, address string) (net.Listener, error) {
 		listener, err := net.Listen(network, address)

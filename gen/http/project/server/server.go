@@ -20,6 +20,7 @@ import (
 type Server struct {
 	Mounts              []*MountPoint
 	Identity            http.Handler
+	EnsureTeam          http.Handler
 	Stop                http.Handler
 	AddAgent            http.Handler
 	RemoveAgent         http.Handler
@@ -55,6 +56,7 @@ func New(
 	return &Server{
 		Mounts: []*MountPoint{
 			{"Identity", "GET", "/project/identity"},
+			{"EnsureTeam", "POST", "/project/team"},
 			{"Stop", "POST", "/project/stop"},
 			{"AddAgent", "POST", "/project/agents"},
 			{"RemoveAgent", "DELETE", "/project/agents/{actor_id}"},
@@ -62,6 +64,7 @@ func New(
 			{"ExchangeBrowserLink", "POST", "/project/browser-session"},
 		},
 		Identity:            NewIdentityHandler(e.Identity, mux, decoder, encoder, errhandler, formatter),
+		EnsureTeam:          NewEnsureTeamHandler(e.EnsureTeam, mux, decoder, encoder, errhandler, formatter),
 		Stop:                NewStopHandler(e.Stop, mux, decoder, encoder, errhandler, formatter),
 		AddAgent:            NewAddAgentHandler(e.AddAgent, mux, decoder, encoder, errhandler, formatter),
 		RemoveAgent:         NewRemoveAgentHandler(e.RemoveAgent, mux, decoder, encoder, errhandler, formatter),
@@ -76,6 +79,7 @@ func (s *Server) Service() string { return "project" }
 // Use wraps the server handlers with the given middleware.
 func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Identity = m(s.Identity)
+	s.EnsureTeam = m(s.EnsureTeam)
 	s.Stop = m(s.Stop)
 	s.AddAgent = m(s.AddAgent)
 	s.RemoveAgent = m(s.RemoveAgent)
@@ -89,6 +93,7 @@ func (s *Server) MethodNames() []string { return project.MethodNames[:] }
 // Mount configures the mux to serve the project endpoints.
 func Mount(mux goahttp.Muxer, h *Server) {
 	MountIdentityHandler(mux, h.Identity)
+	MountEnsureTeamHandler(mux, h.EnsureTeam)
 	MountStopHandler(mux, h.Stop)
 	MountAddAgentHandler(mux, h.AddAgent)
 	MountRemoveAgentHandler(mux, h.RemoveAgent)
@@ -130,6 +135,52 @@ func NewIdentityHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "identity")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "project")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountEnsureTeamHandler configures the mux to serve the "project" service
+// "ensure_team" endpoint.
+func MountEnsureTeamHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/project/team", f)
+}
+
+// NewEnsureTeamHandler creates a HTTP handler which loads the HTTP request and
+// calls the "project" service "ensure_team" endpoint.
+func NewEnsureTeamHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeEnsureTeamResponse(encoder)
+		encodeError    = EncodeEnsureTeamError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "ensure_team")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "project")
 		var err error
 		res, err := endpoint(ctx, nil)

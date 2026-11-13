@@ -32,6 +32,8 @@ func init() {
 	herdrTestRuntime = func() projectRuntime {
 		runtime := productionProjectRuntime()
 		runtime.configRoot = testProjectRuntime().configRoot
+		runtime.preflight = func() error { return preflightProjectStart(projectHerdrProgram) }
+		bindFixtureTeamEffects(&runtime)
 		return runtime
 	}
 }
@@ -186,7 +188,8 @@ func TestHC(t *testing.T) {
 	assert.Nil(t, terminal.Parent)
 	management := running.ManagementCredential
 	assert.False(t, strings.Contains(string(metadata), management), "management credential must not appear in terminal metadata")
-	actor, err := client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
+	// Normal start already registered the guide; a builder preserves the distinct-agent credential proof.
+	actor, err := client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "builder", Role: "builder"})
 	require.NoError(t, err)
 	credential, err := os.ReadFile(actor.CredentialFile)
 	require.NoError(t, err)

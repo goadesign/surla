@@ -43,6 +43,10 @@ type (
 		Owner string `json:"owner"`
 		// Port is selected once and reused so existing agent connections survive restart.
 		Port int `json:"port"`
+		// Team is the stable Chorus team name, selected once by the server.
+		Team string `json:"team,omitempty"`
+		// Space is the most recently adopted local Herdr space.
+		Space string `json:"space,omitempty"`
 		// Agents maps each stable actor ID to its trusted role; secrets are separate files.
 		Agents map[string]string `json:"agents"`
 	}
@@ -234,13 +238,27 @@ func projectDirectory(root, directory string) string {
 
 // validateRecord rejects missing or changed durable identity instead of silently creating another store.
 func validateRecord(r Record, directory string) error {
-	if r.ID == "" || r.Owner == "" || r.Directory != directory || r.Port < 1 || r.Port > 65535 || r.Agents == nil {
+	if len(r.ID) != 64 || r.Owner == "" || r.Directory != directory || r.Port < 1 || r.Port > 65535 || r.Agents == nil {
 		return errors.New("invalid project record")
 	}
+	if _, err := hex.DecodeString(r.ID); err != nil {
+		return errors.New("invalid project identity")
+	}
+	if r.Team != "" && !validTeamName(r.Team) {
+		return errors.New("invalid project team name")
+	}
+	if r.Space != "" && !safeSpaceID(r.Space) {
+		return errors.New("invalid project space")
+	}
+	seenRoles := map[string]bool{}
 	for actor, role := range r.Agents {
 		if err := genprojectserver.ValidateAddAgentRequestBody(&genprojectserver.AddAgentRequestBody{ActorID: &actor, Role: &role}); err != nil {
 			return fmt.Errorf("invalid stored agent: %w", err)
 		}
+		if seenRoles[role] {
+			return fmt.Errorf("invalid stored role %q: more than one agent is registered", role)
+		}
+		seenRoles[role] = true
 	}
 	return nil
 }
