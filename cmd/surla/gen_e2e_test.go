@@ -29,6 +29,7 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/project"
 	"github.com/goadesign/surla/internal/testmodule"
+	"github.com/goadesign/surla/internal/verify"
 )
 
 // starterSurlaVersion is a published Surla version the starter's evaluator
@@ -75,7 +76,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Surla Test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
-	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv} {
+	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv} {
 		t.Setenv(name, "")
 	}
 	provider := &scriptedModelProvider{}
@@ -158,20 +159,24 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	}
 	assert.Equal(t, created, files(t, dir, "."), "regenerating an untouched starter changes no byte")
 
-	// One native journey proves the initializing server builds, starts and
-	// verifies the builder's later commit B against the evaluator commit A it
-	// pinned. Which commit a restarted or directly started server pins is a
-	// server decision made before any build, covered by the fast resolver and
-	// consumer tests (TestLiveAndVerificationUseTheWorkspacePinnedSuite and
-	// TestConfigureServeWorkspacePinsSuiteCommits).
+	// Without stored verification settings, the initializing server verifies
+	// only a change whose build has accepted tests, so a change nobody built
+	// is refused. One native journey then proves a server restarted with the
+	// operator's settings builds, starts and verifies the builder's later
+	// commit B against the evaluator at commit A. Which commits a run of
+	// accepted tests or a live copy uses is covered by the control plane's
+	// tests on a fixture repository.
 	commentPath := filepath.Join(evalDir, "design", "design.go")
 	source, err := os.ReadFile(commentPath)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(commentPath, append(source, []byte("\n// Builder-only comment; evaluator behavior stays unchanged.\n")...), 0o644))
 	candidateCommit := trustedSuiteCommit(t, dir)
 	require.NotEqual(t, initialized.Commit, candidateCommit)
+	assertVerifyRefusedWithoutBuild(t, ctx, client, opts.RunsDir, "operator@example.com", "unbuilt", candidateCommit)
 
-	// The operator stores promotion after initialization; a server restart adopts it.
+	// The operator stores verification and promotion after initialization; a
+	// server restart adopts them.
+	writeStarterVerification(t, workspace, dir, initialized.ModulePath, initialized.Commit)
 	promotion := writeStarterPromotion(t, workspace, initialized.ServiceName, initialized.Commit)
 	state, err := fixtureProjectState(workspace)
 	require.NoError(t, err)

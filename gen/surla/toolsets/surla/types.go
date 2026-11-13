@@ -464,10 +464,14 @@ type (
 		RequestRevision string
 		// Candidate commit the run builds and verifies.
 		CandidateCommit string
-		// Evaluator suite commit the operator configured for the run.
+		// Commit of the tests the run uses: the operator's evaluator, or the tests
+		// accepted for the change's build.
 		SuiteCommit string
 		// When the run was accepted.
 		AcceptedAt string
+		// Where the run's tests came from, recorded when the run started: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource TestSource
 		// Exactly one of running, completed or not_completed.
 		State State
 	}
@@ -855,10 +859,14 @@ type (
 		RequestRevision string
 		// Candidate commit the run builds and verifies.
 		CandidateCommit string
-		// Evaluator suite commit the operator configured for the run.
+		// Commit of the tests the run uses: the operator's evaluator, or the tests
+		// accepted for the change's build.
 		SuiteCommit string
 		// When the run was accepted.
 		AcceptedAt string
+		// Where the run's tests came from, recorded when the run started: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource TestSource
 		// Exactly one of running, completed or not_completed.
 		State State
 	}
@@ -880,6 +888,14 @@ type (
 		CacheAfterSystem bool
 		// True when prompt caching places a checkpoint after tool definitions.
 		CacheAfterTools bool
+	}
+	// AgentWrittenTests is a nested type used by the generated JSON contract.
+	AgentWrittenTests = struct {
+		// Commit Surla recorded the accepted tests at; the same as suite_commit.
+		Commit string
+		// Always: These tests were written by a separate agent on this machine and are
+		// not isolated from the builder.
+		Notice string
 	}
 	// AmbiguityQuestion is a nested type used by the generated JSON contract.
 	AmbiguityQuestion = struct {
@@ -1117,6 +1133,9 @@ type (
 		// when its report's verdict is known; not_completed when it stopped without a
 		// report.
 		State string
+	}
+	// OperatorEvaluatorTests is a nested type used by the generated JSON contract.
+	OperatorEvaluatorTests = struct {
 	}
 	// ProposedRevisionItem is a nested type used by the generated JSON contract.
 	ProposedRevisionItem = struct {
@@ -1464,10 +1483,14 @@ type (
 		RequestRevision string
 		// Candidate commit the run builds and verifies.
 		CandidateCommit string
-		// Evaluator suite commit the operator configured for the run.
+		// Commit of the tests the run uses: the operator's evaluator, or the tests
+		// accepted for the change's build.
 		SuiteCommit string
 		// When the run was accepted.
 		AcceptedAt string
+		// Where the run's tests came from, recorded when the run started: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource TestSource
 		// Exactly one of running, completed or not_completed.
 		State State
 	}

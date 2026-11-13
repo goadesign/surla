@@ -321,6 +321,7 @@ export interface VerificationStatusResult {
   run_id: string;
   state: ({ "type": "running"; "value": VerificationRunning } | { "type": "completed"; "value": VerificationCompleted } | { "type": "not_completed"; "value": VerificationNotCompleted });
   suite_commit: string;
+  test_source: ({ "source": "evaluator" } | { "commit": string; "notice": string; "source": "written_tests" });
 }
 
 export type ExchangeBrowserLinkRequest = ExchangeBrowserLinkRequestBody;
@@ -1700,6 +1701,7 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "candidate_commit",
       "suite_commit",
       "accepted_at",
+      "test_source",
       "state"
     ],
     "properties": {
@@ -1783,6 +1785,49 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       },
       "suite_commit": {
         "type": "string"
+      },
+      "test_source": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "evaluator"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "notice",
+              "source"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "notice": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "written_tests"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "additionalProperties": false

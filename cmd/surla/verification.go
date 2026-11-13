@@ -1,24 +1,18 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
-	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -44,44 +38,15 @@ type verificationFile struct {
 	Timeout string `json:"timeout"`
 }
 
-// cappedBuffer collects one git query's output stream, failing the query once
-// the stream exceeds limit bytes.
-type cappedBuffer struct {
-	// buf holds the bytes written so far, never more than limit.
-	buf bytes.Buffer
-	// limit is the most bytes the stream may carry.
-	limit int
-	// overflow reports that the stream exceeded limit.
-	overflow bool
-}
-
-// defaultProjectVerifyTimeout is the CP4 verification timeout derived for
-// the project server, matching the starter README.
+// defaultProjectVerifyTimeout is how long the project server lets a run of the
+// tests accepted for a change, or a live copy's start, take, matching the
+// starter README.
 const defaultProjectVerifyTimeout = 30 * time.Minute
 
-// gitReadTimeout bounds all the read-only git queries the project server
-// makes at startup together, so an unresponsive repository stops startup with
-// an error.
+// gitReadTimeout bounds the read-only git query the project server makes at
+// startup to find the workspace's enclosing working tree, so an unresponsive
+// repository stops startup with an error.
 const gitReadTimeout = 30 * time.Second
-
-// gitReadMaxOutput bounds the stdout of each startup git query. The largest
-// is a committed go.mod file; a larger one stops startup with an error.
-const gitReadMaxOutput = 1 << 20
-
-// gitReadMaxStderr bounds the stderr of each startup git query, which a
-// failed query's error message quotes.
-const gitReadMaxStderr = 4 << 10
-
-// Write appends p, or records the overflow and fails when p would take the
-// stream past limit, so the git command stops instead of producing output
-// nobody will read.
-func (c *cappedBuffer) Write(p []byte) (int, error) {
-	if c.buf.Len()+len(p) > c.limit {
-		c.overflow = true
-		return 0, errors.New("output limit exceeded")
-	}
-	return c.buf.Write(p)
-}
 
 // runVerifyRun runs one internal role started by verifyrun: `surla verify-run
 // supervise <dir>` or `surla verify-run execute <dir>` for a verification run
@@ -223,242 +188,6 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 		line += "; not passing: " + strings.Join(failing, ", ")
 	}
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
-}
-
-// starterVerificationAtHEAD derives a VerificationConfig from the starter
-// layout committed at HEAD in workspaceDir and places RunsDir at runsDir and
-// ReportDir at reportDir. Every git read shares ctx's deadline.
-func starterVerificationAtHEAD(
-	ctx context.Context,
-	workspaceDir, runsDir, reportDir string,
-) (*controlplane.VerificationConfig, error) {
-	repoRoot, prefix, err := resolveStarterRepo(ctx, workspaceDir)
-	if err != nil {
-		return nil, err
-	}
-	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
-	if err != nil {
-		return nil, fmt.Errorf(
-			"project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
-			workspaceDir,
-			err,
-		)
-	}
-	suiteCommit := strings.TrimSpace(string(headOut))
-	return starterVerificationFromRepoCommit(ctx, workspaceDir, repoRoot, prefix, suiteCommit, runsDir, reportDir)
-}
-
-// starterVerificationAtCommit derives a VerificationConfig from the starter
-// layout committed at pinnedCommit in workspaceDir and places RunsDir at
-// runsDir and ReportDir at reportDir.
-func starterVerificationAtCommit(
-	ctx context.Context,
-	workspaceDir, pinnedCommit, runsDir, reportDir string,
-) (*controlplane.VerificationConfig, error) {
-	if !verify.IsCommitID(pinnedCommit) {
-		return nil, fmt.Errorf("project %s: suite commit %q is not a full commit ID", workspaceDir, pinnedCommit)
-	}
-	repoRoot, prefix, err := resolveStarterRepo(ctx, workspaceDir)
-	if err != nil {
-		return nil, err
-	}
-	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", pinnedCommit+"^{commit}")
-	if err != nil {
-		return nil, fmt.Errorf("project %s is missing pinned evaluator suite commit %s: %w", workspaceDir, pinnedCommit, err)
-	}
-	suiteCommit := strings.TrimSpace(string(headOut))
-	return starterVerificationFromRepoCommit(ctx, workspaceDir, repoRoot, prefix, suiteCommit, runsDir, reportDir)
-}
-
-// resolveStarterRepo resolves dir to its physical path and queries git for its
-// repository root and slash-separated prefix within that repository.
-func resolveStarterRepo(ctx context.Context, dir string) (repoRoot, prefix string, err error) {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return "", "", fmt.Errorf("read project %s: %w", dir, err)
-	}
-	if !info.IsDir() {
-		return "", "", fmt.Errorf("project %s is not a directory", dir)
-	}
-	// Resolve from the working directory without cleaning parent components
-	// before following symlinks: alias/.. must name the linked directory's parent.
-	projectRoot, err := abspath.Eval(dir)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve project %s: %w", dir, err)
-	}
-	// Git reports the repository root and the project's path inside it, such
-	// as "services/shop/" or "" at the root, one per line.
-	topOut, err := runGitRead(ctx, projectRoot, "rev-parse", "--show-toplevel", "--show-prefix")
-	if err != nil {
-		if strings.Contains(err.Error(), "not a git repository") {
-			return "", "", fmt.Errorf(
-				"project %s is not inside a git repository (run git init && git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
-				dir,
-				err,
-			)
-		}
-		return "", "", fmt.Errorf("project %s: find its git repository: %w", dir, err)
-	}
-	lines := strings.Split(strings.TrimSuffix(string(topOut), "\n"), "\n")
-	if len(lines) != 2 {
-		return "", "", fmt.Errorf("project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
-	}
-	return lines[0], lines[1], nil
-}
-
-// starterVerificationFromRepoCommit reads both starter go.mod files and checks
-// both command directories at suiteCommit in repoRoot, returning a
-// VerificationConfig pinned to suiteCommit with RunsDir and ReportDir placed at
-// runsDir and reportDir.
-func starterVerificationFromRepoCommit(
-	ctx context.Context,
-	dir, repoRoot, prefix, suiteCommit, runsDir, reportDir string,
-) (*controlplane.VerificationConfig, error) {
-	// Module directories and committed paths are slash-separated and relative
-	// to the repository root: "." and "eval" for a project at the root,
-	// "services/shop" and "services/shop/eval" for one nested in it.
-	candidateModule := path.Clean("./" + prefix)
-	suiteModule := path.Join(candidateModule, scaffold.SuiteDir)
-	rootGoMod, err := readGitBlob(ctx, repoRoot, suiteCommit, path.Join(candidateModule, "go.mod"), dir)
-	if err != nil {
-		return nil, err
-	}
-	evalGoMod, err := readGitBlob(ctx, repoRoot, suiteCommit, path.Join(suiteModule, "go.mod"), dir)
-	if err != nil {
-		return nil, err
-	}
-	layout, err := scaffold.StarterLayout(rootGoMod, evalGoMod)
-	if err != nil {
-		return nil, fmt.Errorf("project %s does not match the surla init starter layout at HEAD (%s): %w (commit the starter layout or pass verification settings)",
-			dir, suiteCommit, err)
-	}
-	for _, tree := range []string{
-		path.Join(candidateModule, layout.CandidatePackage),
-		path.Join(suiteModule, layout.SuiteCommand),
-	} {
-		if err := requireGitTree(ctx, repoRoot, suiteCommit, tree, dir); err != nil {
-			return nil, err
-		}
-	}
-	self, err := selfCommand()
-	if err != nil {
-		return nil, err
-	}
-	return &controlplane.VerificationConfig{
-		Timeout: defaultProjectVerifyTimeout,
-		RunsDir: runsDir,
-		Plan: verify.Plan{
-			CandidateRepo:   repoRoot,
-			CandidateModule: candidateModule,
-			Binaries:        map[string]string{layout.Service: layout.CandidatePackage},
-			SuiteRepo:       repoRoot,
-			SuiteCommit:     suiteCommit,
-			SuiteModule:     suiteModule,
-			SuiteCommand:    layout.SuiteCommand,
-			ReportDir:       reportDir,
-		},
-		Command: self,
-	}, nil
-}
-
-// readGitBlob reads a committed regular-file blob at <commit>:<treePath> in
-// repoRoot, rejecting missing paths, symlinks, and directories.
-func readGitBlob(ctx context.Context, repoRoot, commit, treePath, project string) ([]byte, error) {
-	mode, kind, err := gitEntry(ctx, repoRoot, commit, treePath)
-	switch {
-	case err != nil:
-		return nil, fmt.Errorf("project %s: %w", project, err)
-	case kind == "":
-		return nil, fmt.Errorf("project %s is missing committed %s at HEAD (%s)"+
-			" (commit the starter layout or pass verification settings)", project, treePath, commit)
-	case kind != "blob" || (mode != "100644" && mode != "100755"):
-		return nil, fmt.Errorf("project %s: committed %s at HEAD (%s) must be a regular file", project, treePath, commit)
-	}
-	content, err := runGitRead(ctx, repoRoot, "cat-file", "blob", commit+":"+treePath)
-	if err != nil {
-		return nil, fmt.Errorf("project %s: read committed %s at HEAD (%s): %w (the project server never downloads"+
-			" objects; if this is a partial clone, check out HEAD there first so git fetches them)",
-			project, treePath, commit, err)
-	}
-	return content, nil
-}
-
-// requireGitTree checks that <commit>:<treePath> exists as a committed
-// directory in repoRoot.
-func requireGitTree(ctx context.Context, repoRoot, commit, treePath, project string) error {
-	_, kind, err := gitEntry(ctx, repoRoot, commit, treePath)
-	if err != nil {
-		return fmt.Errorf("project %s: %w", project, err)
-	}
-	if kind != "tree" {
-		return fmt.Errorf("project %s is missing committed directory %s at HEAD (%s)"+
-			" (commit the starter layout or pass verification settings)", project, treePath, commit)
-	}
-	return nil
-}
-
-// gitEntry returns the mode and object type, such as "100644" and "blob",
-// of <commit>:<treePath> in repoRoot, or two empty strings when the commit
-// has no such path. An error means git itself failed.
-func gitEntry(ctx context.Context, repoRoot, commit, treePath string) (string, string, error) {
-	out, err := runGitRead(ctx, repoRoot, "ls-tree", commit, "--", treePath)
-	if err != nil {
-		return "", "", fmt.Errorf("list committed %s at HEAD (%s): %w", treePath, commit, err)
-	}
-	fields := strings.Fields(string(out))
-	if len(fields) < 2 {
-		return "", "", nil
-	}
-	return fields[0], fields[1], nil
-}
-
-// runGitRead runs one read-only git query in dir and returns its stdout. It
-// removes every inherited GIT_* variable, so dir alone selects the repository;
-// ignores replace refs, so a commit ID names its real content; disables a
-// configured file-system monitor and hooks, and never fetches objects missing
-// from a partial clone, so no repository program or network access runs;
-// takes no optional locks; and stops when ctx ends. Output past
-// gitReadMaxOutput on stdout or gitReadMaxStderr on stderr fails the query.
-func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmdArgs := append([]string{"-C", dir, "--no-optional-locks", "--no-replace-objects", "--no-lazy-fetch", "--literal-pathspecs",
-		"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
-	cmd.Env = cleanGitEnv()
-	cmd.WaitDelay = time.Second
-	stdout := &cappedBuffer{limit: gitReadMaxOutput}
-	stderr := &cappedBuffer{limit: gitReadMaxStderr}
-	cmd.Stdout, cmd.Stderr = stdout, stderr
-	err := cmd.Run()
-	if strings.Contains(stderr.buf.String(), "unknown option: --no-lazy-fetch") {
-		return nil, errors.New("the project server needs Git 2.45 or newer (for --no-lazy-fetch, so startup" +
-			" never downloads objects); upgrade Git or pass verification settings")
-	}
-	if stdout.overflow || stderr.overflow {
-		return nil, fmt.Errorf("git %s printed more output than a startup read allows", args[0])
-	}
-	if err != nil {
-		if msg := strings.TrimSpace(stderr.buf.String()); msg != "" {
-			return nil, fmt.Errorf("%s: %w", msg, err)
-		}
-		return nil, err
-	}
-	return stdout.buf.Bytes(), nil
-}
-
-// cleanGitEnv returns os.Environ without any GIT_* variable, such as GIT_DIR,
-// GIT_OBJECT_DIRECTORY or GIT_CONFIG_PARAMETERS, that could make git read a
-// different repository, objects or configuration than the project
-// directory's own, plus settings that disable terminal prompts and the
-// system-wide configuration file and keep git's messages in English, which
-// resolveStarterRepo matches.
-func cleanGitEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "GIT_") {
-			env = append(env, kv)
-		}
-	}
-	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "LC_ALL=C")
 }
 
 // verificationConfig validates one settings snapshot and derives all storage paths from its project owner.

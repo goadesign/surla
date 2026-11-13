@@ -173,6 +173,9 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	if key == "" {
 		return nil, errors.New("live target key is required")
 	}
+	if err := plan.Tests.Check(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create live root: %w", err)
 	}
@@ -263,6 +266,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		return reportLive(out, errLog, summaryLiveSuite, err)
 	}
 	cmd := exec.CommandContext(ctx, prep.SuiteBin, append([]string{"--live"}, prep.ArtifactFlags...)...)
+	cmd.Env = verify.LiveProgramEnv(req.Plan, os.Environ())
 	cmd.Stdout = suiteOutW
 	cmd.Stderr = errLog
 	// The suite and everything it starts stay in this process group, which
@@ -454,8 +458,8 @@ func logTail(path string, n int64) string {
 	return string(b)
 }
 
-// decodeLiveRequest reads live.json, rejecting unknown fields and trailing
-// data.
+// decodeLiveRequest reads live.json, rejecting unknown fields, trailing data
+// and a plan without a declared test source.
 func decodeLiveRequest(dir string, req *LiveRequest) error {
 	f, err := os.Open(filepath.Join(dir, liveRequestFile))
 	if err != nil {
@@ -469,6 +473,9 @@ func decodeLiveRequest(dir string, req *LiveRequest) error {
 	}
 	if dec.More() {
 		return errors.New("decode live request: trailing data")
+	}
+	if err := req.Plan.Tests.Check(); err != nil {
+		return fmt.Errorf("decode live request: %w", err)
 	}
 	return nil
 }

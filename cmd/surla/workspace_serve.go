@@ -36,11 +36,12 @@ type (
 		evalWorkDir string
 		// runsDir is the protected verification runs directory.
 		runsDir string
-		// verification is the startup VerificationConfig when already available.
+		// verification is the stored evaluator, from the project's stored
+		// verification settings, or nil when none are stored.
 		verification *controlplane.VerificationConfig
-		// resolveVerification dynamically resolves VerificationConfig for the
-		// active workspace directory and pinned suite commit.
-		resolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*controlplane.VerificationConfig, error)
+		// writtenTestRuns runs the tests accepted for each change when no
+		// verification settings are stored; nil when they are.
+		writtenTestRuns *controlplane.WrittenTestRuns
 		// promotionTarget is the startup PromotionTarget when already available.
 		promotionTarget controlplane.PromotionTarget
 		// resolvePromotionTarget dynamically resolves PromotionTarget for the
@@ -62,7 +63,9 @@ const (
 )
 
 // configureProjectWorkspace resolves the bound workspace, operator-owned storage
-// directories and startup verification/promotion inputs for the project server.
+// directories and startup promotion inputs for the project server, and how it
+// verifies: with the evaluator in the project's stored verification settings,
+// or, when none are stored, with the tests accepted for each change's build.
 func configureProjectWorkspace(state *project.State) (workspaceServeConfig, error) {
 	initial := state.Record.Directory
 	protected, err := workspaceProtectedDirs(initial)
@@ -114,24 +117,14 @@ func configureProjectWorkspace(state *project.State) (workspaceServeConfig, erro
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return workspaceServeConfig{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
-	startup, startupErr := starterVerificationAtHEAD(ctx, initial, ws.runsDir, reports)
-	cancel()
-	ws.verification = startup
-	ws.resolveVerification = func(ctx context.Context, active, suiteCommit string) (*controlplane.VerificationConfig, error) {
-		if suiteCommit != "" {
-			bounded, cancel := context.WithTimeout(ctx, gitReadTimeout)
-			defer cancel()
-			return starterVerificationAtCommit(bounded, active, suiteCommit, ws.runsDir, reports)
-		}
-		if startup != nil && active == initial {
-			copy := *startup
-			return &copy, nil
-		}
-		if startupErr != nil {
-			return nil, fmt.Errorf("automatic starter verification was unavailable at server startup (%w); restart surla after committing the starter, or call init_project in an empty workspace", startupErr)
-		}
-		return nil, fmt.Errorf("workspace %s has no pinned starter evaluator suite commit", active)
+	self, err := selfCommand()
+	if err != nil {
+		return workspaceServeConfig{}, err
+	}
+	ws.writtenTestRuns = &controlplane.WrittenTestRuns{
+		ReportDir: reports,
+		Command:   self,
+		Timeout:   defaultProjectVerifyTimeout,
 	}
 	return ws, nil
 }

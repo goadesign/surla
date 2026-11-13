@@ -24,12 +24,13 @@ import (
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
 // journeyOwnerWait bounds each client wait on a server-owned operation in
 // these journeys: the owner's own limit, defaultProjectVerifyTimeout, which
-// serveOptions gives a live start and the starter resolver saves as a
+// serveOptions gives a live start and writeStarterVerification stores as a
 // verification run's timeout, plus the owner's stop path (stop grace 45s,
 // group stop 30s, executor wait 5s). The owner therefore reports its own
 // timeout or terminal state first when it can; the wait does not guarantee
@@ -82,6 +83,74 @@ func toolErrorText(content []*genmcpsurla.ContentItem) string {
 		}
 	}
 	return strings.Join(texts, "\n")
+}
+
+// writeStarterVerification stores, through CLI management before the next
+// server start, the operator's verification settings for the starter at dir:
+// its service and test modules, with the tests at suiteCommit run by the
+// command the starter's layout names. With them, the project verifies every
+// change with that evaluator and needs no build.
+func writeStarterVerification(t *testing.T, workspace, dir, modulePath, suiteCommit string) {
+	t.Helper()
+	t.Chdir(workspace)
+	layout, err := scaffold.LayoutForModule(modulePath)
+	require.NoError(t, err)
+	settings, err := json.Marshal(map[string]any{
+		"candidate_repo":   dir,
+		"candidate_module": ".",
+		"binaries":         map[string]string{layout.Service: layout.CandidatePackage},
+		"suite_repo":       dir,
+		"suite_commit":     suiteCommit,
+		"suite_module":     scaffold.SuiteDir,
+		"suite_command":    layout.SuiteCommand,
+		"timeout":          defaultProjectVerifyTimeout.String(),
+	})
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "verification.json")
+	require.NoError(t, os.WriteFile(path, settings, 0o600))
+	require.NoError(t, runProjectSettings("verification", []string{"set", path}, io.Discard))
+}
+
+// assertVerifyRefusedWithoutBuild proposes and confirms changeID through MCP
+// on a server without stored verification settings, and checks that
+// verify_change of candidateCommit is refused, naming the build the user
+// starts, and that runsDir holds no run of changeID for owner.
+func assertVerifyRefusedWithoutBuild(t *testing.T, ctx context.Context, client *genmcpsurla.Client, runsDir, owner, changeID, candidateCommit string) {
+	t.Helper()
+	args, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
+		ChangeID: changeID, Prompt: "Keep answering price questions.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary:     "The helper keeps answering price questions through the price API.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario: "Price question", InputSummary: "Ask for an item's price.",
+				ExpectedOutcome: "Return its price.", VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"The price API remains available."},
+		},
+	})
+	require.NoError(t, err)
+	proposed, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, ctx, client, "propose_change", args))
+	require.NoError(t, err)
+	args, err = gensurla.EncodeConfirmIntentPayload(&gensurla.ConfirmIntentPayload{
+		ChangeID: changeID, RequestRevision: proposed.RequestRevision, Answers: map[string]string{}, Examples: proposed.Examples,
+	})
+	require.NoError(t, err)
+	card, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, ctx, client, "confirm_intent", args))
+	require.NoError(t, err)
+	args, err = gensurla.EncodeVerifyChangePayload(&gensurla.VerifyChangePayload{
+		ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: candidateCommit,
+	})
+	require.NoError(t, err)
+	result, err := client.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: "verify_change", Arguments: args})
+	require.NoError(t, err)
+	complete, ok := result.Outcome.AsComplete()
+	require.True(t, ok)
+	require.True(t, complete.IsError != nil && *complete.IsError, "verify_change without a build is refused")
+	assert.Contains(t, toolErrorText(complete.Content), "the user has not started a build of change \""+changeID+"\"")
+	runs, err := verifyrun.List(runsDir, owner, changeID)
+	require.NoError(t, err)
+	assert.Empty(t, runs, "no run is accepted")
 }
 
 // writeStarterPromotion stores promotion settings through CLI management before the
@@ -214,6 +283,7 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 		assert.Equal(t, card.RequestRevision, run.RequestRevision)
 		assert.Equal(t, candidateCommit, run.CandidateCommit)
 		assert.Equal(t, suiteCommit, run.SuiteCommit)
+		assert.Equal(t, gensurla.NewTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}), run.TestSource, "the operator's evaluator runs")
 		if completed, ok := run.State.AsCompleted(); ok {
 			done = completed
 			break

@@ -40,6 +40,7 @@ func TestCheckpointUIVerificationStatesAndStatusReads(t *testing.T) {
 			RunID: runID, ChangeID: changeID, RequestRevision: card.RequestRevision,
 			CandidateCommit: strings.Repeat("1", 40), SuiteCommit: strings.Repeat("2", 40),
 			AcceptedAt: "2026-10-31T12:34:56.123Z", State: state,
+			TestSource: gensurla.NewTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}),
 		}
 	}
 	passed := &gensurla.BuilderVerificationReport{

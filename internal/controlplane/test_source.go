@@ -103,12 +103,11 @@ func (c *ControlPlane) projectTestLayout(
 }
 
 // storedEvaluator reports projectTestSource's first answer without reading
-// any file: the composition root bound Options.Verification and no
-// Options.ResolveVerification, so verification always runs the operator's
-// evaluator. The project server binds exactly that when the project has
-// stored verification settings, and binds a resolver that derives the
-// starter's tests from the workspace otherwise. Reads of a build use it to
-// show that no test writer is used.
+// any file: this control plane verifies every change with the evaluator the
+// operator stored with `surla verification set` (Options.Verification). The
+// project server binds that exactly when the project has stored verification
+// settings. Reads of a build use it to show that no test writer is used.
 func (c *ControlPlane) storedEvaluator() bool {
-	return c.verification != nil && c.resolveVerification == nil
+	_, ok := c.verifier.(storedVerification)
+	return ok
 }

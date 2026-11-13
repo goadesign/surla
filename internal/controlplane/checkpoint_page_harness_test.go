@@ -430,6 +430,7 @@ func passedRun(card *gensurla.ChangeCardResult, runID, commit, digest string) *g
 	return &gensurla.VerificationStatusResult{
 		RunID: runID, ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
 		CandidateCommit: commit, SuiteCommit: strings.Repeat("2", 40), AcceptedAt: "2026-10-31T12:34:56.123Z",
+		TestSource: gensurla.NewTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}),
 		State: gensurla.NewStateCompleted(&gensurla.VerificationCompleted{
 			SuiteID: "orders_acceptance", Environment: "sim",
 			Report: &gensurla.BuilderVerificationReport{

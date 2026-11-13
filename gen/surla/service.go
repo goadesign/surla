@@ -110,36 +110,43 @@ type Service interface {
 	// leaves the target's text unchanged; update_not_confirmed means the target
 	// may or may not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
-	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
-	// operator's evaluator suite, as this server's one live CP3 target, then bind
-	// draft_override to it. A running target is stopped first, so there is never
-	// more than one. The target runs until stop_live_target, a later
-	// start_live_target, its own exit, or this server's shutdown; a server restart
-	// leaves none running. Requires a committed starter project in the bound
-	// workspace or verification settings installed with surla verification set.
+	// Build a candidate commit exactly as Checkpoint 4 does and run it as this
+	// server's one live CP3 target, then bind draft_override to it. The target's
+	// program is the operator's evaluator when verification settings are stored
+	// with surla verification set; otherwise it is the generated entry point of
+	// the test module in that same candidate commit, which needs no build and no
+	// accepted tests. A running target is stopped first, so there is never more
+	// than one. The target runs until stop_live_target, a later start_live_target,
+	// its own exit, or this server's shutdown; a server restart leaves none
+	// running.
 	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
 	// Stop this server's live CP3 target, if one runs, and unbind draft_override
 	// from it. Stopping when none runs is not an error.
 	StopLiveTarget(context.Context) (res *StopLiveTargetResult, err error)
 	// Start Checkpoint 4 verification of a candidate commit for the owner's
-	// confirmed Change Card revision and return its run_id at once. The server
-	// builds the commit in Surla's sandbox and runs the evaluator suite the
-	// operator configured, in a separate process that keeps running when the
-	// caller disconnects or the server restarts; get_verification reads its state.
-	// Only the builder view of the report is ever returned. Requires a committed
-	// starter project in the bound workspace or verification settings installed
-	// with surla verification set.
+	// confirmed Change Card revision and return its run_id at once. With
+	// verification settings stored with surla verification set, the run uses the
+	// operator's evaluator and needs no build. Otherwise the user's build of that
+	// revision must exist and Surla must have accepted its tests: the run builds
+	// the candidate's programs from the candidate commit and runs the generated
+	// entry point of the tests at the accepted commit. The server builds the
+	// commit in Surla's sandbox and runs the tests in a separate process that
+	// keeps running when the caller disconnects or the server restarts;
+	// get_verification reads its state. Only the builder view of the report is
+	// ever returned, with where its tests came from.
 	VerifyChange(context.Context, *VerifyChangePayload) (res *VerificationStatusResult, err error)
 	// Return the current state of a verification run to the owner who started it:
 	// running, completed with the builder view of its report, or not completed
-	// with where it stopped. A run keeps the Change Card revision it was started
-	// for.
+	// with where it stopped, and where its tests came from. A run keeps the Change
+	// Card revision it was started for. The test writer reads only the runs of a
+	// change it has an assignment for.
 	GetVerification(context.Context, *GetVerificationPayload) (res *VerificationStatusResult, err error)
 	// Return all Checkpoint 4 verification runs started by the owner for a Change
 	// Card, ordered newest first by accepted_at (tie-broken by run_id), with each
-	// run's current state and the Change Card revision it was started for. Works
-	// whether the Change Card is currently confirmed or in needs_confirmation
-	// after a later revision.
+	// run's current state, the Change Card revision it was started for and where
+	// its tests came from. Works whether the Change Card is currently confirmed or
+	// in needs_confirmation after a later revision. The test writer lists only the
+	// runs of a change it has an assignment for.
 	ListVerifications(context.Context, *ListVerificationsPayload) (res *VerificationListResult, err error)
 	// Record Checkpoint 5 approval for the owner's confirmed Change Card revision.
 	// The control plane loads the verification report by digest and the expected
@@ -340,6 +347,16 @@ type AgentPolicyItem struct {
 	CacheAfterSystem bool
 	// True when prompt caching places a checkpoint after tool definitions.
 	CacheAfterTools bool
+}
+
+// The run used the tests Surla accepted for the change's build, which a
+// separate agent on this machine wrote.
+type AgentWrittenTests struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit string
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice string
 }
 
 // Domain ambiguity surfaced with concrete examples at Checkpoint 1.
@@ -1061,6 +1078,11 @@ type ModelConfigResult struct {
 	GatewayAddr *string
 }
 
+// The run used the operator's evaluator: the one stored with surla
+// verification set, or the one named on surla verify's command line.
+type OperatorEvaluatorTests struct {
+}
+
 // PreviewArchitecturePayload is the payload type of the surla service
 // preview_architecture method.
 type PreviewArchitecturePayload struct {
@@ -1730,10 +1752,14 @@ type VerificationStatusResult struct {
 	RequestRevision string
 	// Candidate commit the run builds and verifies.
 	CandidateCommit string
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit string
 	// When the run was accepted.
 	AcceptedAt string
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource TestSource
 	// Exactly one of running, completed or not_completed.
 	State State
 }
@@ -2072,6 +2098,29 @@ func validatejsonAgentPolicyItemTransport(value *jsonAgentPolicyItemTransport) (
 	}
 	if value.CacheAfterTools == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("cache_after_tools", "body"))
+	}
+	return err
+}
+
+// jsonAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type jsonAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// validatejsonAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func validatejsonAgentWrittenTestsTransport(value *jsonAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
 	}
 	return err
 }
@@ -3966,6 +4015,19 @@ func validatejsonModelConfigResultTransport(value *jsonModelConfigResultTranspor
 	return err
 }
 
+// jsonOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type jsonOperatorEvaluatorTestsTransport struct {
+}
+
+// validatejsonOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func validatejsonOperatorEvaluatorTestsTransport(value *jsonOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
 // jsonPreviewArchitecturePayloadTransport stores JSON fields until they have been validated.
 type jsonPreviewArchitecturePayloadTransport struct {
 	// Confirmed Change Card identifier.
@@ -5782,10 +5844,14 @@ type jsonVerificationStatusResultTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *jsonTestSourceTransport `json:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State *jsonStateTransport `json:"state"`
 }
@@ -5813,11 +5879,31 @@ func validatejsonVerificationStatusResultTransport(value *jsonVerificationStatus
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validatejsonAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if value.State != nil {
 
@@ -7136,10 +7222,17 @@ func validateVerificationListResultOriginal(value *VerificationListResult) (err 
 
 // validateVerificationStatusResultOriginal checks the original typed value before JSON conversion.
 func validateVerificationStatusResultOriginal(value *VerificationStatusResult) (err error) {
+	if value.TestSource.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "value"))
+	}
 	if value.State.Kind() == "" {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "value"))
 	}
 	err = goa.MergeErrors(err, goa.ValidateFormat("value.accepted_at", value.AcceptedAt, goa.FormatDateTime))
+
+	if err2 := value.TestSource.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	}
 
 	if err2 := value.State.Validate(); err2 != nil {
 		err = goa.MergeErrors(err, err2)
@@ -7781,6 +7874,171 @@ func (u *jsonTeamTransport) UnmarshalJSON(data []byte) error {
 		u.Unavailable = value
 	default:
 		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonTeamTransportKindReady), string(jsonTeamTransportKindWindowBusy), string(jsonTeamTransportKindAmbiguousSpace), string(jsonTeamTransportKindUnavailable)})
+	}
+	return u.Validate()
+}
+
+// jsonTestSourceTransport stores exactly one selected Goa OneOf branch.
+type jsonTestSourceTransport struct {
+	kind         jsonTestSourceTransportKind
+	Evaluator    *jsonOperatorEvaluatorTestsTransport
+	WrittenTests *jsonAgentWrittenTestsTransport
+}
+
+// jsonTestSourceTransportKind identifies the selected branch of jsonTestSourceTransport.
+type jsonTestSourceTransportKind string
+
+const (
+	jsonTestSourceTransportKindEvaluator    jsonTestSourceTransportKind = "evaluator"
+	jsonTestSourceTransportKindWrittenTests jsonTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u jsonTestSourceTransport) Kind() jsonTestSourceTransportKind {
+	return u.kind
+}
+
+// newjsonTestSourceTransportEvaluator creates jsonTestSourceTransport with its evaluator branch selected.
+func newjsonTestSourceTransportEvaluator(value *jsonOperatorEvaluatorTestsTransport) jsonTestSourceTransport {
+	return jsonTestSourceTransport{kind: jsonTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u jsonTestSourceTransport) AsEvaluator() (_ *jsonOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != jsonTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *jsonTestSourceTransport) SetEvaluator(value *jsonOperatorEvaluatorTestsTransport) {
+	u.kind = jsonTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// newjsonTestSourceTransportWrittenTests creates jsonTestSourceTransport with its written_tests branch selected.
+func newjsonTestSourceTransportWrittenTests(value *jsonAgentWrittenTestsTransport) jsonTestSourceTransport {
+	return jsonTestSourceTransport{kind: jsonTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u jsonTestSourceTransport) AsWrittenTests() (_ *jsonAgentWrittenTestsTransport, ok bool) {
+	if u.kind != jsonTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *jsonTestSourceTransport) SetWrittenTests(value *jsonAgentWrittenTestsTransport) {
+	u.kind = jsonTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonTestSourceTransport) Validate() error {
+	switch u.kind {
+	case jsonTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "jsonTestSourceTransport")
+		}
+		return nil
+	case jsonTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "jsonTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "jsonTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(jsonTestSourceTransportKindEvaluator), string(jsonTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case jsonTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected jsonTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("jsonTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonTestSourceTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["source"]
+	if !exists {
+		return goa.MissingFieldError("source", "jsonTestSourceTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("source", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "source")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonTestSourceTransportKindEvaluator):
+		var value *jsonOperatorEvaluatorTestsTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestSourceTransportKindEvaluator
+		u.Evaluator = value
+	case string(jsonTestSourceTransportKindWrittenTests):
+		var value *jsonAgentWrittenTestsTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestSourceTransportKindWrittenTests
+		u.WrittenTests = value
+	default:
+		return goa.InvalidEnumValueError("source", raw.Type, []any{string(jsonTestSourceTransportKindEvaluator), string(jsonTestSourceTransportKindWrittenTests)})
 	}
 	return u.Validate()
 }
@@ -8642,6 +8900,86 @@ func DecodeAgentPolicyItem(data []byte) (out *AgentPolicyItem, err error) {
 			KeepRecentTurns:     int(*body.KeepRecentTurns),
 			CacheAfterSystem:    *body.CacheAfterSystem,
 			CacheAfterTools:     *body.CacheAfterTools,
+		}
+	}
+	return out, nil
+}
+
+// EncodeAgentWrittenTests turns a service value into JSON using the field names in the Goa design.
+func EncodeAgentWrittenTests(in *AgentWrittenTests) ([]byte, error) {
+	if err := checkAgentWrittenTestsValue(in); err != nil {
+		return nil, fmt.Errorf("encode AgentWrittenTests JSON: %w", err)
+	}
+	var body *jsonAgentWrittenTestsTransport
+	{
+		body = &jsonAgentWrittenTestsTransport{
+			Commit: &in.Commit,
+			Notice: &in.Notice,
+		}
+	}
+	if err := validatejsonAgentWrittenTestsTransport(body); err != nil {
+		return nil, fmt.Errorf("validate AgentWrittenTests JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode AgentWrittenTests JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateAgentWrittenTestsValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateAgentWrittenTestsValue(in *AgentWrittenTests) error {
+	if err := checkAgentWrittenTestsValue(in); err != nil {
+		return fmt.Errorf("validate AgentWrittenTests value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "AgentWrittenTests")
+	}
+
+	var body *jsonAgentWrittenTestsTransport
+	{
+		body = &jsonAgentWrittenTestsTransport{
+			Commit: &in.Commit,
+			Notice: &in.Notice,
+		}
+	}
+	if err := validatejsonAgentWrittenTestsTransport(body); err != nil {
+		return fmt.Errorf("validate AgentWrittenTests value: %w", err)
+	}
+	return nil
+}
+
+// DecodeAgentWrittenTests checks JSON field names from the Goa design and returns a service value.
+func DecodeAgentWrittenTests(data []byte) (out *AgentWrittenTests, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode AgentWrittenTests JSON: %w", err)
+	}
+	if err := validateAgentWrittenTestsJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode AgentWrittenTests JSON: %w", err)
+	}
+	var body *jsonAgentWrittenTestsTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode AgentWrittenTests JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode AgentWrittenTests JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode AgentWrittenTests JSON after first value: %w", err)
+	}
+	if err := validatejsonAgentWrittenTestsTransport(body); err != nil {
+		return out, fmt.Errorf("validate AgentWrittenTests JSON: %w", err)
+	}
+	{
+		out = &AgentWrittenTests{
+			Commit: *body.Commit,
+			Notice: *body.Notice,
 		}
 	}
 	return out, nil
@@ -13843,6 +14181,77 @@ func DecodeModelConfigResult(data []byte) (out *ModelConfigResult, err error) {
 	return out, nil
 }
 
+// EncodeOperatorEvaluatorTests turns a service value into JSON using the field names in the Goa design.
+func EncodeOperatorEvaluatorTests(in *OperatorEvaluatorTests) ([]byte, error) {
+	if err := checkOperatorEvaluatorTestsValue(in); err != nil {
+		return nil, fmt.Errorf("encode OperatorEvaluatorTests JSON: %w", err)
+	}
+	var body *jsonOperatorEvaluatorTestsTransport
+	{
+		body = &jsonOperatorEvaluatorTestsTransport{}
+	}
+	if err := validatejsonOperatorEvaluatorTestsTransport(body); err != nil {
+		return nil, fmt.Errorf("validate OperatorEvaluatorTests JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode OperatorEvaluatorTests JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateOperatorEvaluatorTestsValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateOperatorEvaluatorTestsValue(in *OperatorEvaluatorTests) error {
+	if err := checkOperatorEvaluatorTestsValue(in); err != nil {
+		return fmt.Errorf("validate OperatorEvaluatorTests value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "OperatorEvaluatorTests")
+	}
+
+	var body *jsonOperatorEvaluatorTestsTransport
+	{
+		body = &jsonOperatorEvaluatorTestsTransport{}
+	}
+	if err := validatejsonOperatorEvaluatorTestsTransport(body); err != nil {
+		return fmt.Errorf("validate OperatorEvaluatorTests value: %w", err)
+	}
+	return nil
+}
+
+// DecodeOperatorEvaluatorTests checks JSON field names from the Goa design and returns a service value.
+func DecodeOperatorEvaluatorTests(data []byte) (out *OperatorEvaluatorTests, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode OperatorEvaluatorTests JSON: %w", err)
+	}
+	if err := validateOperatorEvaluatorTestsJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode OperatorEvaluatorTests JSON: %w", err)
+	}
+	var body *jsonOperatorEvaluatorTestsTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode OperatorEvaluatorTests JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode OperatorEvaluatorTests JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode OperatorEvaluatorTests JSON after first value: %w", err)
+	}
+	if err := validatejsonOperatorEvaluatorTestsTransport(body); err != nil {
+		return out, fmt.Errorf("validate OperatorEvaluatorTests JSON: %w", err)
+	}
+	{
+		out = &OperatorEvaluatorTests{}
+	}
+	return out, nil
+}
+
 // EncodePreviewArchitecturePayload turns a service value into JSON using the field names in the Goa design.
 func EncodePreviewArchitecturePayload(in *PreviewArchitecturePayload) ([]byte, error) {
 	if err := checkPreviewArchitecturePayloadValue(in); err != nil {
@@ -18832,6 +19241,28 @@ func EncodeVerificationStatusResult(in *VerificationStatusResult) ([]byte, error
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
 		}
+		var testSourceValue jsonTestSourceTransport
+		switch string(in.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := in.TestSource.AsEvaluator()
+			var obj *jsonOperatorEvaluatorTestsTransport
+			if actual != nil {
+				obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+			testSourceValue = u
+		case "written_tests":
+			actual, _ := in.TestSource.AsWrittenTests()
+			var obj *jsonAgentWrittenTestsTransport
+			if actual != nil {
+				obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+			testSourceValue = u
+		}
+		body.TestSource = &testSourceValue
 		var stateValue jsonStateTransport
 		switch string(in.State.Kind()) {
 		case "running":
@@ -18899,6 +19330,28 @@ func ValidateVerificationStatusResultValue(in *VerificationStatusResult) error {
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
 		}
+		var testSourceValue jsonTestSourceTransport
+		switch string(in.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := in.TestSource.AsEvaluator()
+			var obj *jsonOperatorEvaluatorTestsTransport
+			if actual != nil {
+				obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+			testSourceValue = u
+		case "written_tests":
+			actual, _ := in.TestSource.AsWrittenTests()
+			var obj *jsonAgentWrittenTestsTransport
+			if actual != nil {
+				obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+			testSourceValue = u
+		}
+		body.TestSource = &testSourceValue
 		var stateValue jsonStateTransport
 		switch string(in.State.Kind()) {
 		case "running":
@@ -18969,6 +19422,26 @@ func DecodeVerificationStatusResult(data []byte) (out *VerificationStatusResult,
 			CandidateCommit: *body.CandidateCommit,
 			SuiteCommit:     *body.SuiteCommit,
 			AcceptedAt:      *body.AcceptedAt,
+		}
+		switch string(body.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := body.TestSource.AsEvaluator()
+			var obj *OperatorEvaluatorTests
+			if actual != nil {
+				obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+			}
+			u := out.TestSource
+			u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+			out.TestSource = u
+		case "written_tests":
+			actual, _ := body.TestSource.AsWrittenTests()
+			var obj *AgentWrittenTests
+			if actual != nil {
+				obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+			}
+			u := out.TestSource
+			u.SetWrittenTests((*AgentWrittenTests)(obj))
+			out.TestSource = u
 		}
 		switch string(body.State.Kind()) {
 		case "running":
@@ -19102,6 +19575,15 @@ func decodeAgentPolicyItemTransportToAgentPolicyItem(v *jsonAgentPolicyItemTrans
 		KeepRecentTurns:     int(*v.KeepRecentTurns),
 		CacheAfterSystem:    *v.CacheAfterSystem,
 		CacheAfterTools:     *v.CacheAfterTools,
+	}
+
+	return res
+}
+
+func decodeAgentWrittenTestsTransportToAgentWrittenTests(v *jsonAgentWrittenTestsTransport) *AgentWrittenTests {
+	res := &AgentWrittenTests{
+		Commit: *v.Commit,
+		Notice: *v.Notice,
 	}
 
 	return res
@@ -19432,6 +19914,12 @@ func decodeLatestVerificationItemTransportToLatestVerificationItem(v *jsonLatest
 		RunID: *v.RunID,
 		State: *v.State,
 	}
+
+	return res
+}
+
+func decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(v *jsonOperatorEvaluatorTestsTransport) *OperatorEvaluatorTests {
+	res := &OperatorEvaluatorTests{}
 
 	return res
 }
@@ -19937,6 +20425,26 @@ func decodeVerificationStatusResultTransportToVerificationStatusResult(v *jsonVe
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
 	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *OperatorEvaluatorTests
+		if actual != nil {
+			obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *AgentWrittenTests
+		if actual != nil {
+			obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*AgentWrittenTests)(obj))
+		res.TestSource = u
+	}
 	switch string(v.State.Kind()) {
 	case "running":
 		actual, _ := v.State.AsRunning()
@@ -19986,6 +20494,15 @@ func encodeAgentPolicyItemToAgentPolicyItemTransport(v *AgentPolicyItem) *jsonAg
 	res.CompressAtTurns = &compressAtTurns
 	keepRecentTurns := agentPolicyItemIntTransport(v.KeepRecentTurns)
 	res.KeepRecentTurns = &keepRecentTurns
+
+	return res
+}
+
+func encodeAgentWrittenTestsToAgentWrittenTestsTransport(v *AgentWrittenTests) *jsonAgentWrittenTestsTransport {
+	res := &jsonAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
 
 	return res
 }
@@ -20361,6 +20878,12 @@ func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVeri
 		RunID: &v.RunID,
 		State: &v.State,
 	}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(v *OperatorEvaluatorTests) *jsonOperatorEvaluatorTestsTransport {
+	res := &jsonOperatorEvaluatorTestsTransport{}
 
 	return res
 }
@@ -21034,6 +21557,28 @@ func encodeVerificationStatusResultToVerificationStatusResultTransport(v *Verifi
 		SuiteCommit:     &v.SuiteCommit,
 		AcceptedAt:      &v.AcceptedAt,
 	}
+	var testSourceValue jsonTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *jsonOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *jsonAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 	var stateValue jsonStateTransport
 	switch string(v.State.Kind()) {
 	case "running":
@@ -21205,6 +21750,50 @@ func validateAgentPolicyItemJSONValue4(path string, value any, description strin
 	_, ok := value.(json.Number)
 	if !ok {
 		return invalidGeneratedFieldTypeError(field, "integer", decodedJSONType(value), description)
+	}
+	return nil
+}
+
+// validateAgentWrittenTestsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateAgentWrittenTestsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Commit Surla recorded the accepted tests at; the same as suite_commit.",
+			); err != nil {
+				return err
+			}
+		case "notice":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Always: These tests were written by a separate agent on this machine and are not isolated from the builder.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+				"notice",
+			})
+		}
 	}
 	return nil
 }
@@ -26472,6 +27061,33 @@ func validateModelConfigResultJSONValue(path string, value any, description stri
 	return nil
 }
 
+// validateOperatorEvaluatorTestsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateOperatorEvaluatorTestsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
 // validatePreviewArchitecturePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validatePreviewArchitecturePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -28152,7 +28768,14 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 		case "suite_commit":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Evaluator suite commit the operator configured for the run.",
+				typed[key], "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.",
+			); err != nil {
+				return err
+			}
+		case "test_source":
+			if err := validateVerificationListResultJSONValue7(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
 			); err != nil {
 				return err
 			}
@@ -28165,6 +28788,7 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 				"run_id",
 				"state",
 				"suite_commit",
+				"test_source",
 			})
 		}
 	}
@@ -28295,6 +28919,39 @@ func validateVerificationListResultJSONValue6(path string, value any, descriptio
 		}
 	}
 	return nil
+}
+
+// validateVerificationListResultJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateVerificationListResultJSONValue7(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["source"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "source" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "evaluator":
+		return validateOperatorEvaluatorTestsJSONValue(path, branch, "")
+	case "written_tests":
+		return validateAgentWrittenTestsJSONValue(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
 }
 
 // validateVerifyChangePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
@@ -28531,6 +29188,39 @@ func checkAgentPolicyItemAgentPolicyItemValue(in *AgentPolicyItem, field string,
 	if in != nil {
 		if !utf8.ValidString(string(in.AgentID)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "agent_id", false))
+		}
+	}
+	return nil
+}
+
+// checkAgentWrittenTestsValue checks text and cycles before conversion.
+func checkAgentWrittenTestsValue(in *AgentWrittenTests) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkAgentWrittenTestsAgentWrittenTestsValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkAgentWrittenTestsAgentWrittenTestsValue checks one generated value on the active path.
+func checkAgentWrittenTestsAgentWrittenTestsValue(in *AgentWrittenTests, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		}
+		if !utf8.ValidString(string(in.Notice)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "notice", false))
 		}
 	}
 	return nil
@@ -31202,6 +31892,33 @@ func checkModelConfigResultModelConfigResultValue(in *ModelConfigResult, field s
 	return nil
 }
 
+// checkOperatorEvaluatorTestsValue checks text and cycles before conversion.
+func checkOperatorEvaluatorTestsValue(in *OperatorEvaluatorTests) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue checks one generated value on the active path.
+func checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue(in *OperatorEvaluatorTests, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
 // checkPreviewArchitecturePayloadValue checks text and cycles before conversion.
 func checkPreviewArchitecturePayloadValue(in *PreviewArchitecturePayload) error {
 	if in == nil {
@@ -32412,6 +33129,22 @@ func checkVerificationListResultVerificationStatusResultValue(in *VerificationSt
 		}
 		if !utf8.ValidString(string(in.AcceptedAt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "accepted_at", false))
+		}
+		if branch1, ok := in.TestSource.AsEvaluator(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue(branch1, generatedJSONChildPath(field, "test_source", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.TestSource.AsWrittenTests(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkAgentWrittenTestsAgentWrittenTestsValue(branch1, generatedJSONChildPath(field, "test_source", false), active); err != nil {
+				return err
+			}
 		}
 		if branch1, ok := in.State.AsRunning(); ok {
 			_ = branch1

@@ -455,7 +455,10 @@ func writeListedRun(t *testing.T, runsDir, owner string, card *gensurla.ChangeCa
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	req, err := json.Marshal(verifyrun.Request{
 		RunID: runID, Owner: owner, ChangeID: card.ChangeID, AcceptedAt: accepted,
-		Plan: verify.Plan{CandidateCommit: commit, RequestRevision: card.RequestRevision, SuiteCommit: inputs.SuiteCommit, ReportDir: reportDir},
+		Plan: verify.Plan{
+			CandidateCommit: commit, RequestRevision: card.RequestRevision, SuiteCommit: inputs.SuiteCommit, ReportDir: reportDir,
+			Tests: verify.TestsEvaluator,
+		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "request.json"), req, 0o600))

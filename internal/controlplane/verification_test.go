@@ -90,7 +90,7 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 		dir := filepath.Join(cfg.RunsDir, runID)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		plan := cfg.Plan
-		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 		req, err := json.Marshal(verifyrun.Request{RunID: runID, Owner: "alice@example.com", ChangeID: "chg",
 			AcceptedAt: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), Plan: plan})
 		require.NoError(t, err)
@@ -176,7 +176,7 @@ func TestGetVerificationSafeErrors(t *testing.T) {
 		dir := filepath.Join(cfg.RunsDir, runID)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		plan := cfg.Plan
-		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 		raw, err := json.Marshal(verifyrun.Request{
 			RunID:    runID,
 			Owner:    "bob@example.com",
@@ -218,7 +218,7 @@ func TestGetVerificationSafeErrors(t *testing.T) {
 		dir := filepath.Join(cfg.RunsDir, runID)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		plan := cfg.Plan
-		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 		raw, err := json.Marshal(verifyrun.Request{
 			RunID:      runID,
 			Owner:      "alice@example.com",
@@ -293,7 +293,7 @@ func TestListVerifications(t *testing.T) {
 			dir := filepath.Join(cfg.RunsDir, runID)
 			require.NoError(t, os.MkdirAll(dir, 0o700))
 			plan := cfg.Plan
-			plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+			plan.CandidateCommit, plan.RequestRevision, plan.Tests = commit, card.RequestRevision, verify.TestsEvaluator
 			raw, err := json.Marshal(verifyrun.Request{
 				RunID:      runID,
 				Owner:      "alice@example.com",

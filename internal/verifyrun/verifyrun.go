@@ -212,8 +212,9 @@ func NewRunID() string {
 // Start accepts req under root and starts its supervisor, then returns the
 // supervisor's PID without waiting for the run. command is the argument list
 // that runs this program, such as the path of the surla executable; Start
-// appends "verify-run supervise <dir>". The run directory must not exist, and
-// req.Plan.WorkDir must name the run's work directory.
+// appends "verify-run supervise <dir>". The run directory must not exist,
+// req.Plan.WorkDir must name the run's work directory, and req.Plan.Tests
+// must name one of the declared test sources.
 func Start(root string, req Request, command []string) (int, error) {
 	if !runIDPattern.MatchString(req.RunID) {
 		return 0, fmt.Errorf("run ID %q is not 32 lowercase hex characters", req.RunID)
@@ -229,6 +230,9 @@ func Start(root string, req Request, command []string) (int, error) {
 	}
 	if req.AcceptedAt.IsZero() {
 		return 0, errors.New("run accepted_at time is required")
+	}
+	if err := req.Plan.Tests.Check(); err != nil {
+		return 0, err
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return 0, fmt.Errorf("create runs directory: %w", err)
@@ -588,9 +592,9 @@ func readRequest(dir string) (Request, error) {
 }
 
 // decodeRequest strictly decodes raw request.json bytes for wantRunID and
-// validates its directory identity, owner, and acceptance time. Once Decode
-// succeeds, req is returned alongside any validation error so callers can still
-// check req.Owner before reporting read failures.
+// validates its directory identity, owner, acceptance time and test source.
+// Once Decode succeeds, req is returned alongside any validation error so
+// callers can still check req.Owner before reporting read failures.
 func decodeRequest(wantRunID string, raw []byte) (Request, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -610,6 +614,9 @@ func decodeRequest(wantRunID string, raw []byte) (Request, error) {
 	}
 	if req.AcceptedAt.IsZero() {
 		return req, errors.New("decode run request: accepted_at is required")
+	}
+	if err := req.Plan.Tests.Check(); err != nil {
+		return req, fmt.Errorf("decode run request: %w", err)
 	}
 	return req, nil
 }

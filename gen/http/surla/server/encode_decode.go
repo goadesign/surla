@@ -3775,6 +3775,27 @@ func marshalSurlaToolInputBindingItemToToolInputBindingItemResponseBody(v *surla
 	return res
 }
 
+// marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody
+// builds a value of type *OperatorEvaluatorTestsResponseBody from a value of
+// type *surla.OperatorEvaluatorTests.
+func marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(v *surla.OperatorEvaluatorTests) *OperatorEvaluatorTestsResponseBody {
+	res := &OperatorEvaluatorTestsResponseBody{}
+
+	return res
+}
+
+// marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody builds a value
+// of type *AgentWrittenTestsResponseBody from a value of type
+// *surla.AgentWrittenTests.
+func marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(v *surla.AgentWrittenTests) *AgentWrittenTestsResponseBody {
+	res := &AgentWrittenTestsResponseBody{
+		Commit: v.Commit,
+		Notice: v.Notice,
+	}
+
+	return res
+}
+
 // marshalSurlaVerificationRunningToVerificationRunningResponseBody builds a
 // value of type *VerificationRunningResponseBody from a value of type
 // *surla.VerificationRunning.
@@ -3904,6 +3925,28 @@ func marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody(
 		CandidateCommit: v.CandidateCommit,
 		SuiteCommit:     v.SuiteCommit,
 		AcceptedAt:      v.AcceptedAt,
+	}
+	if v.TestSource.Kind() != "" {
+		switch string(v.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := v.TestSource.AsEvaluator()
+			var obj *OperatorEvaluatorTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(actual)
+			}
+			u := res.TestSource
+			u.SetEvaluator((*OperatorEvaluatorTestsResponseBody)(obj))
+			res.TestSource = u
+		case "written_tests":
+			actual, _ := v.TestSource.AsWrittenTests()
+			var obj *AgentWrittenTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(actual)
+			}
+			u := res.TestSource
+			u.SetWrittenTests((*AgentWrittenTestsResponseBody)(obj))
+			res.TestSource = u
+		}
 	}
 	if v.State.Kind() != "" {
 		switch string(v.State.Kind()) {

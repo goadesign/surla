@@ -133,7 +133,7 @@ func liveHost(root string) int {
 	if err != nil {
 		return 2
 	}
-	p, err := startLive(context.Background(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+	p, err := startLive(context.Background(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 	if err != nil {
 		fmt.Println("start-error", err)
 		return 2
@@ -220,7 +220,7 @@ func TestStartLiveServesUntilStopAndThenRemovesEverything(t *testing.T) {
 	self, err := os.Executable()
 	require.NoError(t, err)
 
-	p, err := startLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+	p, err := startLive(t.Context(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:4100", p.URL)
 	pgid, pids := recordedPIDs(t, p.Dir(), 2)
@@ -271,7 +271,7 @@ func TestLaunchLiveResolvesItsRoot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			p, err := startLive(ctx, tc.root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+			p, err := startLive(ctx, tc.root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, p.Stop()) })
 			assert.True(t, filepath.IsAbs(p.Dir()))
@@ -305,7 +305,7 @@ func TestStartLiveReportsAndCleansUpEveryFailedStart(t *testing.T) {
 		t.Run(tc.mode+"/"+tc.wantErr, func(t *testing.T) {
 			t.Setenv(liveFakeEnv, tc.mode)
 			root := t.TempDir()
-			_, err := startLive(t.Context(), root, verify.Plan{}, tc.key, []string{self}, os.Environ())
+			_, err := startLive(t.Context(), root, evaluatorPlan, tc.key, []string{self}, os.Environ())
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
 			assert.NotContains(t, err.Error(), "/private/secret/path", "only the safe summary reaches the caller")
@@ -326,7 +326,7 @@ func TestStartLiveStopsAStartThatIsCanceled(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			errs := make(chan error, 1)
 			go func() {
-				_, err := startLive(ctx, root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+				_, err := startLive(ctx, root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 				errs <- err
 			}()
 			dir := onlyLiveDir(t, root)
@@ -345,7 +345,7 @@ func TestLiveTargetThatEndsIsReportedDone(t *testing.T) {
 	root := t.TempDir()
 	self, err := os.Executable()
 	require.NoError(t, err)
-	p, err := startLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+	p, err := startLive(t.Context(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 	require.NoError(t, err)
 	pgid, _ := recordedPIDs(t, p.Dir(), 2)
 	select {
@@ -464,7 +464,7 @@ func TestLiveExecutorEndsItsWholeGroupOnATerminalEvent(t *testing.T) {
 			dir := t.TempDir()
 			tmp := filepath.Join(dir, liveTmpDir)
 			require.NoError(t, os.Mkdir(tmp, 0o700))
-			require.NoError(t, writeJSON(dir, liveRequestFile, LiveRequest{}))
+			require.NoError(t, writeJSON(dir, liveRequestFile, LiveRequest{Plan: evaluatorPlan}))
 			control, keep, err := os.Pipe()
 			require.NoError(t, err)
 			defer keep.Close()
@@ -497,7 +497,7 @@ func TestStartLiveFailsPromptlyOnABadReadyLine(t *testing.T) {
 	self, err := os.Executable()
 	require.NoError(t, err)
 	started := time.Now()
-	_, err = startLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+	_, err = startLive(t.Context(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), summaryLiveSuite)
 	assert.Less(t, time.Since(started), 10*time.Second, "a protocol failure is reported without waiting for the suite to exit")
@@ -513,7 +513,7 @@ func TestRepeatedLiveTargetsRetainNoDescriptors(t *testing.T) {
 	require.NoError(t, err)
 	start := openDescriptors(t)
 	for range 5 {
-		p, err := startLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+		p, err := startLive(t.Context(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 		require.NoError(t, err)
 		require.NoError(t, p.Stop())
 	}
@@ -574,7 +574,7 @@ func TestLiveStartFailuresStayDiagnosableAfterCleanup(t *testing.T) {
 		t.Run(tc.mode, func(t *testing.T) {
 			t.Setenv(liveFakeEnv, tc.mode)
 			root := t.TempDir()
-			_, err := startLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+			_, err := startLive(t.Context(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
 			var start *LiveStartError
 			require.ErrorAs(t, err, &start)
 			assert.Equal(t, summaryLiveSuite, start.Summary, "the public summary is the same safe text")
@@ -590,7 +590,7 @@ func TestAwaitReadyCapturesDetailOnTimeoutAndLeavesTheTargetToItsOwner(t *testin
 	t.Setenv(liveFakeEnv, "prepare-hangs")
 	self, err := os.Executable()
 	require.NoError(t, err)
-	p, err := LaunchLive(t.TempDir(), verify.Plan{}, "secret-key", []string{self}, os.Environ())
+	p, err := LaunchLive(t.TempDir(), evaluatorPlan, "secret-key", []string{self}, os.Environ())
 	require.NoError(t, err)
 	pgid, _ := recordedPIDs(t, p.Dir(), 2)
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)

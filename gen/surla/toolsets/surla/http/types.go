@@ -548,10 +548,14 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// Candidate commit the run builds and verifies.
 		CandidateCommit *string `json:"candidate_commit"`
-		// Evaluator suite commit the operator configured for the run.
+		// Commit of the tests the run uses: the operator's evaluator, or the tests
+		// accepted for the change's build.
 		SuiteCommit *string `json:"suite_commit"`
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
+		// Where the run's tests came from, recorded when the run started: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource *TestSource `json:"test_source"`
 		// Exactly one of running, completed or not_completed.
 		State *State `json:"state"`
 	}
@@ -1035,10 +1039,14 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// Candidate commit the run builds and verifies.
 		CandidateCommit *string `json:"candidate_commit"`
-		// Evaluator suite commit the operator configured for the run.
+		// Commit of the tests the run uses: the operator's evaluator, or the tests
+		// accepted for the change's build.
 		SuiteCommit *string `json:"suite_commit"`
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
+		// Where the run's tests came from, recorded when the run started: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource *TestSource `json:"test_source"`
 		// Exactly one of running, completed or not_completed.
 		State *State `json:"state"`
 	}
@@ -1063,6 +1071,17 @@ type (
 		CacheAfterSystem *bool `json:"cache_after_system"`
 		// True when prompt caching places a checkpoint after tool definitions.
 		CacheAfterTools *bool `json:"cache_after_tools"`
+	}
+	// AgentWrittenTestsTransport is the internal JSON transport type for AgentWrittenTestsTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	AgentWrittenTestsTransport struct {
+		// Commit Surla recorded the accepted tests at; the same as suite_commit.
+		Commit *string `json:"commit"`
+		// Always: These tests were written by a separate agent on this machine and are
+		// not isolated from the builder.
+		Notice *string `json:"notice"`
 	}
 	// AmbiguityQuestionTransport is the internal JSON transport type for AmbiguityQuestionTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1351,6 +1370,12 @@ type (
 		// when its report's verdict is known; not_completed when it stopped without a
 		// report.
 		State *string `json:"state"`
+	}
+	// OperatorEvaluatorTestsTransport is the internal JSON transport type for OperatorEvaluatorTestsTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	OperatorEvaluatorTestsTransport struct {
 	}
 	// ProposedRevisionItemTransport is the internal JSON transport type for ProposedRevisionItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1785,10 +1810,14 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// Candidate commit the run builds and verifies.
 		CandidateCommit *string `json:"candidate_commit"`
-		// Evaluator suite commit the operator configured for the run.
+		// Commit of the tests the run uses: the operator's evaluator, or the tests
+		// accepted for the change's build.
 		SuiteCommit *string `json:"suite_commit"`
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
+		// Where the run's tests came from, recorded when the run started: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource *TestSource `json:"test_source"`
 		// Exactly one of running, completed or not_completed.
 		State *State `json:"state"`
 	}

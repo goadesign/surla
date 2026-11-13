@@ -22,6 +22,7 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	genpromptsclient "github.com/goadesign/surla/internal/targetprompt/gen/http/prompts/client"
 	genprompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
+	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
@@ -128,16 +129,13 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if !c.liveConfigured {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
-	verCfg, err := c.resolveActiveVerification(ctx)
-	if err != nil {
-		return nil, gensurla.MakeLiveTargetUnavailable(err)
-	}
-	if verCfg == nil {
-		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
-	}
 	ctx, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
 		trace.WithAttributes(attribute.String("candidate_commit", p.CandidateCommit)))
 	defer span.End()
+	verCfg, err := c.livePlan(ctx, p.CandidateCommit)
+	if err != nil {
+		return nil, err
+	}
 
 	c.liveMu.Lock()
 	defer c.liveMu.Unlock()
@@ -154,7 +152,6 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		return nil, err
 	}
 	plan := verCfg.Plan
-	plan.CandidateCommit = p.CandidateCommit
 	timeout := c.liveTimeout
 	if timeout <= 0 {
 		timeout = startTimeoutDefault
@@ -211,6 +208,41 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		Message: fmt.Sprintf("Live target for commit %s is running at %s, a loopback address on the Surla server's host; draft_override now sends prompt text to it.",
 			p.CandidateCommit, proc.URL),
 	}, nil
+}
+
+// livePlan returns the configuration of a live copy of candidateCommit,
+// which takes nothing else. With the stored evaluator, the operator's plan,
+// whose program keeps the server's environment. Otherwise the candidate
+// commit's own test module, the builder's tree: its generated entry point
+// built from the same commit, written by agents, so its program gets only the
+// live copy's named environment (verify.LiveProgramEnv). It needs no build
+// and no accepted tests, and the test writer's code never runs in it. It
+// refuses with live_target_unavailable when this control plane runs no
+// verification, and live_target_failed when the repository does not hold the
+// commit or the commit lacks the test layout `surla init` makes.
+func (c *ControlPlane) livePlan(ctx context.Context, candidateCommit string) (VerificationConfig, error) {
+	switch v := c.verifier.(type) {
+	case storedVerification:
+		cfg := *v.cfg
+		cfg.Plan.Tests = verify.TestsEvaluator
+		cfg.Plan.CandidateCommit = candidateCommit
+		return cfg, nil
+	case writtenTestVerification:
+		plan, err := c.starterPlanAt(ctx, candidateCommit, candidateCommit, builderActs)
+		var refusal *layoutRefusal
+		if errors.As(err, &refusal) {
+			return VerificationConfig{}, gensurla.MakeLiveTargetFailed(refusal)
+		}
+		if err != nil {
+			return VerificationConfig{}, err
+		}
+		cfg := *v.runs
+		plan.ReportDir = cfg.Plan.ReportDir
+		cfg.Plan = plan
+		return cfg, nil
+	default:
+		return VerificationConfig{}, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
+	}
 }
 
 // StopLiveTarget stops the running live target, if any.

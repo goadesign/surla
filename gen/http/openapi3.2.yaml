@@ -3283,7 +3283,7 @@ paths:
             tags:
                 - surla
             summary: list_verifications surla
-            description: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.
+            description: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state, the Change Card revision it was started for and where its tests came from. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision. The test writer lists only the runs of a change it has an assignment for.
             operationId: surla#list_verifications
             parameters:
                 - name: change_id
@@ -3376,6 +3376,8 @@ paths:
                                                 suite_failed: false
                                             suite_id: Dolorum sed sunt sed.
                                       suite_commit: Nostrum perspiciatis quo.
+                                      test_source:
+                                        source: evaluator
                                     - accepted_at: "1984-07-01T17:36:31Z"
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
@@ -3446,6 +3448,8 @@ paths:
                                                 suite_failed: false
                                             suite_id: Dolorum sed sunt sed.
                                       suite_commit: Nostrum perspiciatis quo.
+                                      test_source:
+                                        source: evaluator
                                     - accepted_at: "1984-07-01T17:36:31Z"
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
@@ -3516,6 +3520,8 @@ paths:
                                                 suite_failed: false
                                             suite_id: Dolorum sed sunt sed.
                                       suite_commit: Nostrum perspiciatis quo.
+                                      test_source:
+                                        source: evaluator
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
@@ -3559,7 +3565,7 @@ paths:
             tags:
                 - surla
             summary: verify_change surla
-            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.
+            description: 'Start Checkpoint 4 verification of a candidate commit for the owner''s confirmed Change Card revision and return its run_id at once. With verification settings stored with surla verification set, the run uses the operator''s evaluator and needs no build. Otherwise the user''s build of that revision must exist and Surla must have accepted its tests: the run builds the candidate''s programs from the candidate commit and runs the generated entry point of the tests at the accepted commit. The server builds the commit in Surla''s sandbox and runs the tests in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned, with where its tests came from.'
             operationId: surla#verify_change
             parameters:
                 - name: change_id
@@ -3599,6 +3605,8 @@ paths:
                                     value:
                                         started_at: "1984-04-01T02:58:45Z"
                                 suite_commit: Nesciunt dolor in ea.
+                                test_source:
+                                    source: evaluator
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
@@ -13026,7 +13034,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.
             operationId: surla#start_live_target
             requestBody:
                 description: Request body for start_live_target.
@@ -13752,7 +13760,7 @@ paths:
             tags:
                 - surla
             summary: get_verification surla
-            description: 'Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.'
+            description: 'Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped, and where its tests came from. A run keeps the Change Card revision it was started for. The test writer reads only the runs of a change it has an assignment for.'
             operationId: surla#get_verification
             parameters:
                 - name: run_id
@@ -13842,6 +13850,10 @@ paths:
                                             suite_failed: false
                                         suite_id: Dolorum sed sunt sed.
                                 suite_commit: Laboriosam architecto minus itaque deleniti.
+                                test_source:
+                                    commit: Iste aspernatur ab.
+                                    notice: Assumenda quisquam et sed qui eos.
+                                    source: written_tests
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
@@ -27980,6 +27992,8 @@ components:
                                     suite_failed: false
                                 suite_id: Dolorum sed sunt sed.
                           suite_commit: Nostrum perspiciatis quo.
+                          test_source:
+                            source: evaluator
                         - accepted_at: "1984-07-01T17:36:31Z"
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
@@ -28050,6 +28064,8 @@ components:
                                     suite_failed: false
                                 suite_id: Dolorum sed sunt sed.
                           suite_commit: Nostrum perspiciatis quo.
+                          test_source:
+                            source: evaluator
                         - accepted_at: "1984-07-01T17:36:31Z"
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
@@ -28120,6 +28136,8 @@ components:
                                     suite_failed: false
                                 suite_id: Dolorum sed sunt sed.
                           suite_commit: Nostrum perspiciatis quo.
+                          test_source:
+                            source: evaluator
             description: All Checkpoint 4 verification runs started by the owner for one Change Card, ordered newest first by accepted_at (tie-broken by run_id).
             example:
                 change_id: Culpa voluptas voluptas.
@@ -28194,6 +28212,8 @@ components:
                                 suite_failed: false
                             suite_id: Dolorum sed sunt sed.
                       suite_commit: Nostrum perspiciatis quo.
+                      test_source:
+                        source: evaluator
                     - accepted_at: "1984-07-01T17:36:31Z"
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
@@ -28264,6 +28284,8 @@ components:
                                 suite_failed: false
                             suite_id: Dolorum sed sunt sed.
                       suite_commit: Nostrum perspiciatis quo.
+                      test_source:
+                        source: evaluator
                     - accepted_at: "1984-07-01T17:36:31Z"
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
@@ -28334,6 +28356,8 @@ components:
                                 suite_failed: false
                             suite_id: Dolorum sed sunt sed.
                       suite_commit: Nostrum perspiciatis quo.
+                      test_source:
+                        source: evaluator
             required:
                 - change_id
                 - runs
@@ -28510,8 +28534,44 @@ components:
                             - value
                 suite_commit:
                     type: string
-                    description: Evaluator suite commit the operator configured for the run.
+                    description: 'Commit of the tests the run uses: the operator''s evaluator, or the tests accepted for the change''s build.'
                     example: Nesciunt dolor in ea.
+                test_source:
+                    type: object
+                    description: 'Where the run''s tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.'
+                    example:
+                        source: evaluator
+                    anyOf:
+                        - type: object
+                          properties:
+                            source:
+                                type: string
+                                enum:
+                                    - evaluator
+                          example: {}
+                          required:
+                            - source
+                        - type: object
+                          properties:
+                            commit:
+                                type: string
+                                description: Commit Surla recorded the accepted tests at; the same as suite_commit.
+                                example: Odio omnis hic.
+                            notice:
+                                type: string
+                                description: 'Always: These tests were written by a separate agent on this machine and are not isolated from the builder.'
+                                example: Accusantium rerum error quam ab et.
+                            source:
+                                type: string
+                                enum:
+                                    - written_tests
+                          example:
+                            commit: Odio omnis hic.
+                            notice: Accusantium rerum error quam ab et.
+                          required:
+                            - commit
+                            - notice
+                            - source
             description: One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.
             example:
                 accepted_at: "1996-01-07T22:40:11Z"
@@ -28524,6 +28584,8 @@ components:
                     value:
                         started_at: "1984-04-01T02:58:45Z"
                 suite_commit: Nesciunt dolor in ea.
+                test_source:
+                    source: evaluator
             required:
                 - run_id
                 - change_id
@@ -28531,6 +28593,7 @@ components:
                 - candidate_commit
                 - suite_commit
                 - accepted_at
+                - test_source
                 - state
         VerifyChangePayload:
             type: object

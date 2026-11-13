@@ -46,37 +46,37 @@ func ToolSchema(name tools.Ident) (*genregistry.ToolSchema, bool) {
 	case "surla.get_verification":
 		return declarations.schema909(), true
 	case "surla.init_project":
-		return declarations.schema955(), true
+		return declarations.schema961(), true
 	case "surla.list_builder_assignments":
-		return declarations.schema970(), true
+		return declarations.schema976(), true
 	case "surla.list_changes":
-		return declarations.schema990(), true
+		return declarations.schema996(), true
 	case "surla.list_test_writer_assignments":
-		return declarations.schema1010(), true
+		return declarations.schema1016(), true
 	case "surla.list_traces":
-		return declarations.schema1041(), true
+		return declarations.schema1047(), true
 	case "surla.list_verifications":
-		return declarations.schema1070(), true
+		return declarations.schema1076(), true
 	case "surla.preview_architecture":
-		return declarations.schema1119(), true
+		return declarations.schema1131(), true
 	case "surla.propose_change":
-		return declarations.schema1177(), true
+		return declarations.schema1189(), true
 	case "surla.read_check_output":
-		return declarations.schema1366(), true
+		return declarations.schema1378(), true
 	case "surla.refresh_story":
-		return declarations.schema1381(), true
+		return declarations.schema1393(), true
 	case "surla.report_tests_finished":
-		return declarations.schema1429(), true
+		return declarations.schema1441(), true
 	case "surla.revise_change":
-		return declarations.schema1462(), true
+		return declarations.schema1474(), true
 	case "surla.start_live_target":
-		return declarations.schema1659(), true
-	case "surla.stop_live_target":
 		return declarations.schema1671(), true
+	case "surla.stop_live_target":
+		return declarations.schema1683(), true
 	case "surla.update_dependencies":
-		return declarations.schema1680(), true
+		return declarations.schema1692(), true
 	case "surla.verify_change":
-		return declarations.schema1691(), true
+		return declarations.schema1703(), true
 	default:
 		return nil, false
 	}

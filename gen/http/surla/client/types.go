@@ -552,10 +552,14 @@ type VerifyChangeResponseBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
 }
@@ -571,10 +575,14 @@ type GetVerificationResponseBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
 }
@@ -3301,6 +3309,21 @@ type ToolInputBindingItemResponseBody struct {
 	InjectedFields []string `form:"injected_fields,omitempty" json:"injected_fields,omitempty" xml:"injected_fields,omitempty"`
 }
 
+// OperatorEvaluatorTestsResponseBody is used to define fields on response body
+// types.
+type OperatorEvaluatorTestsResponseBody struct {
+}
+
+// AgentWrittenTestsResponseBody is used to define fields on response body
+// types.
+type AgentWrittenTestsResponseBody struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `form:"notice,omitempty" json:"notice,omitempty" xml:"notice,omitempty"`
+}
+
 // VerificationRunningResponseBody is used to define fields on response body
 // types.
 type VerificationRunningResponseBody struct {
@@ -3398,10 +3421,14 @@ type VerificationStatusResultResponseBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Candidate commit the run builds and verifies.
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
-	// Evaluator suite commit the operator configured for the run.
+	// Commit of the tests the run uses: the operator's evaluator, or the tests
+	// accepted for the change's build.
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Where the run's tests came from, recorded when the run started: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
 }
@@ -4468,6 +4495,188 @@ func (u *TeamResponseBody) UnmarshalJSON(data []byte) error {
 			string(TeamResponseBodyKindWindowBusy),
 			string(TeamResponseBodyKindAmbiguousSpace),
 			string(TeamResponseBodyKindUnavailable),
+		})
+	}
+	return nil
+}
+
+// TestSourceResponseBody holds exactly one of its branch values.
+type TestSourceResponseBody struct {
+	kind         TestSourceResponseBodyKind
+	evaluator    *OperatorEvaluatorTestsResponseBody
+	writtenTests *AgentWrittenTestsResponseBody
+}
+
+// TestSourceResponseBodyKind records which TestSourceResponseBody branch is selected.
+type TestSourceResponseBodyKind string
+
+const (
+	// TestSourceResponseBodyKindEvaluator identifies the evaluator branch.
+	TestSourceResponseBodyKindEvaluator TestSourceResponseBodyKind = "evaluator"
+	// TestSourceResponseBodyKindWrittenTests identifies the written_tests branch.
+	TestSourceResponseBodyKindWrittenTests TestSourceResponseBodyKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u TestSourceResponseBody) Kind() TestSourceResponseBodyKind {
+	return u.kind
+}
+
+// NewTestSourceResponseBodyEvaluator constructs TestSourceResponseBody with the evaluator branch set.
+func NewTestSourceResponseBodyEvaluator(v *OperatorEvaluatorTestsResponseBody) TestSourceResponseBody {
+	return TestSourceResponseBody{
+		kind:      TestSourceResponseBodyKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// AsEvaluator returns the value when the evaluator branch is selected.
+func (u TestSourceResponseBody) AsEvaluator() (_ *OperatorEvaluatorTestsResponseBody, ok bool) {
+	if u.kind != TestSourceResponseBodyKindEvaluator {
+		return
+	}
+	return u.evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch and stores v.
+func (u *TestSourceResponseBody) SetEvaluator(v *OperatorEvaluatorTestsResponseBody) {
+	*u = TestSourceResponseBody{
+		kind:      TestSourceResponseBodyKindEvaluator,
+		evaluator: v,
+	}
+}
+
+// NewTestSourceResponseBodyWrittenTests constructs TestSourceResponseBody with the written_tests branch set.
+func NewTestSourceResponseBodyWrittenTests(v *AgentWrittenTestsResponseBody) TestSourceResponseBody {
+	return TestSourceResponseBody{
+		kind:         TestSourceResponseBodyKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// AsWrittenTests returns the value when the written_tests branch is selected.
+func (u TestSourceResponseBody) AsWrittenTests() (_ *AgentWrittenTestsResponseBody, ok bool) {
+	if u.kind != TestSourceResponseBodyKindWrittenTests {
+		return
+	}
+	return u.writtenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch and stores v.
+func (u *TestSourceResponseBody) SetWrittenTests(v *AgentWrittenTestsResponseBody) {
+	*u = TestSourceResponseBody{
+		kind:         TestSourceResponseBodyKindWrittenTests,
+		writtenTests: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u TestSourceResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u TestSourceResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("source", "", []any{
+			string(TestSourceResponseBodyKindEvaluator),
+			string(TestSourceResponseBodyKindWrittenTests),
+		})
+	case TestSourceResponseBodyKindEvaluator:
+		if u.evaluator == nil {
+			return nil, goa.MissingFieldError("value", "TestSourceResponseBody")
+		}
+		return u.evaluator, nil
+	case TestSourceResponseBodyKindWrittenTests:
+		if u.writtenTests == nil {
+			return nil, goa.MissingFieldError("value", "TestSourceResponseBody")
+		}
+		return u.writtenTests, nil
+	default:
+		return nil, goa.InvalidEnumValueError("source", u.kind, []any{
+			string(TestSourceResponseBodyKindEvaluator),
+			string(TestSourceResponseBodyKindWrittenTests),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u TestSourceResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("TestSourceResponseBody branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *TestSourceResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["source"]
+	if !exists {
+		return goa.MissingFieldError("source", "TestSourceResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("source", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "source")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(TestSourceResponseBodyKindEvaluator):
+		var v *OperatorEvaluatorTestsResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetEvaluator(v)
+	case string(TestSourceResponseBodyKindWrittenTests):
+		var v *AgentWrittenTestsResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetWrittenTests(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("source", "TestSourceResponseBody")
+		}
+		return goa.InvalidEnumValueError("source", raw.Type, []any{
+			string(TestSourceResponseBodyKindEvaluator),
+			string(TestSourceResponseBodyKindWrittenTests),
 		})
 	}
 	return nil
@@ -6430,6 +6639,26 @@ func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *
 		SuiteCommit:     *body.SuiteCommit,
 		AcceptedAt:      *body.AcceptedAt,
 	}
+	switch string(body.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := body.TestSource.AsEvaluator()
+		var obj *surla.OperatorEvaluatorTests
+		if actual != nil {
+			obj = unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(actual)
+		}
+		u := v.TestSource
+		u.SetEvaluator((*surla.OperatorEvaluatorTests)(obj))
+		v.TestSource = u
+	case "written_tests":
+		actual, _ := body.TestSource.AsWrittenTests()
+		var obj *surla.AgentWrittenTests
+		if actual != nil {
+			obj = unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(actual)
+		}
+		u := v.TestSource
+		u.SetWrittenTests((*surla.AgentWrittenTests)(obj))
+		v.TestSource = u
+	}
 	switch string(body.State.Kind()) {
 	case "running":
 		actual, _ := body.State.AsRunning()
@@ -6533,6 +6762,26 @@ func NewGetVerificationVerificationStatusResultOK(body *GetVerificationResponseB
 		CandidateCommit: *body.CandidateCommit,
 		SuiteCommit:     *body.SuiteCommit,
 		AcceptedAt:      *body.AcceptedAt,
+	}
+	switch string(body.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := body.TestSource.AsEvaluator()
+		var obj *surla.OperatorEvaluatorTests
+		if actual != nil {
+			obj = unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(actual)
+		}
+		u := v.TestSource
+		u.SetEvaluator((*surla.OperatorEvaluatorTests)(obj))
+		v.TestSource = u
+	case "written_tests":
+		actual, _ := body.TestSource.AsWrittenTests()
+		var obj *surla.AgentWrittenTests
+		if actual != nil {
+			obj = unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(actual)
+		}
+		u := v.TestSource
+		u.SetWrittenTests((*surla.AgentWrittenTests)(obj))
+		v.TestSource = u
 	}
 	switch string(body.State.Kind()) {
 	case "running":
@@ -8780,11 +9029,31 @@ func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validateAgentWrittenTestsResponseBody(actual, "body.test_source.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if body.State != nil {
 
@@ -8841,11 +9110,31 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validateAgentWrittenTestsResponseBody(actual, "body.test_source.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if body.State != nil {
 
@@ -13070,6 +13359,30 @@ func validateToolInputBindingItemResponseBody(body *ToolInputBindingItemResponse
 	return
 }
 
+// ValidateAgentWrittenTestsResponseBody runs the validations defined on
+// AgentWrittenTests
+func ValidateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody) (err error) {
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if body.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return
+}
+
+// validateAgentWrittenTestsResponseBody checks AgentWrittenTests and reports
+// errors using the path supplied by its caller
+func validateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody, path string) (err error) {
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", path))
+	}
+	if body.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", path))
+	}
+	return
+}
+
 // ValidateVerificationRunningResponseBody runs the validations defined on
 // VerificationRunning
 func ValidateVerificationRunningResponseBody(body *VerificationRunningResponseBody) (err error) {
@@ -13386,11 +13699,31 @@ func ValidateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validateAgentWrittenTestsResponseBody(actual, "body.test_source.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if body.State != nil {
 
@@ -13447,11 +13780,31 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", path))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", path))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", path))
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validateAgentWrittenTestsResponseBody(actual, path+".test_source.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	if body.State != nil {
 

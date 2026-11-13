@@ -93,12 +93,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		require.NoError(t, unix.Lstat(stagedDir, &st))
 
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			StageDir:    evalStageParent,
-			Staging:     ".surla-init-123",
-			Dev:         uint64(st.Dev),
-			Ino:         st.Ino,
+			Dir:      "shop",
+			StageDir: evalStageParent,
+			Staging:  ".surla-init-123",
+			Dev:      uint64(st.Dev),
+			Ino:      st.Ino,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -113,7 +112,6 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		defer cp.Close()
 
 		assert.Equal(t, "shop", filepath.Base(cp.activeWorkspaceDir))
-		assert.Equal(t, fakeInitialSuiteCommit, cp.boundSuiteCommit)
 		_, err = os.Stat(stagedDir)
 		assert.ErrorIs(t, err, os.ErrNotExist)
 		var wf workspaceFile
@@ -121,7 +119,6 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(rawWAL, &wf))
 		assert.Equal(t, "shop", wf.Dir)
-		assert.Equal(t, fakeInitialSuiteCommit, wf.SuiteCommit)
 		assert.Empty(t, wf.Staging)
 	})
 
@@ -138,12 +135,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		evalStageParent, err := abspath.Eval(stageParent)
 		require.NoError(t, err)
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			StageDir:    evalStageParent,
-			Staging:     ".surla-init-missing",
-			Dev:         1,
-			Ino:         1,
+			Dir:      "shop",
+			StageDir: evalStageParent,
+			Staging:  ".surla-init-missing",
+			Dev:      1,
+			Ino:      1,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -176,12 +172,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var st unix.Stat_t
 		require.NoError(t, unix.Lstat(targetDir, &st))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			StageDir:    stageParent,
-			Staging:     ".surla-init-456",
-			Dev:         uint64(st.Dev),
-			Ino:         st.Ino,
+			Dir:      "shop",
+			StageDir: stageParent,
+			Staging:  ".surla-init-456",
+			Dev:      uint64(st.Dev),
+			Ino:      st.Ino,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -196,13 +191,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		defer cp.Close()
 
 		assert.Equal(t, "shop", filepath.Base(cp.activeWorkspaceDir))
-		assert.Equal(t, fakeInitialSuiteCommit, cp.boundSuiteCommit)
 		var wf workspaceFile
 		rawWAL, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(rawWAL, &wf))
 		assert.Equal(t, "shop", wf.Dir)
-		assert.Equal(t, fakeInitialSuiteCommit, wf.SuiteCommit)
 		assert.Empty(t, wf.Staging)
 	})
 
@@ -229,12 +222,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			StageDir:    evalStageParent,
-			Staging:     ".surla-init-foreign",
-			Dev:         uint64(wsStat.Dev),
-			Ino:         wsStat.Ino, // matches neither targetDir nor foreignStageDir
+			Dir:      "shop",
+			StageDir: evalStageParent,
+			Staging:  ".surla-init-foreign",
+			Dev:      uint64(wsStat.Dev),
+			Ino:      wsStat.Ino, // matches neither targetDir nor foreignStageDir
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -273,10 +265,9 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			Dev:         uint64(wsStat.Dev),
-			Ino:         wsStat.Ino, // different inode from targetDir
+			Dir: "shop",
+			Dev: uint64(wsStat.Dev),
+			Ino: wsStat.Ino, // different inode from targetDir
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -303,10 +294,9 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			Dev:         uint64(wsStat.Dev),
-			Ino:         wsStat.Ino,
+			Dir: "shop",
+			Dev: uint64(wsStat.Dev),
+			Ino: wsStat.Ino,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -339,12 +329,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:         "shop",
-			SuiteCommit: fakeInitialSuiteCommit,
-			StageDir:    evalStageParent,
-			Staging:     ".surla-init-replaced",
-			Dev:         uint64(wsStat.Dev),
-			Ino:         wsStat.Ino, // does not match foreignStage
+			Dir:      "shop",
+			StageDir: evalStageParent,
+			Staging:  ".surla-init-replaced",
+			Dev:      uint64(wsStat.Dev),
+			Ino:      wsStat.Ino, // does not match foreignStage
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -651,14 +640,12 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		assert.Equal(t, "shop", filepath.Base(res.Dir))
 		assert.Equal(t, fakeInitialSuiteCommit, res.Commit)
 		assert.Equal(t, res.Dir, cp.activeWorkspaceDir)
-		assert.Equal(t, fakeInitialSuiteCommit, cp.boundSuiteCommit)
 
 		var wf workspaceFile
 		rawWAL, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(rawWAL, &wf))
 		assert.Equal(t, "shop", wf.Dir)
-		assert.Equal(t, fakeInitialSuiteCommit, wf.SuiteCommit)
 		assert.Empty(t, wf.Staging)
 
 		spans := exp.GetSpans()
@@ -876,7 +863,6 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 		var saved workspaceFile
 		require.NoError(t, json.Unmarshal(raw, &saved))
 		assert.Empty(t, saved.Staging)
-		assert.Equal(t, fakeInitialSuiteCommit, saved.SuiteCommit)
 	})
 }
 

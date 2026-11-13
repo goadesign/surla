@@ -5224,6 +5224,27 @@ func unmarshalToolInputBindingItemResponseBodyToSurlaToolInputBindingItem(v *Too
 	return res
 }
 
+// unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests
+// builds a value of type *surla.OperatorEvaluatorTests from a value of type
+// *OperatorEvaluatorTestsResponseBody.
+func unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(v *OperatorEvaluatorTestsResponseBody) *surla.OperatorEvaluatorTests {
+	res := &surla.OperatorEvaluatorTests{}
+
+	return res
+}
+
+// unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests builds a
+// value of type *surla.AgentWrittenTests from a value of type
+// *AgentWrittenTestsResponseBody.
+func unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(v *AgentWrittenTestsResponseBody) *surla.AgentWrittenTests {
+	res := &surla.AgentWrittenTests{
+		Commit: *v.Commit,
+		Notice: *v.Notice,
+	}
+
+	return res
+}
+
 // unmarshalVerificationRunningResponseBodyToSurlaVerificationRunning builds a
 // value of type *surla.VerificationRunning from a value of type
 // *VerificationRunningResponseBody.
@@ -5345,6 +5366,26 @@ func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResul
 		CandidateCommit: *v.CandidateCommit,
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
+	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *surla.OperatorEvaluatorTests
+		if actual != nil {
+			obj = unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*surla.OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *surla.AgentWrittenTests
+		if actual != nil {
+			obj = unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*surla.AgentWrittenTests)(obj))
+		res.TestSource = u
 	}
 	switch string(v.State.Kind()) {
 	case "running":

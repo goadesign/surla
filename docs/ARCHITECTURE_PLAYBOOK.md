@@ -21,7 +21,10 @@ without changing resource ownership. One endpoint policy governs HTTP, MCP and
 tool discovery. Browser sessions live only in server and page memory; the CLI's
 management credential cannot confirm or approve. Verification and promotion
 settings are validated and copied into project state by the CLI and read at
-startup. See the [project server contract](REFERENCE.md#surla-serve).
+startup. Without verification settings, the control plane chooses each run's
+tests when it is requested, from the change's build and the commits that call
+names, and starts tests agents wrote with only the environment they need. See
+the [project server contract](REFERENCE.md#surla-serve).
 
 ## The 7 Golden Path Rules
 
