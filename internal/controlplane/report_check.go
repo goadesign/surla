@@ -63,6 +63,9 @@ type (
 		copyFor func(ctx context.Context) (testwriter.WorkingCopy, testwriter.Suite, error)
 		// limit bounds one report's judgment; checkLimit outside tests.
 		limit time.Duration
+		// retry is how long after a failed last step the checker wakes to
+		// judge again; retryAfterFailure outside tests.
+		retry time.Duration
 		// now gives each verdict its time.
 		now func() time.Time
 	}
@@ -96,6 +99,14 @@ const (
 	// when something other than the author's build or listing hangs: a cause
 	// the test writer cannot fix.
 	checkLimit = 15 * time.Minute
+
+	// retryAfterFailure is how long the checker waits before judging again
+	// when its last step failed: the build could not be read to confirm it,
+	// or the verdict could not be saved. The build then stays reported, and
+	// without a later report nothing else would wake the checker. A minute
+	// lets a passing cause, such as a full disk freed by the user, clear
+	// without judging in a tight loop.
+	retryAfterFailure = time.Minute
 
 	// stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit and stepFailure
 	// are the user's steps of a check that could not run, one per cause; each
@@ -141,7 +152,7 @@ func newReportChecker(
 	tests testsLibrary,
 	copyFor func(context.Context) (testwriter.WorkingCopy, testwriter.Suite, error),
 ) *reportChecker {
-	return &reportChecker{cp: cp, tests: tests, copyFor: copyFor, limit: checkLimit, now: time.Now}
+	return &reportChecker{cp: cp, tests: tests, copyFor: copyFor, limit: checkLimit, retry: retryAfterFailure, now: time.Now}
 }
 
 // run judges reported builds until ctx ends: first every build found reported
@@ -209,7 +220,8 @@ func (r *reportChecker) reported(ctx context.Context) []string {
 // accepted tests and saves the verdict, marking the test writer's assignment
 // unread, and the builder's too for an acceptance. When ctx ends first,
 // or a newer report or build replaced the one checked, nothing is recorded
-// or saved.
+// or saved. When the last step fails, the checker judges again after
+// r.retry (wakeLater).
 func (r *reportChecker) judge(ctx context.Context, changeID string) {
 	// Phase 1: take the turn. A free turn and an ended ctx may both be ready.
 	select {
@@ -259,6 +271,7 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 		current, err := r.answersTo(id)
 		if err != nil {
 			recordJudgeFailure(span, err, "confirm build")
+			r.wakeLater()
 			return
 		}
 		if !current {
@@ -280,6 +293,7 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 	saved, current, err := r.saveVerdict(id, verdict)
 	if err != nil {
 		recordJudgeFailure(span, err, "save verdict")
+		r.wakeLater()
 		return
 	}
 	if !current {
@@ -343,6 +357,18 @@ func (r *reportChecker) saveVerdict(id reportIdentity, verdict testWriterAssignm
 		return buildFile{}, false, err
 	}
 	return saved, true, nil
+}
+
+// wakeLater wakes the checker after r.retry, as a report would, so a build
+// whose judgment was lost is judged again. A wake already waiting stands for
+// it, and one sent after the checker stopped is never read.
+func (r *reportChecker) wakeLater() {
+	time.AfterFunc(r.retry, func() {
+		select {
+		case r.cp.reportWake <- struct{}{}:
+		default:
+		}
+	})
 }
 
 // recordScanFailure records on its own span that the report checker could not

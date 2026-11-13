@@ -248,7 +248,8 @@ a build start during a judgment is refused as busy. A newer report during a
 judgment makes the server discard that judgment's verdict and judge the newer
 report next. A report waits while the checker commits accepted tests, so it
 keeps its number. Builds found reported when the checker starts are judged
-then. Findings and reasons contain no absolute path. A saved build has report
+then, and a build whose verdict could not be saved is judged again a minute
+later. Findings and reasons contain no absolute path. A saved build has report
 number 0 while its tests are assigned and at least 1 while they are reported.
 The project server does not start the report checker yet, so a report stays
 `reported`.

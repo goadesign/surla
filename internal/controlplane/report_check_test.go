@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -217,6 +219,38 @@ func TestAReportDuringRecordWaitsAndKeepsItsNumber(t *testing.T) {
 		"Add the tests Surla accepted for change chg, report 1",
 		"Add the tests Surla accepted for change chg, report 2",
 	}, tests.messages)
+}
+
+// TestAVerdictThatCannotBeSavedIsJudgedAgain makes the save of a verdict
+// fail once, by putting a folder where the card store writes its staging
+// file: the build stays reported, and the checker judges it again by itself
+// after its retry delay, with no other report, and saves that verdict.
+func TestAVerdictThatCannotBeSavedIsJudgedAgain(t *testing.T) {
+	checking, release := make(chan int, 2), make(chan struct{}, 2)
+	tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+		checking <- call
+		<-release
+		return testwriter.Verdict{}, nil
+	}}
+	cp, r, revision := newReportFixture(t, Options{}, tests)
+	r.retry = 200 * time.Millisecond
+	// The report is made before the checker starts and its wake is drained,
+	// so the checker's first scan judges it and only the retry can wake it
+	// again.
+	reportTests(t, cp, revision)
+	<-cp.reportWake
+	runChecker(t, r)
+	require.Equal(t, 1, receive(t, checking))
+	staging := filepath.Join(cp.cards.dir, buildStagingFile)
+	require.NoError(t, os.Mkdir(staging, 0o700))
+	release <- struct{}{}
+	require.Equal(t, 2, receive(t, checking), "the checker judges the build again by itself")
+	assert.Equal(t, gensurla.TestsKindReported, mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg").TestWriter.Tests.Kind(),
+		"the first verdict was not saved")
+	require.NoError(t, os.Remove(staging))
+	release <- struct{}{}
+	build := waitForTests(t, cp, gensurla.TestsKindAccepted)
+	assert.Equal(t, 1, build.TestWriter.Report, "no other report was needed")
 }
 
 // TestABuildStartCannotTakeTheTurnDuringACheck holds a check open: a start's
