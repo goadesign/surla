@@ -157,7 +157,17 @@ Changing this contract is a breaking change for every target that implements it.
 
 ### Views page
 
-The Surla server serves the views page at `GET /views` on its numeric loopback address. Running `surla` opens it with a one-time link in the address fragment (`/views#link=<link>`), which a browser never sends to a server. The page is a fixed shell with no project data in it, built from [`ui/checkpoint/`](../ui/checkpoint/) into `internal/controlplane/checkpoint.html`. The server sends its policy as a `Content-Security-Policy` header: the page runs only its own script and styles, sends requests only to the address it was loaded from (`connect-src 'self'`), cannot be shown inside another page (`frame-ancestors 'none'`), submits no form, and cannot change its base address.
+The Surla server serves the views page at `GET /views` on its numeric loopback address. Running `surla` opens it with a one-time link in the address fragment (`/views#link=<link>`), which a browser never sends to a server. The page is a fixed shell with no project data in it, built from [`ui/checkpoint/`](../ui/checkpoint/) into `internal/controlplane/checkpoint.html`. The server sends its policy as a `Content-Security-Policy` header, which a browser enforces before it runs the page:
+
+| Directive | What the browser allows |
+| --- | --- |
+| `script-src 'sha256-<digest>'` | Only the page's one inline script, identified by the SHA-256 digest of its text that the build records. No other inline, injected, or loaded script runs, and nothing is evaluated from a string. |
+| `style-src 'unsafe-inline'` | Inline styles of any kind: the page's style block and style attributes. No style sheet loads from anywhere. |
+| `connect-src 'self'` | Requests only to the address the page was loaded from. |
+| `default-src 'none'` | Nothing else: no images, fonts, frames, or other resources. |
+| `frame-ancestors 'none'` | The page is never shown inside another page. |
+| `form-action 'none'` | The page submits no form. |
+| `base-uri 'none'` | The page cannot change its base address. |
 
 On load, the page exchanges the link once through `POST /project/browser-session` for a session, removes the link from the address, and keeps the session only in the page's memory: never in browser storage or a cookie. It sends the session as `Authorization: Bearer <session>` with every request. Reloading or closing the tab ends the session, and a new tab needs a new link from `surla`. Without a link the page explains how to open it and sends no request. A link that was already used, or has expired, is reported as such. When the server answers `401` (as it does for every session after a restart), the page keeps everything the user typed visible and copyable and says to run `surla` again. Leaving the page with unsaved edits asks the browser to confirm.
 
@@ -501,7 +511,7 @@ The full suite runs nightly at 07:17 UTC and on a manual **Run workflow** reques
 │   ├── verify/                   # Worktree verifier (`surla verify`), holdout redactor, and promotion check (`surla approve`)
 │   └── verifyrun/                # Detached supervised process-group runner and run-directory store for CP4 verifications
 ├── ui/
-│   └── checkpoint/               # React + OpenUI views page source; build.mjs writes checkpoint.html, decision_catalog.md, and generated types
+│   └── checkpoint/               # React + OpenUI views page source; build.mjs writes checkpoint.html, its script digest, decision_catalog.md, and generated types
 ├── verify/
 │   ├── candidate/                # macOS Seatbelt (`sandbox-exec`) build & runtime isolation jail (`Build`, `BuildTest`, `Pin`, `Exec`)
 │   └── suite/                    # Evaluator suite command runner (`suite.Main`, `suite.Command`, `suite.Declaration`)

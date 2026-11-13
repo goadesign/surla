@@ -58,6 +58,26 @@ async function readCard(changeId) {
 }
 `
 
+// TestViewsPagePolicyAllowsOnlyTheServedScript checks the served page against
+// the policy sent with it: the page as an HTML parser reads it holds exactly
+// one script, and the policy allows scripts only by the SHA-256 digest of that
+// script's text, computed here from the served page rather than taken from
+// the build.
+func TestViewsPagePolicyAllowsOnlyTheServedScript(t *testing.T) {
+	ps := startPageServer(t, pageControlPlane(t, Options{}))
+	runPageScript(t, ps, nil, `
+const crypto = require("crypto");
+const page = await openPage(origin);
+const scripts = page.$$("script");
+expect(scripts.length === 1, "the page holds " + scripts.length + " scripts");
+const digest = crypto.createHash("sha256").update(scripts[0].textContent, "utf8").digest("base64");
+const directives = page.headers.get("content-security-policy").split(";").map((d) => d.trim());
+const scriptPolicy = directives.filter((d) => d.startsWith("script-src"));
+expect(JSON.stringify(scriptPolicy) === JSON.stringify(["script-src 'sha256-" + digest + "'"]), "the script policy is not the served script's digest alone: " + JSON.stringify(scriptPolicy));
+page.close();
+`)
+}
+
 // TestViewsPageFindsOpensAndConfirmsChanges walks the user's journey: the
 // empty project explains how a change appears, a proposed change appears by
 // itself, the list orders changes by save time and opens one, and confirming

@@ -11,11 +11,14 @@ import (
 )
 
 // viewsPagePolicy is the views page's Content-Security-Policy. The page may
-// run only its own inline script and styles, send requests only to the
-// address it was loaded from, never be shown inside another page, submit no
-// form anywhere, and never change its base address.
-const viewsPagePolicy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
-	"connect-src 'self'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'"
+// run only the script whose digest the build recorded, so no other inline,
+// injected or loaded script runs; it may use inline styles, send requests
+// only to the address it was loaded from, load nothing else, never be shown
+// inside another page, submit no form anywhere, and never change its base
+// address.
+const viewsPagePolicy = "default-src 'none'; script-src " + viewsPageScriptSource + "; " +
+	"style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'; " +
+	"base-uri 'none'"
 
 // viewsPageHTML is the views page built from ui/checkpoint into checkpoint.html.
 // It is the same for every project and caller: data arrives only through the
