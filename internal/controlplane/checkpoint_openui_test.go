@@ -18,11 +18,7 @@ import (
 // and catalog match ui/checkpoint/src, that no authored source writes raw
 // HTML, and that the bundle carries no legacy Zod v3 code.
 func TestCheckpointUIBuildIsCurrentAndInjectsNoHTML(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required to check the views page build")
-	}
-	ensureCheckpointUIDeps(t)
+	node := requirePageTools(t)
 	check := exec.Command(node, "../../ui/checkpoint/build.mjs", "--check")
 	check.Env = append(os.Environ(), "CI=true")
 	out, err := check.CombinedOutput()
@@ -35,7 +31,9 @@ func TestCheckpointUIBuildIsCurrentAndInjectsNoHTML(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		require.NotContains(t, string(raw), "innerHTML", "authored UI source %s must not use innerHTML", path)
+		for _, writer := range []string{"innerHTML", "dangerouslySetInnerHTML", "outerHTML", "insertAdjacentHTML", "createContextualFragment", "document.write"} {
+			require.NotContains(t, string(raw), writer, "authored UI source %s must not write raw HTML", path)
+		}
 		return nil
 	})
 	require.NoError(t, err)

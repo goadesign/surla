@@ -84,25 +84,22 @@ const (
 	pageGuide = "page-test-guide"
 )
 
-var checkpointUIDepsOnce sync.Once
-
-// ensureCheckpointUIDeps installs ui/checkpoint npm dependencies once when
-// running tests in a clean checkout where node_modules is not yet populated.
-func ensureCheckpointUIDeps(t *testing.T) {
+// requirePageTools returns the node binary the views page tests run. They
+// also need ui/checkpoint's installed packages (npm ci --prefix
+// ui/checkpoint), which tests never install themselves: installing writes
+// the source tree and races other test binaries reading it. Under CI=true a
+// missing tool fails the test, because CI installs both before running Go
+// tests; elsewhere the test is skipped with the step that enables it.
+func requirePageTools(t *testing.T) string {
 	t.Helper()
-	if _, err := os.Stat("../../ui/checkpoint/node_modules/jsdom"); err == nil {
-		return
-	}
-	npmPath, err := exec.LookPath("npm")
+	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("npm not found in PATH and ui/checkpoint/node_modules is missing")
+		missingPageTool(t, "node is required to exercise the views page")
 	}
-	checkpointUIDepsOnce.Do(func() {
-		cmd := exec.Command(npmPath, "ci", "--prefix", "../../ui/checkpoint", "--no-audit", "--no-fund")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("npm ci --prefix ../../ui/checkpoint: %v\n%s", err, string(out))
-		}
-	})
+	if _, err := os.Stat("../../ui/checkpoint/node_modules/jsdom"); err != nil {
+		missingPageTool(t, "ui/checkpoint/node_modules is missing; run npm ci --prefix ui/checkpoint")
+	}
+	return node
 }
 
 // startPageServer serves svc behind the page session for one test.
@@ -169,11 +166,7 @@ func pageControlPlane(t *testing.T, opts Options) *ControlPlane {
 // scope. It fails the test with the script's output when the script throws.
 func runPageScript(t *testing.T, ps *pageServer, input map[string]any, body string) {
 	t.Helper()
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required to exercise the views page")
-	}
-	ensureCheckpointUIDeps(t)
+	node := requirePageTools(t)
 	harness, err := filepath.Abs("../../ui/checkpoint/testing/page_harness.cjs")
 	require.NoError(t, err)
 	if input == nil {
@@ -449,4 +442,14 @@ func passedRun(card *gensurla.ChangeCardResult, runID, commit, digest string) *g
 			},
 		}),
 	}
+}
+
+// missingPageTool fails the test under CI=true and otherwise skips it with
+// reason, which names the step that provides the missing tool.
+func missingPageTool(t *testing.T, reason string) {
+	t.Helper()
+	if os.Getenv("CI") == "true" {
+		t.Fatal(reason)
+	}
+	t.Skip(reason)
 }

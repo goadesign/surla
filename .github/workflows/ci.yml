@@ -174,6 +174,12 @@ jobs:
           node-version: 26.0.0
           cache: npm
           cache-dependency-path: ui/checkpoint/package-lock.json
+      - name: Install the views page's test packages
+        # Go tests never install these themselves and fail under CI without
+        # them; install once before every test binary starts.
+        if: matrix.suite == 'unit-root'
+        run: |
+          npm ci --prefix ui/checkpoint --no-audit --no-fund </dev/null
       - name: Install the Temporal CLI
         if: matrix.suite == 'verifier' || matrix.suite == 'orders-acceptance'
         run: |

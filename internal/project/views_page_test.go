@@ -47,10 +47,10 @@ type viewsProject struct {
 func TestViewsPageSessionLifecycle(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is required to exercise the views page")
+		missingPageTool(t, "node is required to exercise the views page")
 	}
 	if _, err := os.Stat("../../ui/checkpoint/node_modules/jsdom"); err != nil {
-		t.Skip("ui/checkpoint/node_modules is missing; run npm ci --prefix ui/checkpoint")
+		missingPageTool(t, "ui/checkpoint/node_modules is missing; run npm ci --prefix ui/checkpoint")
 	}
 	vp := startViewsProject(t)
 	management := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: vp.state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
@@ -205,4 +205,17 @@ func (vp *viewsProject) restart() {
 	handler := server.Handler(application)
 	vp.server.Store(server)
 	vp.handler.Store(&handler)
+}
+
+// missingPageTool fails the test under CI=true, because CI installs node and
+// ui/checkpoint's packages before running Go tests, and otherwise skips it
+// with reason, which names the step that provides the missing tool. Tests
+// never install the packages themselves: that writes the source tree and
+// races other test binaries reading it.
+func missingPageTool(t *testing.T, reason string) {
+	t.Helper()
+	if os.Getenv("CI") == "true" {
+		t.Fatal(reason)
+	}
+	t.Skip(reason)
 }
