@@ -176,6 +176,9 @@ func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
 					return testwriter.Verdict{}, nil
 				}
 				return needsChanges(fmt.Sprintf("finding of check %d", call)), nil
+			}, record: func(_ context.Context, call int) (string, error) {
+				// Each record moves the tests branch to a commit of its own.
+				return strings.Repeat(fmt.Sprint(call), 40), nil
 			}}
 			cp, revision := newReportFixture(t, Options{}, tests)
 
@@ -194,6 +197,9 @@ func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
 				assert.Equal(t, 2, build.TestWriter.Report)
 				assert.Equal(t, []string{"Add the tests Surla accepted for change chg, report 2"}, tests.recorded(),
 					"only the second report's tests are recorded")
+				accepted, _ := build.TestWriter.Tests.AsAccepted()
+				assert.Equal(t, strings.Repeat("1", 40), accepted.Commit,
+					"the tests branch is where the one record, for report 2, put it")
 				return
 			}
 			waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
