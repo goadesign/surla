@@ -453,14 +453,6 @@ type BuildCopyNotUsed struct {
 type BuildNotStarted struct {
 }
 
-// The build was refused before saving; follow step before starting it again.
-type BuildStartRefusal struct {
-	// Declared refusal name.
-	Name string
-	// What the user does before starting the build again.
-	Step BuildStartStep
-}
-
 type BuildStartStep string
 
 type BuildTeamAmbiguousSpace struct {
@@ -1757,23 +1749,6 @@ type WaitForChangesPayload struct {
 }
 
 // Error returns an error description.
-func (e *BuildStartRefusal) Error() string {
-	return "The build was refused before saving; follow step before starting it again."
-}
-
-// ErrorName returns the error name.
-//
-// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
-func (e *BuildStartRefusal) ErrorName() string {
-	return e.GoaErrorName()
-}
-
-// GoaErrorName returns the error name.
-func (e *BuildStartRefusal) GoaErrorName() string {
-	return e.Name
-}
-
-// Error returns an error description.
 func (e *TeamSpaceConflict) Error() string {
 	return ""
 }
@@ -1878,6 +1853,46 @@ func MakePaneUnavailable(err error) *goa.ServiceError {
 // MakeTeamUnavailable builds a goa.ServiceError from an error.
 func MakeTeamUnavailable(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "team_unavailable", false, false, false)
+}
+
+// MakeNotRepository builds a goa.ServiceError from an error.
+func MakeNotRepository(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "not_repository", false, false, false)
+}
+
+// MakeNoCommit builds a goa.ServiceError from an error.
+func MakeNoCommit(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_commit", false, false, false)
+}
+
+// MakeNoTestLayout builds a goa.ServiceError from an error.
+func MakeNoTestLayout(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_test_layout", false, false, false)
+}
+
+// MakeGitIdentityMissing builds a goa.ServiceError from an error.
+func MakeGitIdentityMissing(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "git_identity_missing", false, false, false)
+}
+
+// MakeCopyFolderInUse builds a goa.ServiceError from an error.
+func MakeCopyFolderInUse(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "copy_folder_in_use", false, false, false)
+}
+
+// MakeTestsBranchInUse builds a goa.ServiceError from an error.
+func MakeTestsBranchInUse(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "tests_branch_in_use", false, false, false)
+}
+
+// MakeWorkingCopyBusy builds a goa.ServiceError from an error.
+func MakeWorkingCopyBusy(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "working_copy_busy", false, false, false)
+}
+
+// MakeSandboxUnavailable builds a goa.ServiceError from an error.
+func MakeSandboxUnavailable(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "sandbox_unavailable", false, false, false)
 }
 
 // agentPolicyItemIntTransport stores JSON fields until they have been validated.
@@ -2354,36 +2369,6 @@ func validatejsonBuildNotStartedTransport(value *jsonBuildNotStartedTransport) (
 		return goa.MissingFieldError("body", "JSON value")
 	}
 
-	return err
-}
-
-// jsonBuildStartRefusalTransport stores JSON fields until they have been validated.
-type jsonBuildStartRefusalTransport struct {
-	// Declared refusal name.
-	Name *string `json:"name"`
-	// What the user does before starting the build again.
-	Step *jsonBuildStartStepTransport `json:"step"`
-}
-
-// validatejsonBuildStartRefusalTransport checks decoded JSON before it becomes a service value.
-func validatejsonBuildStartRefusalTransport(value *jsonBuildStartRefusalTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if value.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
-	}
-	if value.Step != nil {
-		if utf8.RuneCountInString(string(*value.Step)) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 1, true))
-		}
-		if utf8.RuneCountInString(string(*value.Step)) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 512, false))
-		}
-	}
 	return err
 }
 
@@ -6044,17 +6029,6 @@ func validateBuildCopyNotContainedOriginal(value *BuildCopyNotContained) (err er
 	return err
 }
 
-// validateBuildStartRefusalOriginal checks the original typed value before JSON conversion.
-func validateBuildStartRefusalOriginal(value *BuildStartRefusal) (err error) {
-	if utf8.RuneCountInString(string(value.Step)) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 1, true))
-	}
-	if utf8.RuneCountInString(string(value.Step)) > 512 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 512, false))
-	}
-	return err
-}
-
 // validateBuildStartStepOriginal checks the original typed value before JSON conversion.
 func validateBuildStartStepOriginal(value BuildStartStep) (err error) {
 	if utf8.RuneCountInString(string(value)) < 1 {
@@ -9539,94 +9513,6 @@ func DecodeBuildNotStarted(data []byte) (out *BuildNotStarted, err error) {
 	}
 	{
 		out = &BuildNotStarted{}
-	}
-	return out, nil
-}
-
-// EncodeBuildStartRefusal turns a service value into JSON using the field names in the Goa design.
-func EncodeBuildStartRefusal(in *BuildStartRefusal) ([]byte, error) {
-	if err := checkBuildStartRefusalValue(in); err != nil {
-		return nil, fmt.Errorf("encode BuildStartRefusal JSON: %w", err)
-	}
-	if err := validateBuildStartRefusalOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate BuildStartRefusal value: %w", err)
-	}
-	var body *jsonBuildStartRefusalTransport
-	{
-		body = &jsonBuildStartRefusalTransport{
-			Name: &in.Name,
-		}
-		step := jsonBuildStartStepTransport(in.Step)
-		body.Step = &step
-	}
-	if err := validatejsonBuildStartRefusalTransport(body); err != nil {
-		return nil, fmt.Errorf("validate BuildStartRefusal JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode BuildStartRefusal JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateBuildStartRefusalValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateBuildStartRefusalValue(in *BuildStartRefusal) error {
-	if err := checkBuildStartRefusalValue(in); err != nil {
-		return fmt.Errorf("validate BuildStartRefusal value: %w", err)
-	}
-	if err := validateBuildStartRefusalOriginal(in); err != nil {
-		return fmt.Errorf("validate BuildStartRefusal value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "BuildStartRefusal")
-	}
-
-	var body *jsonBuildStartRefusalTransport
-	{
-		body = &jsonBuildStartRefusalTransport{
-			Name: &in.Name,
-		}
-		step := jsonBuildStartStepTransport(in.Step)
-		body.Step = &step
-	}
-	if err := validatejsonBuildStartRefusalTransport(body); err != nil {
-		return fmt.Errorf("validate BuildStartRefusal value: %w", err)
-	}
-	return nil
-}
-
-// DecodeBuildStartRefusal checks JSON field names from the Goa design and returns a service value.
-func DecodeBuildStartRefusal(data []byte) (out *BuildStartRefusal, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode BuildStartRefusal JSON: %w", err)
-	}
-	if err := validateBuildStartRefusalJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode BuildStartRefusal JSON: %w", err)
-	}
-	var body *jsonBuildStartRefusalTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode BuildStartRefusal JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode BuildStartRefusal JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode BuildStartRefusal JSON after first value: %w", err)
-	}
-	if err := validatejsonBuildStartRefusalTransport(body); err != nil {
-		return out, fmt.Errorf("validate BuildStartRefusal JSON: %w", err)
-	}
-	{
-		out = &BuildStartRefusal{
-			Name: *body.Name,
-			Step: BuildStartStep(*body.Step),
-		}
 	}
 	return out, nil
 }
@@ -22277,50 +22163,6 @@ func validateBuildNotStartedJSONValue(path string, value any, description string
 	return nil
 }
 
-// validateBuildStartRefusalJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuildStartRefusalJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "name":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Declared refusal name.",
-			); err != nil {
-				return err
-			}
-		case "step":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "What the user does before starting the build again.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"name",
-				"step",
-			})
-		}
-	}
-	return nil
-}
-
 // validateBuildTeamAmbiguousSpaceJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateBuildTeamAmbiguousSpaceJSONValue(path string, value any, description string) error {
 	field := path
@@ -29146,39 +28988,6 @@ func checkBuildNotStartedBuildNotStartedValue(in *BuildNotStarted, field string,
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
-	}
-	return nil
-}
-
-// checkBuildStartRefusalValue checks text and cycles before conversion.
-func checkBuildStartRefusalValue(in *BuildStartRefusal) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkBuildStartRefusalBuildStartRefusalValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkBuildStartRefusalBuildStartRefusalValue checks one generated value on the active path.
-func checkBuildStartRefusalBuildStartRefusalValue(in *BuildStartRefusal, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Name)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
-		}
-		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
-			return err
-		}
 	}
 	return nil
 }

@@ -2618,66 +2618,129 @@ type StartBuildConflictResponseBody struct {
 // StartBuildNotRepositoryResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "not_repository" error.
 type StartBuildNotRepositoryResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildNoCommitResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "no_commit" error.
 type StartBuildNoCommitResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildNoTestLayoutResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "no_test_layout" error.
 type StartBuildNoTestLayoutResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildGitIdentityMissingResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "git_identity_missing"
 // error.
 type StartBuildGitIdentityMissingResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildCopyFolderInUseResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "copy_folder_in_use" error.
 type StartBuildCopyFolderInUseResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildTestsBranchInUseResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "tests_branch_in_use"
 // error.
 type StartBuildTestsBranchInUseResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildWorkingCopyBusyResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "working_copy_busy" error.
 type StartBuildWorkingCopyBusyResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildUnprocessableResponseBody is the type of the "surla" service
@@ -2720,10 +2783,19 @@ type StartBuildNotImplementedResponseBody struct {
 // "start_build" endpoint HTTP response body for the "sandbox_unavailable"
 // error.
 type StartBuildSandboxUnavailableResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// What the user does before starting the build again.
-	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
 // StartBuildUnavailableResponseBody is the type of the "surla" service
@@ -7722,10 +7794,14 @@ func NewStartBuildConflict(body *StartBuildConflictResponseBody) *goa.ServiceErr
 
 // NewStartBuildNotRepository builds a surla service start_build endpoint
 // not_repository error.
-func NewStartBuildNotRepository(body *StartBuildNotRepositoryResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildNotRepository(body *StartBuildNotRepositoryResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7733,10 +7809,14 @@ func NewStartBuildNotRepository(body *StartBuildNotRepositoryResponseBody) *surl
 
 // NewStartBuildNoCommit builds a surla service start_build endpoint no_commit
 // error.
-func NewStartBuildNoCommit(body *StartBuildNoCommitResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildNoCommit(body *StartBuildNoCommitResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7744,10 +7824,14 @@ func NewStartBuildNoCommit(body *StartBuildNoCommitResponseBody) *surla.BuildSta
 
 // NewStartBuildNoTestLayout builds a surla service start_build endpoint
 // no_test_layout error.
-func NewStartBuildNoTestLayout(body *StartBuildNoTestLayoutResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildNoTestLayout(body *StartBuildNoTestLayoutResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7755,10 +7839,14 @@ func NewStartBuildNoTestLayout(body *StartBuildNoTestLayoutResponseBody) *surla.
 
 // NewStartBuildGitIdentityMissing builds a surla service start_build endpoint
 // git_identity_missing error.
-func NewStartBuildGitIdentityMissing(body *StartBuildGitIdentityMissingResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildGitIdentityMissing(body *StartBuildGitIdentityMissingResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7766,10 +7854,14 @@ func NewStartBuildGitIdentityMissing(body *StartBuildGitIdentityMissingResponseB
 
 // NewStartBuildCopyFolderInUse builds a surla service start_build endpoint
 // copy_folder_in_use error.
-func NewStartBuildCopyFolderInUse(body *StartBuildCopyFolderInUseResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildCopyFolderInUse(body *StartBuildCopyFolderInUseResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7777,10 +7869,14 @@ func NewStartBuildCopyFolderInUse(body *StartBuildCopyFolderInUseResponseBody) *
 
 // NewStartBuildTestsBranchInUse builds a surla service start_build endpoint
 // tests_branch_in_use error.
-func NewStartBuildTestsBranchInUse(body *StartBuildTestsBranchInUseResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildTestsBranchInUse(body *StartBuildTestsBranchInUseResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7788,10 +7884,14 @@ func NewStartBuildTestsBranchInUse(body *StartBuildTestsBranchInUseResponseBody)
 
 // NewStartBuildWorkingCopyBusy builds a surla service start_build endpoint
 // working_copy_busy error.
-func NewStartBuildWorkingCopyBusy(body *StartBuildWorkingCopyBusyResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildWorkingCopyBusy(body *StartBuildWorkingCopyBusyResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -7829,10 +7929,14 @@ func NewStartBuildNotImplemented(body *StartBuildNotImplementedResponseBody) *go
 
 // NewStartBuildSandboxUnavailable builds a surla service start_build endpoint
 // sandbox_unavailable error.
-func NewStartBuildSandboxUnavailable(body *StartBuildSandboxUnavailableResponseBody) *surla.BuildStartRefusal {
-	v := &surla.BuildStartRefusal{
-		Name: *body.Name,
-		Step: surla.BuildStartStep(*body.Step),
+func NewStartBuildSandboxUnavailable(body *StartBuildSandboxUnavailableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -11617,16 +11721,20 @@ func ValidateStartBuildNotRepositoryResponseBody(body *StartBuildNotRepositoryRe
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11637,16 +11745,20 @@ func ValidateStartBuildNoCommitResponseBody(body *StartBuildNoCommitResponseBody
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11657,16 +11769,20 @@ func ValidateStartBuildNoTestLayoutResponseBody(body *StartBuildNoTestLayoutResp
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11677,16 +11793,20 @@ func ValidateStartBuildGitIdentityMissingResponseBody(body *StartBuildGitIdentit
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11697,16 +11817,20 @@ func ValidateStartBuildCopyFolderInUseResponseBody(body *StartBuildCopyFolderInU
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11717,16 +11841,20 @@ func ValidateStartBuildTestsBranchInUseResponseBody(body *StartBuildTestsBranchI
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11737,16 +11865,20 @@ func ValidateStartBuildWorkingCopyBusyResponseBody(body *StartBuildWorkingCopyBu
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }
@@ -11805,16 +11937,20 @@ func ValidateStartBuildSandboxUnavailableResponseBody(body *StartBuildSandboxUna
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Step == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Step != nil {
-		if utf8.RuneCountInString(*body.Step) < 1 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
-		}
-		if utf8.RuneCountInString(*body.Step) > 512 {
-			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }

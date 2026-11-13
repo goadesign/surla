@@ -9,14 +9,6 @@ var BuildStartStep = Type("BuildStartStep", String, func() {
 	MaxLength(512)
 })
 
-// BuildStartRefusal names a pre-save condition and the action that enables a start.
-var BuildStartRefusal = Type("BuildStartRefusal", func() {
-	Description("The build was refused before saving; follow step before starting it again.")
-	Attribute("name", String, "Declared refusal name.", func() { Meta("struct:error:name") })
-	Attribute("step", BuildStartStep, "What the user does before starting the build again.")
-	Required("name", "step")
-})
-
 // BuildTeamWindowBusy leaves the saved build intact while the user closes a dialog.
 var BuildTeamWindowBusy = Type("BuildTeamWindowBusy", func() {
 	Attribute("step", BuildStartStep, "Close the open dialog, then start the team agents.")
@@ -88,14 +80,14 @@ var StartBuildResult = Type("StartBuildResult", func() {
 
 // buildStartRefusals declares the conditions that refuse a start before it saves.
 func buildStartRefusals() {
-	Error("not_repository", BuildStartRefusal, "The project folder is not in a Git repository; nothing was saved.")
-	Error("no_commit", BuildStartRefusal, "The project repository has no commit; nothing was saved.")
-	Error("no_test_layout", BuildStartRefusal, "This project has neither stored verification settings nor Surla's test layout; nothing was saved.")
-	Error("git_identity_missing", BuildStartRefusal, "Git has no configured name and address; nothing was saved.")
-	Error("copy_folder_in_use", BuildStartRefusal, "The test-writer copy's folder is occupied; nothing was saved.")
-	Error("tests_branch_in_use", BuildStartRefusal, "The tests branch is held by another working copy; nothing was saved.")
-	Error("working_copy_busy", BuildStartRefusal, "A build start or test check holds the project's working-copy turn; nothing was saved.")
-	Error("sandbox_unavailable", BuildStartRefusal, "This system has no candidate sandbox; nothing was saved.")
+	Error("not_repository", ErrorResult, "The project folder is not in a Git repository; nothing was saved. The message ends with the step to create or select a repository.")
+	Error("no_commit", ErrorResult, "The project repository has no commit; nothing was saved. The message ends with the step to make its first commit.")
+	Error("no_test_layout", ErrorResult, "This project has neither stored verification settings nor Surla's test layout; nothing was saved. Store verification settings, then build again.")
+	Error("git_identity_missing", ErrorResult, "Git has no configured name and address; nothing was saved. Configure Git's name and address, then build again.")
+	Error("copy_folder_in_use", ErrorResult, "The test-writer copy's named folder is occupied; nothing was saved. The message ends with the step to free that folder and build again.")
+	Error("tests_branch_in_use", ErrorResult, "The named tests branch is held by another working copy; nothing was saved. The message ends with the library's step to free that branch and build again.")
+	Error("working_copy_busy", ErrorResult, "Another build is starting or a test check holds the project's working-copy turn; nothing was saved. Start the build again when that has ended.")
+	Error("sandbox_unavailable", ErrorResult, "This system has no candidate sandbox; nothing was saved. Start this project on a system with Surla's candidate sandbox, then build again.")
 }
 
 // buildStartRefusalResponses maps project state and host availability distinctly.

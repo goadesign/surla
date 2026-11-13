@@ -3680,16 +3680,16 @@ func EncodeStartBuildRequest(encoder func(*http.Request) goahttp.Encoder) func(*
 // DecodeStartBuildResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
-//   - "not_repository" (type *surla.BuildStartRefusal): http.StatusConflict
-//   - "no_commit" (type *surla.BuildStartRefusal): http.StatusConflict
-//   - "no_test_layout" (type *surla.BuildStartRefusal): http.StatusConflict
-//   - "git_identity_missing" (type *surla.BuildStartRefusal): http.StatusConflict
-//   - "copy_folder_in_use" (type *surla.BuildStartRefusal): http.StatusConflict
-//   - "tests_branch_in_use" (type *surla.BuildStartRefusal): http.StatusConflict
-//   - "working_copy_busy" (type *surla.BuildStartRefusal): http.StatusConflict
+//   - "not_repository" (type *goa.ServiceError): http.StatusConflict
+//   - "no_commit" (type *goa.ServiceError): http.StatusConflict
+//   - "no_test_layout" (type *goa.ServiceError): http.StatusConflict
+//   - "git_identity_missing" (type *goa.ServiceError): http.StatusConflict
+//   - "copy_folder_in_use" (type *goa.ServiceError): http.StatusConflict
+//   - "tests_branch_in_use" (type *goa.ServiceError): http.StatusConflict
+//   - "working_copy_busy" (type *goa.ServiceError): http.StatusConflict
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
-//   - "sandbox_unavailable" (type *surla.BuildStartRefusal): http.StatusNotImplemented
+//   - "sandbox_unavailable" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error

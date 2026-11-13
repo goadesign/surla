@@ -2618,66 +2618,129 @@ type StartBuildConflictResponseBody struct {
 // StartBuildNotRepositoryResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "not_repository" error.
 type StartBuildNotRepositoryResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildNoCommitResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "no_commit" error.
 type StartBuildNoCommitResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildNoTestLayoutResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "no_test_layout" error.
 type StartBuildNoTestLayoutResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildGitIdentityMissingResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "git_identity_missing"
 // error.
 type StartBuildGitIdentityMissingResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildCopyFolderInUseResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "copy_folder_in_use" error.
 type StartBuildCopyFolderInUseResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildTestsBranchInUseResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "tests_branch_in_use"
 // error.
 type StartBuildTestsBranchInUseResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildWorkingCopyBusyResponseBody is the type of the "surla" service
 // "start_build" endpoint HTTP response body for the "working_copy_busy" error.
 type StartBuildWorkingCopyBusyResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildUnprocessableResponseBody is the type of the "surla" service
@@ -2720,10 +2783,19 @@ type StartBuildNotImplementedResponseBody struct {
 // "start_build" endpoint HTTP response body for the "sandbox_unavailable"
 // error.
 type StartBuildSandboxUnavailableResponseBody struct {
-	// Declared refusal name.
+	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
-	// What the user does before starting the build again.
-	Step string `form:"step" json:"step" xml:"step"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // StartBuildUnavailableResponseBody is the type of the "surla" service
@@ -7709,70 +7781,98 @@ func NewStartBuildConflictResponseBody(res *goa.ServiceError) *StartBuildConflic
 
 // NewStartBuildNotRepositoryResponseBody builds the HTTP response body from
 // the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildNotRepositoryResponseBody(res *surla.BuildStartRefusal) *StartBuildNotRepositoryResponseBody {
+func NewStartBuildNotRepositoryResponseBody(res *goa.ServiceError) *StartBuildNotRepositoryResponseBody {
 	body := &StartBuildNotRepositoryResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
 
 // NewStartBuildNoCommitResponseBody builds the HTTP response body from the
 // result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildNoCommitResponseBody(res *surla.BuildStartRefusal) *StartBuildNoCommitResponseBody {
+func NewStartBuildNoCommitResponseBody(res *goa.ServiceError) *StartBuildNoCommitResponseBody {
 	body := &StartBuildNoCommitResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
 
 // NewStartBuildNoTestLayoutResponseBody builds the HTTP response body from the
 // result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildNoTestLayoutResponseBody(res *surla.BuildStartRefusal) *StartBuildNoTestLayoutResponseBody {
+func NewStartBuildNoTestLayoutResponseBody(res *goa.ServiceError) *StartBuildNoTestLayoutResponseBody {
 	body := &StartBuildNoTestLayoutResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
 
 // NewStartBuildGitIdentityMissingResponseBody builds the HTTP response body
 // from the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildGitIdentityMissingResponseBody(res *surla.BuildStartRefusal) *StartBuildGitIdentityMissingResponseBody {
+func NewStartBuildGitIdentityMissingResponseBody(res *goa.ServiceError) *StartBuildGitIdentityMissingResponseBody {
 	body := &StartBuildGitIdentityMissingResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
 
 // NewStartBuildCopyFolderInUseResponseBody builds the HTTP response body from
 // the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildCopyFolderInUseResponseBody(res *surla.BuildStartRefusal) *StartBuildCopyFolderInUseResponseBody {
+func NewStartBuildCopyFolderInUseResponseBody(res *goa.ServiceError) *StartBuildCopyFolderInUseResponseBody {
 	body := &StartBuildCopyFolderInUseResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
 
 // NewStartBuildTestsBranchInUseResponseBody builds the HTTP response body from
 // the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildTestsBranchInUseResponseBody(res *surla.BuildStartRefusal) *StartBuildTestsBranchInUseResponseBody {
+func NewStartBuildTestsBranchInUseResponseBody(res *goa.ServiceError) *StartBuildTestsBranchInUseResponseBody {
 	body := &StartBuildTestsBranchInUseResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
 
 // NewStartBuildWorkingCopyBusyResponseBody builds the HTTP response body from
 // the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildWorkingCopyBusyResponseBody(res *surla.BuildStartRefusal) *StartBuildWorkingCopyBusyResponseBody {
+func NewStartBuildWorkingCopyBusyResponseBody(res *goa.ServiceError) *StartBuildWorkingCopyBusyResponseBody {
 	body := &StartBuildWorkingCopyBusyResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }
@@ -7807,10 +7907,14 @@ func NewStartBuildNotImplementedResponseBody(res *goa.ServiceError) *StartBuildN
 
 // NewStartBuildSandboxUnavailableResponseBody builds the HTTP response body
 // from the result of the "start_build" endpoint of the "surla" service.
-func NewStartBuildSandboxUnavailableResponseBody(res *surla.BuildStartRefusal) *StartBuildSandboxUnavailableResponseBody {
+func NewStartBuildSandboxUnavailableResponseBody(res *goa.ServiceError) *StartBuildSandboxUnavailableResponseBody {
 	body := &StartBuildSandboxUnavailableResponseBody{
-		Name: res.Name,
-		Step: string(res.Step),
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }

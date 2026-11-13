@@ -3226,14 +3226,18 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'working_copy_busy: A build start or test check holds the project''s working-copy turn; nothing was saved.'
+                    description: 'working_copy_busy: Another build is starting or a test check holds the project''s working-copy turn; nothing was saved. Start the build again when that has ended.'
                     content:
-                        application/json:
+                        application/vnd.goa.error:
                             schema:
-                                $ref: '#/components/schemas/BuildStartRefusal'
+                                $ref: '#/components/schemas/Error'
                             example:
-                                name: Suscipit minima fugit fugiat ipsam et alias.
-                                step: "4"
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: working_copy_busy
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.'
                     content:
@@ -3248,14 +3252,18 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'sandbox_unavailable: This system has no candidate sandbox; nothing was saved.'
+                    description: 'sandbox_unavailable: This system has no candidate sandbox; nothing was saved. Start this project on a system with Surla''s candidate sandbox, then build again.'
                     content:
-                        application/json:
+                        application/vnd.goa.error:
                             schema:
-                                $ref: '#/components/schemas/BuildStartRefusal'
+                                $ref: '#/components/schemas/Error'
                             example:
-                                name: Est quasi hic exercitationem fugiat voluptatem tenetur.
-                                step: "4"
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: sandbox_unavailable
+                                temporary: false
+                                timeout: false
                 "503":
                     description: 'unavailable: The server is stopping or the start''s time limit ended before saving; call again on a running server. Nothing was saved.'
                     content:
@@ -16457,26 +16465,6 @@ components:
             required:
                 - url
                 - expires_at
-        BuildStartRefusal:
-            type: object
-            properties:
-                name:
-                    type: string
-                    description: Declared refusal name.
-                    example: Ut nihil enim sed autem nihil.
-                step:
-                    type: string
-                    description: What the user does before starting the build again.
-                    example: "4"
-                    minLength: 1
-                    maxLength: 512
-            description: The build was refused before saving; follow step before starting it again.
-            example:
-                name: Ut nihil enim sed autem nihil.
-                step: "4"
-            required:
-                - name
-                - step
         BuilderAssignment:
             type: object
             properties:

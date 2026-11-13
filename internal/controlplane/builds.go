@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
@@ -88,6 +89,9 @@ type (
 		RequestRevision string `json:"request_revision"`
 		// StartedAt is when the user started this build.
 		StartedAt time.Time `json:"started_at"`
+		// Roles records which exact worker roles this build started with.
+		// It is never inferred from a folder or the current verification settings.
+		Roles string `json:"roles"`
 		// Stories is the Story as agreed at RequestRevision, copied from the
 		// card when the build started, because the test writer's work is
 		// judged against it and not against a later revision's Story.
@@ -125,9 +129,9 @@ type (
 		State string `json:"state"`
 		// Read records that the test writer read the assignment in full.
 		Read bool `json:"read"`
-		// WorkingFolder is the test writer's working copy that
-		// BuildTeam.Prepare returned; empty when no BuildTeam is bound.
-		WorkingFolder string `json:"working_folder"`
+		// WorkingFolder is present exactly for builder-and-test-writer builds,
+		// and names the working copy's project folder, not its repository root.
+		WorkingFolder *string `json:"working_folder,omitempty"`
 		// Findings lists what the last check found, in testsNeedChanges.
 		Findings []string `json:"findings"`
 		// Commit is the commit the accepted tests were recorded at, in
@@ -146,6 +150,10 @@ type (
 )
 
 const (
+	// buildRolesBuilderOnly records a build made with a stored evaluator.
+	buildRolesBuilderOnly = "builder_only"
+	// buildRolesBuilderAndTestWriter records a build with its own test-writer copy.
+	buildRolesBuilderAndTestWriter = "builder_and_test_writer"
 	// testsAssigned is the test writer's state until it reports.
 	testsAssigned = "assigned"
 	// testsReported is the test writer's state after it reported its tests
@@ -228,10 +236,15 @@ func (c *ControlPlane) StartBuild(ctx context.Context, p *gensurla.StartBuildPay
 		ChangeID:        p.ChangeID,
 		RequestRevision: p.RequestRevision,
 		StartedAt:       time.Now().UTC(),
+		Roles:           buildRolesBuilderAndTestWriter,
 		Stories:         cloneStorySummaries(record.stories),
 		DesignSource:    record.designSource,
 		Builder:         builderAssignment{},
-		TestWriter:      testWriterAssignment{State: testsAssigned, WorkingFolder: folder},
+		TestWriter:      testWriterAssignment{State: testsAssigned, WorkingFolder: &folder},
+	}
+	if c.storedEvaluator() {
+		saved.Roles = buildRolesBuilderOnly
+		saved.TestWriter.WorkingFolder = nil
 	}
 	if err := c.cards.saveBuild(saved); err != nil {
 		return nil, recordBuildError(span, err, "save build")
@@ -258,7 +271,7 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	if err != nil {
 		return nil, err
 	}
-	if !found {
+	if !found || !c.usableBuild(saved) {
 		return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildNotStarted(&gensurla.BuildNotStarted{})}, nil
 	}
 	held := heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}
@@ -291,10 +304,10 @@ func (c *ControlPlane) GetBuilderAssignment(
 	ctx context.Context,
 	p *gensurla.GetBuilderAssignmentPayload,
 ) (*gensurla.BuilderAssignment, error) {
-	held, err := c.readAssignment(ctx, "surla.controlplane.get_builder_assignment", p.ChangeID, func(saved *buildFile) bool {
+	held, err := c.readAssignment(ctx, "surla.controlplane.get_builder_assignment", p.ChangeID, func(saved *buildFile) (bool, error) {
 		changed := !saved.Builder.Read
 		saved.Builder.Read = true
-		return changed
+		return changed, nil
 	})
 	if err != nil {
 		return nil, err
@@ -314,9 +327,11 @@ func (c *ControlPlane) ListTestWriterAssignments(ctx context.Context) (*gensurla
 	if err != nil {
 		return nil, err
 	}
-	items := make([]*gensurla.TestWriterAssignmentItem, len(builds))
-	for i, held := range builds {
-		items[i] = testWriterAssignmentItem(held)
+	items := make([]*gensurla.TestWriterAssignmentItem, 0, len(builds))
+	for _, held := range builds {
+		if held.file.Roles == buildRolesBuilderAndTestWriter {
+			items = append(items, testWriterAssignmentItem(held))
+		}
 	}
 	return &gensurla.TestWriterAssignmentList{Assignments: items}, nil
 }
@@ -331,10 +346,13 @@ func (c *ControlPlane) GetTestWriterAssignment(
 	ctx context.Context,
 	p *gensurla.GetTestWriterAssignmentPayload,
 ) (*gensurla.TestWriterAssignment, error) {
-	held, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) bool {
+	held, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) (bool, error) {
+		if saved.Roles != buildRolesBuilderAndTestWriter {
+			return false, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it uses the stored evaluator"))
+		}
 		changed := !saved.TestWriter.Read
 		saved.TestWriter.Read = true
-		return changed
+		return changed, nil
 	})
 	if err != nil {
 		return nil, err
@@ -355,7 +373,7 @@ func (c *ControlPlane) GetTestWriterAssignment(
 		RequestRevision: item.RequestRevision,
 		InForce:         item.InForce,
 		Progress:        item.Progress,
-		WorkingFolder:   held.file.TestWriter.WorkingFolder,
+		WorkingFolder:   *held.file.TestWriter.WorkingFolder,
 		DesignSource:    held.file.DesignSource,
 		Stories:         storySummaryItems(held.file.Stories),
 		RequiredTests:   required,
@@ -388,6 +406,9 @@ func (c *ControlPlane) ReportTestsFinished(
 		return nil, recordBuildError(span, err, "load build")
 	}
 	saved := &held.file
+	if saved.Roles != buildRolesBuilderAndTestWriter {
+		return nil, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it uses the stored evaluator"))
+	}
 	if saved.RequestRevision != p.RequestRevision {
 		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"the test assignment for %q is for request_revision %q, not %q",
@@ -519,7 +540,8 @@ func verdictTime(at time.Time) string {
 // recordBuildError records err on span as a failure unless it is a refusal
 // the design declares, and returns err.
 func recordBuildError(span trace.Span, err error, status string) error {
-	if operationFailed(err) {
+	var refused *goa.ServiceError
+	if !errors.As(err, &refused) || refused.Fault {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, status)
 	}
@@ -553,6 +575,18 @@ func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	}
 	if saved.ReportNumber < 0 {
 		return buildFile{}, fmt.Errorf("build of change %q has a negative report number", saved.ChangeID)
+	}
+	switch saved.Roles {
+	case buildRolesBuilderOnly:
+		if saved.TestWriter.WorkingFolder != nil {
+			return buildFile{}, fmt.Errorf("builder-only build of change %q has a test-writer folder", saved.ChangeID)
+		}
+	case buildRolesBuilderAndTestWriter:
+		if saved.TestWriter.WorkingFolder == nil || !filepath.IsAbs(*saved.TestWriter.WorkingFolder) {
+			return buildFile{}, fmt.Errorf("build of change %q has no absolute test-writer project folder", saved.ChangeID)
+		}
+	default:
+		return buildFile{}, fmt.Errorf("build of change %q has unknown roles %q", saved.ChangeID, saved.Roles)
 	}
 	tw := saved.TestWriter
 	noVerdictFields := tw.Reason == "" && tw.Step == ""
@@ -630,8 +664,8 @@ func (c *ControlPlane) ownedBuild(principal Principal, changeID string) (heldBui
 	if err != nil {
 		return heldBuild{}, err
 	}
-	if !found {
-		return heldBuild{}, gensurla.MakeNotFound(fmt.Errorf("change_id %q has no build; the user starts one on the views page", changeID))
+	if !found || !c.usableBuild(saved) {
+		return heldBuild{}, gensurla.MakeNotFound(fmt.Errorf("change_id %q has no usable build; start a new build on the views page", changeID))
 	}
 	return heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}, nil
 }
@@ -655,7 +689,7 @@ func (c *ControlPlane) ownedBuilds(owner string) ([]heldBuild, error) {
 		if err != nil {
 			return nil, err
 		}
-		if found {
+		if found && c.usableBuild(saved) {
 			builds = append(builds, heldBuild{
 				file:            saved,
 				inForce:         buildInForce(saved, record),
@@ -672,13 +706,23 @@ func (c *ControlPlane) ownedBuilds(owner string) ([]heldBuild, error) {
 	return builds, nil
 }
 
+// usableBuild is the single predicate for every build read and consumer. A build
+// started without a writer remains usable only while stored verification
+// settings still supply its tests. A writer build retains its saved copy,
+// snapshots and unread work even when its revision is no longer in force.
+// Callers pass a build validated by decodeBuild or constructed at StartBuild.
+func (c *ControlPlane) usableBuild(saved buildFile) bool {
+	return saved.Roles == buildRolesBuilderAndTestWriter ||
+		saved.Roles == buildRolesBuilderOnly && c.storedEvaluator()
+}
+
 // readAssignment loads the build of the caller's change under the write lock,
 // applies markRead, and saves the build when markRead reports a change, all
 // within spanName.
 func (c *ControlPlane) readAssignment(
 	ctx context.Context,
 	spanName, changeID string,
-	markRead func(*buildFile) bool,
+	markRead func(*buildFile) (bool, error),
 ) (heldBuild, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -693,7 +737,11 @@ func (c *ControlPlane) readAssignment(
 		return heldBuild{}, recordBuildError(span, err, "load build")
 	}
 	span.SetAttributes(attribute.String("surla.request_revision", held.file.RequestRevision))
-	if markRead(&held.file) {
+	changed, err := markRead(&held.file)
+	if err != nil {
+		return heldBuild{}, recordBuildError(span, err, "read assignment")
+	}
+	if changed {
 		if err := c.cards.saveBuild(held.file); err != nil {
 			return heldBuild{}, recordBuildError(span, err, "save build")
 		}

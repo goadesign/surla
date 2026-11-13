@@ -2686,7 +2686,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "not_repository":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2699,7 +2699,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "no_commit":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2712,7 +2712,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "no_test_layout":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2725,7 +2725,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "git_identity_missing":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2738,7 +2738,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "copy_folder_in_use":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2751,7 +2751,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "tests_branch_in_use":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2764,7 +2764,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
 		case "working_copy_busy":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
@@ -2803,7 +2803,7 @@ func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) go
 			w.WriteHeader(http.StatusNotImplemented)
 			return enc.Encode(body)
 		case "sandbox_unavailable":
-			var res *surla.BuildStartRefusal
+			var res *goa.ServiceError
 			errors.As(v, &res)
 			enc := encoder(ctx, w)
 			var body any
