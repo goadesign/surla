@@ -359,12 +359,19 @@ func TestProjectStartShowsEndedServerOutput(t *testing.T) {
 			runtime.startTerminal = func(context.Context, *project.State) (string, error) { return "t7", nil }
 			runtime.waitTerminal = func(context.Context, string) (bool, error) { return true, nil }
 			var effects []string
+			var readCtx context.Context
 			runtime.readTerminal = func(ctx context.Context, id string) (string, error) {
 				assert.NoError(t, ctx.Err(), "the read has its own cleanup deadline")
+				readCtx = ctx
 				effects = append(effects, "read "+id)
 				return tc.output, tc.readErr
 			}
-			runtime.removeTerminal = func(_ context.Context, id string) error {
+			runtime.removeTerminal = func(ctx context.Context, id string) error {
+				// A read that used up its deadline must not leave the removal without one:
+				// the read's context has ended by now and the removal's has not.
+				require.NotNil(t, readCtx, "the read comes first")
+				assert.Error(t, readCtx.Err(), "the read's deadline ends with the read")
+				assert.NoError(t, ctx.Err(), "the removal has its own deadline")
 				effects = append(effects, "remove "+id)
 				return nil
 			}
@@ -372,7 +379,7 @@ func TestProjectStartShowsEndedServerOutput(t *testing.T) {
 			require.Error(t, err)
 			if tc.want != "" {
 				assert.Equal(t, tc.want, err.Error())
-				assert.Less(t, len(tc.want), len(stopped)+startOutputBytes+startOutputLines*3, "shown lines stay within the bound")
+				assert.Less(t, len(err.Error()), len(stopped)+startOutputBytes+startOutputLines*3, "shown lines stay within the bound")
 			}
 			for _, part := range tc.wantParts {
 				assert.Contains(t, err.Error(), part)

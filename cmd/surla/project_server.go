@@ -149,11 +149,15 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 			err = errors.Join(err, outcome.err)
 			if outcome.ended {
 				// The ended terminal holds the server's own error until it is removed.
-				cleanupCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-				output, readErr := runtime.readTerminal(cleanupCtx, terminal)
+				// The read and the removal each get their own deadline: a read that
+				// hangs must not leave the removal with one that has already passed.
+				readCtx, stopRead := context.WithTimeout(context.Background(), 5*time.Second)
+				output, readErr := runtime.readTerminal(readCtx, terminal)
+				stopRead()
 				err = endedStartError(err, output, readErr)
-				err = errors.Join(err, runtime.removeTerminal(cleanupCtx, terminal))
-				stop()
+				removeCtx, stopRemove := context.WithTimeout(context.Background(), 5*time.Second)
+				err = errors.Join(err, runtime.removeTerminal(removeCtx, terminal))
+				stopRemove()
 			}
 		}
 	}
