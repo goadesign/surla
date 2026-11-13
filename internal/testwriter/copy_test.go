@@ -71,6 +71,9 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 		wantErr error
 		// wantStep is a fragment of the step the error names.
 		wantStep string
+		// notStep is a step the error must not name, because it would not
+		// work in that case.
+		notStep string
 	}{
 		{
 			name:     "a folder outside git",
@@ -107,6 +110,7 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			},
 			wantErr:  ErrBranchInUse,
 			wantStep: "switch that folder to another branch",
+			notStep:  "git worktree prune",
 		},
 		{
 			name: "the reserved branch held by a deleted working copy elsewhere",
@@ -118,7 +122,8 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 				return repo
 			},
 			wantErr:  ErrBranchInUse,
-			wantStep: "switch that folder to another branch",
+			wantStep: "remove that registration with git worktree prune in the project",
+			notStep:  "switch that folder",
 		},
 		{
 			name: "a file of the same name",
@@ -139,6 +144,9 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			_, err := OpenWorkingCopy(t.Context(), project)
 			require.ErrorIs(t, err, tc.wantErr)
 			assert.ErrorContains(t, err, tc.wantStep)
+			if tc.notStep != "" {
+				assert.NotContains(t, err.Error(), tc.notStep)
+			}
 			assert.Equal(t, before, folderState(t, project), "a refused project is left as it was")
 		})
 	}
