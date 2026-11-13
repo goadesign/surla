@@ -1478,7 +1478,7 @@ paths:
             tags:
                 - surla
             summary: list_changes surla
-            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
             operationId: surla#list_changes
             responses:
                 "200":
@@ -1641,6 +1641,11 @@ paths:
                                             - Et temporibus suscipit et tempore praesentium fuga.
                                             - Est ipsa et nihil aut omnis fugit.
                                           question: Labore harum illo eos ipsum deleniti possimus.
+                                    changed_design_files:
+                                        - Velit porro.
+                                        - Et aut rerum laboriosam.
+                                        - Modi ex id esse qui labore aliquid.
+                                        - Nemo ipsa occaecati molestiae.
                                     examples:
                                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -3714,6 +3719,11 @@ paths:
                                             - Et temporibus suscipit et tempore praesentium fuga.
                                             - Est ipsa et nihil aut omnis fugit.
                                           question: Labore harum illo eos ipsum deleniti possimus.
+                                    changed_design_files:
+                                        - Velit porro.
+                                        - Et aut rerum laboriosam.
+                                        - Modi ex id esse qui labore aliquid.
+                                        - Nemo ipsa occaecati molestiae.
                                     examples:
                                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -5564,6 +5574,11 @@ paths:
                                             - Et temporibus suscipit et tempore praesentium fuga.
                                             - Est ipsa et nihil aut omnis fugit.
                                           question: Labore harum illo eos ipsum deleniti possimus.
+                                    changed_design_files:
+                                        - Velit porro.
+                                        - Et aut rerum laboriosam.
+                                        - Modi ex id esse qui labore aliquid.
+                                        - Nemo ipsa occaecati molestiae.
                                     examples:
                                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -7303,8 +7318,8 @@ paths:
                         schema:
                             $ref: '#/components/schemas/DeclineRevisionPayload'
                         example:
-                            change_id: Commodi ex facilis.
-                            request_revision: Sequi dignissimos ut non quaerat et enim.
+                            change_id: sg
+                            request_revision: cf2a81cc33e3bef57abac8bae9e732fbabea86567fde6e5bc232e41f8d5391a7
             responses:
                 "200":
                     description: OK response.
@@ -7406,6 +7421,11 @@ paths:
                                             - Et temporibus suscipit et tempore praesentium fuga.
                                             - Est ipsa et nihil aut omnis fugit.
                                           question: Labore harum illo eos ipsum deleniti possimus.
+                                    changed_design_files:
+                                        - Velit porro.
+                                        - Et aut rerum laboriosam.
+                                        - Modi ex id esse qui labore aliquid.
+                                        - Nemo ipsa occaecati molestiae.
                                     examples:
                                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -9709,6 +9729,11 @@ paths:
                                             - Et temporibus suscipit et tempore praesentium fuga.
                                             - Est ipsa et nihil aut omnis fugit.
                                           question: Labore harum illo eos ipsum deleniti possimus.
+                                    changed_design_files:
+                                        - Velit porro.
+                                        - Et aut rerum laboriosam.
+                                        - Modi ex id esse qui labore aliquid.
+                                        - Nemo ipsa occaecati molestiae.
                                     examples:
                                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -11300,6 +11325,11 @@ paths:
                                             - Et temporibus suscipit et tempore praesentium fuga.
                                             - Est ipsa et nihil aut omnis fugit.
                                           question: Labore harum illo eos ipsum deleniti possimus.
+                                    changed_design_files:
+                                        - Velit porro.
+                                        - Et aut rerum laboriosam.
+                                        - Modi ex id esse qui labore aliquid.
+                                        - Nemo ipsa occaecati molestiae.
                                     examples:
                                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -18085,6 +18115,11 @@ components:
                             - Et temporibus suscipit et tempore praesentium fuga.
                             - Est ipsa et nihil aut omnis fugit.
                           question: Labore harum illo eos ipsum deleniti possimus.
+                    changed_design_files:
+                        - Velit porro.
+                        - Et aut rerum laboriosam.
+                        - Modi ex id esse qui labore aliquid.
+                        - Nemo ipsa occaecati molestiae.
                     examples:
                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -19762,15 +19797,17 @@ components:
                 change_id:
                     type: string
                     description: Change identifier.
-                    example: Commodi ex facilis.
+                    example: sg
+                    minLength: 1
                 request_revision:
                     type: string
-                    description: request_revision of the proposed revision being declined (proposed_revision.request_revision).
-                    example: Sequi dignissimos ut non quaerat et enim.
+                    description: 'request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.'
+                    example: cf2a81cc33e3bef57abac8bae9e732fbabea86567fde6e5bc232e41f8d5391a7
+                    pattern: ^[0-9a-f]{64}$
             description: Request body for decline_revision.
             example:
-                change_id: Commodi ex facilis.
-                request_revision: Sequi dignissimos ut non quaerat et enim.
+                change_id: sg
+                request_revision: cf2a81cc33e3bef57abac8bae9e732fbabea86567fde6e5bc232e41f8d5391a7
             required:
                 - change_id
                 - request_revision
@@ -20472,6 +20509,17 @@ components:
                             - Et temporibus suscipit et tempore praesentium fuga.
                             - Est ipsa et nihil aut omnis fugit.
                           question: Labore harum illo eos ipsum deleniti possimus.
+                changed_design_files:
+                    type: array
+                    items:
+                        type: string
+                        example: Velit porro.
+                    description: Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.
+                    example:
+                        - Velit porro.
+                        - Et aut rerum laboriosam.
+                        - Modi ex id esse qui labore aliquid.
+                        - Nemo ipsa occaecati molestiae.
                 examples:
                     type: array
                     items:
@@ -21357,6 +21405,11 @@ components:
                         - Et temporibus suscipit et tempore praesentium fuga.
                         - Est ipsa et nihil aut omnis fugit.
                       question: Labore harum illo eos ipsum deleniti possimus.
+                changed_design_files:
+                    - Velit porro.
+                    - Et aut rerum laboriosam.
+                    - Modi ex id esse qui labore aliquid.
+                    - Nemo ipsa occaecati molestiae.
                 examples:
                     - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                       id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -22200,6 +22253,7 @@ components:
                 - examples
                 - preserved_behaviors
                 - request_revision
+                - changed_design_files
         ReadCheckOutputPayload:
             type: object
             properties:

@@ -4,8 +4,10 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -152,8 +154,10 @@ func (c *ControlPlane) ReviseChange(
 }
 
 // DeclineRevision removes the revision the guide proposed beside a confirmed
-// card, which p.RequestRevision must name. The confirmed revision in force
-// stays exactly as it was. Only the card's owner reaches this; the operation
+// card, which p.RequestRevision must name. It first checks p against the
+// design's rules with the generated gensurla.ValidateDeclineRevisionPayloadValue,
+// so a Go caller gets the checks the HTTP and MCP decoders apply. The
+// confirmed revision in force stays exactly as it was. Only the card's owner reaches this; the operation
 // table lets only the user's session call it. The result is the change as
 // GetChange returns it.
 func (c *ControlPlane) DeclineRevision(
@@ -164,8 +168,8 @@ func (c *ControlPlane) DeclineRevision(
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.RequestRevision) == "" {
-		return nil, gensurla.MakeUnprocessable(errors.New("change_id and request_revision are required"))
+	if err := gensurla.ValidateDeclineRevisionPayloadValue(p); err != nil {
+		return nil, gensurla.MakeUnprocessable(err)
 	}
 	record, err := c.declineRevision(principal, p)
 	if err != nil {
@@ -301,17 +305,26 @@ func (c *ControlPlane) changeResult(ctx context.Context, record storedChangeCard
 		return card, nil
 	}
 	out := *card
-	out.ProposedRevision = proposedRevisionItem(record.proposed)
+	out.ProposedRevision, err = proposedRevisionItem(record)
+	if err != nil {
+		return nil, err
+	}
 	return &out, nil
 }
 
-// proposedRevisionItem is proposed as a change result reports it, or nil
-// when no proposal waits.
-func proposedRevisionItem(proposed *storedRevision) *gensurla.ProposedRevisionItem {
-	if proposed == nil {
-		return nil
+// proposedRevisionItem is record's waiting proposal as a change result
+// reports it, naming the design files it was made from that differ from the
+// agreed revision's, or nil when no proposal waits. A saved design source
+// that does not decode is an error.
+func proposedRevisionItem(record storedChangeCard) (*gensurla.ProposedRevisionItem, error) {
+	if record.proposed == nil {
+		return nil, nil
 	}
-	card := proposed.card
+	changed, err := changedDesignFiles(record.designSource, record.proposed.designSource)
+	if err != nil {
+		return nil, fmt.Errorf("change card %q: %w", record.card.ChangeID, err)
+	}
+	card := record.proposed.card
 	return &gensurla.ProposedRevisionItem{
 		Prompt:             card.Prompt,
 		Summary:            card.Summary,
@@ -321,5 +334,45 @@ func proposedRevisionItem(proposed *storedRevision) *gensurla.ProposedRevisionIt
 		Stories:            card.Stories,
 		RequestRevision:    card.RequestRevision,
 		UIComposition:      card.UIComposition,
+		ChangedDesignFiles: changed,
+	}, nil
+}
+
+// changedDesignFiles returns, in path order, the design files that were
+// added, removed or changed between two saved design sources, each the JSON
+// object of design/*.go files encodeDesignSource writes ("" for none).
+func changedDesignFiles(agreed, proposed string) ([]string, error) {
+	before, err := decodeDesignSource(agreed)
+	if err != nil {
+		return nil, err
 	}
+	after, err := decodeDesignSource(proposed)
+	if err != nil {
+		return nil, err
+	}
+	changed := []string{}
+	for path, content := range after {
+		if prior, ok := before[path]; !ok || prior != content {
+			changed = append(changed, path)
+		}
+	}
+	for path := range before {
+		if _, ok := after[path]; !ok {
+			changed = append(changed, path)
+		}
+	}
+	slices.Sort(changed)
+	return changed, nil
+}
+
+// decodeDesignSource decodes a saved design source into its files.
+func decodeDesignSource(source string) (map[string]string, error) {
+	files := map[string]string{}
+	if source == "" {
+		return files, nil
+	}
+	if err := json.Unmarshal([]byte(source), &files); err != nil {
+		return nil, fmt.Errorf("decode saved design source: %w", err)
+	}
+	return files, nil
 }

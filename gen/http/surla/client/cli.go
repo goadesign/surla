@@ -177,7 +177,14 @@ func BuildDeclineRevisionPayload(surlaDeclineRevisionBody *string) (*surla.Decli
 		}
 		err = json.Unmarshal([]byte(*surlaDeclineRevisionBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"Commodi ex facilis.\",\n      \"request_revision\": \"Sequi dignissimos ut non quaerat et enim.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"sg\",\n      \"request_revision\": \"cf2a81cc33e3bef57abac8bae9e732fbabea86567fde6e5bc232e41f8d5391a7\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", body.ChangeID, utf8.RuneCountInString(body.ChangeID), 1, true))
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.request_revision", body.RequestRevision, "^[0-9a-f]{64}$"))
+		if err != nil {
+			return nil, err
 		}
 	}
 	v := &surla.DeclineRevisionPayload{

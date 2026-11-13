@@ -276,7 +276,7 @@ func validateAmbiguityAnswers(questions []*gensurla.AmbiguityQuestion, answers m
 	}
 	msg := strings.Join(problems, "; ")
 	if unresolved {
-		msg += "; each answer must be exactly one of its question's options, and a decision that no option expresses goes in revise_change's prompt"
+		msg += "; each answer must be exactly one of its question's options; for a decision that no option expresses, ask the guide to revise the change"
 	}
 	return errors.New(msg)
 }

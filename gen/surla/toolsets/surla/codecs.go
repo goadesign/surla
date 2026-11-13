@@ -2025,6 +2025,16 @@ var approveMergeResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "request_revision of the Change Card this program was composed for.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var checkProjectPayloadFields = []tools.FieldMetadata{
 	{
@@ -2870,6 +2880,16 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "request_revision of the Change Card this program was composed for.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var declineRevisionPayloadFields = []tools.FieldMetadata{
 	{
@@ -2884,7 +2904,7 @@ var declineRevisionPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
 		JSONType:    "string",
-		Description: "request_revision of the proposed revision being declined (proposed_revision.request_revision).",
+		Description: "request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.",
 	},
 }
 var declineRevisionResultFields = []tools.FieldMetadata{
@@ -3601,6 +3621,16 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
 		JSONType:    "string",
 		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
 	},
 }
 var diffPayloadFields = []tools.FieldMetadata{
@@ -4997,6 +5027,16 @@ var getChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
 		JSONType:    "string",
 		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
 	},
 }
 var getStoryRefreshPayloadFields = []tools.FieldMetadata{
@@ -8052,6 +8092,16 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 		JSONType:    "string",
 		Description: "request_revision of the Change Card this program was composed for.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
 }
 var readCheckOutputPayloadFields = []tools.FieldMetadata{
 	{
@@ -9368,6 +9418,16 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
 		JSONType:    "string",
 		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files")},
+		JSONType:    "array",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("changed_design_files"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
 	},
 }
 var startLiveTargetPayloadFields = []tools.FieldMetadata{
@@ -17684,6 +17744,13 @@ func validateProposeChangeResultProposedRevisionItemTransportJSONValue(path stri
 			); err != nil {
 				return err
 			}
+		case "changed_design_files":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+			); err != nil {
+				return err
+			}
 		case "examples":
 			if err := validateProposeChangeResultRootExamplesJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -17736,6 +17803,7 @@ func validateProposeChangeResultProposedRevisionItemTransportJSONValue(path stri
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"ambiguities",
+				"changed_design_files",
 				"examples",
 				"preserved_behaviors",
 				"prompt",
@@ -18659,7 +18727,7 @@ func validateDeclineRevisionPayloadJSONValue(path string, value any, description
 		case "request_revision":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "request_revision of the proposed revision being declined (proposed_revision.request_revision).",
+				typed[key], "request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.",
 			); err != nil {
 				return err
 			}
@@ -22901,6 +22969,10 @@ func decodeProposedRevisionItemTransportToProposedRevisionItem(v *toolhttp.Propo
 	if v.UIComposition != nil {
 		res.UIComposition = decodeUICompositionItemTransportToUICompositionItem(v.UIComposition)
 	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }
@@ -23093,6 +23165,10 @@ func encodeProposedRevisionItemToProposedRevisionItemTransport(v *ProposedRevisi
 	}
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToUICompositionItemTransport(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
 	}
 
 	return res

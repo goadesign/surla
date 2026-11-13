@@ -182,7 +182,7 @@ type (
 		// Change identifier.
 		ChangeID string
 		// request_revision of the proposed revision being declined
-		// (proposed_revision.request_revision).
+		// (proposed_revision.request_revision): 64 lowercase hex characters.
 		RequestRevision string
 	}
 	// DeclineRevisionResult defines the JSON result for the surla.decline_revision tool.
@@ -1134,6 +1134,12 @@ type (
 		// Decision view the guide composed for this revision in its analysis, when it
 		// sent one.
 		UIComposition *UICompositionItem
+		// Paths of the design/*.go files that differ between the design source the
+		// confirmed revision was made from and the one this revision was made from
+		// (added, removed or changed), in path order; empty when both were made from
+		// the same design files. Adopting the revision binds it to its own design
+		// source.
+		ChangedDesignFiles []string
 	}
 	// RequiredTest is a nested type used by the generated JSON contract.
 	RequiredTest = struct {

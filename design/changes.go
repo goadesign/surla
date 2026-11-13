@@ -54,7 +54,7 @@ var ChangeListVersion = Type("ChangeListVersion", func() {
 // waiting read. The waiting read is HTTP-only: only the views page uses it.
 func changeListMethods() {
 	Method("list_changes", func() {
-		Description("List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.")
+		Description("List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.")
 		Result(ChangeList)
 		Tool("list_changes", "List this project's Change Cards, most recently saved first, with each card's summary, status, current request_revision, latest verification run state and last save time. Read one card with get_change(change_id).")
 		HTTP(func() {

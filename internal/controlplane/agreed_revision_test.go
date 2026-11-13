@@ -268,6 +268,15 @@ func TestOnlyTheUserMayDeclineAProposal(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, status, "%s declined a proposal", token)
 		assert.Equal(t, saved, savedFile(t, cp, "chg"), "a refused decline by %s changed the file", token)
 	}
+	for _, malformed := range []string{
+		`{"change_id":"","request_revision":"` + proposal.RequestRevision + `"}`,
+		`{"change_id":"chg","request_revision":"not-a-revision"}`,
+		`{"change_id":"chg","request_revision":""}`,
+	} {
+		status, answer := postJSON(t, srv.URL+"/changes/decline", "user", malformed)
+		assert.Equal(t, http.StatusBadRequest, status, "a malformed decline was not refused by the generated validation: %s", answer)
+		assert.Equal(t, saved, savedFile(t, cp, "chg"), "a malformed decline changed the file")
+	}
 	status, answer := postJSON(t, srv.URL+"/changes/decline", "user", body)
 	require.Equal(t, http.StatusOK, status, answer)
 	stored, ok, err := cp.cards.load("chg")
@@ -383,6 +392,144 @@ func TestACardFileWithAProposalIsCheckedOnLoad(t *testing.T) {
 			assert.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+// TestAProposalKeepsItsOwnStoryAndDesignSource proposes, beside an agreed
+// change with one Story and design source, a revision evaluated from other
+// design files with another Story. The proposal carries its own pair and
+// names the changed design file; a second revision over it without a new
+// evaluation keeps that pair; a proposal whose saved design source was
+// altered is refused on load; and adopting it makes its Story and design
+// source the change's.
+func TestAProposalKeepsItsOwnStoryAndDesignSource(t *testing.T) {
+	ws := t.TempDir()
+	writeWorkspaceFiles(t, ws, validWorkspaceStub("package design\n"))
+	cp := newControlPlane(t, Options{WorkspaceDir: ws})
+	agreedOp := seedStoryRefreshForTest(t, cp, agreedOwner, storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+	proposeWithStory(t, cp, agreedGuide, "chg", agreedOp)
+	proposed, err := cp.GetChange(agreedUser, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	agreed, err := cp.ConfirmIntent(agreedUser, &gensurla.ConfirmIntentPayload{
+		ChangeID: "chg", RequestRevision: proposed.RequestRevision, Answers: map[string]string{}, Examples: proposed.Examples,
+	})
+	require.NoError(t, err)
+
+	writeWorkspaceFiles(t, ws, map[string]string{"design/design.go": "package design // exchanges\n"})
+	draftOp := seedStoryRefreshForTest(t, cp, agreedOwner, storyRefreshStateSucceeded, pageStories(), "")
+	first := revisionPayload("chg", agreed.RequestRevision, "Refunds up to $60 are instant.", agreed.Examples[0].ID)
+	first.StoryRefreshOpID = &draftOp
+	revised, err := cp.ReviseChange(agreedGuide, first)
+	require.NoError(t, err)
+	require.NotNil(t, revised.ProposedRevision)
+	assert.Equal(t, flowKeys(storySummaryItems(sampleAdoptedStories())), flowKeys(revised.Stories), "the agreed revision keeps its Story")
+	assert.Equal(t, flowKeys(storySummaryItems(pageStories())), flowKeys(revised.ProposedRevision.Stories), "the proposal carries its own Story")
+	assert.Equal(t, []string{"design/design.go"}, revised.ProposedRevision.ChangedDesignFiles)
+	stored := loadChange(t, cp, "chg")
+	assert.NotContains(t, stored.designSource, "exchanges", "the agreed revision keeps its design source")
+	assert.Contains(t, stored.proposed.designSource, "exchanges", "the proposal records its own design source")
+
+	second, err := cp.ReviseChange(agreedGuide, revisionPayload("chg", revised.ProposedRevision.RequestRevision, "Refunds up to $70 are instant.", agreed.Examples[0].ID))
+	require.NoError(t, err)
+	require.NotNil(t, second.ProposedRevision)
+	assert.Equal(t, flowKeys(storySummaryItems(pageStories())), flowKeys(second.ProposedRevision.Stories), "revising the proposal keeps its Story")
+	assert.Equal(t, []string{"design/design.go"}, second.ProposedRevision.ChangedDesignFiles)
+	stored = loadChange(t, cp, "chg")
+	assert.Contains(t, stored.proposed.designSource, "exchanges", "revising the proposal keeps its design source")
+	assert.Equal(t, pageStories(), stored.proposed.stories)
+
+	valid := savedFile(t, cp, "chg")
+	var file map[string]any
+	require.NoError(t, json.Unmarshal([]byte(valid), &file))
+	file["proposed"].(map[string]any)["design_source"] = `{"design/design.go":"package design // altered\n"}`
+	altered, err := json.Marshal(file)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cp.cards.path("chg"), altered, 0o600))
+	_, err = cp.GetChange(agreedUser, &gensurla.GetChangePayload{ChangeID: "chg"})
+	assert.ErrorContains(t, err, "does not match its request_revision", "a proposal whose design source was altered is refused")
+	require.NoError(t, os.WriteFile(cp.cards.path("chg"), []byte(valid), 0o600))
+
+	adopted := adoptProposal(t, cp, "chg", second.ProposedRevision)
+	assert.Equal(t, flowKeys(storySummaryItems(pageStories())), flowKeys(adopted.Stories), "the adopted revision has the proposal's Story")
+	stored = loadChange(t, cp, "chg")
+	assert.Contains(t, stored.designSource, "exchanges", "the adopted revision has the proposal's design source")
+	assert.Equal(t, pageStories(), stored.stories)
+}
+
+// TestDecliningNamesTheProposalTheUserSaw declines a proposal that the
+// guide has since replaced: the request is refused and changes nothing, and
+// declining the waiting proposal works.
+func TestDecliningNamesTheProposalTheUserSaw(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	agreed := agreeChange(t, cp, "chg")
+	seen := proposeRevision(t, cp, "chg", agreed.RequestRevision, "Refunds up to $60 are instant.").ProposedRevision
+	waiting := proposeRevision(t, cp, "chg", seen.RequestRevision, "Refunds up to $70 are instant.").ProposedRevision
+	saved := savedFile(t, cp, "chg")
+	_, err := cp.DeclineRevision(agreedUser, &gensurla.DeclineRevisionPayload{ChangeID: "chg", RequestRevision: seen.RequestRevision})
+	assertServiceError(t, err, "conflict")
+	assert.Equal(t, saved, savedFile(t, cp, "chg"), "declining a replaced proposal changed the file")
+	declined, err := cp.DeclineRevision(agreedUser, &gensurla.DeclineRevisionPayload{ChangeID: "chg", RequestRevision: waiting.RequestRevision})
+	require.NoError(t, err)
+	assert.Nil(t, declined.ProposedRevision)
+}
+
+// TestAProposalThatIsNotAwaitingConfirmationIsRefusedOnLoad saves a change
+// whose proposal matches its own request_revision but carries answers, a
+// confirmation, or the confirmed status, and checks each is refused on load.
+func TestAProposalThatIsNotAwaitingConfirmationIsRefusedOnLoad(t *testing.T) {
+	confirmedBy := agreedOwner
+	cases := []struct {
+		name  string
+		alter func(card *gensurla.ChangeCardResult)
+	}{
+		{name: "answered", alter: func(card *gensurla.ChangeCardResult) {
+			card.Answers = map[string]string{"chg-ambiguity-01": "with_tax"}
+		}},
+		{name: "confirmed by someone", alter: func(card *gensurla.ChangeCardResult) { card.ConfirmedBy = &confirmedBy }},
+		{name: "confirmed status", alter: func(card *gensurla.ChangeCardResult) {
+			card.Status = StatusConfirmed
+			card.Answers = map[string]string{"chg-ambiguity-01": "with_tax"}
+			card.ConfirmedBy = &confirmedBy
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := newControlPlane(t, Options{})
+			agreed := agreeChange(t, cp, "chg")
+			proposeRevision(t, cp, "chg", agreed.RequestRevision, "Refunds up to $60 are instant.")
+			record := loadChange(t, cp, "chg")
+			proposal := *record.proposed.card
+			tc.alter(&proposal)
+			rev, err := computeCanonicalRevision(&proposal, record.owner, record.proposed.designSource)
+			require.NoError(t, err)
+			proposal.RequestRevision = rev
+			record.proposed = &storedRevision{card: &proposal, designSource: record.proposed.designSource, stories: record.proposed.stories}
+			require.NoError(t, cp.cards.save(record))
+			_, err = cp.GetChange(agreedUser, &gensurla.GetChangePayload{ChangeID: "chg"})
+			assert.ErrorContains(t, err, "not awaiting confirmation")
+		})
+	}
+}
+
+// TestAWaitingProposalsDesignFilesBlockInitialization proposes a change in a
+// workspace without design files, confirms it, adds design files, and
+// proposes a revision that records them: init_project's check then counts
+// the proposal's files although the revision in force has none.
+func TestAWaitingProposalsDesignFilesBlockInitialization(t *testing.T) {
+	ws := t.TempDir()
+	writeWorkspaceFiles(t, ws, map[string]string{"go.mod": "module example.com/orders\n\ngo 1.24\n"})
+	cp := newControlPlane(t, Options{WorkspaceDir: ws})
+	agreed := agreeChange(t, cp, "chg")
+	blocked, err := cp.cards.hasWorkspaceCardsWithFiles()
+	require.NoError(t, err)
+	require.False(t, blocked, "a change made before any design file does not block initialization")
+	writeWorkspaceFiles(t, ws, map[string]string{"design/design.go": "package design\n"})
+	proposeRevision(t, cp, "chg", agreed.RequestRevision, "Refunds up to $60 are instant.")
+	stored := loadChange(t, cp, "chg")
+	require.Empty(t, stored.designSource)
+	require.NotEmpty(t, stored.proposed.designSource)
+	blocked, err = cp.cards.hasWorkspaceCardsWithFiles()
+	require.NoError(t, err)
+	assert.True(t, blocked, "a waiting proposal's design files block initialization")
 }
 
 // TestRevisionDescriptionsSayTheAgreedChangeStaysInForce checks the
@@ -507,4 +654,24 @@ func savedSections(t *testing.T, cp *ControlPlane, changeID string) map[string]j
 // proposedCard returns the proposed revision's card inside a decoded file.
 func proposedCard(file map[string]any) map[string]any {
 	return file["proposed"].(map[string]any)["card"].(map[string]any)
+}
+
+// loadChange returns changeID's saved change, failing when it is not saved.
+func loadChange(t *testing.T, cp *ControlPlane, changeID string) storedChangeCard {
+	t.Helper()
+	record, ok, err := cp.cards.load(changeID)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return record
+}
+
+// flowKeys lists the flow keys of stories in order.
+func flowKeys(stories []*gensurla.StorySummaryItem) []string {
+	keys := []string{}
+	for _, story := range stories {
+		for _, flow := range story.Flows {
+			keys = append(keys, flow.Key)
+		}
+	}
+	return keys
 }

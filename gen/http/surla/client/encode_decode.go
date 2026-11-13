@@ -4795,6 +4795,10 @@ func unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(v *Pro
 	if v.UIComposition != nil {
 		res.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(v.UIComposition)
 	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }

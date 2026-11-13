@@ -82,7 +82,7 @@ type DeclineRevisionRequestBody struct {
 	// Change identifier.
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// request_revision of the proposed revision being declined
-	// (proposed_revision.request_revision).
+	// (proposed_revision.request_revision): 64 lowercase hex characters.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 }
 
@@ -3017,6 +3017,12 @@ type ProposedRevisionItemResponseBody struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `form:"changed_design_files" json:"changed_design_files" xml:"changed_design_files"`
 }
 
 // C4ContainerItemResponseBody is used to define fields on response body types.
@@ -7458,6 +7464,14 @@ func ValidateDeclineRevisionRequestBody(body *DeclineRevisionRequestBody) (err e
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	if body.RequestRevision != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.request_revision", *body.RequestRevision, "^[0-9a-f]{64}$"))
 	}
 	return
 }

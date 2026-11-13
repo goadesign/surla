@@ -237,10 +237,12 @@ type Service interface {
 	// space and availability refusals as the management team-start operation.
 	StartTeamAgents(context.Context) (res *ProjectTeam, err error)
 	// List the owner's saved Change Cards for this project, most recently saved
-	// first, with each card's summary, status, current request_revision, the state
-	// of its most recently accepted verification run, and when it was last saved,
-	// and say whether this server can record approvals. The views page opens on
-	// this list; agents use it to find a change_id. Reading changes nothing.
+	// first, with each card's summary, status, the request_revision in force, the
+	// request_revision of a revision the guide proposed beside a confirmed card
+	// while it waits for the user, the state of its most recently accepted
+	// verification run, and when it was last saved, and say whether this server
+	// can record approvals. The views page opens on this list; agents use it to
+	// find a change_id. Reading changes nothing.
 	ListChanges(context.Context) (res *ChangeList, err error)
 	// Return the current change list's version as soon as it differs from since,
 	// the version of the list the caller last read, or after a bounded wait of a
@@ -780,7 +782,7 @@ type DeclineRevisionPayload struct {
 	// Change identifier.
 	ChangeID string
 	// request_revision of the proposed revision being declined
-	// (proposed_revision.request_revision).
+	// (proposed_revision.request_revision): 64 lowercase hex characters.
 	RequestRevision string
 }
 
@@ -1070,6 +1072,12 @@ type ProposedRevisionItem struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *UICompositionItem
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string
 }
 
 // ReadCheckOutputPayload is the payload type of the surla service
@@ -3103,7 +3111,7 @@ type jsonDeclineRevisionPayloadTransport struct {
 	// Change identifier.
 	ChangeID *string `json:"change_id"`
 	// request_revision of the proposed revision being declined
-	// (proposed_revision.request_revision).
+	// (proposed_revision.request_revision): 64 lowercase hex characters.
 	RequestRevision *string `json:"request_revision"`
 }
 
@@ -3117,6 +3125,14 @@ func validatejsonDeclineRevisionPayloadTransport(value *jsonDeclineRevisionPaylo
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangeID != nil {
+		if utf8.RuneCountInString(*value.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *value.ChangeID, utf8.RuneCountInString(*value.ChangeID), 1, true))
+		}
+	}
+	if value.RequestRevision != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.request_revision", *value.RequestRevision, "^[0-9a-f]{64}$"))
 	}
 	return err
 }
@@ -3775,6 +3791,12 @@ type jsonProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *jsonUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // validatejsonProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -3796,6 +3818,9 @@ func validatejsonProposedRevisionItemTransport(value *jsonProposedRevisionItemTr
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -5992,6 +6017,9 @@ func validateProposedRevisionItemOriginal(value *ProposedRevisionItem) (err erro
 	if value.PreservedBehaviors == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
 	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "value"))
+	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
 			if err2 := validateAmbiguityQuestionOriginal(e); err2 != nil {
@@ -6088,6 +6116,15 @@ func validateConfirmIntentPayloadOriginal(value *ConfirmIntentPayload) (err erro
 			}
 		}
 	}
+	return err
+}
+
+// validateDeclineRevisionPayloadOriginal checks the original typed value before JSON conversion.
+func validateDeclineRevisionPayloadOriginal(value *DeclineRevisionPayload) (err error) {
+	if utf8.RuneCountInString(value.ChangeID) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.change_id", value.ChangeID, utf8.RuneCountInString(value.ChangeID), 1, true))
+	}
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.request_revision", value.RequestRevision, "^[0-9a-f]{64}$"))
 	return err
 }
 
@@ -10415,6 +10452,9 @@ func EncodeDeclineRevisionPayload(in *DeclineRevisionPayload) ([]byte, error) {
 	if err := checkDeclineRevisionPayloadValue(in); err != nil {
 		return nil, fmt.Errorf("encode DeclineRevisionPayload JSON: %w", err)
 	}
+	if err := validateDeclineRevisionPayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate DeclineRevisionPayload value: %w", err)
+	}
 	var body *jsonDeclineRevisionPayloadTransport
 	{
 		body = &jsonDeclineRevisionPayloadTransport{
@@ -10437,6 +10477,9 @@ func EncodeDeclineRevisionPayload(in *DeclineRevisionPayload) ([]byte, error) {
 
 func ValidateDeclineRevisionPayloadValue(in *DeclineRevisionPayload) error {
 	if err := checkDeclineRevisionPayloadValue(in); err != nil {
+		return fmt.Errorf("validate DeclineRevisionPayload value: %w", err)
+	}
+	if err := validateDeclineRevisionPayloadOriginal(in); err != nil {
 		return fmt.Errorf("validate DeclineRevisionPayload value: %w", err)
 	}
 
@@ -11042,7 +11085,7 @@ func DecodeExampleItem(data []byte) (out *ExampleItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode ExampleItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue20("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue21("", root, ""); err != nil {
 		return out, fmt.Errorf("decode ExampleItem JSON: %w", err)
 	}
 	var body *jsonExampleItemTransport
@@ -12460,6 +12503,10 @@ func EncodeProposedRevisionItem(in *ProposedRevisionItem) ([]byte, error) {
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToUICompositionItemTransport(in.UIComposition)
 		}
+		body.ChangedDesignFiles = make([]string, len(in.ChangedDesignFiles))
+		for i, val := range in.ChangedDesignFiles {
+			body.ChangedDesignFiles[i] = val
+		}
 	}
 	if err := validatejsonProposedRevisionItemTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ProposedRevisionItem JSON: %w", err)
@@ -12528,6 +12575,10 @@ func ValidateProposedRevisionItemValue(in *ProposedRevisionItem) error {
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToUICompositionItemTransport(in.UIComposition)
 		}
+		body.ChangedDesignFiles = make([]string, len(in.ChangedDesignFiles))
+		for i, val := range in.ChangedDesignFiles {
+			body.ChangedDesignFiles[i] = val
+		}
 	}
 	if err := validatejsonProposedRevisionItemTransport(body); err != nil {
 		return fmt.Errorf("validate ProposedRevisionItem value: %w", err)
@@ -12541,7 +12592,7 @@ func DecodeProposedRevisionItem(data []byte) (out *ProposedRevisionItem, err err
 	if err != nil {
 		return out, fmt.Errorf("decode ProposedRevisionItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue22("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue23("", root, ""); err != nil {
 		return out, fmt.Errorf("decode ProposedRevisionItem JSON: %w", err)
 	}
 	var body *jsonProposedRevisionItemTransport
@@ -12599,6 +12650,10 @@ func DecodeProposedRevisionItem(data []byte) (out *ProposedRevisionItem, err err
 		}
 		if body.UIComposition != nil {
 			out.UIComposition = decodeUICompositionItemTransportToUICompositionItem(body.UIComposition)
+		}
+		out.ChangedDesignFiles = make([]string, len(body.ChangedDesignFiles))
+		for i, val := range body.ChangedDesignFiles {
+			out.ChangedDesignFiles[i] = val
 		}
 	}
 	return out, nil
@@ -13178,7 +13233,7 @@ func DecodeStoryActorItem(data []byte) (out *StoryActorItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue6("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue7("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
 	}
 	var body *jsonStoryActorItemTransport
@@ -13301,7 +13356,7 @@ func DecodeStoryFlowItem(data []byte) (out *StoryFlowItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue8("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue9("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
 	}
 	var body *jsonStoryFlowItemTransport
@@ -13415,7 +13470,7 @@ func DecodeStoryQuestionItem(data []byte) (out *StoryQuestionItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue10("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue11("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
 	}
 	var body *jsonStoryQuestionItemTransport
@@ -13647,7 +13702,7 @@ func DecodeStoryStepItem(data []byte) (out *StoryStepItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue14("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue15("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
 	}
 	var body *jsonStoryStepItemTransport
@@ -13776,7 +13831,7 @@ func DecodeStorySummaryItem(data []byte) (out *StorySummaryItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue4("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue5("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
 	}
 	var body *jsonStorySummaryItemTransport
@@ -15790,7 +15845,7 @@ func DecodeUICompositionItem(data []byte) (out *UICompositionItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode UICompositionItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue16("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue17("", root, ""); err != nil {
 		return out, fmt.Errorf("decode UICompositionItem JSON: %w", err)
 	}
 	var body *jsonUICompositionItemTransport
@@ -15876,7 +15931,7 @@ func DecodeUnverifiedApprovalItem(data []byte) (out *UnverifiedApprovalItem, err
 	if err != nil {
 		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue18("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue19("", root, ""); err != nil {
 		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
 	}
 	var body *jsonUnverifiedApprovalItemTransport
@@ -17285,6 +17340,10 @@ func decodeProposedRevisionItemTransportToProposedRevisionItem(v *jsonProposedRe
 	if v.UIComposition != nil {
 		res.UIComposition = decodeUICompositionItemTransportToUICompositionItem(v.UIComposition)
 	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }
@@ -18131,6 +18190,10 @@ func encodeProposedRevisionItemToProposedRevisionItemTransport(v *ProposedRevisi
 	}
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToUICompositionItemTransport(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
 	}
 
 	return res
@@ -21308,14 +21371,14 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "examples":
-			if err := validateChangeCardResultJSONValue19(
+			if err := validateChangeCardResultJSONValue20(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Concrete examples mapped to evaluator checks.",
 			); err != nil {
 				return err
 			}
 		case "preserved_behaviors":
-			if err := validateChangeCardResultJSONValue21(
+			if err := validateChangeCardResultJSONValue22(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Existing contract invariants preserved by this change.",
 			); err != nil {
@@ -21329,7 +21392,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "proposed_revision":
-			if err := validateChangeCardResultJSONValue22(
+			if err := validateChangeCardResultJSONValue23(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.",
 			); err != nil {
@@ -21350,7 +21413,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "stories":
-			if err := validateChangeCardResultJSONValue17(
+			if err := validateChangeCardResultJSONValue18(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.",
 			); err != nil {
@@ -21364,14 +21427,14 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "ui_composition":
-			if err := validateChangeCardResultJSONValue16(
+			if err := validateChangeCardResultJSONValue17(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 			); err != nil {
 				return err
 			}
 		case "unverified_approval":
-			if err := validateChangeCardResultJSONValue18(
+			if err := validateChangeCardResultJSONValue19(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 			); err != nil {
@@ -21456,8 +21519,8 @@ func validateChangeCardResultJSONValue13(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue19 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue19(path string, value any, description string) error {
+// validateChangeCardResultJSONValue20 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue20(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21473,7 +21536,7 @@ func validateChangeCardResultJSONValue19(path string, value any, description str
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue20(
+		if err := validateChangeCardResultJSONValue21(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -21483,8 +21546,8 @@ func validateChangeCardResultJSONValue19(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue20 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue20(path string, value any, description string) error {
+// validateChangeCardResultJSONValue21 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue21(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21551,8 +21614,8 @@ func validateChangeCardResultJSONValue20(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue21 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue21(path string, value any, description string) error {
+// validateChangeCardResultJSONValue22 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue22(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21575,8 +21638,8 @@ func validateChangeCardResultJSONValue21(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue22 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue22(path string, value any, description string) error {
+// validateChangeCardResultJSONValue23 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue23(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21596,21 +21659,28 @@ func validateChangeCardResultJSONValue22(path string, value any, description str
 	for _, key := range keys {
 		switch key {
 		case "ambiguities":
-			if err := validateChangeCardResultJSONValue23(
+			if err := validateChangeCardResultJSONValue24(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Domain questions the user answers when adopting this revision.",
 			); err != nil {
 				return err
 			}
+		case "changed_design_files":
+			if err := validateChangeCardResultJSONValue25(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
+			); err != nil {
+				return err
+			}
 		case "examples":
-			if err := validateChangeCardResultJSONValue24(
+			if err := validateChangeCardResultJSONValue26(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Concrete examples mapped to evaluator checks.",
 			); err != nil {
 				return err
 			}
 		case "preserved_behaviors":
-			if err := validateChangeCardResultJSONValue25(
+			if err := validateChangeCardResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Existing contract invariants preserved by this change.",
 			); err != nil {
@@ -21631,7 +21701,7 @@ func validateChangeCardResultJSONValue22(path string, value any, description str
 				return err
 			}
 		case "stories":
-			if err := validateChangeCardResultJSONValue3(
+			if err := validateChangeCardResultJSONValue4(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.",
 			); err != nil {
@@ -21645,7 +21715,7 @@ func validateChangeCardResultJSONValue22(path string, value any, description str
 				return err
 			}
 		case "ui_composition":
-			if err := validateChangeCardResultJSONValue16(
+			if err := validateChangeCardResultJSONValue17(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Decision view the guide composed for this revision in its analysis, when it sent one.",
 			); err != nil {
@@ -21654,6 +21724,7 @@ func validateChangeCardResultJSONValue22(path string, value any, description str
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"ambiguities",
+				"changed_design_files",
 				"examples",
 				"preserved_behaviors",
 				"prompt",
@@ -21662,33 +21733,6 @@ func validateChangeCardResultJSONValue22(path string, value any, description str
 				"summary",
 				"ui_composition",
 			})
-		}
-	}
-	return nil
-}
-
-// validateChangeCardResultJSONValue23 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue23(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateAmbiguityQuestionJSONValue(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -21711,7 +21755,7 @@ func validateChangeCardResultJSONValue24(path string, value any, description str
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue20(
+		if err := validateAmbiguityQuestionJSONValue(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -21745,8 +21789,8 @@ func validateChangeCardResultJSONValue25(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue3(path string, value any, description string) error {
+// validateChangeCardResultJSONValue26 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue26(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21762,7 +21806,31 @@ func validateChangeCardResultJSONValue3(path string, value any, description stri
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue4(
+		if err := validateChangeCardResultJSONValue21(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -21774,6 +21842,33 @@ func validateChangeCardResultJSONValue3(path string, value any, description stri
 
 // validateChangeCardResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
 func validateChangeCardResultJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue5(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue5(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21793,7 +21888,7 @@ func validateChangeCardResultJSONValue4(path string, value any, description stri
 	for _, key := range keys {
 		switch key {
 		case "actors":
-			if err := validateChangeCardResultJSONValue5(
+			if err := validateChangeCardResultJSONValue6(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Domain roles declared in the Story in declaration order.",
 			); err != nil {
@@ -21807,7 +21902,7 @@ func validateChangeCardResultJSONValue4(path string, value any, description stri
 				return err
 			}
 		case "flows":
-			if err := validateChangeCardResultJSONValue7(
+			if err := validateChangeCardResultJSONValue8(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Timeline paths declared in the Story in declaration order.",
 			); err != nil {
@@ -21832,8 +21927,8 @@ func validateChangeCardResultJSONValue4(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue5(path string, value any, description string) error {
+// validateChangeCardResultJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue6(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21849,7 +21944,7 @@ func validateChangeCardResultJSONValue5(path string, value any, description stri
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue6(
+		if err := validateChangeCardResultJSONValue7(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -21859,8 +21954,8 @@ func validateChangeCardResultJSONValue5(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue6(path string, value any, description string) error {
+// validateChangeCardResultJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue7(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21911,8 +22006,8 @@ func validateChangeCardResultJSONValue6(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue7(path string, value any, description string) error {
+// validateChangeCardResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue8(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21928,7 +22023,7 @@ func validateChangeCardResultJSONValue7(path string, value any, description stri
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue8(
+		if err := validateChangeCardResultJSONValue9(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -21938,8 +22033,8 @@ func validateChangeCardResultJSONValue7(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue8(path string, value any, description string) error {
+// validateChangeCardResultJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue9(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21980,14 +22075,14 @@ func validateChangeCardResultJSONValue8(path string, value any, description stri
 				return err
 			}
 		case "questions":
-			if err := validateChangeCardResultJSONValue9(
+			if err := validateChangeCardResultJSONValue10(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Unresolved flow-level decisions in declaration order.",
 			); err != nil {
 				return err
 			}
 		case "steps":
-			if err := validateChangeCardResultJSONValue12(
+			if err := validateChangeCardResultJSONValue14(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Starting, intermediate, and outcome steps in declaration order.",
 			); err != nil {
@@ -22014,8 +22109,8 @@ func validateChangeCardResultJSONValue8(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue9(path string, value any, description string) error {
+// validateChangeCardResultJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue10(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22031,7 +22126,7 @@ func validateChangeCardResultJSONValue9(path string, value any, description stri
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue10(
+		if err := validateChangeCardResultJSONValue11(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -22041,8 +22136,8 @@ func validateChangeCardResultJSONValue9(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue10(path string, value any, description string) error {
+// validateChangeCardResultJSONValue11 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue11(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22076,7 +22171,7 @@ func validateChangeCardResultJSONValue10(path string, value any, description str
 				return err
 			}
 		case "options":
-			if err := validateChangeCardResultJSONValue11(
+			if err := validateChangeCardResultJSONValue12(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Suggested choices in declaration order.",
 			); err != nil {
@@ -22101,8 +22196,8 @@ func validateChangeCardResultJSONValue10(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue11 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue11(path string, value any, description string) error {
+// validateChangeCardResultJSONValue12 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue12(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22125,8 +22220,8 @@ func validateChangeCardResultJSONValue11(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue12 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue12(path string, value any, description string) error {
+// validateChangeCardResultJSONValue14 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue14(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22142,7 +22237,7 @@ func validateChangeCardResultJSONValue12(path string, value any, description str
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue14(
+		if err := validateChangeCardResultJSONValue15(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -22152,8 +22247,8 @@ func validateChangeCardResultJSONValue12(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue14 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue14(path string, value any, description string) error {
+// validateChangeCardResultJSONValue15 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue15(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22201,7 +22296,7 @@ func validateChangeCardResultJSONValue14(path string, value any, description str
 				return err
 			}
 		case "questions":
-			if err := validateChangeCardResultJSONValue15(
+			if err := validateChangeCardResultJSONValue16(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Unresolved step-level decisions in declaration order.",
 			); err != nil {
@@ -22228,8 +22323,8 @@ func validateChangeCardResultJSONValue14(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue15 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue15(path string, value any, description string) error {
+// validateChangeCardResultJSONValue16 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue16(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22245,7 +22340,7 @@ func validateChangeCardResultJSONValue15(path string, value any, description str
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue10(
+		if err := validateChangeCardResultJSONValue11(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -22255,8 +22350,8 @@ func validateChangeCardResultJSONValue15(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue16 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue16(path string, value any, description string) error {
+// validateChangeCardResultJSONValue17 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue17(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22299,8 +22394,8 @@ func validateChangeCardResultJSONValue16(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue17 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue17(path string, value any, description string) error {
+// validateChangeCardResultJSONValue18 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue18(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22316,7 +22411,7 @@ func validateChangeCardResultJSONValue17(path string, value any, description str
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue4(
+		if err := validateChangeCardResultJSONValue5(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -22326,8 +22421,8 @@ func validateChangeCardResultJSONValue17(path string, value any, description str
 	return nil
 }
 
-// validateChangeCardResultJSONValue18 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue18(path string, value any, description string) error {
+// validateChangeCardResultJSONValue19 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue19(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -22899,7 +22994,7 @@ func validateConfirmIntentPayloadJSONValue3(path string, value any, description 
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue20(
+		if err := validateChangeCardResultJSONValue21(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -22939,7 +23034,7 @@ func validateDeclineRevisionPayloadJSONValue(path string, value any, description
 		case "request_revision":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "request_revision of the proposed revision being declined (proposed_revision.request_revision).",
+				typed[key], "request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.",
 			); err != nil {
 				return err
 			}
@@ -24438,7 +24533,7 @@ func validateStoryRefreshResultJSONValue2(path string, value any, description st
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue4(
+		if err := validateChangeCardResultJSONValue5(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -24767,7 +24862,7 @@ func validateTestWriterAssignmentJSONValue3(path string, value any, description 
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue4(
+		if err := validateChangeCardResultJSONValue5(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -27292,6 +27387,13 @@ func checkChangeCardResultProposedRevisionItemValue(in *ProposedRevisionItem, fi
 		}
 		if err := checkChangeCardResultUICompositionItemValue(in.UIComposition, generatedJSONChildPath(field, "ui_composition", false), active); err != nil {
 			return err
+		}
+		for index1, item1 := range in.ChangedDesignFiles {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "changed_design_files", false), strconv.Itoa(index1), true))
+			}
 		}
 	}
 	return nil

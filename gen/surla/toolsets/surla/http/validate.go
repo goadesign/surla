@@ -266,6 +266,14 @@ func ValidateDeclineRevisionPayloadTransport(body *DeclineRevisionPayloadTranspo
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	if body.RequestRevision != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.request_revision", *body.RequestRevision, "^[0-9a-f]{64}$"))
+	}
 	return
 }
 
@@ -1882,6 +1890,9 @@ func ValidateProposedRevisionItemTransport(body *ProposedRevisionItemTransport) 
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range body.Ambiguities {
 		if e != nil {

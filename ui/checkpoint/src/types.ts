@@ -152,6 +152,7 @@ export interface PreviewArchitecturePayload {
 
 export interface ProposedRevisionItem {
   ambiguities?: AmbiguityQuestion[];
+  changed_design_files: string[];
   examples: ExampleItem[];
   preserved_behaviors: string[];
   prompt: string;
@@ -1058,13 +1059,20 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "summary",
       "examples",
       "preserved_behaviors",
-      "request_revision"
+      "request_revision",
+      "changed_design_files"
     ],
     "properties": {
       "ambiguities": {
         "type": "array",
         "items": {
           "$ref": "#/$defs/AmbiguityQuestion"
+        }
+      },
+      "changed_design_files": {
+        "type": "array",
+        "items": {
+          "type": "string"
         }
       },
       "examples": {

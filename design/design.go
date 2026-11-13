@@ -66,8 +66,12 @@ var GetChangePayload = Type("GetChangePayload", func() {
 // DeclineRevisionPayload names the proposed revision the user declines.
 var DeclineRevisionPayload = Type("DeclineRevisionPayload", func() {
 	Description("Identifies the proposed revision of a confirmed Change Card that the user declines.")
-	Attribute("change_id", String, "Change identifier.")
-	Attribute("request_revision", String, "request_revision of the proposed revision being declined (proposed_revision.request_revision).")
+	Attribute("change_id", String, "Change identifier.", func() {
+		MinLength(1)
+	})
+	Attribute("request_revision", String, "request_revision of the proposed revision being declined (proposed_revision.request_revision): 64 lowercase hex characters.", func() {
+		Pattern("^[0-9a-f]{64}$")
+	})
 	Required("change_id", "request_revision")
 })
 
@@ -227,7 +231,8 @@ var ProposedRevisionItem = Type("ProposedRevisionItem", func() {
 	Attribute("stories", ArrayOf(StorySummaryItem), "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.")
 	Attribute("request_revision", String, "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.")
 	Attribute("ui_composition", UICompositionItem, "Decision view the guide composed for this revision in its analysis, when it sent one.")
-	Required("prompt", "summary", "examples", "preserved_behaviors", "request_revision")
+	Attribute("changed_design_files", ArrayOf(String), "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.")
+	Required("prompt", "summary", "examples", "preserved_behaviors", "request_revision", "changed_design_files")
 })
 
 // ChangeCardResult is the output of CP1 propose_change, revise_change,

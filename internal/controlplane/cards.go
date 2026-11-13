@@ -413,17 +413,20 @@ func (s *cardStore) all() ([]storedChangeCard, error) {
 	return records, nil
 }
 
-// hasWorkspaceCardsWithFiles reports whether any saved card in s captured
-// existing workspace design files (non-empty design_source). Cards proposed
-// in an empty workspace before init_project have an empty design_source and
-// do not block initialization.
+// hasWorkspaceCardsWithFiles reports whether any saved change in s captured
+// existing workspace design files (a non-empty design_source), which decides
+// whether init_project may still lay down a fresh workspace. A waiting
+// proposal counts like the revision in force: adopting it binds the change to
+// the files it recorded. Changes proposed in an empty workspace before
+// init_project have an empty design_source and do not block initialization.
 func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
 	records, err := s.all()
 	if err != nil {
 		return false, err
 	}
 	for _, rec := range records {
-		if strings.TrimSpace(rec.designSource) != "" {
+		if strings.TrimSpace(rec.designSource) != "" ||
+			(rec.proposed != nil && strings.TrimSpace(rec.proposed.designSource) != "") {
 			return true, nil
 		}
 	}

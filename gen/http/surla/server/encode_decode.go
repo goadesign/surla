@@ -3471,6 +3471,14 @@ func marshalSurlaProposedRevisionItemToProposedRevisionItemResponseBody(v *surla
 	if v.UIComposition != nil {
 		res.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(v.UIComposition)
 	}
+	if v.ChangedDesignFiles != nil {
+		res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+		for i, val := range v.ChangedDesignFiles {
+			res.ChangedDesignFiles[i] = val
+		}
+	} else {
+		res.ChangedDesignFiles = []string{}
+	}
 
 	return res
 }

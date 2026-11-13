@@ -205,6 +205,12 @@ type ApproveMergeResultProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *ApproveMergeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // ValidateApproveMergeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -226,6 +232,9 @@ func ValidateApproveMergeResultProposedRevisionItemTransport(value *ApproveMerge
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -971,6 +980,12 @@ type ConfirmIntentResultProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *ConfirmIntentResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // ValidateConfirmIntentResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -992,6 +1007,9 @@ func ValidateConfirmIntentResultProposedRevisionItemTransport(value *ConfirmInte
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -1409,7 +1427,7 @@ type DeclineRevisionPayloadTransport struct {
 	// Change identifier.
 	ChangeID *string `json:"change_id"`
 	// request_revision of the proposed revision being declined
-	// (proposed_revision.request_revision).
+	// (proposed_revision.request_revision): 64 lowercase hex characters.
 	RequestRevision *string `json:"request_revision"`
 }
 
@@ -1423,6 +1441,14 @@ func ValidateDeclineRevisionPayloadTransport(value *DeclineRevisionPayloadTransp
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangeID != nil {
+		if utf8.RuneCountInString(*value.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *value.ChangeID, utf8.RuneCountInString(*value.ChangeID), 1, true))
+		}
+	}
+	if value.RequestRevision != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.request_revision", *value.RequestRevision, "^[0-9a-f]{64}$"))
 	}
 	return err
 }
@@ -1573,6 +1599,12 @@ type DeclineRevisionResultProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *DeclineRevisionResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // ValidateDeclineRevisionResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -1594,6 +1626,9 @@ func ValidateDeclineRevisionResultProposedRevisionItemTransport(value *DeclineRe
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -2868,6 +2903,12 @@ type GetChangeResultProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *GetChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // ValidateGetChangeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -2889,6 +2930,9 @@ func ValidateGetChangeResultProposedRevisionItemTransport(value *GetChangeResult
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -6250,6 +6294,12 @@ type ProposeChangeResultProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *ProposeChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // ValidateProposeChangeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -6271,6 +6321,9 @@ func ValidateProposeChangeResultProposedRevisionItemTransport(value *ProposeChan
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -7653,6 +7706,12 @@ type ReviseChangeResultProposedRevisionItemTransport struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *ReviseChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `json:"changed_design_files"`
 }
 
 // ValidateReviseChangeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
@@ -7674,6 +7733,9 @@ func ValidateReviseChangeResultProposedRevisionItemTransport(value *ReviseChange
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
 	}
 	for _, e := range value.Ambiguities {
 		if e != nil {
@@ -12893,6 +12955,10 @@ func encodeProposedRevisionItemToApproveMergeResultProposedRevisionItemTransport
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToApproveMergeResultUICompositionItemTransport2(v.UIComposition)
 	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }
@@ -12937,6 +13003,10 @@ func encodeProposedRevisionItemToConfirmIntentResultProposedRevisionItemTranspor
 	}
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToConfirmIntentResultUICompositionItemTransport2(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
 	}
 
 	return res
@@ -12983,6 +13053,10 @@ func encodeProposedRevisionItemToDeclineRevisionResultProposedRevisionItemTransp
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToDeclineRevisionResultUICompositionItemTransport2(v.UIComposition)
 	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }
@@ -13027,6 +13101,10 @@ func encodeProposedRevisionItemToGetChangeResultProposedRevisionItemTransport(v 
 	}
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToGetChangeResultUICompositionItemTransport2(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
 	}
 
 	return res
@@ -13073,6 +13151,10 @@ func encodeProposedRevisionItemToProposeChangeResultProposedRevisionItemTranspor
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToProposeChangeResultUICompositionItemTransport2(v.UIComposition)
 	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
+	}
 
 	return res
 }
@@ -13117,6 +13199,10 @@ func encodeProposedRevisionItemToReviseChangeResultProposedRevisionItemTransport
 	}
 	if v.UIComposition != nil {
 		res.UIComposition = encodeUICompositionItemToReviseChangeResultUICompositionItemTransport2(v.UIComposition)
+	}
+	res.ChangedDesignFiles = make([]string, len(v.ChangedDesignFiles))
+	for i, val := range v.ChangedDesignFiles {
+		res.ChangedDesignFiles[i] = val
 	}
 
 	return res

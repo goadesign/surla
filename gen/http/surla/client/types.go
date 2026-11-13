@@ -82,7 +82,7 @@ type DeclineRevisionRequestBody struct {
 	// Change identifier.
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// request_revision of the proposed revision being declined
-	// (proposed_revision.request_revision).
+	// (proposed_revision.request_revision): 64 lowercase hex characters.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 }
 
@@ -3017,6 +3017,12 @@ type ProposedRevisionItemResponseBody struct {
 	// Decision view the guide composed for this revision in its analysis, when it
 	// sent one.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+	// Paths of the design/*.go files that differ between the design source the
+	// confirmed revision was made from and the one this revision was made from
+	// (added, removed or changed), in path order; empty when both were made from
+	// the same design files. Adopting the revision binds it to its own design
+	// source.
+	ChangedDesignFiles []string `form:"changed_design_files,omitempty" json:"changed_design_files,omitempty" xml:"changed_design_files,omitempty"`
 }
 
 // C4ContainerItemResponseBody is used to define fields on response body types.
@@ -11426,6 +11432,9 @@ func ValidateProposedRevisionItemResponseBody(body *ProposedRevisionItemResponse
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
+	if body.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", "body"))
+	}
 	for _, e := range body.Ambiguities {
 		if e != nil {
 			if err2 := validateAmbiguityQuestionResponseBody(e, "body.ambiguities[*]"); err2 != nil {
@@ -11472,6 +11481,9 @@ func validateProposedRevisionItemResponseBody(body *ProposedRevisionItemResponse
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", path))
+	}
+	if body.ChangedDesignFiles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changed_design_files", path))
 	}
 	for _, e := range body.Ambiguities {
 		if e != nil {
