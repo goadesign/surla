@@ -374,6 +374,8 @@ func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
 	require.ErrorContains(t, err, "test-owned configuration directory")
 	_, err = runtime.startTerminal(t.Context(), nil)
 	require.ErrorContains(t, err, "cannot start real")
+	_, err = runtime.readTerminal(t.Context(), "unused")
+	require.ErrorContains(t, err, "cannot read real")
 	require.ErrorContains(t, runtime.openViews(t.Context(), "unused"), "cannot open real")
 	require.ErrorContains(t, runtime.startTeamPrograms(t.Context()), "cannot start real team")
 	_, err = runtime.teamDependencies(t.Context())

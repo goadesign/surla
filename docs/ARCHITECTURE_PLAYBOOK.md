@@ -146,7 +146,16 @@ holding the Change Card directory lock; `controlplane.Options.TracerProvider`
 binds the project server's SDK provider to that instance's operations at construction.
 Without a provider, `list_traces` returns `not_implemented` with setup instructions.
 Each recorded operation saves its
-bounded safe view through `internal/traceview` when its own span ends. Identity
+bounded safe view through `internal/traceview` when its own span ends.
+Reads by the user's page that succeed or are refused are not saved, so the
+views page's repeated reads do not fill the history: `NewHTTPHandler` marks the
+context of each request sent with `GET`, and every `GET` route the user's
+session may call only reads (the builder's and the test writer's assignment
+reads, which record that they were read, are refused to it by the operation
+table). A span of the user's browser session under that mark is saved only
+when it ends with an error status or while a panic is in flight, which the span
+wrapper's `End` sees. A refusal such as `not_found` is an expected answer
+without error status. Identity
 stays with that local write; it is not attached to the exported span or chosen
 by a provider-wide processor.
 `ControlPlane.ListTraces` reads the project owner's pages from that file, and
