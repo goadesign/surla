@@ -124,25 +124,25 @@ type Client struct {
 	// endpoint.
 	GetBuildDoer goahttp.Doer
 
-	// ListBuildAssignments Doer is the HTTP client used to make requests to the
-	// list_build_assignments endpoint.
-	ListBuildAssignmentsDoer goahttp.Doer
+	// ListBuilderAssignments Doer is the HTTP client used to make requests to the
+	// list_builder_assignments endpoint.
+	ListBuilderAssignmentsDoer goahttp.Doer
 
-	// GetBuildAssignment Doer is the HTTP client used to make requests to the
-	// get_build_assignment endpoint.
-	GetBuildAssignmentDoer goahttp.Doer
+	// GetBuilderAssignment Doer is the HTTP client used to make requests to the
+	// get_builder_assignment endpoint.
+	GetBuilderAssignmentDoer goahttp.Doer
 
-	// ListTestAssignments Doer is the HTTP client used to make requests to the
-	// list_test_assignments endpoint.
-	ListTestAssignmentsDoer goahttp.Doer
+	// ListTestWriterAssignments Doer is the HTTP client used to make requests to
+	// the list_test_writer_assignments endpoint.
+	ListTestWriterAssignmentsDoer goahttp.Doer
 
-	// GetTestAssignment Doer is the HTTP client used to make requests to the
-	// get_test_assignment endpoint.
-	GetTestAssignmentDoer goahttp.Doer
+	// GetTestWriterAssignment Doer is the HTTP client used to make requests to the
+	// get_test_writer_assignment endpoint.
+	GetTestWriterAssignmentDoer goahttp.Doer
 
-	// ReportTests Doer is the HTTP client used to make requests to the
-	// report_tests endpoint.
-	ReportTestsDoer goahttp.Doer
+	// ReportTestsFinished Doer is the HTTP client used to make requests to the
+	// report_tests_finished endpoint.
+	ReportTestsFinishedDoer goahttp.Doer
 
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
@@ -164,43 +164,43 @@ func NewClient(
 	restoreBody bool,
 ) *Client {
 	return &Client{
-		GoldenPathDoer:           doer,
-		ProposeChangeDoer:        doer,
-		ReviseChangeDoer:         doer,
-		ConfirmIntentDoer:        doer,
-		GetChangeDoer:            doer,
-		PreviewArchitectureDoer:  doer,
-		DraftOverrideDoer:        doer,
-		StartLiveTargetDoer:      doer,
-		StopLiveTargetDoer:       doer,
-		VerifyChangeDoer:         doer,
-		GetVerificationDoer:      doer,
-		ListVerificationsDoer:    doer,
-		ApproveMergeDoer:         doer,
-		DiffDoer:                 doer,
-		ConfigureModelDoer:       doer,
-		InitProjectDoer:          doer,
-		GenerateCodeDoer:         doer,
-		CheckProjectDoer:         doer,
-		UpdateDependenciesDoer:   doer,
-		ReadCheckOutputDoer:      doer,
-		ListTracesDoer:           doer,
-		RefreshStoryDoer:         doer,
-		GetStoryRefreshDoer:      doer,
-		ListChangesDoer:          doer,
-		WaitForChangesDoer:       doer,
-		StartBuildDoer:           doer,
-		GetBuildDoer:             doer,
-		ListBuildAssignmentsDoer: doer,
-		GetBuildAssignmentDoer:   doer,
-		ListTestAssignmentsDoer:  doer,
-		GetTestAssignmentDoer:    doer,
-		ReportTestsDoer:          doer,
-		RestoreResponseBody:      restoreBody,
-		scheme:                   scheme,
-		host:                     host,
-		decoder:                  dec,
-		encoder:                  enc,
+		GoldenPathDoer:                doer,
+		ProposeChangeDoer:             doer,
+		ReviseChangeDoer:              doer,
+		ConfirmIntentDoer:             doer,
+		GetChangeDoer:                 doer,
+		PreviewArchitectureDoer:       doer,
+		DraftOverrideDoer:             doer,
+		StartLiveTargetDoer:           doer,
+		StopLiveTargetDoer:            doer,
+		VerifyChangeDoer:              doer,
+		GetVerificationDoer:           doer,
+		ListVerificationsDoer:         doer,
+		ApproveMergeDoer:              doer,
+		DiffDoer:                      doer,
+		ConfigureModelDoer:            doer,
+		InitProjectDoer:               doer,
+		GenerateCodeDoer:              doer,
+		CheckProjectDoer:              doer,
+		UpdateDependenciesDoer:        doer,
+		ReadCheckOutputDoer:           doer,
+		ListTracesDoer:                doer,
+		RefreshStoryDoer:              doer,
+		GetStoryRefreshDoer:           doer,
+		ListChangesDoer:               doer,
+		WaitForChangesDoer:            doer,
+		StartBuildDoer:                doer,
+		GetBuildDoer:                  doer,
+		ListBuilderAssignmentsDoer:    doer,
+		GetBuilderAssignmentDoer:      doer,
+		ListTestWriterAssignmentsDoer: doer,
+		GetTestWriterAssignmentDoer:   doer,
+		ReportTestsFinishedDoer:       doer,
+		RestoreResponseBody:           restoreBody,
+		scheme:                        scheme,
+		host:                          host,
+		decoder:                       dec,
+		encoder:                       enc,
 	}
 }
 
@@ -797,91 +797,91 @@ func (c *Client) GetBuild() goa.Endpoint {
 	}
 }
 
-// ListBuildAssignments returns an endpoint that makes HTTP requests to the
-// surla service list_build_assignments server.
-func (c *Client) ListBuildAssignments() goa.Endpoint {
+// ListBuilderAssignments returns an endpoint that makes HTTP requests to the
+// surla service list_builder_assignments server.
+func (c *Client) ListBuilderAssignments() goa.Endpoint {
 	var (
-		decodeResponse = DecodeListBuildAssignmentsResponse(c.decoder, c.RestoreResponseBody)
+		decodeResponse = DecodeListBuilderAssignmentsResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildListBuildAssignmentsRequest(ctx, v)
+		req, err := c.BuildListBuilderAssignmentsRequest(ctx, v)
 		if err != nil {
 			return nil, err
 		}
-		resp, err := c.ListBuildAssignmentsDoer.Do(req)
+		resp, err := c.ListBuilderAssignmentsDoer.Do(req)
 		if err != nil {
-			return nil, goahttp.ErrRequestError("surla", "list_build_assignments", err)
+			return nil, goahttp.ErrRequestError("surla", "list_builder_assignments", err)
 		}
 		return decodeResponse(resp)
 	}
 }
 
-// GetBuildAssignment returns an endpoint that makes HTTP requests to the surla
-// service get_build_assignment server.
-func (c *Client) GetBuildAssignment() goa.Endpoint {
+// GetBuilderAssignment returns an endpoint that makes HTTP requests to the
+// surla service get_builder_assignment server.
+func (c *Client) GetBuilderAssignment() goa.Endpoint {
 	var (
-		decodeResponse = DecodeGetBuildAssignmentResponse(c.decoder, c.RestoreResponseBody)
+		decodeResponse = DecodeGetBuilderAssignmentResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildGetBuildAssignmentRequest(ctx, v)
+		req, err := c.BuildGetBuilderAssignmentRequest(ctx, v)
 		if err != nil {
 			return nil, err
 		}
-		resp, err := c.GetBuildAssignmentDoer.Do(req)
+		resp, err := c.GetBuilderAssignmentDoer.Do(req)
 		if err != nil {
-			return nil, goahttp.ErrRequestError("surla", "get_build_assignment", err)
+			return nil, goahttp.ErrRequestError("surla", "get_builder_assignment", err)
 		}
 		return decodeResponse(resp)
 	}
 }
 
-// ListTestAssignments returns an endpoint that makes HTTP requests to the
-// surla service list_test_assignments server.
-func (c *Client) ListTestAssignments() goa.Endpoint {
+// ListTestWriterAssignments returns an endpoint that makes HTTP requests to
+// the surla service list_test_writer_assignments server.
+func (c *Client) ListTestWriterAssignments() goa.Endpoint {
 	var (
-		decodeResponse = DecodeListTestAssignmentsResponse(c.decoder, c.RestoreResponseBody)
+		decodeResponse = DecodeListTestWriterAssignmentsResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildListTestAssignmentsRequest(ctx, v)
+		req, err := c.BuildListTestWriterAssignmentsRequest(ctx, v)
 		if err != nil {
 			return nil, err
 		}
-		resp, err := c.ListTestAssignmentsDoer.Do(req)
+		resp, err := c.ListTestWriterAssignmentsDoer.Do(req)
 		if err != nil {
-			return nil, goahttp.ErrRequestError("surla", "list_test_assignments", err)
+			return nil, goahttp.ErrRequestError("surla", "list_test_writer_assignments", err)
 		}
 		return decodeResponse(resp)
 	}
 }
 
-// GetTestAssignment returns an endpoint that makes HTTP requests to the surla
-// service get_test_assignment server.
-func (c *Client) GetTestAssignment() goa.Endpoint {
+// GetTestWriterAssignment returns an endpoint that makes HTTP requests to the
+// surla service get_test_writer_assignment server.
+func (c *Client) GetTestWriterAssignment() goa.Endpoint {
 	var (
-		decodeResponse = DecodeGetTestAssignmentResponse(c.decoder, c.RestoreResponseBody)
+		decodeResponse = DecodeGetTestWriterAssignmentResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildGetTestAssignmentRequest(ctx, v)
+		req, err := c.BuildGetTestWriterAssignmentRequest(ctx, v)
 		if err != nil {
 			return nil, err
 		}
-		resp, err := c.GetTestAssignmentDoer.Do(req)
+		resp, err := c.GetTestWriterAssignmentDoer.Do(req)
 		if err != nil {
-			return nil, goahttp.ErrRequestError("surla", "get_test_assignment", err)
+			return nil, goahttp.ErrRequestError("surla", "get_test_writer_assignment", err)
 		}
 		return decodeResponse(resp)
 	}
 }
 
-// ReportTests returns an endpoint that makes HTTP requests to the surla
-// service report_tests server.
-func (c *Client) ReportTests() goa.Endpoint {
+// ReportTestsFinished returns an endpoint that makes HTTP requests to the
+// surla service report_tests_finished server.
+func (c *Client) ReportTestsFinished() goa.Endpoint {
 	var (
-		encodeRequest  = EncodeReportTestsRequest(c.encoder)
-		decodeResponse = DecodeReportTestsResponse(c.decoder, c.RestoreResponseBody)
+		encodeRequest  = EncodeReportTestsFinishedRequest(c.encoder)
+		decodeResponse = DecodeReportTestsFinishedResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildReportTestsRequest(ctx, v)
+		req, err := c.BuildReportTestsFinishedRequest(ctx, v)
 		if err != nil {
 			return nil, err
 		}
@@ -889,9 +889,9 @@ func (c *Client) ReportTests() goa.Endpoint {
 		if err != nil {
 			return nil, err
 		}
-		resp, err := c.ReportTestsDoer.Do(req)
+		resp, err := c.ReportTestsFinishedDoer.Do(req)
 		if err != nil {
-			return nil, goahttp.ErrRequestError("surla", "report_tests", err)
+			return nil, goahttp.ErrRequestError("surla", "report_tests_finished", err)
 		}
 		return decodeResponse(resp)
 	}

@@ -618,16 +618,16 @@ func BuildGetBuildPayload(surlaGetBuildChangeID *string) (*surla.GetBuildPayload
 	return v, nil
 }
 
-// BuildGetBuildAssignmentPayload builds the payload for the surla
-// get_build_assignment endpoint from CLI flags.
-func BuildGetBuildAssignmentPayload(surlaGetBuildAssignmentChangeID *string) (*surla.GetBuildAssignmentPayload, error) {
+// BuildGetBuilderAssignmentPayload builds the payload for the surla
+// get_builder_assignment endpoint from CLI flags.
+func BuildGetBuilderAssignmentPayload(surlaGetBuilderAssignmentChangeID *string) (*surla.GetBuilderAssignmentPayload, error) {
 	var err error
 	var changeID string
 	{
-		if surlaGetBuildAssignmentChangeID == nil {
+		if surlaGetBuilderAssignmentChangeID == nil {
 			return nil, fmt.Errorf("missing required flag --change-id")
 		}
-		changeID = *surlaGetBuildAssignmentChangeID
+		changeID = *surlaGetBuilderAssignmentChangeID
 		if utf8.RuneCountInString(changeID) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
 		}
@@ -635,22 +635,22 @@ func BuildGetBuildAssignmentPayload(surlaGetBuildAssignmentChangeID *string) (*s
 			return nil, err
 		}
 	}
-	v := &surla.GetBuildAssignmentPayload{}
+	v := &surla.GetBuilderAssignmentPayload{}
 	v.ChangeID = changeID
 
 	return v, nil
 }
 
-// BuildGetTestAssignmentPayload builds the payload for the surla
-// get_test_assignment endpoint from CLI flags.
-func BuildGetTestAssignmentPayload(surlaGetTestAssignmentChangeID *string) (*surla.GetTestAssignmentPayload, error) {
+// BuildGetTestWriterAssignmentPayload builds the payload for the surla
+// get_test_writer_assignment endpoint from CLI flags.
+func BuildGetTestWriterAssignmentPayload(surlaGetTestWriterAssignmentChangeID *string) (*surla.GetTestWriterAssignmentPayload, error) {
 	var err error
 	var changeID string
 	{
-		if surlaGetTestAssignmentChangeID == nil {
+		if surlaGetTestWriterAssignmentChangeID == nil {
 			return nil, fmt.Errorf("missing required flag --change-id")
 		}
-		changeID = *surlaGetTestAssignmentChangeID
+		changeID = *surlaGetTestWriterAssignmentChangeID
 		if utf8.RuneCountInString(changeID) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
 		}
@@ -658,24 +658,24 @@ func BuildGetTestAssignmentPayload(surlaGetTestAssignmentChangeID *string) (*sur
 			return nil, err
 		}
 	}
-	v := &surla.GetTestAssignmentPayload{}
+	v := &surla.GetTestWriterAssignmentPayload{}
 	v.ChangeID = changeID
 
 	return v, nil
 }
 
-// BuildReportTestsPayload builds the payload for the surla report_tests
-// endpoint from CLI flags.
-func BuildReportTestsPayload(surlaReportTestsBody *string, surlaReportTestsChangeID *string) (*surla.ReportTestsPayload, error) {
+// BuildReportTestsFinishedPayload builds the payload for the surla
+// report_tests_finished endpoint from CLI flags.
+func BuildReportTestsFinishedPayload(surlaReportTestsFinishedBody *string, surlaReportTestsFinishedChangeID *string) (*surla.ReportTestsFinishedPayload, error) {
 	var err error
-	var body ReportTestsRequestBody
+	var body ReportTestsFinishedRequestBody
 	{
-		if surlaReportTestsBody == nil {
+		if surlaReportTestsFinishedBody == nil {
 			return nil, fmt.Errorf("missing required flag --body")
 		}
-		err = json.Unmarshal([]byte(*surlaReportTestsBody), &body)
+		err = json.Unmarshal([]byte(*surlaReportTestsFinishedBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"request_revision\": \"5\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"request_revision\": \"td\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.RequestRevision) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.request_revision", body.RequestRevision, utf8.RuneCountInString(body.RequestRevision), 1, true))
@@ -686,10 +686,10 @@ func BuildReportTestsPayload(surlaReportTestsBody *string, surlaReportTestsChang
 	}
 	var changeID string
 	{
-		if surlaReportTestsChangeID == nil {
+		if surlaReportTestsFinishedChangeID == nil {
 			return nil, fmt.Errorf("missing required flag --change-id")
 		}
-		changeID = *surlaReportTestsChangeID
+		changeID = *surlaReportTestsFinishedChangeID
 		if utf8.RuneCountInString(changeID) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
 		}
@@ -697,7 +697,7 @@ func BuildReportTestsPayload(surlaReportTestsBody *string, surlaReportTestsChang
 			return nil, err
 		}
 	}
-	v := &surla.ReportTestsPayload{
+	v := &surla.ReportTestsFinishedPayload{
 		RequestRevision: body.RequestRevision,
 	}
 	v.ChangeID = changeID

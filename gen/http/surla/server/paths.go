@@ -144,27 +144,27 @@ func GetBuildSurlaPath(changeID string) string {
 	return fmt.Sprintf("/changes/%v/build", changeID)
 }
 
-// ListBuildAssignmentsSurlaPath returns the URL path to the surla service list_build_assignments HTTP endpoint.
-func ListBuildAssignmentsSurlaPath() string {
-	return "/assignments/build"
+// ListBuilderAssignmentsSurlaPath returns the URL path to the surla service list_builder_assignments HTTP endpoint.
+func ListBuilderAssignmentsSurlaPath() string {
+	return "/assignments/builder"
 }
 
-// GetBuildAssignmentSurlaPath returns the URL path to the surla service get_build_assignment HTTP endpoint.
-func GetBuildAssignmentSurlaPath(changeID string) string {
-	return fmt.Sprintf("/assignments/build/%v", changeID)
+// GetBuilderAssignmentSurlaPath returns the URL path to the surla service get_builder_assignment HTTP endpoint.
+func GetBuilderAssignmentSurlaPath(changeID string) string {
+	return fmt.Sprintf("/assignments/builder/%v", changeID)
 }
 
-// ListTestAssignmentsSurlaPath returns the URL path to the surla service list_test_assignments HTTP endpoint.
-func ListTestAssignmentsSurlaPath() string {
-	return "/assignments/tests"
+// ListTestWriterAssignmentsSurlaPath returns the URL path to the surla service list_test_writer_assignments HTTP endpoint.
+func ListTestWriterAssignmentsSurlaPath() string {
+	return "/assignments/test-writer"
 }
 
-// GetTestAssignmentSurlaPath returns the URL path to the surla service get_test_assignment HTTP endpoint.
-func GetTestAssignmentSurlaPath(changeID string) string {
-	return fmt.Sprintf("/assignments/tests/%v", changeID)
+// GetTestWriterAssignmentSurlaPath returns the URL path to the surla service get_test_writer_assignment HTTP endpoint.
+func GetTestWriterAssignmentSurlaPath(changeID string) string {
+	return fmt.Sprintf("/assignments/test-writer/%v", changeID)
 }
 
-// ReportTestsSurlaPath returns the URL path to the surla service report_tests HTTP endpoint.
-func ReportTestsSurlaPath(changeID string) string {
-	return fmt.Sprintf("/assignments/tests/%v/report", changeID)
+// ReportTestsFinishedSurlaPath returns the URL path to the surla service report_tests_finished HTTP endpoint.
+func ReportTestsFinishedSurlaPath(changeID string) string {
+	return fmt.Sprintf("/assignments/test-writer/%v/finished", changeID)
 }

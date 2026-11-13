@@ -242,19 +242,19 @@ type (
 		// build afterwards.
 		Build Build
 	}
-	// GetBuildAssignmentPayload defines the JSON payload for the surla.get_build_assignment tool.
-	GetBuildAssignmentPayload = struct {
-		// Change Card identifier from list_build_assignments.
+	// GetBuilderAssignmentPayload defines the JSON payload for the surla.get_builder_assignment tool.
+	GetBuilderAssignmentPayload = struct {
+		// Change Card identifier from list_builder_assignments.
 		ChangeID string
 	}
-	// GetBuildAssignmentResult defines the JSON result for the surla.get_build_assignment tool.
-	GetBuildAssignmentResult = struct {
+	// GetBuilderAssignmentResult defines the JSON result for the surla.get_builder_assignment tool.
+	GetBuilderAssignmentResult = struct {
 		// Change Card to build; get_change takes it.
 		ChangeID string
 		// Change Card revision to build; verify_change takes it.
 		RequestRevision string
-		// Where this assignment stands.
-		Progress *BuilderProgress
+		// True once you read this assignment in full with get_builder_assignment.
+		Read bool
 	}
 	// GetChangePayload defines the JSON payload for the surla.get_change tool.
 	GetChangePayload = struct {
@@ -333,23 +333,24 @@ type (
 		// Summary of the current Story refresh state and next action.
 		Message string
 	}
-	// GetTestAssignmentPayload defines the JSON payload for the surla.get_test_assignment tool.
-	GetTestAssignmentPayload = struct {
-		// Change Card identifier from list_test_assignments.
+	// GetTestWriterAssignmentPayload defines the JSON payload for the surla.get_test_writer_assignment tool.
+	GetTestWriterAssignmentPayload = struct {
+		// Change Card identifier from list_test_writer_assignments.
 		ChangeID string
 	}
-	// GetTestAssignmentResult defines the JSON result for the surla.get_test_assignment tool.
-	GetTestAssignmentResult = struct {
+	// GetTestWriterAssignmentResult defines the JSON result for the surla.get_test_writer_assignment tool.
+	GetTestWriterAssignmentResult = struct {
 		// Change Card the tests are for.
 		ChangeID string
-		// Change Card revision the tests are for; report_tests takes it.
+		// Change Card revision the tests are for; report_tests_finished takes it.
 		RequestRevision string
 		// Where this assignment stands, including Surla's findings when it needs
 		// changes.
 		Progress *TestWriterProgress
-		// Folder to write the tests in: the test writer's own working copy of the
-		// project, which Surla prepares when the user starts the build. Empty when
-		// this server prepares no working copy.
+		// Folder to write the tests in: your own working copy of the project, which
+		// the server prepares when the user starts the build. It is empty until the
+		// server prepares working copies; an empty folder means none was prepared for
+		// this build.
 		WorkingFolder string
 		// The Story as agreed at request_revision, in declaration order. It does not
 		// change when the change is revised later.
@@ -402,14 +403,14 @@ type (
 		// verify_change take this commit ID.
 		Commit string
 	}
-	// ListBuildAssignmentsPayload defines the JSON payload for the surla.list_build_assignments tool.
-	ListBuildAssignmentsPayload = struct {
+	// ListBuilderAssignmentsPayload defines the JSON payload for the surla.list_builder_assignments tool.
+	ListBuilderAssignmentsPayload = struct {
 	}
-	// ListBuildAssignmentsResult defines the JSON result for the surla.list_build_assignments tool.
-	ListBuildAssignmentsResult = struct {
+	// ListBuilderAssignmentsResult defines the JSON result for the surla.list_builder_assignments tool.
+	ListBuilderAssignmentsResult = struct {
 		// Assignments, most recently started first; empty when the user has built no
 		// change.
-		Assignments []*BuildAssignment
+		Assignments []*BuilderAssignment
 	}
 	// ListChangesPayload defines the JSON payload for the surla.list_changes tool.
 	ListChangesPayload = struct {
@@ -429,14 +430,14 @@ type (
 		// restart Surla.
 		ApprovalAvailable bool
 	}
-	// ListTestAssignmentsPayload defines the JSON payload for the surla.list_test_assignments tool.
-	ListTestAssignmentsPayload = struct {
+	// ListTestWriterAssignmentsPayload defines the JSON payload for the surla.list_test_writer_assignments tool.
+	ListTestWriterAssignmentsPayload = struct {
 	}
-	// ListTestAssignmentsResult defines the JSON result for the surla.list_test_assignments tool.
-	ListTestAssignmentsResult = struct {
+	// ListTestWriterAssignmentsResult defines the JSON result for the surla.list_test_writer_assignments tool.
+	ListTestWriterAssignmentsResult = struct {
 		// Assignments, most recently started first; empty when the user has built no
 		// change.
-		Assignments []*TestAssignmentItem
+		Assignments []*TestWriterAssignmentItem
 	}
 	// ListTracesPayload defines the JSON payload for the surla.list_traces tool.
 	ListTracesPayload = struct {
@@ -606,16 +607,16 @@ type (
 		// Summary of the current Story refresh state and next action.
 		Message string
 	}
-	// ReportTestsPayload defines the JSON payload for the surla.report_tests tool.
-	ReportTestsPayload = struct {
+	// ReportTestsFinishedPayload defines the JSON payload for the surla.report_tests_finished tool.
+	ReportTestsFinishedPayload = struct {
 		// Change Card identifier from your test assignment.
 		ChangeID string
 		// request_revision of your test assignment.
 		RequestRevision string
 	}
-	// ReportTestsResult defines the JSON result for the surla.report_tests tool.
-	ReportTestsResult = struct {
-		// Change Card the tests are for; get_test_assignment takes it.
+	// ReportTestsFinishedResult defines the JSON result for the surla.report_tests_finished tool.
+	ReportTestsFinishedResult = struct {
+		// Change Card the tests are for; get_test_writer_assignment takes it.
 		ChangeID string
 		// Change Card revision the tests are for.
 		RequestRevision string
@@ -804,23 +805,22 @@ type (
 		// Number of declared evaluator scenarios, every one of which passed.
 		ScenarioCount int
 	}
-	// BuildAssignment is a nested type used by the generated JSON contract.
-	BuildAssignment = struct {
+	// BuildNotStarted is a nested type used by the generated JSON contract.
+	BuildNotStarted = struct {
+	}
+	// BuilderAssignment is a nested type used by the generated JSON contract.
+	BuilderAssignment = struct {
 		// Change Card to build; get_change takes it.
 		ChangeID string
 		// Change Card revision to build; verify_change takes it.
 		RequestRevision string
-		// Where this assignment stands.
-		Progress *BuilderProgress
-	}
-	// BuildNotStarted is a nested type used by the generated JSON contract.
-	BuildNotStarted = struct {
+		// True once you read this assignment in full with get_builder_assignment.
+		Read bool
 	}
 	// BuilderProgress is a nested type used by the generated JSON contract.
 	BuilderProgress = struct {
-		// The builder's state: assigned from the moment the user starts the build.
-		State string
-		// True once the builder read this assignment in full with get_build_assignment.
+		// True once the builder read this assignment in full with
+		// get_builder_assignment.
 		Read bool
 	}
 	// BuilderVerificationReport is a nested type used by the generated JSON contract.
@@ -1086,9 +1086,9 @@ type (
 		// Timeline paths declared in the Story in declaration order.
 		Flows []*StoryFlowItem
 	}
-	// TestAssignmentItem is a nested type used by the generated JSON contract.
-	TestAssignmentItem = struct {
-		// Change Card the tests are for; get_test_assignment takes it.
+	// TestWriterAssignmentItem is a nested type used by the generated JSON contract.
+	TestWriterAssignmentItem = struct {
+		// Change Card the tests are for; get_test_writer_assignment takes it.
 		ChangeID string
 		// Change Card revision the tests are for.
 		RequestRevision string
@@ -1101,7 +1101,7 @@ type (
 		// or accepted with the commit Surla recorded.
 		Tests Tests
 		// True once the test writer read this assignment in full with
-		// get_test_assignment.
+		// get_test_writer_assignment.
 		Read bool
 	}
 	// TestsAccepted is a nested type used by the generated JSON contract.

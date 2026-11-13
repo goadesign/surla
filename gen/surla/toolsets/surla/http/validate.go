@@ -392,8 +392,8 @@ func ValidateGetBuildResultTransport(body *GetBuildResultTransport) (err error) 
 	return
 }
 
-// ValidateGetBuildAssignmentPayloadTransport runs the validations defined on GetBuildAssignmentPayloadTransport.
-func ValidateGetBuildAssignmentPayloadTransport(body *GetBuildAssignmentPayloadTransport) (err error) {
+// ValidateGetBuilderAssignmentPayloadTransport runs the validations defined on GetBuilderAssignmentPayloadTransport.
+func ValidateGetBuilderAssignmentPayloadTransport(body *GetBuilderAssignmentPayloadTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
@@ -405,21 +405,16 @@ func ValidateGetBuildAssignmentPayloadTransport(body *GetBuildAssignmentPayloadT
 	return
 }
 
-// ValidateGetBuildAssignmentResultTransport runs the validations defined on GetBuildAssignmentResultTransport.
-func ValidateGetBuildAssignmentResultTransport(body *GetBuildAssignmentResultTransport) (err error) {
+// ValidateGetBuilderAssignmentResultTransport runs the validations defined on GetBuilderAssignmentResultTransport.
+func ValidateGetBuilderAssignmentResultTransport(body *GetBuilderAssignmentResultTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
-	if body.Progress == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
-	}
-	if body.Progress != nil {
-		if err2 := ValidateBuilderProgressTransport(body.Progress); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
+	if body.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
 	return
 }
@@ -525,8 +520,8 @@ func ValidateGetStoryRefreshResultTransport(body *GetStoryRefreshResultTransport
 	return
 }
 
-// ValidateGetTestAssignmentPayloadTransport runs the validations defined on GetTestAssignmentPayloadTransport.
-func ValidateGetTestAssignmentPayloadTransport(body *GetTestAssignmentPayloadTransport) (err error) {
+// ValidateGetTestWriterAssignmentPayloadTransport runs the validations defined on GetTestWriterAssignmentPayloadTransport.
+func ValidateGetTestWriterAssignmentPayloadTransport(body *GetTestWriterAssignmentPayloadTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
@@ -538,8 +533,8 @@ func ValidateGetTestAssignmentPayloadTransport(body *GetTestAssignmentPayloadTra
 	return
 }
 
-// ValidateGetTestAssignmentResultTransport runs the validations defined on GetTestAssignmentResultTransport.
-func ValidateGetTestAssignmentResultTransport(body *GetTestAssignmentResultTransport) (err error) {
+// ValidateGetTestWriterAssignmentResultTransport runs the validations defined on GetTestWriterAssignmentResultTransport.
+func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmentResultTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
@@ -681,14 +676,14 @@ func ValidateInitProjectResultTransport(body *InitProjectResultTransport) (err e
 	return
 }
 
-// ValidateListBuildAssignmentsResultTransport runs the validations defined on ListBuildAssignmentsResultTransport.
-func ValidateListBuildAssignmentsResultTransport(body *ListBuildAssignmentsResultTransport) (err error) {
+// ValidateListBuilderAssignmentsResultTransport runs the validations defined on ListBuilderAssignmentsResultTransport.
+func ValidateListBuilderAssignmentsResultTransport(body *ListBuilderAssignmentsResultTransport) (err error) {
 	if body.Assignments == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
 	}
 	for _, e := range body.Assignments {
 		if e != nil {
-			if err2 := ValidateBuildAssignmentTransport(e); err2 != nil {
+			if err2 := ValidateBuilderAssignmentTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -717,14 +712,14 @@ func ValidateListChangesResultTransport(body *ListChangesResultTransport) (err e
 	return
 }
 
-// ValidateListTestAssignmentsResultTransport runs the validations defined on ListTestAssignmentsResultTransport.
-func ValidateListTestAssignmentsResultTransport(body *ListTestAssignmentsResultTransport) (err error) {
+// ValidateListTestWriterAssignmentsResultTransport runs the validations defined on ListTestWriterAssignmentsResultTransport.
+func ValidateListTestWriterAssignmentsResultTransport(body *ListTestWriterAssignmentsResultTransport) (err error) {
 	if body.Assignments == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
 	}
 	for _, e := range body.Assignments {
 		if e != nil {
-			if err2 := ValidateTestAssignmentItemTransport(e); err2 != nil {
+			if err2 := ValidateTestWriterAssignmentItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -1004,8 +999,8 @@ func ValidateRefreshStoryResultTransport(body *RefreshStoryResultTransport) (err
 	return
 }
 
-// ValidateReportTestsPayloadTransport runs the validations defined on ReportTestsPayloadTransport.
-func ValidateReportTestsPayloadTransport(body *ReportTestsPayloadTransport) (err error) {
+// ValidateReportTestsFinishedPayloadTransport runs the validations defined on ReportTestsFinishedPayloadTransport.
+func ValidateReportTestsFinishedPayloadTransport(body *ReportTestsFinishedPayloadTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
@@ -1025,8 +1020,8 @@ func ValidateReportTestsPayloadTransport(body *ReportTestsPayloadTransport) (err
 	return
 }
 
-// ValidateReportTestsResultTransport runs the validations defined on ReportTestsResultTransport.
-func ValidateReportTestsResultTransport(body *ReportTestsResultTransport) (err error) {
+// ValidateReportTestsFinishedResultTransport runs the validations defined on ReportTestsFinishedResultTransport.
+func ValidateReportTestsFinishedResultTransport(body *ReportTestsFinishedResultTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
@@ -1332,37 +1327,24 @@ func ValidateApprovalItemTransport(body *ApprovalItemTransport) (err error) {
 	return
 }
 
-// ValidateBuildAssignmentTransport runs the validations defined on BuildAssignmentTransport.
-func ValidateBuildAssignmentTransport(body *BuildAssignmentTransport) (err error) {
+// ValidateBuilderAssignmentTransport runs the validations defined on BuilderAssignmentTransport.
+func ValidateBuilderAssignmentTransport(body *BuilderAssignmentTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
-	if body.Progress == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
-	}
-	if body.Progress != nil {
-		if err2 := ValidateBuilderProgressTransport(body.Progress); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
+	if body.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
 	return
 }
 
 // ValidateBuilderProgressTransport runs the validations defined on BuilderProgressTransport.
 func ValidateBuilderProgressTransport(body *BuilderProgressTransport) (err error) {
-	if body.State == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
-	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
-	}
-	if body.State != nil {
-		if !(*body.State == "assigned") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"assigned"}))
-		}
 	}
 	return
 }
@@ -1893,8 +1875,8 @@ func ValidateStorySummaryItemTransport(body *StorySummaryItemTransport) (err err
 	return
 }
 
-// ValidateTestAssignmentItemTransport runs the validations defined on TestAssignmentItemTransport.
-func ValidateTestAssignmentItemTransport(body *TestAssignmentItemTransport) (err error) {
+// ValidateTestWriterAssignmentItemTransport runs the validations defined on TestWriterAssignmentItemTransport.
+func ValidateTestWriterAssignmentItemTransport(body *TestWriterAssignmentItemTransport) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
 	}

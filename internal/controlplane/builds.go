@@ -59,7 +59,7 @@ type (
 	// buildFile is the saved form of one change's build, in its own file beside
 	// the change's card in the cards directory. Starting a build again
 	// replaces the whole file. A file that does not match this schema, or
-	// whose assignment states contradict their fields, stops the call that
+	// whose test writer state contradicts its fields, stops the call that
 	// reads it.
 	buildFile struct {
 		// ChangeID is the Change Card the build is for; its hash names the file.
@@ -78,11 +78,11 @@ type (
 		TestWriter testWriterAssignment `json:"test_writer"`
 	}
 
-	// builderAssignment is the builder's saved assignment for one build.
+	// builderAssignment is the builder's saved assignment for one build. It
+	// has no state: it exists from the moment the user starts the build, and
+	// verification of the build's revision, not the assignment, judges the
+	// builder's work.
 	builderAssignment struct {
-		// State is always builderAssigned: verification of the build's
-		// revision, not the assignment, judges the builder's work.
-		State string `json:"state"`
 		// Read records that the builder read the assignment in full.
 		Read bool `json:"read"`
 	}
@@ -108,8 +108,6 @@ type (
 )
 
 const (
-	// builderAssigned is the builder's one state.
-	builderAssigned = "assigned"
 	// testsAssigned is the test writer's state until it reports.
 	testsAssigned = "assigned"
 	// testsReported is the test writer's state after it reported its tests
@@ -185,7 +183,7 @@ func (c *ControlPlane) StartBuild(ctx context.Context, p *gensurla.StartBuildPay
 		RequestRevision: p.RequestRevision,
 		StartedAt:       time.Now().UTC(),
 		Stories:         cloneStorySummaries(record.stories),
-		Builder:         builderAssignment{State: builderAssigned},
+		Builder:         builderAssignment{},
 		TestWriter:      testWriterAssignment{State: testsAssigned, WorkingFolder: folder},
 	}
 	if err := c.cards.saveBuild(saved); err != nil {
@@ -220,9 +218,9 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(saved, inForce))}, nil
 }
 
-// ListBuildAssignments returns the builder's assignment of every build of the
-// caller's changes, most recently started first. It records nothing.
-func (c *ControlPlane) ListBuildAssignments(ctx context.Context) (*gensurla.BuildAssignmentList, error) {
+// ListBuilderAssignments returns the builder's assignment of every build of
+// the caller's changes, most recently started first. It records nothing.
+func (c *ControlPlane) ListBuilderAssignments(ctx context.Context) (*gensurla.BuilderAssignmentList, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -231,22 +229,22 @@ func (c *ControlPlane) ListBuildAssignments(ctx context.Context) (*gensurla.Buil
 	if err != nil {
 		return nil, err
 	}
-	items := make([]*gensurla.BuildAssignment, len(builds))
+	items := make([]*gensurla.BuilderAssignment, len(builds))
 	for i, saved := range builds {
-		items[i] = buildAssignment(saved)
+		items[i] = builderAssignmentResult(saved)
 	}
-	return &gensurla.BuildAssignmentList{Assignments: items}, nil
+	return &gensurla.BuilderAssignmentList{Assignments: items}, nil
 }
 
-// GetBuildAssignment returns the builder's assignment for the caller's change
-// and records that the builder read it; a later build of the change replaces
-// it unread. It fails with not_found when the change or its build does not
-// exist and forbidden for another owner's change.
-func (c *ControlPlane) GetBuildAssignment(
+// GetBuilderAssignment returns the builder's assignment for the caller's
+// change and records that the builder read it; a later build of the change
+// replaces it unread. It fails with not_found when the change or its build
+// does not exist and forbidden for another owner's change.
+func (c *ControlPlane) GetBuilderAssignment(
 	ctx context.Context,
-	p *gensurla.GetBuildAssignmentPayload,
-) (*gensurla.BuildAssignment, error) {
-	saved, err := c.readAssignment(ctx, "surla.controlplane.get_build_assignment", p.ChangeID, func(saved *buildFile) bool {
+	p *gensurla.GetBuilderAssignmentPayload,
+) (*gensurla.BuilderAssignment, error) {
+	saved, err := c.readAssignment(ctx, "surla.controlplane.get_builder_assignment", p.ChangeID, func(saved *buildFile) bool {
 		changed := !saved.Builder.Read
 		saved.Builder.Read = true
 		return changed
@@ -254,12 +252,13 @@ func (c *ControlPlane) GetBuildAssignment(
 	if err != nil {
 		return nil, err
 	}
-	return buildAssignment(saved), nil
+	return builderAssignmentResult(saved), nil
 }
 
-// ListTestAssignments returns the test writer's assignment of every build of
-// the caller's changes, most recently started first. It records nothing.
-func (c *ControlPlane) ListTestAssignments(ctx context.Context) (*gensurla.TestAssignmentList, error) {
+// ListTestWriterAssignments returns the test writer's assignment of every
+// build of the caller's changes, most recently started first. It records
+// nothing.
+func (c *ControlPlane) ListTestWriterAssignments(ctx context.Context) (*gensurla.TestWriterAssignmentList, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -268,24 +267,24 @@ func (c *ControlPlane) ListTestAssignments(ctx context.Context) (*gensurla.TestA
 	if err != nil {
 		return nil, err
 	}
-	items := make([]*gensurla.TestAssignmentItem, len(builds))
+	items := make([]*gensurla.TestWriterAssignmentItem, len(builds))
 	for i, saved := range builds {
-		items[i] = testAssignmentItem(saved)
+		items[i] = testWriterAssignmentItem(saved)
 	}
-	return &gensurla.TestAssignmentList{Assignments: items}, nil
+	return &gensurla.TestWriterAssignmentList{Assignments: items}, nil
 }
 
-// GetTestAssignment returns the test writer's assignment for the caller's
-// change in full, with the Story as agreed at the built revision and one
+// GetTestWriterAssignment returns the test writer's assignment for the
+// caller's change in full, with the Story as agreed at the built revision and one
 // required test per finished flow, and records that the test writer read it;
 // a later build of the change replaces it unread. It fails with not_found when
 // the change or its build does not exist and forbidden for another owner's
 // change.
-func (c *ControlPlane) GetTestAssignment(
+func (c *ControlPlane) GetTestWriterAssignment(
 	ctx context.Context,
-	p *gensurla.GetTestAssignmentPayload,
-) (*gensurla.TestAssignment, error) {
-	saved, err := c.readAssignment(ctx, "surla.controlplane.get_test_assignment", p.ChangeID, func(saved *buildFile) bool {
+	p *gensurla.GetTestWriterAssignmentPayload,
+) (*gensurla.TestWriterAssignment, error) {
+	saved, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) bool {
 		changed := !saved.TestWriter.Read
 		saved.TestWriter.Read = true
 		return changed
@@ -303,8 +302,8 @@ func (c *ControlPlane) GetTestAssignment(
 	for i, s := range scenarios {
 		required[i] = &gensurla.RequiredTest{Story: s.Story, FlowKey: s.Key, Scenario: s.Scenario, Hook: s.Hook}
 	}
-	item := testAssignmentItem(saved)
-	return &gensurla.TestAssignment{
+	item := testWriterAssignmentItem(saved)
+	return &gensurla.TestWriterAssignment{
 		ChangeID:        item.ChangeID,
 		RequestRevision: item.RequestRevision,
 		Progress:        item.Progress,
@@ -314,18 +313,21 @@ func (c *ControlPlane) GetTestAssignment(
 	}, nil
 }
 
-// ReportTests records that the test writer finished its tests for the
+// ReportTestsFinished records that the test writer finished its tests for the
 // caller's change at the build's revision: the test writer's state becomes
 // reported and any earlier findings or accepted commit are cleared. It fails
 // with not_found when the change or its build does not exist, forbidden for
 // another owner's change, and conflict for any other revision; a refused
 // report changes nothing.
-func (c *ControlPlane) ReportTests(ctx context.Context, p *gensurla.ReportTestsPayload) (*gensurla.TestAssignmentItem, error) {
+func (c *ControlPlane) ReportTestsFinished(
+	ctx context.Context,
+	p *gensurla.ReportTestsFinishedPayload,
+) (*gensurla.TestWriterAssignmentItem, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.report_tests", trace.WithAttributes(
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.report_tests_finished", trace.WithAttributes(
 		attribute.String("surla.change_id", p.ChangeID),
 		attribute.String("surla.request_revision", p.RequestRevision),
 	))
@@ -351,7 +353,7 @@ func (c *ControlPlane) ReportTests(ctx context.Context, p *gensurla.ReportTestsP
 		}
 	}
 	span.SetAttributes(attribute.String("surla.tests_state", saved.TestWriter.State))
-	return testAssignmentItem(saved), nil
+	return testWriterAssignmentItem(saved), nil
 }
 
 // revisionInForce returns the revision of card the user agreed and that every
@@ -376,19 +378,20 @@ func startedBuild(saved buildFile, inForce bool) *gensurla.StartedBuild {
 	}
 }
 
-// buildAssignment converts a saved build into the builder's assignment.
-func buildAssignment(saved buildFile) *gensurla.BuildAssignment {
-	return &gensurla.BuildAssignment{
+// builderAssignmentResult converts a saved build into the builder's
+// assignment.
+func builderAssignmentResult(saved buildFile) *gensurla.BuilderAssignment {
+	return &gensurla.BuilderAssignment{
 		ChangeID:        saved.ChangeID,
 		RequestRevision: saved.RequestRevision,
-		Progress:        builderProgress(saved.Builder),
+		Read:            saved.Builder.Read,
 	}
 }
 
-// testAssignmentItem converts a saved build into the test writer's
+// testWriterAssignmentItem converts a saved build into the test writer's
 // assignment summary.
-func testAssignmentItem(saved buildFile) *gensurla.TestAssignmentItem {
-	return &gensurla.TestAssignmentItem{
+func testWriterAssignmentItem(saved buildFile) *gensurla.TestWriterAssignmentItem {
+	return &gensurla.TestWriterAssignmentItem{
 		ChangeID:        saved.ChangeID,
 		RequestRevision: saved.RequestRevision,
 		Progress:        testWriterProgress(saved.TestWriter),
@@ -397,7 +400,7 @@ func testAssignmentItem(saved buildFile) *gensurla.TestAssignmentItem {
 
 // builderProgress converts the builder's saved assignment.
 func builderProgress(saved builderAssignment) *gensurla.BuilderProgress {
-	return &gensurla.BuilderProgress{State: saved.State, Read: saved.Read}
+	return &gensurla.BuilderProgress{Read: saved.Read}
 }
 
 // testWriterProgress converts the test writer's saved assignment. decodeBuild
@@ -436,7 +439,7 @@ func buildFileName(changeID string) string {
 
 // decodeBuild strictly decodes the build file named fileName: unknown fields
 // and trailing data are refused, the file must hold the build of the change
-// whose hash names it, and each assignment's state must match its fields.
+// whose hash names it, and the test writer's state must match its fields.
 func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	var saved buildFile
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -452,9 +455,6 @@ func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	}
 	if saved.RequestRevision == "" || saved.StartedAt.IsZero() {
 		return buildFile{}, fmt.Errorf("build of change %q has no revision or start time", saved.ChangeID)
-	}
-	if saved.Builder.State != builderAssigned {
-		return buildFile{}, fmt.Errorf("build of change %q has unknown builder state %q", saved.ChangeID, saved.Builder.State)
 	}
 	tw := saved.TestWriter
 	var valid bool

@@ -28,8 +28,9 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 		"get_change":       common, "preview_architecture": common, "diff": common, "get_verification": common, "list_verifications": common, "list_traces": common, "read_check_output": common, "get_story_refresh": common,
 		"list_changes": common, "wait_for_changes": {CallerUser},
 		"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
-		"list_build_assignments": {CallerBuilder}, "get_build_assignment": {CallerBuilder},
-		"list_test_assignments": {CallerTestWriter}, "get_test_assignment": {CallerTestWriter}, "report_tests": {CallerTestWriter},
+		"list_builder_assignments": {CallerBuilder}, "get_builder_assignment": {CallerBuilder},
+		"list_test_writer_assignments": {CallerTestWriter}, "get_test_writer_assignment": {CallerTestWriter},
+		"report_tests_finished": {CallerTestWriter},
 	}
 	assert.Len(t, expected, len(gensurla.MethodNames))
 	for _, name := range gensurla.MethodNames {

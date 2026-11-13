@@ -3410,14 +3410,14 @@ func DecodeGetBuildResponse(decoder func(*http.Response) goahttp.Decoder, restor
 	}
 }
 
-// BuildListBuildAssignmentsRequest instantiates a HTTP request object with
-// method and path set to call the "surla" service "list_build_assignments"
+// BuildListBuilderAssignmentsRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "list_builder_assignments"
 // endpoint
-func (c *Client) BuildListBuildAssignmentsRequest(ctx context.Context, v any) (*http.Request, error) {
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListBuildAssignmentsSurlaPath()}
+func (c *Client) BuildListBuilderAssignmentsRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListBuilderAssignmentsSurlaPath()}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return nil, goahttp.ErrInvalidURL("surla", "list_build_assignments", u.String(), err)
+		return nil, goahttp.ErrInvalidURL("surla", "list_builder_assignments", u.String(), err)
 	}
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -3426,20 +3426,20 @@ func (c *Client) BuildListBuildAssignmentsRequest(ctx context.Context, v any) (*
 	return req, nil
 }
 
-// DecodeListBuildAssignmentsResponse returns a decoder for responses returned
-// by the surla list_build_assignments endpoint. restoreBody controls whether
-// the response body should be restored after having been read.
-// DecodeListBuildAssignmentsResponse may return the following errors:
+// DecodeListBuilderAssignmentsResponse returns a decoder for responses
+// returned by the surla list_builder_assignments endpoint. restoreBody
+// controls whether the response body should be restored after having been read.
+// DecodeListBuilderAssignmentsResponse may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
-func DecodeListBuildAssignmentsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+func DecodeListBuilderAssignmentsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
 		if restoreBody {
 			b, readErr := io.ReadAll(responseBody)
 			closeErr := responseBody.Close()
 			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_build_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_builder_assignments", err)
 			}
 			resp.Body = io.NopCloser(bytes.NewBuffer(b))
 			defer func() {
@@ -3448,70 +3448,70 @@ func DecodeListBuildAssignmentsResponse(decoder func(*http.Response) goahttp.Dec
 		} else {
 			defer func() {
 				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_build_assignments", err))
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_builder_assignments", err))
 				}
 			}()
 		}
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var (
-				body ListBuildAssignmentsResponseBody
+				body ListBuilderAssignmentsResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_build_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_builder_assignments", err)
 			}
-			err = ValidateListBuildAssignmentsResponseBody(&body)
+			err = ValidateListBuilderAssignmentsResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "list_build_assignments", err)
+				return nil, goahttp.ErrValidationError("surla", "list_builder_assignments", err)
 			}
-			res := NewListBuildAssignmentsBuildAssignmentListOK(&body)
+			res := NewListBuilderAssignmentsBuilderAssignmentListOK(&body)
 			return res, nil
 		case http.StatusForbidden:
 			var (
-				body ListBuildAssignmentsForbiddenResponseBody
+				body ListBuilderAssignmentsForbiddenResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_build_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_builder_assignments", err)
 			}
-			err = ValidateListBuildAssignmentsForbiddenResponseBody(&body)
+			err = ValidateListBuilderAssignmentsForbiddenResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "list_build_assignments", err)
+				return nil, goahttp.ErrValidationError("surla", "list_builder_assignments", err)
 			}
-			return nil, NewListBuildAssignmentsForbidden(&body)
+			return nil, NewListBuilderAssignmentsForbidden(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_build_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_builder_assignments", err)
 			}
-			return nil, goahttp.ErrInvalidResponse("surla", "list_build_assignments", resp.StatusCode, string(body))
+			return nil, goahttp.ErrInvalidResponse("surla", "list_builder_assignments", resp.StatusCode, string(body))
 		}
 	}
 }
 
-// BuildGetBuildAssignmentRequest instantiates a HTTP request object with
-// method and path set to call the "surla" service "get_build_assignment"
+// BuildGetBuilderAssignmentRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "get_builder_assignment"
 // endpoint
-func (c *Client) BuildGetBuildAssignmentRequest(ctx context.Context, v any) (*http.Request, error) {
+func (c *Client) BuildGetBuilderAssignmentRequest(ctx context.Context, v any) (*http.Request, error) {
 	var (
 		changeID string
 	)
 	{
-		p, ok := v.(*surla.GetBuildAssignmentPayload)
+		p, ok := v.(*surla.GetBuilderAssignmentPayload)
 		if !ok {
-			return nil, goahttp.ErrInvalidType("surla", "get_build_assignment", "*surla.GetBuildAssignmentPayload", v)
+			return nil, goahttp.ErrInvalidType("surla", "get_builder_assignment", "*surla.GetBuilderAssignmentPayload", v)
 		}
 		changeID = p.ChangeID
 	}
 
-	rawPath := fmt.Sprintf("/assignments/build/%v", url.PathEscape(fmt.Sprint(changeID)))
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetBuildAssignmentSurlaPath(changeID), RawPath: rawPath}
+	rawPath := fmt.Sprintf("/assignments/builder/%v", url.PathEscape(fmt.Sprint(changeID)))
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetBuilderAssignmentSurlaPath(changeID), RawPath: rawPath}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return nil, goahttp.ErrInvalidURL("surla", "get_build_assignment", u.String(), err)
+		return nil, goahttp.ErrInvalidURL("surla", "get_builder_assignment", u.String(), err)
 	}
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -3520,21 +3520,21 @@ func (c *Client) BuildGetBuildAssignmentRequest(ctx context.Context, v any) (*ht
 	return req, nil
 }
 
-// DecodeGetBuildAssignmentResponse returns a decoder for responses returned by
-// the surla get_build_assignment endpoint. restoreBody controls whether the
-// response body should be restored after having been read.
-// DecodeGetBuildAssignmentResponse may return the following errors:
+// DecodeGetBuilderAssignmentResponse returns a decoder for responses returned
+// by the surla get_builder_assignment endpoint. restoreBody controls whether
+// the response body should be restored after having been read.
+// DecodeGetBuilderAssignmentResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
-func DecodeGetBuildAssignmentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+func DecodeGetBuilderAssignmentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
 		if restoreBody {
 			b, readErr := io.ReadAll(responseBody)
 			closeErr := responseBody.Close()
 			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_builder_assignment", err)
 			}
 			resp.Body = io.NopCloser(bytes.NewBuffer(b))
 			defer func() {
@@ -3543,72 +3543,72 @@ func DecodeGetBuildAssignmentResponse(decoder func(*http.Response) goahttp.Decod
 		} else {
 			defer func() {
 				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_build_assignment", err))
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_builder_assignment", err))
 				}
 			}()
 		}
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var (
-				body GetBuildAssignmentResponseBody
+				body GetBuilderAssignmentResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_builder_assignment", err)
 			}
-			err = ValidateGetBuildAssignmentResponseBody(&body)
+			err = ValidateGetBuilderAssignmentResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrValidationError("surla", "get_builder_assignment", err)
 			}
-			res := NewGetBuildAssignmentBuildAssignmentOK(&body)
+			res := NewGetBuilderAssignmentBuilderAssignmentOK(&body)
 			return res, nil
 		case http.StatusNotFound:
 			var (
-				body GetBuildAssignmentNotFoundResponseBody
+				body GetBuilderAssignmentNotFoundResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_builder_assignment", err)
 			}
-			err = ValidateGetBuildAssignmentNotFoundResponseBody(&body)
+			err = ValidateGetBuilderAssignmentNotFoundResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrValidationError("surla", "get_builder_assignment", err)
 			}
-			return nil, NewGetBuildAssignmentNotFound(&body)
+			return nil, NewGetBuilderAssignmentNotFound(&body)
 		case http.StatusForbidden:
 			var (
-				body GetBuildAssignmentForbiddenResponseBody
+				body GetBuilderAssignmentForbiddenResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_builder_assignment", err)
 			}
-			err = ValidateGetBuildAssignmentForbiddenResponseBody(&body)
+			err = ValidateGetBuilderAssignmentForbiddenResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrValidationError("surla", "get_builder_assignment", err)
 			}
-			return nil, NewGetBuildAssignmentForbidden(&body)
+			return nil, NewGetBuilderAssignmentForbidden(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_build_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_builder_assignment", err)
 			}
-			return nil, goahttp.ErrInvalidResponse("surla", "get_build_assignment", resp.StatusCode, string(body))
+			return nil, goahttp.ErrInvalidResponse("surla", "get_builder_assignment", resp.StatusCode, string(body))
 		}
 	}
 }
 
-// BuildListTestAssignmentsRequest instantiates a HTTP request object with
-// method and path set to call the "surla" service "list_test_assignments"
-// endpoint
-func (c *Client) BuildListTestAssignmentsRequest(ctx context.Context, v any) (*http.Request, error) {
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListTestAssignmentsSurlaPath()}
+// BuildListTestWriterAssignmentsRequest instantiates a HTTP request object
+// with method and path set to call the "surla" service
+// "list_test_writer_assignments" endpoint
+func (c *Client) BuildListTestWriterAssignmentsRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListTestWriterAssignmentsSurlaPath()}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return nil, goahttp.ErrInvalidURL("surla", "list_test_assignments", u.String(), err)
+		return nil, goahttp.ErrInvalidURL("surla", "list_test_writer_assignments", u.String(), err)
 	}
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -3617,20 +3617,20 @@ func (c *Client) BuildListTestAssignmentsRequest(ctx context.Context, v any) (*h
 	return req, nil
 }
 
-// DecodeListTestAssignmentsResponse returns a decoder for responses returned
-// by the surla list_test_assignments endpoint. restoreBody controls whether
-// the response body should be restored after having been read.
-// DecodeListTestAssignmentsResponse may return the following errors:
+// DecodeListTestWriterAssignmentsResponse returns a decoder for responses
+// returned by the surla list_test_writer_assignments endpoint. restoreBody
+// controls whether the response body should be restored after having been read.
+// DecodeListTestWriterAssignmentsResponse may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
-func DecodeListTestAssignmentsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+func DecodeListTestWriterAssignmentsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
 		if restoreBody {
 			b, readErr := io.ReadAll(responseBody)
 			closeErr := responseBody.Close()
 			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_test_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_test_writer_assignments", err)
 			}
 			resp.Body = io.NopCloser(bytes.NewBuffer(b))
 			defer func() {
@@ -3639,69 +3639,70 @@ func DecodeListTestAssignmentsResponse(decoder func(*http.Response) goahttp.Deco
 		} else {
 			defer func() {
 				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_test_assignments", err))
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_test_writer_assignments", err))
 				}
 			}()
 		}
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var (
-				body ListTestAssignmentsResponseBody
+				body ListTestWriterAssignmentsResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_test_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_test_writer_assignments", err)
 			}
-			err = ValidateListTestAssignmentsResponseBody(&body)
+			err = ValidateListTestWriterAssignmentsResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "list_test_assignments", err)
+				return nil, goahttp.ErrValidationError("surla", "list_test_writer_assignments", err)
 			}
-			res := NewListTestAssignmentsTestAssignmentListOK(&body)
+			res := NewListTestWriterAssignmentsTestWriterAssignmentListOK(&body)
 			return res, nil
 		case http.StatusForbidden:
 			var (
-				body ListTestAssignmentsForbiddenResponseBody
+				body ListTestWriterAssignmentsForbiddenResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_test_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_test_writer_assignments", err)
 			}
-			err = ValidateListTestAssignmentsForbiddenResponseBody(&body)
+			err = ValidateListTestWriterAssignmentsForbiddenResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "list_test_assignments", err)
+				return nil, goahttp.ErrValidationError("surla", "list_test_writer_assignments", err)
 			}
-			return nil, NewListTestAssignmentsForbidden(&body)
+			return nil, NewListTestWriterAssignmentsForbidden(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "list_test_assignments", err)
+				return nil, goahttp.ErrDecodingError("surla", "list_test_writer_assignments", err)
 			}
-			return nil, goahttp.ErrInvalidResponse("surla", "list_test_assignments", resp.StatusCode, string(body))
+			return nil, goahttp.ErrInvalidResponse("surla", "list_test_writer_assignments", resp.StatusCode, string(body))
 		}
 	}
 }
 
-// BuildGetTestAssignmentRequest instantiates a HTTP request object with method
-// and path set to call the "surla" service "get_test_assignment" endpoint
-func (c *Client) BuildGetTestAssignmentRequest(ctx context.Context, v any) (*http.Request, error) {
+// BuildGetTestWriterAssignmentRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "get_test_writer_assignment"
+// endpoint
+func (c *Client) BuildGetTestWriterAssignmentRequest(ctx context.Context, v any) (*http.Request, error) {
 	var (
 		changeID string
 	)
 	{
-		p, ok := v.(*surla.GetTestAssignmentPayload)
+		p, ok := v.(*surla.GetTestWriterAssignmentPayload)
 		if !ok {
-			return nil, goahttp.ErrInvalidType("surla", "get_test_assignment", "*surla.GetTestAssignmentPayload", v)
+			return nil, goahttp.ErrInvalidType("surla", "get_test_writer_assignment", "*surla.GetTestWriterAssignmentPayload", v)
 		}
 		changeID = p.ChangeID
 	}
 
-	rawPath := fmt.Sprintf("/assignments/tests/%v", url.PathEscape(fmt.Sprint(changeID)))
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetTestAssignmentSurlaPath(changeID), RawPath: rawPath}
+	rawPath := fmt.Sprintf("/assignments/test-writer/%v", url.PathEscape(fmt.Sprint(changeID)))
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetTestWriterAssignmentSurlaPath(changeID), RawPath: rawPath}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return nil, goahttp.ErrInvalidURL("surla", "get_test_assignment", u.String(), err)
+		return nil, goahttp.ErrInvalidURL("surla", "get_test_writer_assignment", u.String(), err)
 	}
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -3710,21 +3711,21 @@ func (c *Client) BuildGetTestAssignmentRequest(ctx context.Context, v any) (*htt
 	return req, nil
 }
 
-// DecodeGetTestAssignmentResponse returns a decoder for responses returned by
-// the surla get_test_assignment endpoint. restoreBody controls whether the
-// response body should be restored after having been read.
-// DecodeGetTestAssignmentResponse may return the following errors:
+// DecodeGetTestWriterAssignmentResponse returns a decoder for responses
+// returned by the surla get_test_writer_assignment endpoint. restoreBody
+// controls whether the response body should be restored after having been read.
+// DecodeGetTestWriterAssignmentResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
-func DecodeGetTestAssignmentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+func DecodeGetTestWriterAssignmentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
 		if restoreBody {
 			b, readErr := io.ReadAll(responseBody)
 			closeErr := responseBody.Close()
 			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_test_writer_assignment", err)
 			}
 			resp.Body = io.NopCloser(bytes.NewBuffer(b))
 			defer func() {
@@ -3733,83 +3734,84 @@ func DecodeGetTestAssignmentResponse(decoder func(*http.Response) goahttp.Decode
 		} else {
 			defer func() {
 				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_test_assignment", err))
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_test_writer_assignment", err))
 				}
 			}()
 		}
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var (
-				body GetTestAssignmentResponseBody
+				body GetTestWriterAssignmentResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_test_writer_assignment", err)
 			}
-			err = ValidateGetTestAssignmentResponseBody(&body)
+			err = ValidateGetTestWriterAssignmentResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrValidationError("surla", "get_test_writer_assignment", err)
 			}
-			res := NewGetTestAssignmentTestAssignmentOK(&body)
+			res := NewGetTestWriterAssignmentTestWriterAssignmentOK(&body)
 			return res, nil
 		case http.StatusNotFound:
 			var (
-				body GetTestAssignmentNotFoundResponseBody
+				body GetTestWriterAssignmentNotFoundResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_test_writer_assignment", err)
 			}
-			err = ValidateGetTestAssignmentNotFoundResponseBody(&body)
+			err = ValidateGetTestWriterAssignmentNotFoundResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrValidationError("surla", "get_test_writer_assignment", err)
 			}
-			return nil, NewGetTestAssignmentNotFound(&body)
+			return nil, NewGetTestWriterAssignmentNotFound(&body)
 		case http.StatusForbidden:
 			var (
-				body GetTestAssignmentForbiddenResponseBody
+				body GetTestWriterAssignmentForbiddenResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_test_writer_assignment", err)
 			}
-			err = ValidateGetTestAssignmentForbiddenResponseBody(&body)
+			err = ValidateGetTestWriterAssignmentForbiddenResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrValidationError("surla", "get_test_writer_assignment", err)
 			}
-			return nil, NewGetTestAssignmentForbidden(&body)
+			return nil, NewGetTestWriterAssignmentForbidden(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "get_test_assignment", err)
+				return nil, goahttp.ErrDecodingError("surla", "get_test_writer_assignment", err)
 			}
-			return nil, goahttp.ErrInvalidResponse("surla", "get_test_assignment", resp.StatusCode, string(body))
+			return nil, goahttp.ErrInvalidResponse("surla", "get_test_writer_assignment", resp.StatusCode, string(body))
 		}
 	}
 }
 
-// BuildReportTestsRequest instantiates a HTTP request object with method and
-// path set to call the "surla" service "report_tests" endpoint
-func (c *Client) BuildReportTestsRequest(ctx context.Context, v any) (*http.Request, error) {
+// BuildReportTestsFinishedRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "report_tests_finished"
+// endpoint
+func (c *Client) BuildReportTestsFinishedRequest(ctx context.Context, v any) (*http.Request, error) {
 	var (
 		changeID string
 	)
 	{
-		p, ok := v.(*surla.ReportTestsPayload)
+		p, ok := v.(*surla.ReportTestsFinishedPayload)
 		if !ok {
-			return nil, goahttp.ErrInvalidType("surla", "report_tests", "*surla.ReportTestsPayload", v)
+			return nil, goahttp.ErrInvalidType("surla", "report_tests_finished", "*surla.ReportTestsFinishedPayload", v)
 		}
 		changeID = p.ChangeID
 	}
 
-	rawPath := fmt.Sprintf("/assignments/tests/%v/report", url.PathEscape(fmt.Sprint(changeID)))
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ReportTestsSurlaPath(changeID), RawPath: rawPath}
+	rawPath := fmt.Sprintf("/assignments/test-writer/%v/finished", url.PathEscape(fmt.Sprint(changeID)))
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ReportTestsFinishedSurlaPath(changeID), RawPath: rawPath}
 	req, err := http.NewRequest("POST", u.String(), nil)
 	if err != nil {
-		return nil, goahttp.ErrInvalidURL("surla", "report_tests", u.String(), err)
+		return nil, goahttp.ErrInvalidURL("surla", "report_tests_finished", u.String(), err)
 	}
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -3818,38 +3820,38 @@ func (c *Client) BuildReportTestsRequest(ctx context.Context, v any) (*http.Requ
 	return req, nil
 }
 
-// EncodeReportTestsRequest returns an encoder for requests sent to the surla
-// report_tests server.
-func EncodeReportTestsRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+// EncodeReportTestsFinishedRequest returns an encoder for requests sent to the
+// surla report_tests_finished server.
+func EncodeReportTestsFinishedRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
 	return func(req *http.Request, v any) error {
-		p, ok := v.(*surla.ReportTestsPayload)
+		p, ok := v.(*surla.ReportTestsFinishedPayload)
 		if !ok {
-			return goahttp.ErrInvalidType("surla", "report_tests", "*surla.ReportTestsPayload", v)
+			return goahttp.ErrInvalidType("surla", "report_tests_finished", "*surla.ReportTestsFinishedPayload", v)
 		}
-		body := NewReportTestsRequestBody(p)
+		body := NewReportTestsFinishedRequestBody(p)
 		if err := encoder(req).Encode(&body); err != nil {
-			return goahttp.ErrEncodingError("surla", "report_tests", err)
+			return goahttp.ErrEncodingError("surla", "report_tests_finished", err)
 		}
 		return nil
 	}
 }
 
-// DecodeReportTestsResponse returns a decoder for responses returned by the
-// surla report_tests endpoint. restoreBody controls whether the response body
-// should be restored after having been read.
-// DecodeReportTestsResponse may return the following errors:
+// DecodeReportTestsFinishedResponse returns a decoder for responses returned
+// by the surla report_tests_finished endpoint. restoreBody controls whether
+// the response body should be restored after having been read.
+// DecodeReportTestsFinishedResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
-func DecodeReportTestsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+func DecodeReportTestsFinishedResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
 		if restoreBody {
 			b, readErr := io.ReadAll(responseBody)
 			closeErr := responseBody.Close()
 			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "report_tests", err)
+				return nil, goahttp.ErrDecodingError("surla", "report_tests_finished", err)
 			}
 			resp.Body = io.NopCloser(bytes.NewBuffer(b))
 			defer func() {
@@ -3858,74 +3860,74 @@ func DecodeReportTestsResponse(decoder func(*http.Response) goahttp.Decoder, res
 		} else {
 			defer func() {
 				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "report_tests", err))
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "report_tests_finished", err))
 				}
 			}()
 		}
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var (
-				body ReportTestsResponseBody
+				body ReportTestsFinishedResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "report_tests", err)
+				return nil, goahttp.ErrDecodingError("surla", "report_tests_finished", err)
 			}
-			err = ValidateReportTestsResponseBody(&body)
+			err = ValidateReportTestsFinishedResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "report_tests", err)
+				return nil, goahttp.ErrValidationError("surla", "report_tests_finished", err)
 			}
-			res := NewReportTestsTestAssignmentItemOK(&body)
+			res := NewReportTestsFinishedTestWriterAssignmentItemOK(&body)
 			return res, nil
 		case http.StatusNotFound:
 			var (
-				body ReportTestsNotFoundResponseBody
+				body ReportTestsFinishedNotFoundResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "report_tests", err)
+				return nil, goahttp.ErrDecodingError("surla", "report_tests_finished", err)
 			}
-			err = ValidateReportTestsNotFoundResponseBody(&body)
+			err = ValidateReportTestsFinishedNotFoundResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "report_tests", err)
+				return nil, goahttp.ErrValidationError("surla", "report_tests_finished", err)
 			}
-			return nil, NewReportTestsNotFound(&body)
+			return nil, NewReportTestsFinishedNotFound(&body)
 		case http.StatusConflict:
 			var (
-				body ReportTestsConflictResponseBody
+				body ReportTestsFinishedConflictResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "report_tests", err)
+				return nil, goahttp.ErrDecodingError("surla", "report_tests_finished", err)
 			}
-			err = ValidateReportTestsConflictResponseBody(&body)
+			err = ValidateReportTestsFinishedConflictResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "report_tests", err)
+				return nil, goahttp.ErrValidationError("surla", "report_tests_finished", err)
 			}
-			return nil, NewReportTestsConflict(&body)
+			return nil, NewReportTestsFinishedConflict(&body)
 		case http.StatusForbidden:
 			var (
-				body ReportTestsForbiddenResponseBody
+				body ReportTestsFinishedForbiddenResponseBody
 				err  error
 			)
 			err = decoder(resp).Decode(&body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "report_tests", err)
+				return nil, goahttp.ErrDecodingError("surla", "report_tests_finished", err)
 			}
-			err = ValidateReportTestsForbiddenResponseBody(&body)
+			err = ValidateReportTestsFinishedForbiddenResponseBody(&body)
 			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "report_tests", err)
+				return nil, goahttp.ErrValidationError("surla", "report_tests_finished", err)
 			}
-			return nil, NewReportTestsForbidden(&body)
+			return nil, NewReportTestsFinishedForbidden(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "report_tests", err)
+				return nil, goahttp.ErrDecodingError("surla", "report_tests_finished", err)
 			}
-			return nil, goahttp.ErrInvalidResponse("surla", "report_tests", resp.StatusCode, string(body))
+			return nil, goahttp.ErrInvalidResponse("surla", "report_tests_finished", resp.StatusCode, string(body))
 		}
 	}
 }
@@ -4763,8 +4765,7 @@ func unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem(v 
 // *BuilderProgressResponseBody.
 func unmarshalBuilderProgressResponseBodyToSurlaBuilderProgress(v *BuilderProgressResponseBody) *surla.BuilderProgress {
 	res := &surla.BuilderProgress{
-		State: *v.State,
-		Read:  *v.Read,
+		Read: *v.Read,
 	}
 
 	return res
@@ -4881,24 +4882,24 @@ func unmarshalStartedBuildResponseBodyToSurlaStartedBuild(v *StartedBuildRespons
 	return res
 }
 
-// unmarshalBuildAssignmentResponseBodyToSurlaBuildAssignment builds a value of
-// type *surla.BuildAssignment from a value of type
-// *BuildAssignmentResponseBody.
-func unmarshalBuildAssignmentResponseBodyToSurlaBuildAssignment(v *BuildAssignmentResponseBody) *surla.BuildAssignment {
-	res := &surla.BuildAssignment{
+// unmarshalBuilderAssignmentResponseBodyToSurlaBuilderAssignment builds a
+// value of type *surla.BuilderAssignment from a value of type
+// *BuilderAssignmentResponseBody.
+func unmarshalBuilderAssignmentResponseBodyToSurlaBuilderAssignment(v *BuilderAssignmentResponseBody) *surla.BuilderAssignment {
+	res := &surla.BuilderAssignment{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
+		Read:            *v.Read,
 	}
-	res.Progress = unmarshalBuilderProgressResponseBodyToSurlaBuilderProgress(v.Progress)
 
 	return res
 }
 
-// unmarshalTestAssignmentItemResponseBodyToSurlaTestAssignmentItem builds a
-// value of type *surla.TestAssignmentItem from a value of type
-// *TestAssignmentItemResponseBody.
-func unmarshalTestAssignmentItemResponseBodyToSurlaTestAssignmentItem(v *TestAssignmentItemResponseBody) *surla.TestAssignmentItem {
-	res := &surla.TestAssignmentItem{
+// unmarshalTestWriterAssignmentItemResponseBodyToSurlaTestWriterAssignmentItem
+// builds a value of type *surla.TestWriterAssignmentItem from a value of type
+// *TestWriterAssignmentItemResponseBody.
+func unmarshalTestWriterAssignmentItemResponseBodyToSurlaTestWriterAssignmentItem(v *TestWriterAssignmentItemResponseBody) *surla.TestWriterAssignmentItem {
+	res := &surla.TestWriterAssignmentItem{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
 	}

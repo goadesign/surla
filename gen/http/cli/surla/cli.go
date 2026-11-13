@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|list-changes|wait-for-changes|start-build|get-build|list-build-assignments|get-build-assignment|list-test-assignments|get-test-assignment|report-tests)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -162,19 +162,19 @@ func ParseEndpoint(
 		surlaGetBuildFlags        = flag.NewFlagSet("get-build", flag.ExitOnError)
 		surlaGetBuildChangeIDFlag = new(cliStringFlag)
 
-		surlaListBuildAssignmentsFlags = flag.NewFlagSet("list-build-assignments", flag.ExitOnError)
+		surlaListBuilderAssignmentsFlags = flag.NewFlagSet("list-builder-assignments", flag.ExitOnError)
 
-		surlaGetBuildAssignmentFlags        = flag.NewFlagSet("get-build-assignment", flag.ExitOnError)
-		surlaGetBuildAssignmentChangeIDFlag = new(cliStringFlag)
+		surlaGetBuilderAssignmentFlags        = flag.NewFlagSet("get-builder-assignment", flag.ExitOnError)
+		surlaGetBuilderAssignmentChangeIDFlag = new(cliStringFlag)
 
-		surlaListTestAssignmentsFlags = flag.NewFlagSet("list-test-assignments", flag.ExitOnError)
+		surlaListTestWriterAssignmentsFlags = flag.NewFlagSet("list-test-writer-assignments", flag.ExitOnError)
 
-		surlaGetTestAssignmentFlags        = flag.NewFlagSet("get-test-assignment", flag.ExitOnError)
-		surlaGetTestAssignmentChangeIDFlag = new(cliStringFlag)
+		surlaGetTestWriterAssignmentFlags        = flag.NewFlagSet("get-test-writer-assignment", flag.ExitOnError)
+		surlaGetTestWriterAssignmentChangeIDFlag = new(cliStringFlag)
 
-		surlaReportTestsFlags        = flag.NewFlagSet("report-tests", flag.ExitOnError)
-		surlaReportTestsBodyFlag     = new(cliStringFlag)
-		surlaReportTestsChangeIDFlag = new(cliStringFlag)
+		surlaReportTestsFinishedFlags        = flag.NewFlagSet("report-tests-finished", flag.ExitOnError)
+		surlaReportTestsFinishedBodyFlag     = new(cliStringFlag)
+		surlaReportTestsFinishedChangeIDFlag = new(cliStringFlag)
 	)
 	projectAddAgentFlags.Var(projectAddAgentBodyFlag, "body", "")
 	projectRemoveAgentFlags.Var(projectRemoveAgentActorIDFlag, "actor-id", "Agent identifier.")
@@ -201,10 +201,10 @@ func ParseEndpoint(
 	surlaStartBuildFlags.Var(surlaStartBuildBodyFlag, "body", "")
 	surlaStartBuildFlags.Var(surlaStartBuildChangeIDFlag, "change-id", "Confirmed Change Card identifier.")
 	surlaGetBuildFlags.Var(surlaGetBuildChangeIDFlag, "change-id", "Change Card identifier.")
-	surlaGetBuildAssignmentFlags.Var(surlaGetBuildAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_build_assignments.")
-	surlaGetTestAssignmentFlags.Var(surlaGetTestAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_test_assignments.")
-	surlaReportTestsFlags.Var(surlaReportTestsBodyFlag, "body", "")
-	surlaReportTestsFlags.Var(surlaReportTestsChangeIDFlag, "change-id", "Change Card identifier from your test assignment.")
+	surlaGetBuilderAssignmentFlags.Var(surlaGetBuilderAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_builder_assignments.")
+	surlaGetTestWriterAssignmentFlags.Var(surlaGetTestWriterAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_test_writer_assignments.")
+	surlaReportTestsFinishedFlags.Var(surlaReportTestsFinishedBodyFlag, "body", "")
+	surlaReportTestsFinishedFlags.Var(surlaReportTestsFinishedChangeIDFlag, "change-id", "Change Card identifier from your test assignment.")
 
 	projectFlags.Usage = projectUsage
 	projectIdentityFlags.Usage = projectIdentityUsage
@@ -242,11 +242,11 @@ func ParseEndpoint(
 	surlaWaitForChangesFlags.Usage = surlaWaitForChangesUsage
 	surlaStartBuildFlags.Usage = surlaStartBuildUsage
 	surlaGetBuildFlags.Usage = surlaGetBuildUsage
-	surlaListBuildAssignmentsFlags.Usage = surlaListBuildAssignmentsUsage
-	surlaGetBuildAssignmentFlags.Usage = surlaGetBuildAssignmentUsage
-	surlaListTestAssignmentsFlags.Usage = surlaListTestAssignmentsUsage
-	surlaGetTestAssignmentFlags.Usage = surlaGetTestAssignmentUsage
-	surlaReportTestsFlags.Usage = surlaReportTestsUsage
+	surlaListBuilderAssignmentsFlags.Usage = surlaListBuilderAssignmentsUsage
+	surlaGetBuilderAssignmentFlags.Usage = surlaGetBuilderAssignmentUsage
+	surlaListTestWriterAssignmentsFlags.Usage = surlaListTestWriterAssignmentsUsage
+	surlaGetTestWriterAssignmentFlags.Usage = surlaGetTestWriterAssignmentUsage
+	surlaReportTestsFinishedFlags.Usage = surlaReportTestsFinishedUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -387,20 +387,20 @@ func ParseEndpoint(
 			case "get-build":
 				epf = surlaGetBuildFlags
 
-			case "list-build-assignments":
-				epf = surlaListBuildAssignmentsFlags
+			case "list-builder-assignments":
+				epf = surlaListBuilderAssignmentsFlags
 
-			case "get-build-assignment":
-				epf = surlaGetBuildAssignmentFlags
+			case "get-builder-assignment":
+				epf = surlaGetBuilderAssignmentFlags
 
-			case "list-test-assignments":
-				epf = surlaListTestAssignmentsFlags
+			case "list-test-writer-assignments":
+				epf = surlaListTestWriterAssignmentsFlags
 
-			case "get-test-assignment":
-				epf = surlaGetTestAssignmentFlags
+			case "get-test-writer-assignment":
+				epf = surlaGetTestWriterAssignmentFlags
 
-			case "report-tests":
-				epf = surlaReportTestsFlags
+			case "report-tests-finished":
+				epf = surlaReportTestsFinishedFlags
 
 			}
 
@@ -520,19 +520,19 @@ func ParseEndpoint(
 			case "get-build":
 				endpoint = c.GetBuild()
 				data, err = surlac.BuildGetBuildPayload(surlaGetBuildChangeIDFlag.value)
-			case "list-build-assignments":
-				endpoint = c.ListBuildAssignments()
-			case "get-build-assignment":
-				endpoint = c.GetBuildAssignment()
-				data, err = surlac.BuildGetBuildAssignmentPayload(surlaGetBuildAssignmentChangeIDFlag.value)
-			case "list-test-assignments":
-				endpoint = c.ListTestAssignments()
-			case "get-test-assignment":
-				endpoint = c.GetTestAssignment()
-				data, err = surlac.BuildGetTestAssignmentPayload(surlaGetTestAssignmentChangeIDFlag.value)
-			case "report-tests":
-				endpoint = c.ReportTests()
-				data, err = surlac.BuildReportTestsPayload(surlaReportTestsBodyFlag.value, surlaReportTestsChangeIDFlag.value)
+			case "list-builder-assignments":
+				endpoint = c.ListBuilderAssignments()
+			case "get-builder-assignment":
+				endpoint = c.GetBuilderAssignment()
+				data, err = surlac.BuildGetBuilderAssignmentPayload(surlaGetBuilderAssignmentChangeIDFlag.value)
+			case "list-test-writer-assignments":
+				endpoint = c.ListTestWriterAssignments()
+			case "get-test-writer-assignment":
+				endpoint = c.GetTestWriterAssignment()
+				data, err = surlac.BuildGetTestWriterAssignmentPayload(surlaGetTestWriterAssignmentChangeIDFlag.value)
+			case "report-tests-finished":
+				endpoint = c.ReportTestsFinished()
+				data, err = surlac.BuildReportTestsFinishedPayload(surlaReportTestsFinishedBodyFlag.value, surlaReportTestsFinishedChangeIDFlag.value)
 			}
 		}
 	}
@@ -691,12 +691,12 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
 	fmt.Fprintln(os.Stderr, `    start-build: The user starts building a confirmed change at its revision in force. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the one in force, is refused and nothing changes.`)
-	fmt.Fprintln(os.Stderr, `    get-build: Return a change's build: not_started until the user starts one; otherwise the revision built, when, both assignments' states and whether each was read, and whether the build is for the change's revision in force. Reading changes nothing.`)
-	fmt.Fprintln(os.Stderr, `    list-build-assignments: List the builder's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
-	fmt.Fprintln(os.Stderr, `    get-build-assignment: Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
-	fmt.Fprintln(os.Stderr, `    list-test-assignments: List the test writer's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
-	fmt.Fprintln(os.Stderr, `    get-test-assignment: Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
-	fmt.Fprintln(os.Stderr, `    report-tests: The test writer reports that its tests for a change at the build's revision are finished, which asks Surla to look at them. Surla records the report; the assignment's state becomes reported. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-build: Return a change's build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    list-builder-assignments: List the builder's assignments, one per change the user built, most recently started first, each with its change, revision and whether it was read. Reading the list records nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-builder-assignment: Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
+	fmt.Fprintln(os.Stderr, `    list-test-writer-assignments: List the test writer's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
+	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished, which asks Surla to look at them. Surla records the report; the assignment's state becomes reported. A report for another revision is refused and changes nothing.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -1171,7 +1171,7 @@ func surlaGetBuildUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return a change's build: not_started until the user starts one; otherwise the revision built, when, both assignments' states and whether each was read, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `Return a change's build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
@@ -1181,25 +1181,25 @@ func surlaGetBuildUsage() {
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-build --change-id \"svp\"")
 }
 
-func surlaListBuildAssignmentsUsage() {
+func surlaListBuilderAssignmentsUsage() {
 	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla list-build-assignments", os.Args[0])
+	fmt.Fprintf(os.Stderr, "%s [flags] surla list-builder-assignments", os.Args[0])
 	fmt.Fprintln(os.Stderr)
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `List the builder's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
+	fmt.Fprintln(os.Stderr, `List the builder's assignments, one per change the user built, most recently started first, each with its change, revision and whether it was read. Reading the list records nothing.`)
 
 	// Flags list
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-build-assignments")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-builder-assignments")
 }
 
-func surlaGetBuildAssignmentUsage() {
+func surlaGetBuilderAssignmentUsage() {
 	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla get-build-assignment", os.Args[0])
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-builder-assignment", os.Args[0])
 	fmt.Fprint(os.Stderr, " -change-id STRING")
 	fmt.Fprintln(os.Stderr)
 
@@ -1208,16 +1208,16 @@ func surlaGetBuildAssignmentUsage() {
 	fmt.Fprintln(os.Stderr, `Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
 
 	// Flags list
-	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_build_assignments.`)
+	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_builder_assignments.`)
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-build-assignment --change-id \"7o2\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-builder-assignment --change-id \"cly\"")
 }
 
-func surlaListTestAssignmentsUsage() {
+func surlaListTestWriterAssignmentsUsage() {
 	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla list-test-assignments", os.Args[0])
+	fmt.Fprintf(os.Stderr, "%s [flags] surla list-test-writer-assignments", os.Args[0])
 	fmt.Fprintln(os.Stderr)
 
 	// Description
@@ -1228,12 +1228,12 @@ func surlaListTestAssignmentsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-test-assignments")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-test-writer-assignments")
 }
 
-func surlaGetTestAssignmentUsage() {
+func surlaGetTestWriterAssignmentUsage() {
 	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla get-test-assignment", os.Args[0])
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-test-writer-assignment", os.Args[0])
 	fmt.Fprint(os.Stderr, " -change-id STRING")
 	fmt.Fprintln(os.Stderr)
 
@@ -1242,16 +1242,16 @@ func surlaGetTestAssignmentUsage() {
 	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
 
 	// Flags list
-	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_test_assignments.`)
+	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_test_writer_assignments.`)
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-test-assignment --change-id \"zta\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-test-writer-assignment --change-id \"2k\"")
 }
 
-func surlaReportTestsUsage() {
+func surlaReportTestsFinishedUsage() {
 	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla report-tests", os.Args[0])
+	fmt.Fprintf(os.Stderr, "%s [flags] surla report-tests-finished", os.Args[0])
 	fmt.Fprint(os.Stderr, " -body JSON")
 	fmt.Fprint(os.Stderr, " -change-id STRING")
 	fmt.Fprintln(os.Stderr)
@@ -1266,5 +1266,5 @@ func surlaReportTestsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla report-tests --body '{\n      \"request_revision\": \"5\"\n   }' --change-id \"v7r\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla report-tests-finished --body '{\n      \"request_revision\": \"td\"\n   }' --change-id \"7\"")
 }

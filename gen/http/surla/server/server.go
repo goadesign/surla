@@ -18,39 +18,39 @@ import (
 
 // Server lists the surla service endpoint HTTP handlers.
 type Server struct {
-	Mounts               []*MountPoint
-	GoldenPath           http.Handler
-	ProposeChange        http.Handler
-	ReviseChange         http.Handler
-	ConfirmIntent        http.Handler
-	GetChange            http.Handler
-	PreviewArchitecture  http.Handler
-	DraftOverride        http.Handler
-	StartLiveTarget      http.Handler
-	StopLiveTarget       http.Handler
-	VerifyChange         http.Handler
-	GetVerification      http.Handler
-	ListVerifications    http.Handler
-	ApproveMerge         http.Handler
-	Diff                 http.Handler
-	ConfigureModel       http.Handler
-	InitProject          http.Handler
-	GenerateCode         http.Handler
-	CheckProject         http.Handler
-	UpdateDependencies   http.Handler
-	ReadCheckOutput      http.Handler
-	ListTraces           http.Handler
-	RefreshStory         http.Handler
-	GetStoryRefresh      http.Handler
-	ListChanges          http.Handler
-	WaitForChanges       http.Handler
-	StartBuild           http.Handler
-	GetBuild             http.Handler
-	ListBuildAssignments http.Handler
-	GetBuildAssignment   http.Handler
-	ListTestAssignments  http.Handler
-	GetTestAssignment    http.Handler
-	ReportTests          http.Handler
+	Mounts                    []*MountPoint
+	GoldenPath                http.Handler
+	ProposeChange             http.Handler
+	ReviseChange              http.Handler
+	ConfirmIntent             http.Handler
+	GetChange                 http.Handler
+	PreviewArchitecture       http.Handler
+	DraftOverride             http.Handler
+	StartLiveTarget           http.Handler
+	StopLiveTarget            http.Handler
+	VerifyChange              http.Handler
+	GetVerification           http.Handler
+	ListVerifications         http.Handler
+	ApproveMerge              http.Handler
+	Diff                      http.Handler
+	ConfigureModel            http.Handler
+	InitProject               http.Handler
+	GenerateCode              http.Handler
+	CheckProject              http.Handler
+	UpdateDependencies        http.Handler
+	ReadCheckOutput           http.Handler
+	ListTraces                http.Handler
+	RefreshStory              http.Handler
+	GetStoryRefresh           http.Handler
+	ListChanges               http.Handler
+	WaitForChanges            http.Handler
+	StartBuild                http.Handler
+	GetBuild                  http.Handler
+	ListBuilderAssignments    http.Handler
+	GetBuilderAssignment      http.Handler
+	ListTestWriterAssignments http.Handler
+	GetTestWriterAssignment   http.Handler
+	ReportTestsFinished       http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -107,44 +107,44 @@ func New(
 			{"WaitForChanges", "GET", "/change-updates"},
 			{"StartBuild", "POST", "/changes/{change_id}/build"},
 			{"GetBuild", "GET", "/changes/{change_id}/build"},
-			{"ListBuildAssignments", "GET", "/assignments/build"},
-			{"GetBuildAssignment", "GET", "/assignments/build/{change_id}"},
-			{"ListTestAssignments", "GET", "/assignments/tests"},
-			{"GetTestAssignment", "GET", "/assignments/tests/{change_id}"},
-			{"ReportTests", "POST", "/assignments/tests/{change_id}/report"},
+			{"ListBuilderAssignments", "GET", "/assignments/builder"},
+			{"GetBuilderAssignment", "GET", "/assignments/builder/{change_id}"},
+			{"ListTestWriterAssignments", "GET", "/assignments/test-writer"},
+			{"GetTestWriterAssignment", "GET", "/assignments/test-writer/{change_id}"},
+			{"ReportTestsFinished", "POST", "/assignments/test-writer/{change_id}/finished"},
 		},
-		GoldenPath:           NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
-		ProposeChange:        NewProposeChangeHandler(e.ProposeChange, mux, decoder, encoder, errhandler, formatter),
-		ReviseChange:         NewReviseChangeHandler(e.ReviseChange, mux, decoder, encoder, errhandler, formatter),
-		ConfirmIntent:        NewConfirmIntentHandler(e.ConfirmIntent, mux, decoder, encoder, errhandler, formatter),
-		GetChange:            NewGetChangeHandler(e.GetChange, mux, decoder, encoder, errhandler, formatter),
-		PreviewArchitecture:  NewPreviewArchitectureHandler(e.PreviewArchitecture, mux, decoder, encoder, errhandler, formatter),
-		DraftOverride:        NewDraftOverrideHandler(e.DraftOverride, mux, decoder, encoder, errhandler, formatter),
-		StartLiveTarget:      NewStartLiveTargetHandler(e.StartLiveTarget, mux, decoder, encoder, errhandler, formatter),
-		StopLiveTarget:       NewStopLiveTargetHandler(e.StopLiveTarget, mux, decoder, encoder, errhandler, formatter),
-		VerifyChange:         NewVerifyChangeHandler(e.VerifyChange, mux, decoder, encoder, errhandler, formatter),
-		GetVerification:      NewGetVerificationHandler(e.GetVerification, mux, decoder, encoder, errhandler, formatter),
-		ListVerifications:    NewListVerificationsHandler(e.ListVerifications, mux, decoder, encoder, errhandler, formatter),
-		ApproveMerge:         NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
-		Diff:                 NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
-		ConfigureModel:       NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
-		InitProject:          NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
-		GenerateCode:         NewGenerateCodeHandler(e.GenerateCode, mux, decoder, encoder, errhandler, formatter),
-		CheckProject:         NewCheckProjectHandler(e.CheckProject, mux, decoder, encoder, errhandler, formatter),
-		UpdateDependencies:   NewUpdateDependenciesHandler(e.UpdateDependencies, mux, decoder, encoder, errhandler, formatter),
-		ReadCheckOutput:      NewReadCheckOutputHandler(e.ReadCheckOutput, mux, decoder, encoder, errhandler, formatter),
-		ListTraces:           NewListTracesHandler(e.ListTraces, mux, decoder, encoder, errhandler, formatter),
-		RefreshStory:         NewRefreshStoryHandler(e.RefreshStory, mux, decoder, encoder, errhandler, formatter),
-		GetStoryRefresh:      NewGetStoryRefreshHandler(e.GetStoryRefresh, mux, decoder, encoder, errhandler, formatter),
-		ListChanges:          NewListChangesHandler(e.ListChanges, mux, decoder, encoder, errhandler, formatter),
-		WaitForChanges:       NewWaitForChangesHandler(e.WaitForChanges, mux, decoder, encoder, errhandler, formatter),
-		StartBuild:           NewStartBuildHandler(e.StartBuild, mux, decoder, encoder, errhandler, formatter),
-		GetBuild:             NewGetBuildHandler(e.GetBuild, mux, decoder, encoder, errhandler, formatter),
-		ListBuildAssignments: NewListBuildAssignmentsHandler(e.ListBuildAssignments, mux, decoder, encoder, errhandler, formatter),
-		GetBuildAssignment:   NewGetBuildAssignmentHandler(e.GetBuildAssignment, mux, decoder, encoder, errhandler, formatter),
-		ListTestAssignments:  NewListTestAssignmentsHandler(e.ListTestAssignments, mux, decoder, encoder, errhandler, formatter),
-		GetTestAssignment:    NewGetTestAssignmentHandler(e.GetTestAssignment, mux, decoder, encoder, errhandler, formatter),
-		ReportTests:          NewReportTestsHandler(e.ReportTests, mux, decoder, encoder, errhandler, formatter),
+		GoldenPath:                NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
+		ProposeChange:             NewProposeChangeHandler(e.ProposeChange, mux, decoder, encoder, errhandler, formatter),
+		ReviseChange:              NewReviseChangeHandler(e.ReviseChange, mux, decoder, encoder, errhandler, formatter),
+		ConfirmIntent:             NewConfirmIntentHandler(e.ConfirmIntent, mux, decoder, encoder, errhandler, formatter),
+		GetChange:                 NewGetChangeHandler(e.GetChange, mux, decoder, encoder, errhandler, formatter),
+		PreviewArchitecture:       NewPreviewArchitectureHandler(e.PreviewArchitecture, mux, decoder, encoder, errhandler, formatter),
+		DraftOverride:             NewDraftOverrideHandler(e.DraftOverride, mux, decoder, encoder, errhandler, formatter),
+		StartLiveTarget:           NewStartLiveTargetHandler(e.StartLiveTarget, mux, decoder, encoder, errhandler, formatter),
+		StopLiveTarget:            NewStopLiveTargetHandler(e.StopLiveTarget, mux, decoder, encoder, errhandler, formatter),
+		VerifyChange:              NewVerifyChangeHandler(e.VerifyChange, mux, decoder, encoder, errhandler, formatter),
+		GetVerification:           NewGetVerificationHandler(e.GetVerification, mux, decoder, encoder, errhandler, formatter),
+		ListVerifications:         NewListVerificationsHandler(e.ListVerifications, mux, decoder, encoder, errhandler, formatter),
+		ApproveMerge:              NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
+		Diff:                      NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
+		ConfigureModel:            NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
+		InitProject:               NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
+		GenerateCode:              NewGenerateCodeHandler(e.GenerateCode, mux, decoder, encoder, errhandler, formatter),
+		CheckProject:              NewCheckProjectHandler(e.CheckProject, mux, decoder, encoder, errhandler, formatter),
+		UpdateDependencies:        NewUpdateDependenciesHandler(e.UpdateDependencies, mux, decoder, encoder, errhandler, formatter),
+		ReadCheckOutput:           NewReadCheckOutputHandler(e.ReadCheckOutput, mux, decoder, encoder, errhandler, formatter),
+		ListTraces:                NewListTracesHandler(e.ListTraces, mux, decoder, encoder, errhandler, formatter),
+		RefreshStory:              NewRefreshStoryHandler(e.RefreshStory, mux, decoder, encoder, errhandler, formatter),
+		GetStoryRefresh:           NewGetStoryRefreshHandler(e.GetStoryRefresh, mux, decoder, encoder, errhandler, formatter),
+		ListChanges:               NewListChangesHandler(e.ListChanges, mux, decoder, encoder, errhandler, formatter),
+		WaitForChanges:            NewWaitForChangesHandler(e.WaitForChanges, mux, decoder, encoder, errhandler, formatter),
+		StartBuild:                NewStartBuildHandler(e.StartBuild, mux, decoder, encoder, errhandler, formatter),
+		GetBuild:                  NewGetBuildHandler(e.GetBuild, mux, decoder, encoder, errhandler, formatter),
+		ListBuilderAssignments:    NewListBuilderAssignmentsHandler(e.ListBuilderAssignments, mux, decoder, encoder, errhandler, formatter),
+		GetBuilderAssignment:      NewGetBuilderAssignmentHandler(e.GetBuilderAssignment, mux, decoder, encoder, errhandler, formatter),
+		ListTestWriterAssignments: NewListTestWriterAssignmentsHandler(e.ListTestWriterAssignments, mux, decoder, encoder, errhandler, formatter),
+		GetTestWriterAssignment:   NewGetTestWriterAssignmentHandler(e.GetTestWriterAssignment, mux, decoder, encoder, errhandler, formatter),
+		ReportTestsFinished:       NewReportTestsFinishedHandler(e.ReportTestsFinished, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -180,11 +180,11 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.WaitForChanges = m(s.WaitForChanges)
 	s.StartBuild = m(s.StartBuild)
 	s.GetBuild = m(s.GetBuild)
-	s.ListBuildAssignments = m(s.ListBuildAssignments)
-	s.GetBuildAssignment = m(s.GetBuildAssignment)
-	s.ListTestAssignments = m(s.ListTestAssignments)
-	s.GetTestAssignment = m(s.GetTestAssignment)
-	s.ReportTests = m(s.ReportTests)
+	s.ListBuilderAssignments = m(s.ListBuilderAssignments)
+	s.GetBuilderAssignment = m(s.GetBuilderAssignment)
+	s.ListTestWriterAssignments = m(s.ListTestWriterAssignments)
+	s.GetTestWriterAssignment = m(s.GetTestWriterAssignment)
+	s.ReportTestsFinished = m(s.ReportTestsFinished)
 }
 
 // MethodNames returns the methods served.
@@ -219,11 +219,11 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountWaitForChangesHandler(mux, h.WaitForChanges)
 	MountStartBuildHandler(mux, h.StartBuild)
 	MountGetBuildHandler(mux, h.GetBuild)
-	MountListBuildAssignmentsHandler(mux, h.ListBuildAssignments)
-	MountGetBuildAssignmentHandler(mux, h.GetBuildAssignment)
-	MountListTestAssignmentsHandler(mux, h.ListTestAssignments)
-	MountGetTestAssignmentHandler(mux, h.GetTestAssignment)
-	MountReportTestsHandler(mux, h.ReportTests)
+	MountListBuilderAssignmentsHandler(mux, h.ListBuilderAssignments)
+	MountGetBuilderAssignmentHandler(mux, h.GetBuilderAssignment)
+	MountListTestWriterAssignmentsHandler(mux, h.ListTestWriterAssignments)
+	MountGetTestWriterAssignmentHandler(mux, h.GetTestWriterAssignment)
+	MountReportTestsFinishedHandler(mux, h.ReportTestsFinished)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -1613,21 +1613,21 @@ func NewGetBuildHandler(
 	})
 }
 
-// MountListBuildAssignmentsHandler configures the mux to serve the "surla"
-// service "list_build_assignments" endpoint.
-func MountListBuildAssignmentsHandler(mux goahttp.Muxer, h http.Handler) {
+// MountListBuilderAssignmentsHandler configures the mux to serve the "surla"
+// service "list_builder_assignments" endpoint.
+func MountListBuilderAssignmentsHandler(mux goahttp.Muxer, h http.Handler) {
 	f, ok := h.(http.HandlerFunc)
 	if !ok {
 		f = func(w http.ResponseWriter, r *http.Request) {
 			h.ServeHTTP(w, r)
 		}
 	}
-	mux.Handle("GET", "/assignments/build", f)
+	mux.Handle("GET", "/assignments/builder", f)
 }
 
-// NewListBuildAssignmentsHandler creates a HTTP handler which loads the HTTP
-// request and calls the "surla" service "list_build_assignments" endpoint.
-func NewListBuildAssignmentsHandler(
+// NewListBuilderAssignmentsHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "list_builder_assignments" endpoint.
+func NewListBuilderAssignmentsHandler(
 	endpoint goa.Endpoint,
 	mux goahttp.Muxer,
 	decoder func(*http.Request) goahttp.Decoder,
@@ -1636,12 +1636,12 @@ func NewListBuildAssignmentsHandler(
 	formatter func(ctx context.Context, err error) goahttp.Statuser,
 ) http.Handler {
 	var (
-		encodeResponse = EncodeListBuildAssignmentsResponse(encoder)
-		encodeError    = EncodeListBuildAssignmentsError(encoder, formatter)
+		encodeResponse = EncodeListBuilderAssignmentsResponse(encoder)
+		encodeError    = EncodeListBuilderAssignmentsError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "list_build_assignments")
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_builder_assignments")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		var err error
 		res, err := endpoint(ctx, nil)
@@ -1659,21 +1659,21 @@ func NewListBuildAssignmentsHandler(
 	})
 }
 
-// MountGetBuildAssignmentHandler configures the mux to serve the "surla"
-// service "get_build_assignment" endpoint.
-func MountGetBuildAssignmentHandler(mux goahttp.Muxer, h http.Handler) {
+// MountGetBuilderAssignmentHandler configures the mux to serve the "surla"
+// service "get_builder_assignment" endpoint.
+func MountGetBuilderAssignmentHandler(mux goahttp.Muxer, h http.Handler) {
 	f, ok := h.(http.HandlerFunc)
 	if !ok {
 		f = func(w http.ResponseWriter, r *http.Request) {
 			h.ServeHTTP(w, r)
 		}
 	}
-	mux.Handle("GET", "/assignments/build/{change_id}", f)
+	mux.Handle("GET", "/assignments/builder/{change_id}", f)
 }
 
-// NewGetBuildAssignmentHandler creates a HTTP handler which loads the HTTP
-// request and calls the "surla" service "get_build_assignment" endpoint.
-func NewGetBuildAssignmentHandler(
+// NewGetBuilderAssignmentHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "get_builder_assignment" endpoint.
+func NewGetBuilderAssignmentHandler(
 	endpoint goa.Endpoint,
 	mux goahttp.Muxer,
 	decoder func(*http.Request) goahttp.Decoder,
@@ -1682,13 +1682,13 @@ func NewGetBuildAssignmentHandler(
 	formatter func(ctx context.Context, err error) goahttp.Statuser,
 ) http.Handler {
 	var (
-		decodeRequest  = DecodeGetBuildAssignmentRequest(mux, decoder)
-		encodeResponse = EncodeGetBuildAssignmentResponse(encoder)
-		encodeError    = EncodeGetBuildAssignmentError(encoder, formatter)
+		decodeRequest  = DecodeGetBuilderAssignmentRequest(mux, decoder)
+		encodeResponse = EncodeGetBuilderAssignmentResponse(encoder)
+		encodeError    = EncodeGetBuilderAssignmentError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "get_build_assignment")
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_builder_assignment")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {
@@ -1712,21 +1712,22 @@ func NewGetBuildAssignmentHandler(
 	})
 }
 
-// MountListTestAssignmentsHandler configures the mux to serve the "surla"
-// service "list_test_assignments" endpoint.
-func MountListTestAssignmentsHandler(mux goahttp.Muxer, h http.Handler) {
+// MountListTestWriterAssignmentsHandler configures the mux to serve the
+// "surla" service "list_test_writer_assignments" endpoint.
+func MountListTestWriterAssignmentsHandler(mux goahttp.Muxer, h http.Handler) {
 	f, ok := h.(http.HandlerFunc)
 	if !ok {
 		f = func(w http.ResponseWriter, r *http.Request) {
 			h.ServeHTTP(w, r)
 		}
 	}
-	mux.Handle("GET", "/assignments/tests", f)
+	mux.Handle("GET", "/assignments/test-writer", f)
 }
 
-// NewListTestAssignmentsHandler creates a HTTP handler which loads the HTTP
-// request and calls the "surla" service "list_test_assignments" endpoint.
-func NewListTestAssignmentsHandler(
+// NewListTestWriterAssignmentsHandler creates a HTTP handler which loads the
+// HTTP request and calls the "surla" service "list_test_writer_assignments"
+// endpoint.
+func NewListTestWriterAssignmentsHandler(
 	endpoint goa.Endpoint,
 	mux goahttp.Muxer,
 	decoder func(*http.Request) goahttp.Decoder,
@@ -1735,12 +1736,12 @@ func NewListTestAssignmentsHandler(
 	formatter func(ctx context.Context, err error) goahttp.Statuser,
 ) http.Handler {
 	var (
-		encodeResponse = EncodeListTestAssignmentsResponse(encoder)
-		encodeError    = EncodeListTestAssignmentsError(encoder, formatter)
+		encodeResponse = EncodeListTestWriterAssignmentsResponse(encoder)
+		encodeError    = EncodeListTestWriterAssignmentsError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "list_test_assignments")
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_test_writer_assignments")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		var err error
 		res, err := endpoint(ctx, nil)
@@ -1758,21 +1759,22 @@ func NewListTestAssignmentsHandler(
 	})
 }
 
-// MountGetTestAssignmentHandler configures the mux to serve the "surla"
-// service "get_test_assignment" endpoint.
-func MountGetTestAssignmentHandler(mux goahttp.Muxer, h http.Handler) {
+// MountGetTestWriterAssignmentHandler configures the mux to serve the "surla"
+// service "get_test_writer_assignment" endpoint.
+func MountGetTestWriterAssignmentHandler(mux goahttp.Muxer, h http.Handler) {
 	f, ok := h.(http.HandlerFunc)
 	if !ok {
 		f = func(w http.ResponseWriter, r *http.Request) {
 			h.ServeHTTP(w, r)
 		}
 	}
-	mux.Handle("GET", "/assignments/tests/{change_id}", f)
+	mux.Handle("GET", "/assignments/test-writer/{change_id}", f)
 }
 
-// NewGetTestAssignmentHandler creates a HTTP handler which loads the HTTP
-// request and calls the "surla" service "get_test_assignment" endpoint.
-func NewGetTestAssignmentHandler(
+// NewGetTestWriterAssignmentHandler creates a HTTP handler which loads the
+// HTTP request and calls the "surla" service "get_test_writer_assignment"
+// endpoint.
+func NewGetTestWriterAssignmentHandler(
 	endpoint goa.Endpoint,
 	mux goahttp.Muxer,
 	decoder func(*http.Request) goahttp.Decoder,
@@ -1781,13 +1783,13 @@ func NewGetTestAssignmentHandler(
 	formatter func(ctx context.Context, err error) goahttp.Statuser,
 ) http.Handler {
 	var (
-		decodeRequest  = DecodeGetTestAssignmentRequest(mux, decoder)
-		encodeResponse = EncodeGetTestAssignmentResponse(encoder)
-		encodeError    = EncodeGetTestAssignmentError(encoder, formatter)
+		decodeRequest  = DecodeGetTestWriterAssignmentRequest(mux, decoder)
+		encodeResponse = EncodeGetTestWriterAssignmentResponse(encoder)
+		encodeError    = EncodeGetTestWriterAssignmentError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "get_test_assignment")
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_test_writer_assignment")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {
@@ -1811,21 +1813,21 @@ func NewGetTestAssignmentHandler(
 	})
 }
 
-// MountReportTestsHandler configures the mux to serve the "surla" service
-// "report_tests" endpoint.
-func MountReportTestsHandler(mux goahttp.Muxer, h http.Handler) {
+// MountReportTestsFinishedHandler configures the mux to serve the "surla"
+// service "report_tests_finished" endpoint.
+func MountReportTestsFinishedHandler(mux goahttp.Muxer, h http.Handler) {
 	f, ok := h.(http.HandlerFunc)
 	if !ok {
 		f = func(w http.ResponseWriter, r *http.Request) {
 			h.ServeHTTP(w, r)
 		}
 	}
-	mux.Handle("POST", "/assignments/tests/{change_id}/report", f)
+	mux.Handle("POST", "/assignments/test-writer/{change_id}/finished", f)
 }
 
-// NewReportTestsHandler creates a HTTP handler which loads the HTTP request
-// and calls the "surla" service "report_tests" endpoint.
-func NewReportTestsHandler(
+// NewReportTestsFinishedHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "report_tests_finished" endpoint.
+func NewReportTestsFinishedHandler(
 	endpoint goa.Endpoint,
 	mux goahttp.Muxer,
 	decoder func(*http.Request) goahttp.Decoder,
@@ -1834,13 +1836,13 @@ func NewReportTestsHandler(
 	formatter func(ctx context.Context, err error) goahttp.Statuser,
 ) http.Handler {
 	var (
-		decodeRequest  = DecodeReportTestsRequest(mux, decoder)
-		encodeResponse = EncodeReportTestsResponse(encoder)
-		encodeError    = EncodeReportTestsError(encoder, formatter)
+		decodeRequest  = DecodeReportTestsFinishedRequest(mux, decoder)
+		encodeResponse = EncodeReportTestsFinishedResponse(encoder)
+		encodeError    = EncodeReportTestsFinishedError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
-		ctx = context.WithValue(ctx, goa.MethodKey, "report_tests")
+		ctx = context.WithValue(ctx, goa.MethodKey, "report_tests_finished")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

@@ -220,33 +220,33 @@ type Service interface {
 	// and nothing changes.
 	StartBuild(context.Context, *StartBuildPayload) (res *StartedBuild, err error)
 	// Return a change's build: not_started until the user starts one; otherwise
-	// the revision built, when, both assignments' states and whether each was
-	// read, and whether the build is for the change's revision in force. Reading
-	// changes nothing.
+	// the revision built, when, whether the builder read its assignment, the test
+	// writer's state and whether it read its assignment, and whether the build is
+	// for the change's revision in force. Reading changes nothing.
 	GetBuild(context.Context, *GetBuildPayload) (res *ChangeBuild, err error)
 	// List the builder's assignments, one per change the user built, most recently
-	// started first, each with its change, revision, state and whether it was
-	// read. Reading the list records nothing.
-	ListBuildAssignments(context.Context) (res *BuildAssignmentList, err error)
+	// started first, each with its change, revision and whether it was read.
+	// Reading the list records nothing.
+	ListBuilderAssignments(context.Context) (res *BuilderAssignmentList, err error)
 	// Return the builder's assignment for a change in full and record that the
 	// builder read it at its revision. A new build of the change replaces the
 	// assignment, which then counts as unread.
-	GetBuildAssignment(context.Context, *GetBuildAssignmentPayload) (res *BuildAssignment, err error)
+	GetBuilderAssignment(context.Context, *GetBuilderAssignmentPayload) (res *BuilderAssignment, err error)
 	// List the test writer's assignments, one per change the user built, most
 	// recently started first, each with its change, revision, state and whether it
 	// was read. Reading the list records nothing.
-	ListTestAssignments(context.Context) (res *TestAssignmentList, err error)
+	ListTestWriterAssignments(context.Context) (res *TestWriterAssignmentList, err error)
 	// Return the test writer's assignment for a change in full (the working
 	// folder, the Story as agreed at the built revision, the tests it requires,
 	// and the state with any findings) and record that the test writer read it at
 	// its revision. A new build of the change replaces the assignment, which then
 	// counts as unread.
-	GetTestAssignment(context.Context, *GetTestAssignmentPayload) (res *TestAssignment, err error)
+	GetTestWriterAssignment(context.Context, *GetTestWriterAssignmentPayload) (res *TestWriterAssignment, err error)
 	// The test writer reports that its tests for a change at the build's revision
 	// are finished, which asks Surla to look at them. Surla records the report;
 	// the assignment's state becomes reported. A report for another revision is
 	// refused and changes nothing.
-	ReportTests(context.Context, *ReportTestsPayload) (res *TestAssignmentItem, err error)
+	ReportTestsFinished(context.Context, *ReportTestsFinishedPayload) (res *TestWriterAssignmentItem, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -263,7 +263,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [32]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "list_changes", "wait_for_changes", "start_build", "get_build", "list_build_assignments", "get_build_assignment", "list_test_assignments", "get_test_assignment", "report_tests"}
+var MethodNames = [32]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "list_changes", "wait_for_changes", "start_build", "get_build", "list_builder_assignments", "get_builder_assignment", "list_test_writer_assignments", "get_test_writer_assignment", "report_tests_finished"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -364,35 +364,35 @@ type ArchitecturePreviewResult struct {
 	Banner string
 }
 
-// BuildAssignment is the result type of the surla service get_build_assignment
-// method.
-type BuildAssignment struct {
-	// Change Card to build; get_change takes it.
-	ChangeID string
-	// Change Card revision to build; verify_change takes it.
-	RequestRevision string
-	// Where this assignment stands.
-	Progress *BuilderProgress
-}
-
-// BuildAssignmentList is the result type of the surla service
-// list_build_assignments method.
-type BuildAssignmentList struct {
-	// Assignments, most recently started first; empty when the user has built no
-	// change.
-	Assignments []*BuildAssignment
-}
-
 // The user has not started a build of this change.
 type BuildNotStarted struct {
 }
 
-// Where the builder's assignment for one build stands. Verification of the
-// build's revision, not the assignment, judges the builder's work.
+// BuilderAssignment is the result type of the surla service
+// get_builder_assignment method.
+type BuilderAssignment struct {
+	// Change Card to build; get_change takes it.
+	ChangeID string
+	// Change Card revision to build; verify_change takes it.
+	RequestRevision string
+	// True once you read this assignment in full with get_builder_assignment.
+	Read bool
+}
+
+// BuilderAssignmentList is the result type of the surla service
+// list_builder_assignments method.
+type BuilderAssignmentList struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*BuilderAssignment
+}
+
+// The builder's assignment for one build. It exists from the moment the user
+// starts the build; verification of the build's revision, not the assignment,
+// judges the builder's work.
 type BuilderProgress struct {
-	// The builder's state: assigned from the moment the user starts the build.
-	State string
-	// True once the builder read this assignment in full with get_build_assignment.
+	// True once the builder read this assignment in full with
+	// get_builder_assignment.
 	Read bool
 }
 
@@ -811,16 +811,16 @@ type GenerateCodeResult struct {
 	Warnings []string
 }
 
-// GetBuildAssignmentPayload is the payload type of the surla service
-// get_build_assignment method.
-type GetBuildAssignmentPayload struct {
-	// Change Card identifier from list_build_assignments.
-	ChangeID string
-}
-
 // GetBuildPayload is the payload type of the surla service get_build method.
 type GetBuildPayload struct {
 	// Change Card identifier.
+	ChangeID string
+}
+
+// GetBuilderAssignmentPayload is the payload type of the surla service
+// get_builder_assignment method.
+type GetBuilderAssignmentPayload struct {
+	// Change Card identifier from list_builder_assignments.
 	ChangeID string
 }
 
@@ -830,10 +830,10 @@ type GetChangePayload struct {
 	ChangeID string
 }
 
-// GetTestAssignmentPayload is the payload type of the surla service
-// get_test_assignment method.
-type GetTestAssignmentPayload struct {
-	// Change Card identifier from list_test_assignments.
+// GetTestWriterAssignmentPayload is the payload type of the surla service
+// get_test_writer_assignment method.
+type GetTestWriterAssignmentPayload struct {
+	// Change Card identifier from list_test_writer_assignments.
 	ChangeID string
 }
 
@@ -959,9 +959,9 @@ type ReadCheckOutputPayload struct {
 	Cursor *string
 }
 
-// ReportTestsPayload is the payload type of the surla service report_tests
-// method.
-type ReportTestsPayload struct {
+// ReportTestsFinishedPayload is the payload type of the surla service
+// report_tests_finished method.
+type ReportTestsFinishedPayload struct {
 	// Change Card identifier from your test assignment.
 	ChangeID string
 	// request_revision of your test assignment.
@@ -1136,19 +1136,20 @@ type StorySummaryItem struct {
 	Flows []*StoryFlowItem
 }
 
-// TestAssignment is the result type of the surla service get_test_assignment
-// method.
-type TestAssignment struct {
+// TestWriterAssignment is the result type of the surla service
+// get_test_writer_assignment method.
+type TestWriterAssignment struct {
 	// Change Card the tests are for.
 	ChangeID string
-	// Change Card revision the tests are for; report_tests takes it.
+	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision string
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *TestWriterProgress
-	// Folder to write the tests in: the test writer's own working copy of the
-	// project, which Surla prepares when the user starts the build. Empty when
-	// this server prepares no working copy.
+	// Folder to write the tests in: your own working copy of the project, which
+	// the server prepares when the user starts the build. It is empty until the
+	// server prepares working copies; an empty folder means none was prepared for
+	// this build.
 	WorkingFolder string
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
@@ -1158,10 +1159,10 @@ type TestAssignment struct {
 	RequiredTests []*RequiredTest
 }
 
-// TestAssignmentItem is the result type of the surla service report_tests
-// method.
-type TestAssignmentItem struct {
-	// Change Card the tests are for; get_test_assignment takes it.
+// TestWriterAssignmentItem is the result type of the surla service
+// report_tests_finished method.
+type TestWriterAssignmentItem struct {
+	// Change Card the tests are for; get_test_writer_assignment takes it.
 	ChangeID string
 	// Change Card revision the tests are for.
 	RequestRevision string
@@ -1169,12 +1170,12 @@ type TestAssignmentItem struct {
 	Progress *TestWriterProgress
 }
 
-// TestAssignmentList is the result type of the surla service
-// list_test_assignments method.
-type TestAssignmentList struct {
+// TestWriterAssignmentList is the result type of the surla service
+// list_test_writer_assignments method.
+type TestWriterAssignmentList struct {
 	// Assignments, most recently started first; empty when the user has built no
 	// change.
-	Assignments []*TestAssignmentItem
+	Assignments []*TestWriterAssignmentItem
 }
 
 // Where the test writer's assignment for one build stands.
@@ -1183,7 +1184,7 @@ type TestWriterProgress struct {
 	// or accepted with the commit Surla recorded.
 	Tests Tests
 	// True once the test writer read this assignment in full with
-	// get_test_assignment.
+	// get_test_writer_assignment.
 	Read bool
 }
 
@@ -1868,63 +1869,6 @@ func validatejsonArchitecturePreviewResultTransport(value *jsonArchitecturePrevi
 	return err
 }
 
-// jsonBuildAssignmentListTransport stores JSON fields until they have been validated.
-type jsonBuildAssignmentListTransport struct {
-	// Assignments, most recently started first; empty when the user has built no
-	// change.
-	Assignments []*jsonBuildAssignmentTransport `json:"assignments"`
-}
-
-// validatejsonBuildAssignmentListTransport checks decoded JSON before it becomes a service value.
-func validatejsonBuildAssignmentListTransport(value *jsonBuildAssignmentListTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Assignments == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
-	}
-	for _, e := range value.Assignments {
-		if e != nil {
-			if err2 := validatejsonBuildAssignmentTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// jsonBuildAssignmentTransport stores JSON fields until they have been validated.
-type jsonBuildAssignmentTransport struct {
-	// Change Card to build; get_change takes it.
-	ChangeID *string `json:"change_id"`
-	// Change Card revision to build; verify_change takes it.
-	RequestRevision *string `json:"request_revision"`
-	// Where this assignment stands.
-	Progress *jsonBuilderProgressTransport `json:"progress"`
-}
-
-// validatejsonBuildAssignmentTransport checks decoded JSON before it becomes a service value.
-func validatejsonBuildAssignmentTransport(value *jsonBuildAssignmentTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.ChangeID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
-	}
-	if value.RequestRevision == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
-	}
-	if value.Progress == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
-	}
-	if value.Progress != nil {
-		if err2 := validatejsonBuilderProgressTransport(value.Progress); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	return err
-}
-
 // jsonBuildNotStartedTransport stores JSON fields until they have been validated.
 type jsonBuildNotStartedTransport struct {
 }
@@ -1938,11 +1882,62 @@ func validatejsonBuildNotStartedTransport(value *jsonBuildNotStartedTransport) (
 	return err
 }
 
+// jsonBuilderAssignmentListTransport stores JSON fields until they have been validated.
+type jsonBuilderAssignmentListTransport struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*jsonBuilderAssignmentTransport `json:"assignments"`
+}
+
+// validatejsonBuilderAssignmentListTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuilderAssignmentListTransport(value *jsonBuilderAssignmentListTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
+	}
+	for _, e := range value.Assignments {
+		if e != nil {
+			if err2 := validatejsonBuilderAssignmentTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonBuilderAssignmentTransport stores JSON fields until they have been validated.
+type jsonBuilderAssignmentTransport struct {
+	// Change Card to build; get_change takes it.
+	ChangeID *string `json:"change_id"`
+	// Change Card revision to build; verify_change takes it.
+	RequestRevision *string `json:"request_revision"`
+	// True once you read this assignment in full with get_builder_assignment.
+	Read *bool `json:"read"`
+}
+
+// validatejsonBuilderAssignmentTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuilderAssignmentTransport(value *jsonBuilderAssignmentTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	return err
+}
+
 // jsonBuilderProgressTransport stores JSON fields until they have been validated.
 type jsonBuilderProgressTransport struct {
-	// The builder's state: assigned from the moment the user starts the build.
-	State *string `json:"state"`
-	// True once the builder read this assignment in full with get_build_assignment.
+	// True once the builder read this assignment in full with
+	// get_builder_assignment.
 	Read *bool `json:"read"`
 }
 
@@ -1951,16 +1946,8 @@ func validatejsonBuilderProgressTransport(value *jsonBuilderProgressTransport) (
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
-	if value.State == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
-	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
-	}
-	if value.State != nil {
-		if !(*value.State == "assigned") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"assigned"}))
-		}
 	}
 	return err
 }
@@ -3806,9 +3793,9 @@ func validatejsonStorySummaryItemTransport(value *jsonStorySummaryItemTransport)
 	return err
 }
 
-// jsonTestAssignmentItemTransport stores JSON fields until they have been validated.
-type jsonTestAssignmentItemTransport struct {
-	// Change Card the tests are for; get_test_assignment takes it.
+// jsonTestWriterAssignmentItemTransport stores JSON fields until they have been validated.
+type jsonTestWriterAssignmentItemTransport struct {
+	// Change Card the tests are for; get_test_writer_assignment takes it.
 	ChangeID *string `json:"change_id"`
 	// Change Card revision the tests are for.
 	RequestRevision *string `json:"request_revision"`
@@ -3816,8 +3803,8 @@ type jsonTestAssignmentItemTransport struct {
 	Progress *jsonTestWriterProgressTransport `json:"progress"`
 }
 
-// validatejsonTestAssignmentItemTransport checks decoded JSON before it becomes a service value.
-func validatejsonTestAssignmentItemTransport(value *jsonTestAssignmentItemTransport) (err error) {
+// validatejsonTestWriterAssignmentItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestWriterAssignmentItemTransport(value *jsonTestWriterAssignmentItemTransport) (err error) {
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
@@ -3838,15 +3825,15 @@ func validatejsonTestAssignmentItemTransport(value *jsonTestAssignmentItemTransp
 	return err
 }
 
-// jsonTestAssignmentListTransport stores JSON fields until they have been validated.
-type jsonTestAssignmentListTransport struct {
+// jsonTestWriterAssignmentListTransport stores JSON fields until they have been validated.
+type jsonTestWriterAssignmentListTransport struct {
 	// Assignments, most recently started first; empty when the user has built no
 	// change.
-	Assignments []*jsonTestAssignmentItemTransport `json:"assignments"`
+	Assignments []*jsonTestWriterAssignmentItemTransport `json:"assignments"`
 }
 
-// validatejsonTestAssignmentListTransport checks decoded JSON before it becomes a service value.
-func validatejsonTestAssignmentListTransport(value *jsonTestAssignmentListTransport) (err error) {
+// validatejsonTestWriterAssignmentListTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestWriterAssignmentListTransport(value *jsonTestWriterAssignmentListTransport) (err error) {
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
@@ -3855,7 +3842,7 @@ func validatejsonTestAssignmentListTransport(value *jsonTestAssignmentListTransp
 	}
 	for _, e := range value.Assignments {
 		if e != nil {
-			if err2 := validatejsonTestAssignmentItemTransport(e); err2 != nil {
+			if err2 := validatejsonTestWriterAssignmentItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -3863,18 +3850,19 @@ func validatejsonTestAssignmentListTransport(value *jsonTestAssignmentListTransp
 	return err
 }
 
-// jsonTestAssignmentTransport stores JSON fields until they have been validated.
-type jsonTestAssignmentTransport struct {
+// jsonTestWriterAssignmentTransport stores JSON fields until they have been validated.
+type jsonTestWriterAssignmentTransport struct {
 	// Change Card the tests are for.
 	ChangeID *string `json:"change_id"`
-	// Change Card revision the tests are for; report_tests takes it.
+	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision *string `json:"request_revision"`
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *jsonTestWriterProgressTransport `json:"progress"`
-	// Folder to write the tests in: the test writer's own working copy of the
-	// project, which Surla prepares when the user starts the build. Empty when
-	// this server prepares no working copy.
+	// Folder to write the tests in: your own working copy of the project, which
+	// the server prepares when the user starts the build. It is empty until the
+	// server prepares working copies; an empty folder means none was prepared for
+	// this build.
 	WorkingFolder *string `json:"working_folder"`
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
@@ -3884,8 +3872,8 @@ type jsonTestAssignmentTransport struct {
 	RequiredTests []*jsonRequiredTestTransport `json:"required_tests"`
 }
 
-// validatejsonTestAssignmentTransport checks decoded JSON before it becomes a service value.
-func validatejsonTestAssignmentTransport(value *jsonTestAssignmentTransport) (err error) {
+// validatejsonTestWriterAssignmentTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTransport) (err error) {
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
@@ -3935,7 +3923,7 @@ type jsonTestWriterProgressTransport struct {
 	// or accepted with the commit Surla recorded.
 	Tests *jsonTestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
-	// get_test_assignment.
+	// get_test_writer_assignment.
 	Read *bool `json:"read"`
 }
 
@@ -4796,38 +4784,10 @@ func validateToolInputBindingItemOriginal(value *ToolInputBindingItem) (err erro
 	return err
 }
 
-// validateBuildAssignmentOriginal checks the original typed value before JSON conversion.
-func validateBuildAssignmentOriginal(value *BuildAssignment) (err error) {
-	if value.Progress == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
-	}
-	if value.Progress != nil {
-		if err2 := validateBuilderProgressOriginal(value.Progress); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	return err
-}
-
-// validateBuilderProgressOriginal checks the original typed value before JSON conversion.
-func validateBuilderProgressOriginal(value *BuilderProgress) (err error) {
-	if !(value.State == "assigned") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.state", value.State, []any{"assigned"}))
-	}
-	return err
-}
-
-// validateBuildAssignmentListOriginal checks the original typed value before JSON conversion.
-func validateBuildAssignmentListOriginal(value *BuildAssignmentList) (err error) {
+// validateBuilderAssignmentListOriginal checks the original typed value before JSON conversion.
+func validateBuilderAssignmentListOriginal(value *BuilderAssignmentList) (err error) {
 	if value.Assignments == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "value"))
-	}
-	for _, e := range value.Assignments {
-		if e != nil {
-			if err2 := validateBuildAssignmentOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
 	}
 	return err
 }
@@ -5022,11 +4982,6 @@ func validateStartedBuildOriginal(value *StartedBuild) (err error) {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "value"))
 	}
 	err = goa.MergeErrors(err, goa.ValidateFormat("value.started_at", value.StartedAt, goa.FormatDateTime))
-	if value.Builder != nil {
-		if err2 := validateBuilderProgressOriginal(value.Builder); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
 	if value.TestWriter != nil {
 		if err2 := validateTestWriterProgressOriginal(value.TestWriter); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -5476,8 +5431,8 @@ func validateStoryRefreshResultOriginal(value *StoryRefreshResult) (err error) {
 	return err
 }
 
-// validateTestAssignmentOriginal checks the original typed value before JSON conversion.
-func validateTestAssignmentOriginal(value *TestAssignment) (err error) {
+// validateTestWriterAssignmentOriginal checks the original typed value before JSON conversion.
+func validateTestWriterAssignmentOriginal(value *TestWriterAssignment) (err error) {
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
 	}
@@ -5502,8 +5457,8 @@ func validateTestAssignmentOriginal(value *TestAssignment) (err error) {
 	return err
 }
 
-// validateTestAssignmentItemOriginal checks the original typed value before JSON conversion.
-func validateTestAssignmentItemOriginal(value *TestAssignmentItem) (err error) {
+// validateTestWriterAssignmentItemOriginal checks the original typed value before JSON conversion.
+func validateTestWriterAssignmentItemOriginal(value *TestWriterAssignmentItem) (err error) {
 	if value.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
 	}
@@ -5515,14 +5470,14 @@ func validateTestAssignmentItemOriginal(value *TestAssignmentItem) (err error) {
 	return err
 }
 
-// validateTestAssignmentListOriginal checks the original typed value before JSON conversion.
-func validateTestAssignmentListOriginal(value *TestAssignmentList) (err error) {
+// validateTestWriterAssignmentListOriginal checks the original typed value before JSON conversion.
+func validateTestWriterAssignmentListOriginal(value *TestWriterAssignmentList) (err error) {
 	if value.Assignments == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "value"))
 	}
 	for _, e := range value.Assignments {
 		if e != nil {
-			if err2 := validateTestAssignmentItemOriginal(e); err2 != nil {
+			if err2 := validateTestWriterAssignmentItemOriginal(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -6855,196 +6810,6 @@ func DecodeArchitecturePreviewResult(data []byte) (out *ArchitecturePreviewResul
 	return out, nil
 }
 
-// EncodeBuildAssignment turns a service value into JSON using the field names in the Goa design.
-func EncodeBuildAssignment(in *BuildAssignment) ([]byte, error) {
-	if err := checkBuildAssignmentValue(in); err != nil {
-		return nil, fmt.Errorf("encode BuildAssignment JSON: %w", err)
-	}
-	if err := validateBuildAssignmentOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate BuildAssignment value: %w", err)
-	}
-	var body *jsonBuildAssignmentTransport
-	{
-		body = &jsonBuildAssignmentTransport{
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-		}
-		body.Progress = encodeBuilderProgressToBuilderProgressTransport(in.Progress)
-	}
-	if err := validatejsonBuildAssignmentTransport(body); err != nil {
-		return nil, fmt.Errorf("validate BuildAssignment JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode BuildAssignment JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateBuildAssignmentValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateBuildAssignmentValue(in *BuildAssignment) error {
-	if err := checkBuildAssignmentValue(in); err != nil {
-		return fmt.Errorf("validate BuildAssignment value: %w", err)
-	}
-	if err := validateBuildAssignmentOriginal(in); err != nil {
-		return fmt.Errorf("validate BuildAssignment value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "BuildAssignment")
-	}
-
-	var body *jsonBuildAssignmentTransport
-	{
-		body = &jsonBuildAssignmentTransport{
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-		}
-		body.Progress = encodeBuilderProgressToBuilderProgressTransport(in.Progress)
-	}
-	if err := validatejsonBuildAssignmentTransport(body); err != nil {
-		return fmt.Errorf("validate BuildAssignment value: %w", err)
-	}
-	return nil
-}
-
-// DecodeBuildAssignment checks JSON field names from the Goa design and returns a service value.
-func DecodeBuildAssignment(data []byte) (out *BuildAssignment, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode BuildAssignment JSON: %w", err)
-	}
-	if err := validateBuildAssignmentJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode BuildAssignment JSON: %w", err)
-	}
-	var body *jsonBuildAssignmentTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode BuildAssignment JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode BuildAssignment JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode BuildAssignment JSON after first value: %w", err)
-	}
-	if err := validatejsonBuildAssignmentTransport(body); err != nil {
-		return out, fmt.Errorf("validate BuildAssignment JSON: %w", err)
-	}
-	{
-		out = &BuildAssignment{
-			ChangeID:        *body.ChangeID,
-			RequestRevision: *body.RequestRevision,
-		}
-		out.Progress = decodeBuilderProgressTransportToBuilderProgress(body.Progress)
-	}
-	return out, nil
-}
-
-// EncodeBuildAssignmentList turns a service value into JSON using the field names in the Goa design.
-func EncodeBuildAssignmentList(in *BuildAssignmentList) ([]byte, error) {
-	if err := checkBuildAssignmentListValue(in); err != nil {
-		return nil, fmt.Errorf("encode BuildAssignmentList JSON: %w", err)
-	}
-	if err := validateBuildAssignmentListOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate BuildAssignmentList value: %w", err)
-	}
-	var body *jsonBuildAssignmentListTransport
-	{
-		body = &jsonBuildAssignmentListTransport{}
-		body.Assignments = make([]*jsonBuildAssignmentTransport, len(in.Assignments))
-		for i, val := range in.Assignments {
-			if val == nil {
-				body.Assignments[i] = nil
-				continue
-			}
-			body.Assignments[i] = encodeBuildAssignmentToBuildAssignmentTransport(val)
-		}
-	}
-	if err := validatejsonBuildAssignmentListTransport(body); err != nil {
-		return nil, fmt.Errorf("validate BuildAssignmentList JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode BuildAssignmentList JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateBuildAssignmentListValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateBuildAssignmentListValue(in *BuildAssignmentList) error {
-	if err := checkBuildAssignmentListValue(in); err != nil {
-		return fmt.Errorf("validate BuildAssignmentList value: %w", err)
-	}
-	if err := validateBuildAssignmentListOriginal(in); err != nil {
-		return fmt.Errorf("validate BuildAssignmentList value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "BuildAssignmentList")
-	}
-
-	var body *jsonBuildAssignmentListTransport
-	{
-		body = &jsonBuildAssignmentListTransport{}
-		body.Assignments = make([]*jsonBuildAssignmentTransport, len(in.Assignments))
-		for i, val := range in.Assignments {
-			if val == nil {
-				body.Assignments[i] = nil
-				continue
-			}
-			body.Assignments[i] = encodeBuildAssignmentToBuildAssignmentTransport(val)
-		}
-	}
-	if err := validatejsonBuildAssignmentListTransport(body); err != nil {
-		return fmt.Errorf("validate BuildAssignmentList value: %w", err)
-	}
-	return nil
-}
-
-// DecodeBuildAssignmentList checks JSON field names from the Goa design and returns a service value.
-func DecodeBuildAssignmentList(data []byte) (out *BuildAssignmentList, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode BuildAssignmentList JSON: %w", err)
-	}
-	if err := validateBuildAssignmentListJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode BuildAssignmentList JSON: %w", err)
-	}
-	var body *jsonBuildAssignmentListTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode BuildAssignmentList JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode BuildAssignmentList JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode BuildAssignmentList JSON after first value: %w", err)
-	}
-	if err := validatejsonBuildAssignmentListTransport(body); err != nil {
-		return out, fmt.Errorf("validate BuildAssignmentList JSON: %w", err)
-	}
-	{
-		out = &BuildAssignmentList{}
-		out.Assignments = make([]*BuildAssignment, len(body.Assignments))
-		for i, val := range body.Assignments {
-			if val == nil {
-				out.Assignments[i] = nil
-				continue
-			}
-			out.Assignments[i] = decodeBuildAssignmentTransportToBuildAssignment(val)
-		}
-	}
-	return out, nil
-}
-
 // EncodeBuildNotStarted turns a service value into JSON using the field names in the Goa design.
 func EncodeBuildNotStarted(in *BuildNotStarted) ([]byte, error) {
 	if err := checkBuildNotStartedValue(in); err != nil {
@@ -7116,19 +6881,199 @@ func DecodeBuildNotStarted(data []byte) (out *BuildNotStarted, err error) {
 	return out, nil
 }
 
+// EncodeBuilderAssignment turns a service value into JSON using the field names in the Goa design.
+func EncodeBuilderAssignment(in *BuilderAssignment) ([]byte, error) {
+	if err := checkBuilderAssignmentValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuilderAssignment JSON: %w", err)
+	}
+	var body *jsonBuilderAssignmentTransport
+	{
+		body = &jsonBuilderAssignmentTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			Read:            &in.Read,
+		}
+	}
+	if err := validatejsonBuilderAssignmentTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuilderAssignment JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuilderAssignment JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuilderAssignmentValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuilderAssignmentValue(in *BuilderAssignment) error {
+	if err := checkBuilderAssignmentValue(in); err != nil {
+		return fmt.Errorf("validate BuilderAssignment value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuilderAssignment")
+	}
+
+	var body *jsonBuilderAssignmentTransport
+	{
+		body = &jsonBuilderAssignmentTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			Read:            &in.Read,
+		}
+	}
+	if err := validatejsonBuilderAssignmentTransport(body); err != nil {
+		return fmt.Errorf("validate BuilderAssignment value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuilderAssignment checks JSON field names from the Goa design and returns a service value.
+func DecodeBuilderAssignment(data []byte) (out *BuilderAssignment, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuilderAssignment JSON: %w", err)
+	}
+	if err := validateBuilderAssignmentJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuilderAssignment JSON: %w", err)
+	}
+	var body *jsonBuilderAssignmentTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuilderAssignment JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuilderAssignment JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuilderAssignment JSON after first value: %w", err)
+	}
+	if err := validatejsonBuilderAssignmentTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuilderAssignment JSON: %w", err)
+	}
+	{
+		out = &BuilderAssignment{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+			Read:            *body.Read,
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuilderAssignmentList turns a service value into JSON using the field names in the Goa design.
+func EncodeBuilderAssignmentList(in *BuilderAssignmentList) ([]byte, error) {
+	if err := checkBuilderAssignmentListValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuilderAssignmentList JSON: %w", err)
+	}
+	if err := validateBuilderAssignmentListOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuilderAssignmentList value: %w", err)
+	}
+	var body *jsonBuilderAssignmentListTransport
+	{
+		body = &jsonBuilderAssignmentListTransport{}
+		body.Assignments = make([]*jsonBuilderAssignmentTransport, len(in.Assignments))
+		for i, val := range in.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = encodeBuilderAssignmentToBuilderAssignmentTransport(val)
+		}
+	}
+	if err := validatejsonBuilderAssignmentListTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuilderAssignmentList JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuilderAssignmentList JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuilderAssignmentListValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuilderAssignmentListValue(in *BuilderAssignmentList) error {
+	if err := checkBuilderAssignmentListValue(in); err != nil {
+		return fmt.Errorf("validate BuilderAssignmentList value: %w", err)
+	}
+	if err := validateBuilderAssignmentListOriginal(in); err != nil {
+		return fmt.Errorf("validate BuilderAssignmentList value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuilderAssignmentList")
+	}
+
+	var body *jsonBuilderAssignmentListTransport
+	{
+		body = &jsonBuilderAssignmentListTransport{}
+		body.Assignments = make([]*jsonBuilderAssignmentTransport, len(in.Assignments))
+		for i, val := range in.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = encodeBuilderAssignmentToBuilderAssignmentTransport(val)
+		}
+	}
+	if err := validatejsonBuilderAssignmentListTransport(body); err != nil {
+		return fmt.Errorf("validate BuilderAssignmentList value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuilderAssignmentList checks JSON field names from the Goa design and returns a service value.
+func DecodeBuilderAssignmentList(data []byte) (out *BuilderAssignmentList, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuilderAssignmentList JSON: %w", err)
+	}
+	if err := validateBuilderAssignmentListJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuilderAssignmentList JSON: %w", err)
+	}
+	var body *jsonBuilderAssignmentListTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuilderAssignmentList JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuilderAssignmentList JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuilderAssignmentList JSON after first value: %w", err)
+	}
+	if err := validatejsonBuilderAssignmentListTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuilderAssignmentList JSON: %w", err)
+	}
+	{
+		out = &BuilderAssignmentList{}
+		out.Assignments = make([]*BuilderAssignment, len(body.Assignments))
+		for i, val := range body.Assignments {
+			if val == nil {
+				out.Assignments[i] = nil
+				continue
+			}
+			out.Assignments[i] = decodeBuilderAssignmentTransportToBuilderAssignment(val)
+		}
+	}
+	return out, nil
+}
+
 // EncodeBuilderProgress turns a service value into JSON using the field names in the Goa design.
 func EncodeBuilderProgress(in *BuilderProgress) ([]byte, error) {
 	if err := checkBuilderProgressValue(in); err != nil {
 		return nil, fmt.Errorf("encode BuilderProgress JSON: %w", err)
 	}
-	if err := validateBuilderProgressOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate BuilderProgress value: %w", err)
-	}
 	var body *jsonBuilderProgressTransport
 	{
 		body = &jsonBuilderProgressTransport{
-			State: &in.State,
-			Read:  &in.Read,
+			Read: &in.Read,
 		}
 	}
 	if err := validatejsonBuilderProgressTransport(body); err != nil {
@@ -7148,9 +7093,6 @@ func ValidateBuilderProgressValue(in *BuilderProgress) error {
 	if err := checkBuilderProgressValue(in); err != nil {
 		return fmt.Errorf("validate BuilderProgress value: %w", err)
 	}
-	if err := validateBuilderProgressOriginal(in); err != nil {
-		return fmt.Errorf("validate BuilderProgress value: %w", err)
-	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "BuilderProgress")
@@ -7159,8 +7101,7 @@ func ValidateBuilderProgressValue(in *BuilderProgress) error {
 	var body *jsonBuilderProgressTransport
 	{
 		body = &jsonBuilderProgressTransport{
-			State: &in.State,
-			Read:  &in.Read,
+			Read: &in.Read,
 		}
 	}
 	if err := validatejsonBuilderProgressTransport(body); err != nil {
@@ -7175,7 +7116,7 @@ func DecodeBuilderProgress(data []byte) (out *BuilderProgress, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode BuilderProgress JSON: %w", err)
 	}
-	if err := validateBuildAssignmentJSONValue2("", root, ""); err != nil {
+	if err := validateBuilderProgressJSONValue("", root, ""); err != nil {
 		return out, fmt.Errorf("decode BuilderProgress JSON: %w", err)
 	}
 	var body *jsonBuilderProgressTransport
@@ -7195,8 +7136,7 @@ func DecodeBuilderProgress(data []byte) (out *BuilderProgress, err error) {
 	}
 	{
 		out = &BuilderProgress{
-			State: *body.State,
-			Read:  *body.Read,
+			Read: *body.Read,
 		}
 	}
 	return out, nil
@@ -11245,7 +11185,7 @@ func EncodeStartedBuild(in *StartedBuild) ([]byte, error) {
 			StartedAt:       &in.StartedAt,
 			InForce:         &in.InForce,
 		}
-		body.Builder = encodeBuilderProgressToBuilderProgressTransport2(in.Builder)
+		body.Builder = encodeBuilderProgressToBuilderProgressTransport(in.Builder)
 		body.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(in.TestWriter)
 	}
 	if err := validatejsonStartedBuildTransport(body); err != nil {
@@ -11280,7 +11220,7 @@ func ValidateStartedBuildValue(in *StartedBuild) error {
 			StartedAt:       &in.StartedAt,
 			InForce:         &in.InForce,
 		}
-		body.Builder = encodeBuilderProgressToBuilderProgressTransport2(in.Builder)
+		body.Builder = encodeBuilderProgressToBuilderProgressTransport(in.Builder)
 		body.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(in.TestWriter)
 	}
 	if err := validatejsonStartedBuildTransport(body); err != nil {
@@ -12101,17 +12041,17 @@ func DecodeStorySummaryItem(data []byte) (out *StorySummaryItem, err error) {
 	return out, nil
 }
 
-// EncodeTestAssignment turns a service value into JSON using the field names in the Goa design.
-func EncodeTestAssignment(in *TestAssignment) ([]byte, error) {
-	if err := checkTestAssignmentValue(in); err != nil {
-		return nil, fmt.Errorf("encode TestAssignment JSON: %w", err)
+// EncodeTestWriterAssignment turns a service value into JSON using the field names in the Goa design.
+func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
+	if err := checkTestWriterAssignmentValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestWriterAssignment JSON: %w", err)
 	}
-	if err := validateTestAssignmentOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate TestAssignment value: %w", err)
+	if err := validateTestWriterAssignmentOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestWriterAssignment value: %w", err)
 	}
-	var body *jsonTestAssignmentTransport
+	var body *jsonTestWriterAssignmentTransport
 	{
-		body = &jsonTestAssignmentTransport{
+		body = &jsonTestWriterAssignmentTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
 			WorkingFolder:   &in.WorkingFolder,
@@ -12134,34 +12074,34 @@ func EncodeTestAssignment(in *TestAssignment) ([]byte, error) {
 			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
 		}
 	}
-	if err := validatejsonTestAssignmentTransport(body); err != nil {
-		return nil, fmt.Errorf("validate TestAssignment JSON: %w", err)
+	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestWriterAssignment JSON: %w", err)
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("encode TestAssignment JSON: %w", err)
+		return nil, fmt.Errorf("encode TestWriterAssignment JSON: %w", err)
 	}
 	return data, nil
 }
 
-// ValidateTestAssignmentValue checks the original Go fields against their declared constraints.
+// ValidateTestWriterAssignmentValue checks the original Go fields against their declared constraints.
 // It returns validation errors without encoding the value as JSON.
 
-func ValidateTestAssignmentValue(in *TestAssignment) error {
-	if err := checkTestAssignmentValue(in); err != nil {
-		return fmt.Errorf("validate TestAssignment value: %w", err)
+func ValidateTestWriterAssignmentValue(in *TestWriterAssignment) error {
+	if err := checkTestWriterAssignmentValue(in); err != nil {
+		return fmt.Errorf("validate TestWriterAssignment value: %w", err)
 	}
-	if err := validateTestAssignmentOriginal(in); err != nil {
-		return fmt.Errorf("validate TestAssignment value: %w", err)
+	if err := validateTestWriterAssignmentOriginal(in); err != nil {
+		return fmt.Errorf("validate TestWriterAssignment value: %w", err)
 	}
 
 	if in == nil {
-		return goa.MissingFieldError("result", "TestAssignment")
+		return goa.MissingFieldError("result", "TestWriterAssignment")
 	}
 
-	var body *jsonTestAssignmentTransport
+	var body *jsonTestWriterAssignmentTransport
 	{
-		body = &jsonTestAssignmentTransport{
+		body = &jsonTestWriterAssignmentTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
 			WorkingFolder:   &in.WorkingFolder,
@@ -12184,38 +12124,38 @@ func ValidateTestAssignmentValue(in *TestAssignment) error {
 			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
 		}
 	}
-	if err := validatejsonTestAssignmentTransport(body); err != nil {
-		return fmt.Errorf("validate TestAssignment value: %w", err)
+	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
+		return fmt.Errorf("validate TestWriterAssignment value: %w", err)
 	}
 	return nil
 }
 
-// DecodeTestAssignment checks JSON field names from the Goa design and returns a service value.
-func DecodeTestAssignment(data []byte) (out *TestAssignment, err error) {
+// DecodeTestWriterAssignment checks JSON field names from the Goa design and returns a service value.
+func DecodeTestWriterAssignment(data []byte) (out *TestWriterAssignment, err error) {
 	root, err := readStrictJSON(data)
 	if err != nil {
-		return out, fmt.Errorf("decode TestAssignment JSON: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignment JSON: %w", err)
 	}
-	if err := validateTestAssignmentJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode TestAssignment JSON: %w", err)
+	if err := validateTestWriterAssignmentJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestWriterAssignment JSON: %w", err)
 	}
-	var body *jsonTestAssignmentTransport
+	var body *jsonTestWriterAssignmentTransport
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode TestAssignment JSON: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignment JSON: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
-			return out, fmt.Errorf("decode TestAssignment JSON: multiple JSON values")
+			return out, fmt.Errorf("decode TestWriterAssignment JSON: multiple JSON values")
 		}
-		return out, fmt.Errorf("decode TestAssignment JSON after first value: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignment JSON after first value: %w", err)
 	}
-	if err := validatejsonTestAssignmentTransport(body); err != nil {
-		return out, fmt.Errorf("validate TestAssignment JSON: %w", err)
+	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestWriterAssignment JSON: %w", err)
 	}
 	{
-		out = &TestAssignment{
+		out = &TestWriterAssignment{
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
 			WorkingFolder:   *body.WorkingFolder,
@@ -12241,87 +12181,87 @@ func DecodeTestAssignment(data []byte) (out *TestAssignment, err error) {
 	return out, nil
 }
 
-// EncodeTestAssignmentItem turns a service value into JSON using the field names in the Goa design.
-func EncodeTestAssignmentItem(in *TestAssignmentItem) ([]byte, error) {
-	if err := checkTestAssignmentItemValue(in); err != nil {
-		return nil, fmt.Errorf("encode TestAssignmentItem JSON: %w", err)
+// EncodeTestWriterAssignmentItem turns a service value into JSON using the field names in the Goa design.
+func EncodeTestWriterAssignmentItem(in *TestWriterAssignmentItem) ([]byte, error) {
+	if err := checkTestWriterAssignmentItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestWriterAssignmentItem JSON: %w", err)
 	}
-	if err := validateTestAssignmentItemOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	if err := validateTestWriterAssignmentItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestWriterAssignmentItem value: %w", err)
 	}
-	var body *jsonTestAssignmentItemTransport
+	var body *jsonTestWriterAssignmentItemTransport
 	{
-		body = &jsonTestAssignmentItemTransport{
+		body = &jsonTestWriterAssignmentItemTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
 	}
-	if err := validatejsonTestAssignmentItemTransport(body); err != nil {
-		return nil, fmt.Errorf("validate TestAssignmentItem JSON: %w", err)
+	if err := validatejsonTestWriterAssignmentItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestWriterAssignmentItem JSON: %w", err)
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("encode TestAssignmentItem JSON: %w", err)
+		return nil, fmt.Errorf("encode TestWriterAssignmentItem JSON: %w", err)
 	}
 	return data, nil
 }
 
-// ValidateTestAssignmentItemValue checks the original Go fields against their declared constraints.
+// ValidateTestWriterAssignmentItemValue checks the original Go fields against their declared constraints.
 // It returns validation errors without encoding the value as JSON.
 
-func ValidateTestAssignmentItemValue(in *TestAssignmentItem) error {
-	if err := checkTestAssignmentItemValue(in); err != nil {
-		return fmt.Errorf("validate TestAssignmentItem value: %w", err)
+func ValidateTestWriterAssignmentItemValue(in *TestWriterAssignmentItem) error {
+	if err := checkTestWriterAssignmentItemValue(in); err != nil {
+		return fmt.Errorf("validate TestWriterAssignmentItem value: %w", err)
 	}
-	if err := validateTestAssignmentItemOriginal(in); err != nil {
-		return fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	if err := validateTestWriterAssignmentItemOriginal(in); err != nil {
+		return fmt.Errorf("validate TestWriterAssignmentItem value: %w", err)
 	}
 
 	if in == nil {
-		return goa.MissingFieldError("result", "TestAssignmentItem")
+		return goa.MissingFieldError("result", "TestWriterAssignmentItem")
 	}
 
-	var body *jsonTestAssignmentItemTransport
+	var body *jsonTestWriterAssignmentItemTransport
 	{
-		body = &jsonTestAssignmentItemTransport{
+		body = &jsonTestWriterAssignmentItemTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
 	}
-	if err := validatejsonTestAssignmentItemTransport(body); err != nil {
-		return fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	if err := validatejsonTestWriterAssignmentItemTransport(body); err != nil {
+		return fmt.Errorf("validate TestWriterAssignmentItem value: %w", err)
 	}
 	return nil
 }
 
-// DecodeTestAssignmentItem checks JSON field names from the Goa design and returns a service value.
-func DecodeTestAssignmentItem(data []byte) (out *TestAssignmentItem, err error) {
+// DecodeTestWriterAssignmentItem checks JSON field names from the Goa design and returns a service value.
+func DecodeTestWriterAssignmentItem(data []byte) (out *TestWriterAssignmentItem, err error) {
 	root, err := readStrictJSON(data)
 	if err != nil {
-		return out, fmt.Errorf("decode TestAssignmentItem JSON: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignmentItem JSON: %w", err)
 	}
-	if err := validateTestAssignmentItemJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode TestAssignmentItem JSON: %w", err)
+	if err := validateTestWriterAssignmentItemJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestWriterAssignmentItem JSON: %w", err)
 	}
-	var body *jsonTestAssignmentItemTransport
+	var body *jsonTestWriterAssignmentItemTransport
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode TestAssignmentItem JSON: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignmentItem JSON: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
-			return out, fmt.Errorf("decode TestAssignmentItem JSON: multiple JSON values")
+			return out, fmt.Errorf("decode TestWriterAssignmentItem JSON: multiple JSON values")
 		}
-		return out, fmt.Errorf("decode TestAssignmentItem JSON after first value: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignmentItem JSON after first value: %w", err)
 	}
-	if err := validatejsonTestAssignmentItemTransport(body); err != nil {
-		return out, fmt.Errorf("validate TestAssignmentItem JSON: %w", err)
+	if err := validatejsonTestWriterAssignmentItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestWriterAssignmentItem JSON: %w", err)
 	}
 	{
-		out = &TestAssignmentItem{
+		out = &TestWriterAssignmentItem{
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
 		}
@@ -12330,102 +12270,102 @@ func DecodeTestAssignmentItem(data []byte) (out *TestAssignmentItem, err error) 
 	return out, nil
 }
 
-// EncodeTestAssignmentList turns a service value into JSON using the field names in the Goa design.
-func EncodeTestAssignmentList(in *TestAssignmentList) ([]byte, error) {
-	if err := checkTestAssignmentListValue(in); err != nil {
-		return nil, fmt.Errorf("encode TestAssignmentList JSON: %w", err)
+// EncodeTestWriterAssignmentList turns a service value into JSON using the field names in the Goa design.
+func EncodeTestWriterAssignmentList(in *TestWriterAssignmentList) ([]byte, error) {
+	if err := checkTestWriterAssignmentListValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestWriterAssignmentList JSON: %w", err)
 	}
-	if err := validateTestAssignmentListOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate TestAssignmentList value: %w", err)
+	if err := validateTestWriterAssignmentListOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestWriterAssignmentList value: %w", err)
 	}
-	var body *jsonTestAssignmentListTransport
+	var body *jsonTestWriterAssignmentListTransport
 	{
-		body = &jsonTestAssignmentListTransport{}
-		body.Assignments = make([]*jsonTestAssignmentItemTransport, len(in.Assignments))
+		body = &jsonTestWriterAssignmentListTransport{}
+		body.Assignments = make([]*jsonTestWriterAssignmentItemTransport, len(in.Assignments))
 		for i, val := range in.Assignments {
 			if val == nil {
 				body.Assignments[i] = nil
 				continue
 			}
-			body.Assignments[i] = encodeTestAssignmentItemToTestAssignmentItemTransport(val)
+			body.Assignments[i] = encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(val)
 		}
 	}
-	if err := validatejsonTestAssignmentListTransport(body); err != nil {
-		return nil, fmt.Errorf("validate TestAssignmentList JSON: %w", err)
+	if err := validatejsonTestWriterAssignmentListTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestWriterAssignmentList JSON: %w", err)
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("encode TestAssignmentList JSON: %w", err)
+		return nil, fmt.Errorf("encode TestWriterAssignmentList JSON: %w", err)
 	}
 	return data, nil
 }
 
-// ValidateTestAssignmentListValue checks the original Go fields against their declared constraints.
+// ValidateTestWriterAssignmentListValue checks the original Go fields against their declared constraints.
 // It returns validation errors without encoding the value as JSON.
 
-func ValidateTestAssignmentListValue(in *TestAssignmentList) error {
-	if err := checkTestAssignmentListValue(in); err != nil {
-		return fmt.Errorf("validate TestAssignmentList value: %w", err)
+func ValidateTestWriterAssignmentListValue(in *TestWriterAssignmentList) error {
+	if err := checkTestWriterAssignmentListValue(in); err != nil {
+		return fmt.Errorf("validate TestWriterAssignmentList value: %w", err)
 	}
-	if err := validateTestAssignmentListOriginal(in); err != nil {
-		return fmt.Errorf("validate TestAssignmentList value: %w", err)
+	if err := validateTestWriterAssignmentListOriginal(in); err != nil {
+		return fmt.Errorf("validate TestWriterAssignmentList value: %w", err)
 	}
 
 	if in == nil {
-		return goa.MissingFieldError("result", "TestAssignmentList")
+		return goa.MissingFieldError("result", "TestWriterAssignmentList")
 	}
 
-	var body *jsonTestAssignmentListTransport
+	var body *jsonTestWriterAssignmentListTransport
 	{
-		body = &jsonTestAssignmentListTransport{}
-		body.Assignments = make([]*jsonTestAssignmentItemTransport, len(in.Assignments))
+		body = &jsonTestWriterAssignmentListTransport{}
+		body.Assignments = make([]*jsonTestWriterAssignmentItemTransport, len(in.Assignments))
 		for i, val := range in.Assignments {
 			if val == nil {
 				body.Assignments[i] = nil
 				continue
 			}
-			body.Assignments[i] = encodeTestAssignmentItemToTestAssignmentItemTransport(val)
+			body.Assignments[i] = encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(val)
 		}
 	}
-	if err := validatejsonTestAssignmentListTransport(body); err != nil {
-		return fmt.Errorf("validate TestAssignmentList value: %w", err)
+	if err := validatejsonTestWriterAssignmentListTransport(body); err != nil {
+		return fmt.Errorf("validate TestWriterAssignmentList value: %w", err)
 	}
 	return nil
 }
 
-// DecodeTestAssignmentList checks JSON field names from the Goa design and returns a service value.
-func DecodeTestAssignmentList(data []byte) (out *TestAssignmentList, err error) {
+// DecodeTestWriterAssignmentList checks JSON field names from the Goa design and returns a service value.
+func DecodeTestWriterAssignmentList(data []byte) (out *TestWriterAssignmentList, err error) {
 	root, err := readStrictJSON(data)
 	if err != nil {
-		return out, fmt.Errorf("decode TestAssignmentList JSON: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignmentList JSON: %w", err)
 	}
-	if err := validateTestAssignmentListJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode TestAssignmentList JSON: %w", err)
+	if err := validateTestWriterAssignmentListJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestWriterAssignmentList JSON: %w", err)
 	}
-	var body *jsonTestAssignmentListTransport
+	var body *jsonTestWriterAssignmentListTransport
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode TestAssignmentList JSON: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignmentList JSON: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
-			return out, fmt.Errorf("decode TestAssignmentList JSON: multiple JSON values")
+			return out, fmt.Errorf("decode TestWriterAssignmentList JSON: multiple JSON values")
 		}
-		return out, fmt.Errorf("decode TestAssignmentList JSON after first value: %w", err)
+		return out, fmt.Errorf("decode TestWriterAssignmentList JSON after first value: %w", err)
 	}
-	if err := validatejsonTestAssignmentListTransport(body); err != nil {
-		return out, fmt.Errorf("validate TestAssignmentList JSON: %w", err)
+	if err := validatejsonTestWriterAssignmentListTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestWriterAssignmentList JSON: %w", err)
 	}
 	{
-		out = &TestAssignmentList{}
-		out.Assignments = make([]*TestAssignmentItem, len(body.Assignments))
+		out = &TestWriterAssignmentList{}
+		out.Assignments = make([]*TestWriterAssignmentItem, len(body.Assignments))
 		for i, val := range body.Assignments {
 			if val == nil {
 				out.Assignments[i] = nil
 				continue
 			}
-			out.Assignments[i] = decodeTestAssignmentItemTransportToTestAssignmentItem(val)
+			out.Assignments[i] = decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(val)
 		}
 	}
 	return out, nil
@@ -14678,26 +14618,25 @@ func decodeApprovalItemTransportToApprovalItem(v *jsonApprovalItemTransport) *Ap
 	return res
 }
 
-func decodeBuildAssignmentTransportToBuildAssignment(v *jsonBuildAssignmentTransport) *BuildAssignment {
-	res := &BuildAssignment{
-		ChangeID:        *v.ChangeID,
-		RequestRevision: *v.RequestRevision,
-	}
-	res.Progress = decodeBuilderProgressTransportToBuilderProgress(v.Progress)
-
-	return res
-}
-
 func decodeBuildNotStartedTransportToBuildNotStarted(v *jsonBuildNotStartedTransport) *BuildNotStarted {
 	res := &BuildNotStarted{}
 
 	return res
 }
 
+func decodeBuilderAssignmentTransportToBuilderAssignment(v *jsonBuilderAssignmentTransport) *BuilderAssignment {
+	res := &BuilderAssignment{
+		ChangeID:        *v.ChangeID,
+		RequestRevision: *v.RequestRevision,
+		Read:            *v.Read,
+	}
+
+	return res
+}
+
 func decodeBuilderProgressTransportToBuilderProgress(v *jsonBuilderProgressTransport) *BuilderProgress {
 	res := &BuilderProgress{
-		State: *v.State,
-		Read:  *v.Read,
+		Read: *v.Read,
 	}
 
 	return res
@@ -15007,8 +14946,8 @@ func decodeStorySummaryItemTransportToStorySummaryItem(v *jsonStorySummaryItemTr
 	return res
 }
 
-func decodeTestAssignmentItemTransportToTestAssignmentItem(v *jsonTestAssignmentItemTransport) *TestAssignmentItem {
-	res := &TestAssignmentItem{
+func decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(v *jsonTestWriterAssignmentItemTransport) *TestWriterAssignmentItem {
+	res := &TestWriterAssignmentItem{
 		ChangeID:        *v.ChangeID,
 		RequestRevision: *v.RequestRevision,
 	}
@@ -15360,35 +15299,25 @@ func encodeApprovalItemToApprovalItemTransport2(v *ApprovalItem) *jsonApprovalIt
 	return res
 }
 
-func encodeBuildAssignmentToBuildAssignmentTransport(v *BuildAssignment) *jsonBuildAssignmentTransport {
-	res := &jsonBuildAssignmentTransport{
-		ChangeID:        &v.ChangeID,
-		RequestRevision: &v.RequestRevision,
-	}
-	res.Progress = encodeBuilderProgressToBuilderProgressTransport(v.Progress)
-
-	return res
-}
-
 func encodeBuildNotStartedToBuildNotStartedTransport(v *BuildNotStarted) *jsonBuildNotStartedTransport {
 	res := &jsonBuildNotStartedTransport{}
 
 	return res
 }
 
-func encodeBuilderProgressToBuilderProgressTransport(v *BuilderProgress) *jsonBuilderProgressTransport {
-	res := &jsonBuilderProgressTransport{
-		State: &v.State,
-		Read:  &v.Read,
+func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *jsonBuilderAssignmentTransport {
+	res := &jsonBuilderAssignmentTransport{
+		ChangeID:        &v.ChangeID,
+		RequestRevision: &v.RequestRevision,
+		Read:            &v.Read,
 	}
 
 	return res
 }
 
-func encodeBuilderProgressToBuilderProgressTransport2(v *BuilderProgress) *jsonBuilderProgressTransport {
+func encodeBuilderProgressToBuilderProgressTransport(v *BuilderProgress) *jsonBuilderProgressTransport {
 	res := &jsonBuilderProgressTransport{
-		State: &v.State,
-		Read:  &v.Read,
+		Read: &v.Read,
 	}
 
 	return res
@@ -15616,7 +15545,7 @@ func encodeStartedBuildToStartedBuildTransport(v *StartedBuild) *jsonStartedBuil
 		StartedAt:       &v.StartedAt,
 		InForce:         &v.InForce,
 	}
-	res.Builder = encodeBuilderProgressToBuilderProgressTransport2(v.Builder)
+	res.Builder = encodeBuilderProgressToBuilderProgressTransport(v.Builder)
 	res.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(v.TestWriter)
 
 	return res
@@ -15718,8 +15647,8 @@ func encodeStorySummaryItemToStorySummaryItemTransport(v *StorySummaryItem) *jso
 	return res
 }
 
-func encodeTestAssignmentItemToTestAssignmentItemTransport(v *TestAssignmentItem) *jsonTestAssignmentItemTransport {
-	res := &jsonTestAssignmentItemTransport{
+func encodeTestWriterAssignmentItemToTestWriterAssignmentItemTransport(v *TestWriterAssignmentItem) *jsonTestWriterAssignmentItemTransport {
+	res := &jsonTestWriterAssignmentItemTransport{
 		ChangeID:        &v.ChangeID,
 		RequestRevision: &v.RequestRevision,
 	}
@@ -17058,8 +16987,35 @@ func validateArchitecturePreviewResultJSONValue3(path string, value any, descrip
 	return nil
 }
 
-// validateBuildAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuildAssignmentJSONValue(path string, value any, description string) error {
+// validateBuildNotStartedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildNotStartedJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateBuilderAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentJSONValue(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -17085,10 +17041,10 @@ func validateBuildAssignmentJSONValue(path string, value any, description string
 			); err != nil {
 				return err
 			}
-		case "progress":
-			if err := validateBuildAssignmentJSONValue2(
+		case "read":
+			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where this assignment stands.",
+				typed[key], "True once you read this assignment in full with get_builder_assignment.",
 			); err != nil {
 				return err
 			}
@@ -17102,7 +17058,7 @@ func validateBuildAssignmentJSONValue(path string, value any, description string
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
-				"progress",
+				"read",
 				"request_revision",
 			})
 		}
@@ -17110,8 +17066,71 @@ func validateBuildAssignmentJSONValue(path string, value any, description string
 	return nil
 }
 
-// validateBuildAssignmentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuildAssignmentJSONValue2(path string, value any, description string) error {
+// validateBuilderAssignmentListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentListJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "assignments":
+			if err := validateBuilderAssignmentListJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"assignments",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuilderAssignmentListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentListJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateBuilderAssignmentJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateBuilderProgressJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderProgressJSONValue(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -17133,112 +17152,14 @@ func validateBuildAssignmentJSONValue2(path string, value any, description strin
 		case "read":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True once the builder read this assignment in full with get_build_assignment.",
-			); err != nil {
-				return err
-			}
-		case "state":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "The builder's state: assigned from the moment the user starts the build.",
+				typed[key], "True once the builder read this assignment in full with get_builder_assignment.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"read",
-				"state",
 			})
-		}
-	}
-	return nil
-}
-
-// validateBuildAssignmentListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuildAssignmentListJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "assignments":
-			if err := validateBuildAssignmentListJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"assignments",
-			})
-		}
-	}
-	return nil
-}
-
-// validateBuildAssignmentListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuildAssignmentListJSONValue2(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateBuildAssignmentJSONValue(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateBuildNotStartedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuildNotStartedJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		default:
-			return unknownJSONFieldError(path, key, []string{})
 		}
 	}
 	return nil
@@ -18152,7 +18073,7 @@ func validateChangeBuildJSONValue3(path string, value any, description string) e
 	for _, key := range keys {
 		switch key {
 		case "builder":
-			if err := validateBuildAssignmentJSONValue2(
+			if err := validateBuilderProgressJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The builder's assignment.",
 			); err != nil {
@@ -18222,7 +18143,7 @@ func validateChangeBuildJSONValue4(path string, value any, description string) e
 		case "read":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True once the test writer read this assignment in full with get_test_assignment.",
+				typed[key], "True once the test writer read this assignment in full with get_test_writer_assignment.",
 			); err != nil {
 				return err
 			}
@@ -21230,8 +21151,8 @@ func validateStoryRefreshResultJSONValue2(path string, value any, description st
 	return nil
 }
 
-// validateTestAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestAssignmentJSONValue(path string, value any, description string) error {
+// validateTestWriterAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21267,19 +21188,19 @@ func validateTestAssignmentJSONValue(path string, value any, description string)
 		case "request_revision":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Change Card revision the tests are for; report_tests takes it.",
+				typed[key], "Change Card revision the tests are for; report_tests_finished takes it.",
 			); err != nil {
 				return err
 			}
 		case "required_tests":
-			if err := validateTestAssignmentJSONValue2(
+			if err := validateTestWriterAssignmentJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "One test per finished flow of stories, in declaration order; unfinished flows require none.",
 			); err != nil {
 				return err
 			}
 		case "stories":
-			if err := validateTestAssignmentJSONValue3(
+			if err := validateTestWriterAssignmentJSONValue3(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
 			); err != nil {
@@ -21288,7 +21209,7 @@ func validateTestAssignmentJSONValue(path string, value any, description string)
 		case "working_folder":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Folder to write the tests in: the test writer's own working copy of the project, which Surla prepares when the user starts the build. Empty when this server prepares no working copy.",
+				typed[key], "Folder to write the tests in: your own working copy of the project, which the server prepares when the user starts the build. It is empty until the server prepares working copies; an empty folder means none was prepared for this build.",
 			); err != nil {
 				return err
 			}
@@ -21306,8 +21227,8 @@ func validateTestAssignmentJSONValue(path string, value any, description string)
 	return nil
 }
 
-// validateTestAssignmentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestAssignmentJSONValue2(path string, value any, description string) error {
+// validateTestWriterAssignmentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue2(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21333,8 +21254,8 @@ func validateTestAssignmentJSONValue2(path string, value any, description string
 	return nil
 }
 
-// validateTestAssignmentJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestAssignmentJSONValue3(path string, value any, description string) error {
+// validateTestWriterAssignmentJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue3(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21360,8 +21281,8 @@ func validateTestAssignmentJSONValue3(path string, value any, description string
 	return nil
 }
 
-// validateTestAssignmentItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestAssignmentItemJSONValue(path string, value any, description string) error {
+// validateTestWriterAssignmentItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentItemJSONValue(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21383,7 +21304,7 @@ func validateTestAssignmentItemJSONValue(path string, value any, description str
 		case "change_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Change Card the tests are for; get_test_assignment takes it.",
+				typed[key], "Change Card the tests are for; get_test_writer_assignment takes it.",
 			); err != nil {
 				return err
 			}
@@ -21412,8 +21333,8 @@ func validateTestAssignmentItemJSONValue(path string, value any, description str
 	return nil
 }
 
-// validateTestAssignmentListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestAssignmentListJSONValue(path string, value any, description string) error {
+// validateTestWriterAssignmentListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentListJSONValue(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21433,7 +21354,7 @@ func validateTestAssignmentListJSONValue(path string, value any, description str
 	for _, key := range keys {
 		switch key {
 		case "assignments":
-			if err := validateTestAssignmentListJSONValue2(
+			if err := validateTestWriterAssignmentListJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
 			); err != nil {
@@ -21448,8 +21369,8 @@ func validateTestAssignmentListJSONValue(path string, value any, description str
 	return nil
 }
 
-// validateTestAssignmentListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateTestAssignmentListJSONValue2(path string, value any, description string) error {
+// validateTestWriterAssignmentListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentListJSONValue2(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -21465,7 +21386,7 @@ func validateTestAssignmentListJSONValue2(path string, value any, description st
 		if item == nil {
 			continue
 		}
-		if err := validateTestAssignmentItemJSONValue(
+		if err := validateTestWriterAssignmentItemJSONValue(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -22689,94 +22610,6 @@ func checkArchitecturePreviewResultToolInputBindingItemValue(in *ToolInputBindin
 	return nil
 }
 
-// checkBuildAssignmentValue checks text and cycles before conversion.
-func checkBuildAssignmentValue(in *BuildAssignment) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkBuildAssignmentBuildAssignmentValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkBuildAssignmentBuildAssignmentValue checks one generated value on the active path.
-func checkBuildAssignmentBuildAssignmentValue(in *BuildAssignment, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.ChangeID)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
-		}
-		if !utf8.ValidString(string(in.RequestRevision)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
-		}
-		if err := checkBuildAssignmentBuilderProgressValue(in.Progress, generatedJSONChildPath(field, "progress", false), active); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// checkBuildAssignmentBuilderProgressValue checks one generated value on the active path.
-func checkBuildAssignmentBuilderProgressValue(in *BuilderProgress, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.State)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "state", false))
-		}
-	}
-	return nil
-}
-
-// checkBuildAssignmentListValue checks text and cycles before conversion.
-func checkBuildAssignmentListValue(in *BuildAssignmentList) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkBuildAssignmentListBuildAssignmentListValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkBuildAssignmentListBuildAssignmentListValue checks one generated value on the active path.
-func checkBuildAssignmentListBuildAssignmentListValue(in *BuildAssignmentList, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		for index1, item1 := range in.Assignments {
-			_ = index1
-			_ = item1
-			if err := checkBuildAssignmentBuildAssignmentValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // checkBuildNotStartedValue checks text and cycles before conversion.
 func checkBuildNotStartedValue(in *BuildNotStarted) error {
 	if in == nil {
@@ -22804,14 +22637,96 @@ func checkBuildNotStartedBuildNotStartedValue(in *BuildNotStarted, field string,
 	return nil
 }
 
+// checkBuilderAssignmentValue checks text and cycles before conversion.
+func checkBuilderAssignmentValue(in *BuilderAssignment) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuilderAssignmentBuilderAssignmentValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuilderAssignmentBuilderAssignmentValue checks one generated value on the active path.
+func checkBuilderAssignmentBuilderAssignmentValue(in *BuilderAssignment, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+	}
+	return nil
+}
+
+// checkBuilderAssignmentListValue checks text and cycles before conversion.
+func checkBuilderAssignmentListValue(in *BuilderAssignmentList) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuilderAssignmentListBuilderAssignmentListValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuilderAssignmentListBuilderAssignmentListValue checks one generated value on the active path.
+func checkBuilderAssignmentListBuilderAssignmentListValue(in *BuilderAssignmentList, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for index1, item1 := range in.Assignments {
+			_ = index1
+			_ = item1
+			if err := checkBuilderAssignmentBuilderAssignmentValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // checkBuilderProgressValue checks text and cycles before conversion.
 func checkBuilderProgressValue(in *BuilderProgress) error {
 	if in == nil {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkBuildAssignmentBuilderProgressValue(in, "$", active); err != nil {
+	if err := checkBuilderProgressBuilderProgressValue(in, "$", active); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkBuilderProgressBuilderProgressValue checks one generated value on the active path.
+func checkBuilderProgressBuilderProgressValue(in *BuilderProgress, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
 	}
 	return nil
 }
@@ -23253,7 +23168,7 @@ func checkChangeBuildStartedBuildValue(in *StartedBuild, field string, active ma
 		if !utf8.ValidString(string(in.StartedAt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "started_at", false))
 		}
-		if err := checkBuildAssignmentBuilderProgressValue(in.Builder, generatedJSONChildPath(field, "builder", false), active); err != nil {
+		if err := checkBuilderProgressBuilderProgressValue(in.Builder, generatedJSONChildPath(field, "builder", false), active); err != nil {
 			return err
 		}
 		if err := checkChangeBuildTestWriterProgressValue(in.TestWriter, generatedJSONChildPath(field, "test_writer", false), active); err != nil {
@@ -24968,20 +24883,20 @@ func checkStorySummaryItemValue(in *StorySummaryItem) error {
 	return nil
 }
 
-// checkTestAssignmentValue checks text and cycles before conversion.
-func checkTestAssignmentValue(in *TestAssignment) error {
+// checkTestWriterAssignmentValue checks text and cycles before conversion.
+func checkTestWriterAssignmentValue(in *TestWriterAssignment) error {
 	if in == nil {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkTestAssignmentTestAssignmentValue(in, "$", active); err != nil {
+	if err := checkTestWriterAssignmentTestWriterAssignmentValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
 }
 
-// checkTestAssignmentTestAssignmentValue checks one generated value on the active path.
-func checkTestAssignmentTestAssignmentValue(in *TestAssignment, field string, active map[any]bool) error {
+// checkTestWriterAssignmentTestWriterAssignmentValue checks one generated value on the active path.
+func checkTestWriterAssignmentTestWriterAssignmentValue(in *TestWriterAssignment, field string, active map[any]bool) error {
 	if in == nil {
 		return nil
 	}
@@ -25021,20 +24936,20 @@ func checkTestAssignmentTestAssignmentValue(in *TestAssignment, field string, ac
 	return nil
 }
 
-// checkTestAssignmentItemValue checks text and cycles before conversion.
-func checkTestAssignmentItemValue(in *TestAssignmentItem) error {
+// checkTestWriterAssignmentItemValue checks text and cycles before conversion.
+func checkTestWriterAssignmentItemValue(in *TestWriterAssignmentItem) error {
 	if in == nil {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkTestAssignmentItemTestAssignmentItemValue(in, "$", active); err != nil {
+	if err := checkTestWriterAssignmentItemTestWriterAssignmentItemValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
 }
 
-// checkTestAssignmentItemTestAssignmentItemValue checks one generated value on the active path.
-func checkTestAssignmentItemTestAssignmentItemValue(in *TestAssignmentItem, field string, active map[any]bool) error {
+// checkTestWriterAssignmentItemTestWriterAssignmentItemValue checks one generated value on the active path.
+func checkTestWriterAssignmentItemTestWriterAssignmentItemValue(in *TestWriterAssignmentItem, field string, active map[any]bool) error {
 	if in == nil {
 		return nil
 	}
@@ -25057,20 +24972,20 @@ func checkTestAssignmentItemTestAssignmentItemValue(in *TestAssignmentItem, fiel
 	return nil
 }
 
-// checkTestAssignmentListValue checks text and cycles before conversion.
-func checkTestAssignmentListValue(in *TestAssignmentList) error {
+// checkTestWriterAssignmentListValue checks text and cycles before conversion.
+func checkTestWriterAssignmentListValue(in *TestWriterAssignmentList) error {
 	if in == nil {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkTestAssignmentListTestAssignmentListValue(in, "$", active); err != nil {
+	if err := checkTestWriterAssignmentListTestWriterAssignmentListValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
 }
 
-// checkTestAssignmentListTestAssignmentListValue checks one generated value on the active path.
-func checkTestAssignmentListTestAssignmentListValue(in *TestAssignmentList, field string, active map[any]bool) error {
+// checkTestWriterAssignmentListTestWriterAssignmentListValue checks one generated value on the active path.
+func checkTestWriterAssignmentListTestWriterAssignmentListValue(in *TestWriterAssignmentList, field string, active map[any]bool) error {
 	if in == nil {
 		return nil
 	}
@@ -25083,7 +24998,7 @@ func checkTestAssignmentListTestAssignmentListValue(in *TestAssignmentList, fiel
 		for index1, item1 := range in.Assignments {
 			_ = index1
 			_ = item1
-			if err := checkTestAssignmentItemTestAssignmentItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
+			if err := checkTestWriterAssignmentItemTestWriterAssignmentItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
 				return err
 			}
 		}

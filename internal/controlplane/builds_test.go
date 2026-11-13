@@ -104,7 +104,7 @@ func TestStartBuildOnlyAtTheConfirmedRevisionInForce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, confirmed.RequestRevision, started.RequestRevision)
 	assert.True(t, started.InForce)
-	assert.Equal(t, &gensurla.BuilderProgress{State: "assigned", Read: false}, started.Builder)
+	assert.Equal(t, &gensurla.BuilderProgress{Read: false}, started.Builder)
 	assert.Equal(t, gensurla.TestsKindAssigned, started.TestWriter.Tests.Kind())
 	assert.False(t, started.TestWriter.Read)
 	startedAt, err := time.Parse(time.RFC3339Nano, started.StartedAt)
@@ -132,22 +132,19 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	_, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
 	require.NoError(t, err)
 
-	listed, err := cp.ListBuildAssignments(builder)
+	listed, err := cp.ListBuilderAssignments(builder)
 	require.NoError(t, err)
 	require.Len(t, listed.Assignments, 1)
-	assert.False(t, listed.Assignments[0].Progress.Read, "listing records no read")
-	full, err := cp.GetBuildAssignment(builder, &gensurla.GetBuildAssignmentPayload{ChangeID: "chg"})
+	assert.False(t, listed.Assignments[0].Read, "listing records no read")
+	full, err := cp.GetBuilderAssignment(builder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
-	assert.Equal(t, &gensurla.BuildAssignment{
-		ChangeID: "chg", RequestRevision: first.RequestRevision,
-		Progress: &gensurla.BuilderProgress{State: "assigned", Read: true},
-	}, full)
+	assert.Equal(t, &gensurla.BuilderAssignment{ChangeID: "chg", RequestRevision: first.RequestRevision, Read: true}, full)
 	build := mustStartedBuild(t, cp, user, "chg")
 	assert.True(t, build.Builder.Read, "reading in full records the builder's read")
 	assert.False(t, build.TestWriter.Read, "the builder's read is not the test writer's")
-	_, err = cp.GetTestAssignment(tests, &gensurla.GetTestAssignmentPayload{ChangeID: "chg"})
+	_, err = cp.GetTestWriterAssignment(tests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
-	_, err = cp.ReportTests(tests, &gensurla.ReportTestsPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
+	_, err = cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: first.RequestRevision})
 	require.NoError(t, err)
 	build = mustStartedBuild(t, cp, user, "chg")
 	assert.True(t, build.TestWriter.Read)
@@ -175,12 +172,12 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	assert.False(t, rebuilt.Builder.Read, "a new build clears the builder's read")
 	assert.False(t, rebuilt.TestWriter.Read, "a new build clears the test writer's read")
 	assert.Equal(t, gensurla.TestsKindAssigned, rebuilt.TestWriter.Tests.Kind(), "a new build assigns the tests again")
-	listed, err = cp.ListBuildAssignments(builder)
+	listed, err = cp.ListBuilderAssignments(builder)
 	require.NoError(t, err)
 	require.Len(t, listed.Assignments, 1, "the build was replaced, not added")
 	assert.Equal(t, second.RequestRevision, listed.Assignments[0].RequestRevision)
 
-	_, err = cp.GetBuildAssignment(builder, &gensurla.GetBuildAssignmentPayload{ChangeID: "chg"})
+	_, err = cp.GetBuilderAssignment(builder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	again, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: second.RequestRevision})
 	require.NoError(t, err)
@@ -205,7 +202,7 @@ func TestTestAssignmentKeepsTheStoryAgreedAtTheBuiltRevision(t *testing.T) {
 	revised[0].Flows = append(revised[0].Flows, designeval.StoryFlow{Key: "store-credit", Title: "Store credit", Complete: true})
 	saveStoryCard(t, cp, "chg", StatusNeedsConfirmation, revised)
 
-	assignment, err := cp.GetTestAssignment(tests, &gensurla.GetTestAssignmentPayload{ChangeID: "chg"})
+	assignment, err := cp.GetTestWriterAssignment(tests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Equal(t, card.RequestRevision, assignment.RequestRevision)
 	assert.Equal(t, storySummaryItems(agreed), assignment.Stories, "the Story as agreed at the built revision")
@@ -260,12 +257,12 @@ func TestReportForAnotherRevisionIsRefused(t *testing.T) {
 			if tc.refusal == "forbidden" {
 				ctx = asCaller("bob@example.com", CallerTestWriter)
 			}
-			_, err := cp.ReportTests(ctx, &gensurla.ReportTestsPayload{ChangeID: tc.changeID, RequestRevision: tc.revision})
+			_, err := cp.ReportTestsFinished(ctx, &gensurla.ReportTestsFinishedPayload{ChangeID: tc.changeID, RequestRevision: tc.revision})
 			assertRefused(t, err, tc.refusal)
 			assert.Equal(t, before, readBuildFile(t, cp, "chg"), "a refused report changes nothing")
 		})
 	}
-	reported, err := cp.ReportTests(tests, &gensurla.ReportTestsPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	reported, err := cp.ReportTestsFinished(tests, &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	require.NoError(t, err)
 	assert.Equal(t, gensurla.TestsKindReported, reported.Progress.Tests.Kind())
 	assert.Equal(t, gensurla.TestsKindReported, mustStartedBuild(t, cp, user, "chg").TestWriter.Tests.Kind(), "the report is saved")
@@ -284,26 +281,26 @@ func TestAssignmentsListOnlyTheCallersOwnChanges(t *testing.T) {
 	_, err = cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "newer", RequestRevision: newer.RequestRevision})
 	require.NoError(t, err)
 
-	builds, err := cp.ListBuildAssignments(asCaller("alice@example.com", CallerBuilder))
+	builds, err := cp.ListBuilderAssignments(asCaller("alice@example.com", CallerBuilder))
 	require.NoError(t, err)
 	require.Len(t, builds.Assignments, 2)
 	assert.Equal(t, []string{"newer", "older"}, []string{builds.Assignments[0].ChangeID, builds.Assignments[1].ChangeID})
-	tests, err := cp.ListTestAssignments(asCaller("alice@example.com", CallerTestWriter))
+	tests, err := cp.ListTestWriterAssignments(asCaller("alice@example.com", CallerTestWriter))
 	require.NoError(t, err)
 	require.Len(t, tests.Assignments, 2)
 	assert.Equal(t, []string{"newer", "older"}, []string{tests.Assignments[0].ChangeID, tests.Assignments[1].ChangeID})
 
 	otherBuilder := asCaller("bob@example.com", CallerBuilder)
 	otherTests := asCaller("bob@example.com", CallerTestWriter)
-	none, err := cp.ListBuildAssignments(otherBuilder)
+	none, err := cp.ListBuilderAssignments(otherBuilder)
 	require.NoError(t, err)
 	assert.Empty(t, none.Assignments)
-	noTests, err := cp.ListTestAssignments(otherTests)
+	noTests, err := cp.ListTestWriterAssignments(otherTests)
 	require.NoError(t, err)
 	assert.Empty(t, noTests.Assignments)
-	_, err = cp.GetBuildAssignment(otherBuilder, &gensurla.GetBuildAssignmentPayload{ChangeID: "older"})
+	_, err = cp.GetBuilderAssignment(otherBuilder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "older"})
 	assertRefused(t, err, "forbidden")
-	_, err = cp.GetTestAssignment(otherTests, &gensurla.GetTestAssignmentPayload{ChangeID: "older"})
+	_, err = cp.GetTestWriterAssignment(otherTests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "older"})
 	assertRefused(t, err, "forbidden")
 }
 
@@ -353,7 +350,7 @@ func TestBuildTeamPreparesBeforeTheBuildIsSaved(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, []codes.Code{codes.Unset, codes.Unset}, statuses)
-			assignment, err := cp.GetTestAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestAssignmentPayload{ChangeID: "chg"})
+			assignment, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 			require.NoError(t, err)
 			assert.Equal(t, folder, assignment.WorkingFolder)
 		})
@@ -379,10 +376,10 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 		}, refusal: "unknown field"},
 		{name: "trailing data", edit: func(f map[string]any) map[string]any { return f }, trailer: "{}", refusal: "trailing data"},
 		{name: "another change's build", edit: func(f map[string]any) map[string]any { f["change_id"] = "other"; return f }, refusal: "does not hold"},
-		{name: "unknown builder state", edit: func(f map[string]any) map[string]any {
-			f["builder"].(map[string]any)["state"] = "verified"
+		{name: "builder state", edit: func(f map[string]any) map[string]any {
+			f["builder"].(map[string]any)["state"] = "assigned"
 			return f
-		}, refusal: "unknown builder state"},
+		}, refusal: "unknown field"},
 		{name: "unknown test writer state", edit: func(f map[string]any) map[string]any {
 			f["test_writer"].(map[string]any)["state"] = "approved"
 			return f
@@ -415,7 +412,7 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 			build, ok := read.Build.AsStarted()
 			require.True(t, ok)
 			assert.Equal(t, tc.tests, build.TestWriter.Tests.Kind())
-			assignment, err := cp.GetTestAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestAssignmentPayload{ChangeID: "chg"})
+			assignment, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
 			require.NoError(t, err)
 			if findings, ok := assignment.Progress.Tests.AsNeedsChanges(); ok {
 				assert.Equal(t, []string{"RefundOverLimit is not implemented"}, findings.Findings)
@@ -461,11 +458,11 @@ func TestBuildOperationsFollowTheRoleTable(t *testing.T) {
 	}{
 		{name: "get_build", method: http.MethodGet, path: "/changes/chg/build", arguments: `{"change_id":"chg"}`,
 			callers: []string{"user", "guide", "builder", "tests"}},
-		{name: "list_build_assignments", method: http.MethodGet, path: "/assignments/build", arguments: `{}`, callers: []string{"builder"}},
-		{name: "get_build_assignment", method: http.MethodGet, path: "/assignments/build/chg", arguments: `{"change_id":"chg"}`, callers: []string{"builder"}},
-		{name: "list_test_assignments", method: http.MethodGet, path: "/assignments/tests", arguments: `{}`, callers: []string{"tests"}},
-		{name: "get_test_assignment", method: http.MethodGet, path: "/assignments/tests/chg", arguments: `{"change_id":"chg"}`, callers: []string{"tests"}},
-		{name: "report_tests", method: http.MethodPost, path: "/assignments/tests/chg/report", body: revision,
+		{name: "list_builder_assignments", method: http.MethodGet, path: "/assignments/builder", arguments: `{}`, callers: []string{"builder"}},
+		{name: "get_builder_assignment", method: http.MethodGet, path: "/assignments/builder/chg", arguments: `{"change_id":"chg"}`, callers: []string{"builder"}},
+		{name: "list_test_writer_assignments", method: http.MethodGet, path: "/assignments/test-writer", arguments: `{}`, callers: []string{"tests"}},
+		{name: "get_test_writer_assignment", method: http.MethodGet, path: "/assignments/test-writer/chg", arguments: `{"change_id":"chg"}`, callers: []string{"tests"}},
+		{name: "report_tests_finished", method: http.MethodPost, path: "/assignments/test-writer/chg/finished", body: revision,
 			arguments: `{"change_id":"chg","request_revision":"` + card.RequestRevision + `"}`, callers: []string{"tests"}},
 	}
 	for _, token := range []string{"user", "guide", "builder", "tests"} {

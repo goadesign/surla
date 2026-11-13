@@ -50,8 +50,9 @@ var operationRoles = map[string][]CallerKind{
 	"list_changes":         {CallerUser, CallerGuide, CallerBuilder},
 	"wait_for_changes":     {CallerUser},
 	"start_build":          {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
-	"list_build_assignments": {CallerBuilder}, "get_build_assignment": {CallerBuilder},
-	"list_test_assignments": {CallerTestWriter}, "get_test_assignment": {CallerTestWriter}, "report_tests": {CallerTestWriter},
+	"list_builder_assignments": {CallerBuilder}, "get_builder_assignment": {CallerBuilder},
+	"list_test_writer_assignments": {CallerTestWriter}, "get_test_writer_assignment": {CallerTestWriter},
+	"report_tests_finished": {CallerTestWriter},
 }
 
 // OperationAllowed reports the same policy used by both transports and tool listing.
@@ -117,11 +118,11 @@ func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	e.WaitForChanges = wrap("wait_for_changes", e.WaitForChanges)
 	e.StartBuild = wrap("start_build", e.StartBuild)
 	e.GetBuild = wrap("get_build", e.GetBuild)
-	e.ListBuildAssignments = wrap("list_build_assignments", e.ListBuildAssignments)
-	e.GetBuildAssignment = wrap("get_build_assignment", e.GetBuildAssignment)
-	e.ListTestAssignments = wrap("list_test_assignments", e.ListTestAssignments)
-	e.GetTestAssignment = wrap("get_test_assignment", e.GetTestAssignment)
-	e.ReportTests = wrap("report_tests", e.ReportTests)
+	e.ListBuilderAssignments = wrap("list_builder_assignments", e.ListBuilderAssignments)
+	e.GetBuilderAssignment = wrap("get_builder_assignment", e.GetBuilderAssignment)
+	e.ListTestWriterAssignments = wrap("list_test_writer_assignments", e.ListTestWriterAssignments)
+	e.GetTestWriterAssignment = wrap("get_test_writer_assignment", e.GetTestWriterAssignment)
+	e.ReportTestsFinished = wrap("report_tests_finished", e.ReportTestsFinished)
 }
 
 // filterMCPDiscovery derives each caller's catalog from the invocation policy.
