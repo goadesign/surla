@@ -1,6 +1,8 @@
 package testwriter
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
@@ -82,7 +85,49 @@ func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 				assert.Equal(t, before, projectFiles(t, repo), "the project is byte-identical")
 				require.ErrorIs(t, err, ErrLinkedFolder)
 				assert.ErrorContains(t, err, path.Clean(tc.link)+" is a symbolic link")
+				var author *AuthorError
+				require.ErrorAs(t, err, &author, "a link the author placed is the author's to fix")
+				assert.Equal(t, FindingGeneration, author.Finding.Kind)
+				assert.Contains(t, author.Finding.Message, path.Clean(tc.link)+" is a symbolic link")
 			})
 		}
+	}
+}
+
+// TestPrepareSeparatesFailuresTheAuthorCannotFix runs Prepare where the
+// failure is not the copy's author's: the caller's context already ended, or
+// the evaluator was closed. Each is a plain error, not an *AuthorError, and
+// the copy's generated folder is not written.
+func TestPrepareSeparatesFailuresTheAuthorCannotFix(t *testing.T) {
+	t.Parallel()
+	module := testmodule.Module(t, "example.com/shop/eval", "", map[string]string{"design/design.go": fixtureDesign})
+	files := map[string]string{}
+	for p, content := range module {
+		files["eval/"+p] = content
+	}
+	closed := designeval.NewEvaluatorInDir(t.TempDir())
+	require.NoError(t, closed.Close())
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
+	cases := []struct {
+		name    string
+		checker *Checker
+		ctx     context.Context
+	}{
+		{name: "the caller's context ended", checker: testChecker, ctx: ended},
+		{name: "the evaluator was closed", checker: NewChecker(closed, t.TempDir()), ctx: t.Context()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			repo, _ := newProject(t, files)
+			wc, err := OpenWorkingCopy(t.Context(), repo)
+			require.NoError(t, err)
+			_, err = tc.checker.Prepare(tc.ctx, wc, Suite{Module: "eval", Command: "./cmd/shop-evals"}, nil)
+			require.Error(t, err)
+			var author *AuthorError
+			assert.False(t, errors.As(err, &author), "not the author's to fix: %v", err)
+			assert.NoDirExists(t, filepath.Join(wc.Project(), "eval", "gen"))
+		})
 	}
 }

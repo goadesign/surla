@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -27,6 +28,8 @@ type (
 		modCache string
 	}
 	// phaseError identifies the operation in progress when evaluation failed.
+	// Its phase is one of the descriptions runSandboxed sets; modulePhases
+	// lists those that work on the target module's own files.
 	// It makes no claim about whether source, storage, or setup caused failure.
 	phaseError struct {
 		// phase is the owner-selected operation description, never raw output.
@@ -53,6 +56,19 @@ type (
 		paths diagnosticPaths
 	}
 )
+
+// The phases of runSandboxed that check, resolve, compile or evaluate the
+// target module's own files. GenerationDiagnostic names every phase in its
+// message; FailedOnModule reports these four.
+const (
+	phaseCheckFiles  = "checking the local module files"
+	phaseLoadModules = "loading the design module dependencies"
+	phaseCompile     = "compiling the design"
+	phaseEvaluateDSL = "evaluating the design and generating files"
+)
+
+// modulePhases lists the module phases FailedOnModule reports.
+var modulePhases = []string{phaseCheckFiles, phaseLoadModules, phaseCompile, phaseEvaluateDSL}
 
 // GenerationDiagnostic describes the phase where generation failed and any
 // available sandbox output, with exact private directory names replaced. HTTP
@@ -85,6 +101,23 @@ func GenerationDiagnostic(err error) string {
 		message += "\nIf the compiler reports that generator.CompleteSources is undefined, the module needs a goa.design/goa/v3 requirement or versioned replacement at " + completeSourcesGoa + " or later."
 	}
 	return message
+}
+
+// FailedOnModule reports whether err, from Evaluate, Generate or
+// GenerateWithStories, ended in a phase that works on the target module's own
+// files: checking them, loading the dependencies its go.mod and go.sum name,
+// compiling its design, or evaluating it. Such a failure is first the
+// module's author's to look at. A failure while preparing or removing the
+// compiler's own files, while starting the sandboxed generator or reading its
+// output, or because the evaluator was closed, is not. Like
+// GenerationDiagnostic it makes no verdict that the module is wrong: a full
+// disk while the design compiles still fails in a module phase.
+func FailedOnModule(err error) bool {
+	if validation := (*snapshotValidationError)(nil); errors.As(err, &validation) {
+		return true
+	}
+	operation := (*phaseError)(nil)
+	return errors.As(err, &operation) && slices.Contains(modulePhases, operation.phase)
 }
 
 // Error preserves the original CLI and trace error text without adding a phase.

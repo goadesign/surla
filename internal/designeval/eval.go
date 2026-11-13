@@ -578,7 +578,7 @@ func runSandboxed(
 	ctx context.Context, files map[string]string, workDir string, program harnessProgram,
 	args func(stateDir string) []string, collect func(stateDir string) error,
 ) (goa listedModule, err error) {
-	phase := "checking the local module files"
+	phase := phaseCheckFiles
 	defer func() {
 		if err != nil {
 			err = &phaseError{phase: phase, err: err}
@@ -625,7 +625,7 @@ func runSandboxed(
 		return listedModule{}, err
 	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
-	phase = "loading the design module dependencies"
+	phase = phaseLoadModules
 	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, logDir, target, evalMod, program)
 	if err != nil {
 		return listedModule{}, err
@@ -644,7 +644,7 @@ func runSandboxed(
 
 	rawBin := filepath.Join(outDir, "designeval-bin")
 	buildLog := filepath.Join(tmpDir, "build.log")
-	phase = "compiling the design"
+	phase = phaseCompile
 	if err := candidate.Build(ctx, candidate.BuildSpec{
 		SourceDir: buildDir,
 		ModuleDir: buildDir,
@@ -681,7 +681,7 @@ func runSandboxed(
 	if err != nil {
 		return goa, fmt.Errorf("exec sandboxed design evaluator: %w", err)
 	}
-	phase = "evaluating the design and generating files"
+	phase = phaseEvaluateDSL
 	if waitErr := proc.Wait(); waitErr != nil {
 		excerpt, _, exErr := proc.Excerpt(16 << 10)
 		if exErr != nil {

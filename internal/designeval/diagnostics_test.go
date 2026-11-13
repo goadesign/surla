@@ -15,6 +15,36 @@ import (
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
+// TestFailedOnModuleNamesTheModulePhases checks every phase runSandboxed sets
+// and the failures outside it: only checking, resolving, compiling and
+// evaluating the module's own files count, whatever the underlying cause.
+func TestFailedOnModuleNamesTheModulePhases(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("exit status 1")
+	for _, test := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "snapshot validation", err: &snapshotValidationError{err: cause}, want: true},
+		{name: "checking the module files", err: &phaseError{phase: phaseCheckFiles, err: cause}, want: true},
+		{name: "loading the module's dependencies", err: &phaseError{phase: phaseLoadModules, err: cause}, want: true},
+		{name: "compiling the design", err: &phaseError{phase: phaseCompile, err: &buildError{err: cause}}, want: true},
+		{name: "evaluating the design", err: &phaseError{phase: phaseEvaluateDSL, err: cause}, want: true},
+		{name: "preparing the compiler", err: &phaseError{phase: "preparing the design compiler", err: cause}},
+		{name: "preparing the temporary files", err: &phaseError{phase: "preparing the temporary compiler files", err: cause}},
+		{name: "starting the sandboxed generator", err: &phaseError{phase: "starting the sandboxed design generator", err: cause}},
+		{name: "reading the generated output", err: &phaseError{phase: "reading the generated output", err: cause}},
+		{name: "removing the temporary files", err: &phaseError{phase: "removing the temporary compiler files", err: cause}},
+		{name: "a closed evaluator", err: errEvaluatorClosed},
+		{name: "wrapped by a caller", err: fmt.Errorf("generate: %w", &phaseError{phase: phaseCompile, err: cause}), want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, FailedOnModule(test.err))
+		})
+	}
+}
+
 // TestGenerationDiagnosticReportsFactsWithoutBlamingSource verifies phase and
 // sandbox-output reporting without inferring a source cause from an exit code.
 // Errors from module commands retain raw private output only for CLI/traces.
