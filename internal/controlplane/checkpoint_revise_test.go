@@ -225,7 +225,7 @@ expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval"
 // State 5: no promotion target, then recovery through the check control.
 await control(origin, "act", { key: "absent" });
 await refresh();
-expect(page.text("#surla-cp5-unverified-approval-reason").includes("-promotion-config") && page.$("#surla-cp5-refresh-approval"), "State 5 (absent target) did not render its reason and the check control");
+expect(page.text("#surla-cp5-unverified-approval-reason").includes("no promotion target is configured") && page.$("#surla-cp5-refresh-approval"), "State 5 (absent target) did not render its reason and the check control");
 await control(origin, "act", { key: "restored" });
 await refresh();
 expect(page.$("#surla-cp5-approval") && !page.$("#surla-cp5-unverified-approval"), "checking after the target recovered did not show #surla-cp5-approval");

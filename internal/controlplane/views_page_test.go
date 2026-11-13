@@ -91,7 +91,7 @@ expect(page.$("#surla-confirm-submit").disabled && page.$("#surla-cp1-form-card"
 await control(origin, "release", { key: "POST /changes/confirm" });
 await until(() => page.$("#surla-cp1-editor").textContent.includes("Confirmed Change Decision"), "confirming did not show the confirmed card");
 const confirmed = await readCard("chg-first");
-expect(confirmed.status === "confirmed" && confirmed.confirmed_by === input.user, "the saved change does not record the user as who confirmed: " + confirmed.confirmed_by);
+expect(confirmed.status === "confirmed" && confirmed.confirmed_by === input.owner, "the saved change does not record the user as who confirmed: " + confirmed.confirmed_by);
 expect(page.doc.activeElement === page.$("#surla-cp1-editor"), "confirming did not move focus to the result");
 page.close();
 `)
@@ -178,8 +178,8 @@ const before = await history();
 const waits = page.sent("GET", "/change-updates").length;
 await until(() => page.sent("GET", "/change-updates").length >= waits + 3, "the idle page stopped waiting", 15000);
 const after = await history();
-const added = after.slice(0, after.length - before.length).map((span) => span.name);
-expect(JSON.stringify(added) === JSON.stringify(["surla.controlplane.list_traces"]), "an idle page added diagnostics: " + JSON.stringify(added));
+const added = after.slice(0, after.length - before.length).map((span) => span.name).sort();
+expect(JSON.stringify(added) === JSON.stringify(["surla.controlplane.list_traces", "surla.request.list_traces"]), "an idle page added diagnostics beyond the first history read: " + JSON.stringify(added));
 expect(!after.some((span) => span.name.includes("wait_for_changes")), "a waiting read was saved in the diagnostics history");
 expect(page.sent("GET", "/changes").length === 1 && page.sent("GET", "/changes/chg-idle").length === 1, "an idle page read the list or the change again");
 page.setHidden(true);
@@ -190,13 +190,12 @@ page.setHidden(false);
 await until(() => page.sent("GET", "/change-updates").length > hiddenWaits, "showing the tab again did not resume waiting");
 page.close();
 `)
-	var waits int
+	exported := map[string]int{}
 	for _, span := range exporter.GetSpans() {
-		if span.Name == waitForChangesSpan {
-			waits++
-		}
+		exported[span.Name]++
 	}
-	assert.GreaterOrEqual(t, waits, 3, "each waiting read is traced like any operation")
+	assert.GreaterOrEqual(t, exported["surla.request.wait_for_changes"], 3, "each waiting read keeps its exported request span")
+	assert.GreaterOrEqual(t, exported[waitForChangesSpan], 3, "each waiting read keeps its exported domain span")
 }
 
 // TestViewsPageApprovesAPassedResult confirms a change, opens its passed
@@ -245,7 +244,7 @@ await control(origin, "release", { key: "POST /changes/approve" });
 await until(() => page.$("#surla-cp5-approval"), "the recorded approval is not shown");
 expect(page.doc.activeElement === page.$("#surla-cp5-approval"), "approving did not move focus to the result");
 const approval = page.text("#surla-cp5-approval");
-expect(approval.includes("Approval recorded") && approval.includes("No merge or deploy side effect") && approval.includes(input.user) && approval.includes(input.digest) && approval.includes("orders_acceptance"), "the approval panel lacks its record: " + approval);
+expect(approval.includes("Approval recorded") && approval.includes("No merge or deploy side effect") && approval.includes(input.owner) && approval.includes(input.digest) && approval.includes("orders_acceptance"), "the approval panel lacks its record: " + approval);
 expect(!page.$("#surla-cp5-approval-dirty-warning"), "a clean approved card warned about unsaved edits");
 const outcome = page.$('textarea[data-field="expected_outcome"]');
 const saved = outcome.value;
@@ -254,8 +253,18 @@ expect(page.$("#surla-cp5-approval-dirty-warning"), "unsaved edits on an approve
 page.type(outcome, saved);
 expect(!page.$("#surla-cp5-approval-dirty-warning"), "restoring the saved text did not clear the warning");
 const stored = await readCard("chg-approve");
-expect(stored.approval && stored.approval.approved_by === input.user && stored.approval.report_digest === input.digest, "the saved change does not record the user's approval");
+expect(stored.approval && stored.approval.approved_by === input.owner && stored.approval.report_digest === input.digest, "the saved change does not record the user's approval");
 page.close();
+
+// A new page session confirming the unchanged answers keeps the revision and the approval.
+const again = await openPage(origin, { link: input.link + "-2" });
+await until(() => again.$("#surla-cp1-editor").dataset.changeId === "chg-approve" && again.$("#surla-cp5-approval"), "a new session did not open the approved change");
+again.$("#surla-confirm-submit").click();
+await until(() => again.sent("POST", "/changes/confirm").length === 1 && !again.$("#surla-confirm-submit").disabled, "the unchanged confirmation did not finish");
+expect(again.$("#surla-cp1-editor").dataset.requestRevision === input.revision && again.$("#surla-cp5-approval"), "confirming unchanged answers changed the revision or dropped the approval");
+const unchanged = await readCard("chg-approve");
+expect(unchanged.request_revision === input.revision && unchanged.approval && unchanged.approval.approved_by === input.owner, "the saved revision or approval changed");
+again.close();
 `)
 	})
 
@@ -281,7 +290,7 @@ await until(() => page.$("#surla-cp5-approve"), "no approval control");
 page.$("#surla-cp5-approve").click();
 await until(() => page.$("#surla-cp5-unavailable"), "approval was not shown as unavailable");
 const reason = page.text("#surla-cp5-unavailable");
-expect(reason.includes("no promotion target is bound") && reason.includes("promotion settings") && reason.includes("surla stop"), "unavailable approval does not name the enabling step: " + reason);
+expect(reason.includes("no promotion target is bound") && reason.includes("surla promotion set") && reason.includes("surla stop"), "unavailable approval does not name the enabling step: " + reason);
 expect(page.doc.activeElement === page.$("#surla-cp5-unavailable"), "the unavailable result did not take focus");
 expect(!page.$("#surla-cp5-approve"), "an unavailable approval still offered its control");
 page.close();

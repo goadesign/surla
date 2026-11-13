@@ -182,7 +182,7 @@ func runPageScript(t *testing.T, ps *pageServer, input map[string]any, body stri
 	input["origin"] = ps.server.URL
 	input["link"] = pageLink
 	input["guide"] = pageGuide
-	input["user"] = pageUserID
+	input["owner"] = pageOwner
 	raw, err := json.Marshal(input)
 	require.NoError(t, err)
 	harnessLiteral, err := json.Marshal(harness)

@@ -67,8 +67,9 @@ export function ApproveResultControl({
           {unavailable}
           <p>
             Approval needs this project's promotion settings: the evaluator suite, environment
-            and release files a promotion requires. Store them with the <code>surla</code>{" "}
-            command, then restart Surla (<code>surla stop</code>, then <code>surla</code>).
+            and release files a promotion requires. Store them with{" "}
+            <code>surla promotion set &lt;file&gt;</code>, then restart Surla (
+            <code>surla stop</code>, then <code>surla</code>).
           </p>
         </Alert>
       ) : recorded ? (
