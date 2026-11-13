@@ -78,6 +78,8 @@ type (
 	teamOperation struct {
 		sync.Mutex
 		dependencies TeamDependencies
+		// withTimeout privately injects the accepted-operation deadline; nil uses context.WithTimeout.
+		withTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		// observationMu protects only the small public snapshot, never external replies.
 		observationMu sync.RWMutex
 		observed      map[string]roleObservation
@@ -111,21 +113,19 @@ type (
 	}
 )
 
+// teamStartTimeout bounds one accepted roster/window transition so an unresponsive
+// Herdr command cannot hold the serialized team operation indefinitely. This budget
+// is independent of a build's working-copy and generation phase.
+const teamStartTimeout = 45 * time.Second
+
 // EnsureTeam accepts management authority once, then completes bounded server-owned work.
 // A disconnected caller can repeat the operation; saved identity and space adoption avoid duplication.
 func (s *Server) EnsureTeam(ctx context.Context) (*genproject.ProjectTeam, error) {
 	if err := managementOnly(ctx, "ensure_team"); err != nil {
 		return nil, err
 	}
-	// Retain request values and tracing while the server, rather than the client,
-	// owns cancellation of accepted work.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	ctx, cancel := s.acceptedTeamContext(ctx)
 	defer cancel()
-	stopLifetime := context.AfterFunc(s.team.dependencies.Lifetime, cancel)
-	defer stopLifetime()
-	if s.team.dependencies.Lifetime.Err() != nil {
-		cancel()
-	}
 	ctx, span := otel.Tracer("surla/project").Start(ctx, "surla.project.ensure_team")
 	defer span.End()
 	result, err := s.ensureTeam(ctx)
@@ -471,4 +471,22 @@ func teamNextStep(dialog string) string {
 		return "Every listed role is running."
 	}
 	panic("unrecognized team dialog state")
+}
+
+// acceptedTeamContext retains caller values and tracing while the server owns
+// cancellation and the one-operation deadline. Cleanup stops the lifetime callback.
+func (s *Server) acceptedTeamContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	withTimeout := s.team.withTimeout
+	if withTimeout == nil {
+		withTimeout = context.WithTimeout
+	}
+	ctx, cancel := withTimeout(context.WithoutCancel(ctx), teamStartTimeout)
+	stop := context.AfterFunc(s.team.dependencies.Lifetime, cancel)
+	if s.team.dependencies.Lifetime.Err() != nil {
+		cancel()
+	}
+	return ctx, func() {
+		stop()
+		cancel()
+	}
 }

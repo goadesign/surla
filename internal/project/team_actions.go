@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"time"
 
 	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -43,13 +42,8 @@ func (s *Server) ReadTeam(ctx context.Context) (*gensurla.TeamSnapshot, error) {
 // StartAgents shares the existing private ensureTeam workflow and its accepted-work lifetime.
 // The control plane authorizes the user once; this method does not repeat entry policy.
 func (s *Server) StartAgents(ctx context.Context) (*gensurla.ProjectTeam, error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	ctx, cancel := s.acceptedTeamContext(ctx)
 	defer cancel()
-	stop := context.AfterFunc(s.team.dependencies.Lifetime, cancel)
-	defer stop()
-	if s.team.dependencies.Lifetime.Err() != nil {
-		cancel()
-	}
 	result, err := s.ensureTeam(ctx)
 	if err != nil {
 		return nil, userTeamError(err)
