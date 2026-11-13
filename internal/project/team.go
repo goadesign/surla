@@ -22,7 +22,7 @@ type (
 	TeamHost interface {
 		Spaces(context.Context) ([]TeamSpace, error)
 		CreateSpace(context.Context, string, string) (TeamSpace, error)
-		Terminals(context.Context, string, string) ([]TeamTerminal, error)
+		Terminals(context.Context, string, string, []string) ([]TeamTerminal, error)
 		Focus(context.Context, TeamSpace) error
 		Overlays(context.Context) ([]string, error)
 		OpenLauncher(context.Context) error
@@ -40,6 +40,11 @@ type (
 		TestWriterFolder func(context.Context) (string, error)
 		// Shell is the server login shell used by the shared running predicate.
 		Shell string
+		// Observer follows only the registered selection. Nil refuses all observations.
+		Observer TeamObserver
+		// Sender is explicitly injected; nil refuses typing. Production remains unbound
+		// until an agent receiver proves exact, untagged reminder delivery.
+		Sender TeamSender
 	}
 	// TeamSpace is a local space and its tab-to-terminal mapping reported by Herdr.
 	TeamSpace struct {
@@ -59,9 +64,14 @@ type (
 	}
 	// TeamTerminal contains only the trusted observations needed to identify a running role.
 	TeamTerminal struct {
+		Address    string            `json:"address"`
 		State      string            `json:"state"`
 		Labels     map[string]string `json:"labels"`
 		Foreground *TeamForeground   `json:"foreground"`
+		Reported   bool              `json:"reported"`
+		Status     *TeamStatus       `json:"status"`
+		CreatedMS  int64             `json:"created_ms"`
+		Reason     string            `json:"reason"`
 	}
 	// TeamForeground preserves argv rather than Herdr's display name (which may be a version).
 	TeamForeground struct {
@@ -71,6 +81,9 @@ type (
 	teamOperation struct {
 		sync.Mutex
 		dependencies TeamDependencies
+		// observationMu protects only the small public snapshot, never external replies.
+		observationMu sync.RWMutex
+		observed      map[string]roleObservation
 	}
 	// launcherRoster mirrors Chorus load_roster's exact closed schema.
 	launcherRoster struct {
@@ -141,13 +154,13 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	s.team.Lock()
 	defer s.team.Unlock()
 	if err := ctx.Err(); err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "lifetime")
 	}
 	host := s.team.dependencies.Host
 	// Observe dialogs before any space creation or focus change: opening the launcher is a toggle.
 	overlays, err := host.Overlays(ctx)
 	if err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "overlays")
 	}
 	launcherOpen := false
 	for _, overlay := range overlays {
@@ -166,7 +179,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	}
 	spaces, err := host.Spaces(ctx)
 	if err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "spaces")
 	}
 	var space TeamSpace
 	for _, candidate := range spaces {
@@ -194,18 +207,18 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 			}
 			space, err = host.CreateSpace(ctx, team, record.Directory)
 			if err != nil {
-				return nil, teamUnavailable(ctx)
+				return nil, teamUnavailable(ctx, "create_space")
 			}
 		}
 	}
 	if !safeSpaceID(space.ID) {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "space_identity")
 	}
 	// Keep the old identity until its roster is removed; deterministic adoption recovers a lost reply.
 	if record.Space != "" && record.Space != space.ID {
 		err = os.Remove(filepath.Join(s.team.dependencies.RosterDirectory, record.Space+".json"))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, teamUnavailable(ctx)
+			return nil, teamUnavailable(ctx, "remove_roster")
 		}
 	}
 	s.state.mu.Lock()
@@ -218,7 +231,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	}
 	s.state.mu.Unlock()
 	if err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "save_team")
 	}
 	s.state.mu.Lock()
 	hasGuide := false
@@ -230,7 +243,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	s.state.mu.Unlock()
 	if !hasGuide {
 		if _, err := s.addAgent(&genproject.AddAgentPayload{ActorID: teamName("guide", record.ID), Role: "guide"}); err != nil {
-			return nil, teamUnavailable(ctx)
+			return nil, teamUnavailable(ctx, "register_guide")
 		}
 	}
 	// Snapshot the registry after guide admission; every registered actor survives this operation.
@@ -242,21 +255,25 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	s.state.mu.Unlock()
 	roles, err := s.registeredTeamRoles(ctx, agents)
 	if err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "role_folders")
 	}
 	roster, err := s.teamRoster(roles)
 	if err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "roster")
 	}
 	if err := os.MkdirAll(s.team.dependencies.RosterDirectory, 0o700); err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "roster_directory")
 	}
 	if err := writeJSON(filepath.Join(s.team.dependencies.RosterDirectory, space.ID+".json"), roster); err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "write_roster")
 	}
-	terminals, err := host.Terminals(ctx, record.Directory, space.ID)
+	handles := make([]string, 0, len(agents))
+	for handle := range agents {
+		handles = append(handles, handle)
+	}
+	terminals, err := host.Terminals(ctx, record.Directory, space.ID, handles)
 	if err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "terminals")
 	}
 	runningHandles := map[string]bool{}
 	for _, terminal := range terminals {
@@ -276,7 +293,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	result := &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: make([]*genproject.ProjectTeamRole, 0, len(roles))}
 	missing := false
 	for _, role := range roles {
-		running := listed[role.Handle] && runningHandles[role.Handle]
+		running := runningHandles[role.Handle]
 		result.Roles = append(result.Roles, &genproject.ProjectTeamRole{Role: agents[role.Handle], Handle: role.Handle, Running: running})
 		if listed[role.Handle] && !running {
 			missing = true
@@ -290,10 +307,10 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 		return result, nil
 	}
 	if err := host.Focus(ctx, space); err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "focus")
 	}
 	if err := host.OpenLauncher(ctx); err != nil {
-		return nil, teamUnavailable(ctx)
+		return nil, teamUnavailable(ctx, "launcher")
 	}
 	result.Dialog = "opened"
 	return result, nil
@@ -445,9 +462,10 @@ func validTeamName(value string) bool {
 }
 
 // teamUnavailable records a fixed bounded failure without exporting private paths or command arguments.
-func teamUnavailable(ctx context.Context) error {
+func teamUnavailable(ctx context.Context, step string) error {
 	failure := errors.New("project team could not be prepared")
 	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("team.failed_step", step))
 	span.RecordError(failure)
 	span.SetStatus(codes.Error, "team start failed")
 	return genproject.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and run surla again"))

@@ -37,7 +37,7 @@ var ChangeListItem = Type("ChangeListItem", func() {
 var ChangeList = Type("ChangeList", func() {
 	Description("The project's saved Change Cards, most recently saved first (tie-broken by change_id).")
 	Attribute("changes", ArrayOf(ChangeListItem), "Saved Change Cards, most recently saved first.")
-	Attribute("version", String, "Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.")
+	Attribute("version", String, "Opaque value identifying this exact list and the owner's current Story evaluation and public team snapshot; it changes whenever any listed value or team fact changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.")
 	Attribute("approval_available", Boolean, "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.")
 	Required("changes", "version", "approval_available")
 })
@@ -63,7 +63,7 @@ func changeListMethods() {
 	})
 
 	Method("wait_for_changes", func() {
-		Description("Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.")
+		Description("Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.")
 		Payload(func() {
 			Attribute("since", String, "version of the change list the caller last read.", func() {
 				MinLength(1)

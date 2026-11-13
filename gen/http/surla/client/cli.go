@@ -528,6 +528,33 @@ func BuildListTracesPayload(surlaListTracesStatus string, surlaListTracesLimit s
 	return v, nil
 }
 
+// BuildShowTeamPanePayload builds the payload for the surla show_team_pane
+// endpoint from CLI flags.
+func BuildShowTeamPanePayload(surlaShowTeamPaneBody *string) (*surla.ShowTeamPanePayload, error) {
+	var err error
+	var body ShowTeamPaneRequestBody
+	{
+		if surlaShowTeamPaneBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaShowTeamPaneBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"role\": \"test_writer\"\n   }'")
+		}
+		if !(body.Role == "guide" || body.Role == "builder" || body.Role == "test_writer") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", body.Role, []any{"guide", "builder", "test_writer"}))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.ShowTeamPanePayload{
+		Role: body.Role,
+	}
+
+	return v, nil
+}
+
 // BuildWaitForChangesPayload builds the payload for the surla wait_for_changes
 // endpoint from CLI flags.
 func BuildWaitForChangesPayload(surlaWaitForChangesSince *string) (*surla.WaitForChangesPayload, error) {

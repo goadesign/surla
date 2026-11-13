@@ -389,5 +389,13 @@ func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
 	require.ErrorContains(t, runtime.startTeamPrograms(t.Context()), "cannot start real team")
 	_, err = runtime.teamDependencies(t.Context())
 	require.ErrorContains(t, err, "cannot resolve or change real project teams")
+	// The constructor fixtures bind neither reader nor sender: opting into startup
+	// stand-ins must never opt a test into terminal observations or reminder typing.
+	isolateServeWorkspace(t)
+	state, err := fixtureProjectState(t.TempDir())
+	require.NoError(t, err)
+	dependencies := fixtureTeamDependencies(state)
+	assert.Nil(t, dependencies.Observer)
+	assert.Nil(t, dependencies.Sender)
 	require.ErrorContains(t, run(nil, io.Discard), "cannot start real")
 }

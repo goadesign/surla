@@ -188,6 +188,8 @@ type (
 		// starts a build. Without it, start_build saves the build and the
 		// test writer's assignment names no working folder.
 		BuildTeam BuildTeam
+		// Team is the project owner composed before this control plane; nil leaves team operations unavailable.
+		Team *TeamBinding
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
@@ -365,6 +367,9 @@ type (
 		// never while holding mu: those steps run for minutes, and mu guards
 		// every card and build read. Nothing takes it yet.
 		workingCopyTurn chan struct{}
+		// team is the single injected owner; teamWorker drains before stores close.
+		team       *TeamBinding
+		teamWorker sync.WaitGroup
 	}
 )
 
@@ -475,6 +480,7 @@ func New(opts Options) (*ControlPlane, error) {
 		liveState:              newLiveState(opts.Live, cards.dir),
 		buildTeam:              opts.BuildTeam,
 		workingCopyTurn:        make(chan struct{}, 1),
+		team:                   opts.Team,
 	}
 	if err := cp.restoreWorkspace(); err != nil {
 		return nil, errors.Join(err, cp.Close())
@@ -499,6 +505,10 @@ func New(opts Options) (*ControlPlane, error) {
 		// does not stop this server from starting.
 		cp.recoverCheckOperations()
 	}
+	if cp.team != nil && (cp.team.Owner == "" || cp.team.Service == nil) {
+		return nil, errors.Join(errors.New("team binding requires its owner and service"), cp.Close())
+	}
+	cp.startTeamSupervisor()
 	return cp, nil
 }
 
@@ -692,6 +702,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // is released only once.
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
+	c.teamWorker.Wait()
 	// Wait out any check admission in progress: an operation admitted under
 	// workspaceMu before this point is already registered, and every later
 	// one sees the server context ended and is refused (see

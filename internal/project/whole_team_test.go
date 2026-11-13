@@ -42,7 +42,7 @@ func TestEnsureTeamPreservesRegisteredRoles(t *testing.T) {
 			// no test folder both listed roles run and the omitted role must not open a dialog.
 			host.terminals = []TeamTerminal{{State: "live", Labels: map[string]string{"chorus.project": state.Record.Directory, "herdr.space": "space-1", "herdr.tab": "tab", "chorus.handle": handles[0]}, Foreground: &TeamForeground{Argv: []string{"codex"}}}}
 			if missingFolder {
-				host.terminals = append(host.terminals, TeamTerminal{State: "live", Labels: map[string]string{"chorus.project": state.Record.Directory, "herdr.space": "space-1", "herdr.tab": "tab", "chorus.handle": handles[1]}, Foreground: &TeamForeground{Argv: []string{"claude"}}})
+				host.terminals = append(host.terminals, TeamTerminal{State: "live", Labels: map[string]string{"chorus.project": state.Record.Directory, "herdr.space": "space-1", "herdr.tab": "tab", "chorus.handle": handles[1]}, Foreground: &TeamForeground{Argv: []string{"claude"}}}, TeamTerminal{State: "live", Labels: map[string]string{"chorus.project": state.Record.Directory, "herdr.space": "space-1", "herdr.tab": "tab", "chorus.handle": handles[2]}, Foreground: &TeamForeground{Argv: []string{"codex"}}})
 			}
 			var first []byte
 			for attempt := 0; attempt < 2; attempt++ {
@@ -57,7 +57,7 @@ func TestEnsureTeamPreservesRegisteredRoles(t *testing.T) {
 				}
 				assert.True(t, result.Roles[0].Running)
 				assert.Equal(t, missingFolder, result.Roles[1].Running)
-				assert.False(t, result.Roles[2].Running)
+				assert.Equal(t, missingFolder, result.Roles[2].Running, "running is independent of roster membership")
 				if missingFolder {
 					assert.Equal(t, "not_needed", result.Dialog)
 					assert.NotContains(t, host.calls, "focus")

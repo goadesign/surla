@@ -38,6 +38,9 @@ type Endpoints struct {
 	ListTraces                goa.Endpoint
 	RefreshStory              goa.Endpoint
 	GetStoryRefresh           goa.Endpoint
+	GetTeam                   goa.Endpoint
+	ShowTeamPane              goa.Endpoint
+	StartTeamAgents           goa.Endpoint
 	ListChanges               goa.Endpoint
 	WaitForChanges            goa.Endpoint
 	StartBuild                goa.Endpoint
@@ -75,6 +78,9 @@ func NewEndpoints(s Service) *Endpoints {
 		ListTraces:                NewListTracesEndpoint(s),
 		RefreshStory:              NewRefreshStoryEndpoint(s),
 		GetStoryRefresh:           NewGetStoryRefreshEndpoint(s),
+		GetTeam:                   NewGetTeamEndpoint(s),
+		ShowTeamPane:              NewShowTeamPaneEndpoint(s),
+		StartTeamAgents:           NewStartTeamAgentsEndpoint(s),
 		ListChanges:               NewListChangesEndpoint(s),
 		WaitForChanges:            NewWaitForChangesEndpoint(s),
 		StartBuild:                NewStartBuildEndpoint(s),
@@ -112,6 +118,9 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.ListTraces = m(e.ListTraces)
 	e.RefreshStory = m(e.RefreshStory)
 	e.GetStoryRefresh = m(e.GetStoryRefresh)
+	e.GetTeam = m(e.GetTeam)
+	e.ShowTeamPane = m(e.ShowTeamPane)
+	e.StartTeamAgents = m(e.StartTeamAgents)
 	e.ListChanges = m(e.ListChanges)
 	e.WaitForChanges = m(e.WaitForChanges)
 	e.StartBuild = m(e.StartBuild)
@@ -321,6 +330,31 @@ func NewRefreshStoryEndpoint(s Service) goa.Endpoint {
 func NewGetStoryRefreshEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		return s.GetStoryRefresh(ctx)
+	}
+}
+
+// NewGetTeamEndpoint returns an endpoint function that calls the method
+// "get_team" of service "surla".
+func NewGetTeamEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.GetTeam(ctx)
+	}
+}
+
+// NewShowTeamPaneEndpoint returns an endpoint function that calls the method
+// "show_team_pane" of service "surla".
+func NewShowTeamPaneEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ShowTeamPanePayload)
+		return nil, s.ShowTeamPane(ctx, p)
+	}
+}
+
+// NewStartTeamAgentsEndpoint returns an endpoint function that calls the
+// method "start_team_agents" of service "surla".
+func NewStartTeamAgentsEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.StartTeamAgents(ctx)
 	}
 }
 

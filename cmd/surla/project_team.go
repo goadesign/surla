@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,10 @@ func runTeamCommand(ctx context.Context, program string, args ...string) ([]byte
 	defer cancel()
 	raw, err := exec.CommandContext(ctx, program, args...).Output()
 	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, teamCommandExit{code: exit.ExitCode()}
+		}
 		return nil, fmt.Errorf("%s command failed", filepath.Base(program))
 	}
 	return raw, nil
@@ -181,7 +186,7 @@ func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, err
 		}
 		home = filepath.Join(userHome, ".config", "herdr-app")
 	}
-	return project.TeamDependencies{Lifetime: ctx, Host: commands, TestWriterFolder: noTestWriterWorkingFolder, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL")}, nil
+	return project.TeamDependencies{Lifetime: ctx, Host: commands, TestWriterFolder: noTestWriterWorkingFolder, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL"), Observer: teamObservations{commands: commands, stream: runTeamStream, client: &http.Client{Timeout: 65 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, chorusURL: "http://127.0.0.1:9440"}, Sender: unboundTeamSender{}}, nil
 }
 
 // json decodes command replies and checks JSON-level errors as well as process status.
@@ -190,14 +195,16 @@ func (c teamCommands) json(ctx context.Context, program string, result any, args
 	if err != nil {
 		return err
 	}
-	var envelope map[string]json.RawMessage
+	var envelope *struct {
+		Error json.RawMessage `json:"error"`
+	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return errors.New("Herdr returned invalid JSON")
 	}
 	if envelope == nil {
 		return errors.New("Herdr returned an empty result")
 	}
-	errorField := envelope["error"]
+	errorField := envelope.Error
 	if len(errorField) > 0 && string(errorField) != "null" && string(errorField) != "false" && string(errorField) != `""` {
 		return errors.New("Herdr reported a command error")
 	}
@@ -255,29 +262,31 @@ func (c teamCommands) CreateSpace(ctx context.Context, name, folder string) (pro
 	return project.TeamSpace{ID: result.Space, Name: name, Folder: folder, Tabs: []project.TeamTab{{ID: result.Tab, Terminals: []project.TeamPane{{Terminal: result.Terminal}}}}}, nil
 }
 
-// Terminals loads full records because Herdr list summaries do not include labels.
-func (c teamCommands) Terminals(ctx context.Context, root, space string) ([]project.TeamTerminal, error) {
-	var listing struct {
-		Terminals *[]struct {
-			Address string `json:"address"`
-		} `json:"terminals"`
-	}
-	if err := c.json(ctx, c.core, &listing, "ls", "--json", "--label", "chorus.project="+root, "--label", "herdr.space="+space); err != nil {
-		return nil, err
-	}
-	if listing.Terminals == nil {
-		return nil, errors.New("Herdr omitted its terminal listing")
-	}
-	result := make([]project.TeamTerminal, 0, len(*listing.Terminals))
-	for _, item := range *listing.Terminals {
-		if item.Address == "" {
-			return nil, errors.New("Herdr returned a missing terminal identifier")
+// Terminals selects each registered handle with both owner labels before reading facts.
+func (c teamCommands) Terminals(ctx context.Context, root, space string, handles []string) ([]project.TeamTerminal, error) {
+	result := make([]project.TeamTerminal, 0, len(handles))
+	for _, handle := range handles {
+		var listing struct {
+			Terminals *[]struct {
+				Address string `json:"address"`
+			} `json:"terminals"`
 		}
-		var terminal project.TeamTerminal
-		if err := c.json(ctx, c.core, &terminal, "get", item.Address, "--json"); err != nil {
+		if err := c.json(ctx, c.core, &listing, "ls", "--json", "--label", "chorus.project="+root, "--label", "herdr.space="+space, "--label", "chorus.handle="+handle); err != nil {
 			return nil, err
 		}
-		result = append(result, terminal)
+		if listing.Terminals == nil {
+			return nil, errors.New("Herdr omitted its terminal listing")
+		}
+		for _, item := range *listing.Terminals {
+			if item.Address == "" {
+				return nil, errors.New("Herdr returned a missing terminal identifier")
+			}
+			var terminal teamTerminalFacts
+			if err := c.json(ctx, c.core, &terminal, "get", item.Address, "--json"); err != nil {
+				return nil, err
+			}
+			result = append(result, terminal.terminal())
+		}
 	}
 	return result, nil
 }

@@ -124,6 +124,21 @@ func GetStoryRefreshSurlaPath() string {
 	return "/workspace/story/refresh"
 }
 
+// GetTeamSurlaPath returns the URL path to the surla service get_team HTTP endpoint.
+func GetTeamSurlaPath() string {
+	return "/team"
+}
+
+// ShowTeamPaneSurlaPath returns the URL path to the surla service show_team_pane HTTP endpoint.
+func ShowTeamPaneSurlaPath() string {
+	return "/team/pane"
+}
+
+// StartTeamAgentsSurlaPath returns the URL path to the surla service start_team_agents HTTP endpoint.
+func StartTeamAgentsSurlaPath() string {
+	return "/team/agents"
+}
+
 // ListChangesSurlaPath returns the URL path to the surla service list_changes HTTP endpoint.
 func ListChangesSurlaPath() string {
 	return "/changes"

@@ -318,8 +318,9 @@ or for other management operations. The roster home also comes from the
 server's login environment. It contains only roles whose working folders exist;
 existing role entries require valid credential files. Each trusted role has at most
 one agent; registering another actor for an occupied role returns `conflict`.
-Missing working folders are omitted from the launcher and reported as not
-running; they do not by themselves open the launcher.
+Missing working folders are omitted from the launcher and do not by themselves
+open it. A role's running flag still reports its actual owned terminal, independently
+of whether the role has a folder and is listed in the launcher.
 Starting again reuses the guide and saved space. If a space was closed, the
 server adopts exactly one local space matching its team name and physical
 folder, creates one if none matches, and refuses duplicates with their count.
@@ -361,6 +362,41 @@ include `ambiguous_space` with its numeric count, `window_busy`, and
 `team_unavailable`; the CLI supplies its own messages without printing peer
 error text. If the answering project server lacks this operation, Surla tells
 you to run `surla stop`, then `surla`, to start the current server version.
+
+<a id="team-supervision"></a>
+
+**Team supervision.** The project server rebuilds this picture in memory from
+Herdr and Chorus; it saves no supervision state. These HTTP-only operations
+require the user's browser session. Guide, builder, test-writer and management
+credentials cannot call them, and none appears in agent MCP discovery.
+
+| Operation | Result or effect |
+| --- | --- |
+| `get_team` (`GET /team`) | Stable team name and registered roles in guide, builder, test-writer order. Before registration, the list is empty; reading creates nothing. |
+| `show_team_pane` (`POST /team/pane`, `role`) | Show this project's space and focus only that role's freshly identified pane. Any open dialog returns `window_busy` before window changes. A missing or changed pane returns `pane_unavailable`. |
+| `start_team_agents` (`POST /team/agents`) | Reuse the team-start workflow, result and refusals described above, including the open-dialog rule. |
+
+Each role has required `role`, `handle`, `state`, `attention`, `watcher` and
+`assignment` values. Terminal `state` is `not_started`, `ended`, `starting`,
+`needs_you`, `working`, `waiting`, `error` or `unknown`. Attention is `none`,
+`permission`, `question`, `auth`, `silent` or `unknown`. A running agent that
+reports nothing for 60 seconds needs the user; this changes display state only.
+Watcher state is `held`, `gone` after 90 seconds of known absence, or `unknown`.
+Assignment state is `unread`, `nothing_owed` or `unknown`; the guide has none.
+Failed assignment reads never imply that nothing is owed. A stale revision alone does not clear unread
+assignments. The existing `wait_for_changes` version
+also covers every public team fact, so no second waiting request is needed.
+The views page does not draw these facts yet.
+
+The executable currently leaves reminder delivery unavailable until exact text
+delivery to a status-reporting agent is verified. The reminder policy permits
+only fixed text to an idle/done agent with positively reported foreground
+arguments, a fresh ownership check and an unread assignment or a watcher gone
+past the grace period. No reminder is eligible in the first 90 seconds after
+server start. Unknown facts never authorize input. Missing foreground information
+continues to count as running for pane safety, but cannot authorize a reminder.
+Surla never reads screen text or retains status messages or titles. Supervision
+issues no explicit service-start command and never takes focus without a user action.
 
 At startup, `ANTHROPIC_API_KEY` selects Anthropic with `claude-sonnet-4-6`; otherwise `OPENAI_API_KEY` selects OpenAI with `gpt-5.4-mini`.
 

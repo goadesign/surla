@@ -4598,7 +4598,7 @@ var listChangesResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("version")},
 		JSONType:    "string",
-		Description: "Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
+		Description: "Opaque value identifying this exact list and the owner's current Story evaluation and public team snapshot; it changes whenever any listed value or team fact changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval_available")},
@@ -18722,7 +18722,7 @@ func validateListChangesResultJSONValue(path string, value any, description stri
 		case "version":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
+				typed[key], "Opaque value identifying this exact list and the owner's current Story evaluation and public team snapshot; it changes whenever any listed value or team fact changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
 			); err != nil {
 				return err
 			}

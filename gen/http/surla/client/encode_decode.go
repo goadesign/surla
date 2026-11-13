@@ -2971,6 +2971,362 @@ func DecodeGetStoryRefreshResponse(decoder func(*http.Response) goahttp.Decoder,
 	}
 }
 
+// BuildGetTeamRequest instantiates a HTTP request object with method and path
+// set to call the "surla" service "get_team" endpoint
+func (c *Client) BuildGetTeamRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetTeamSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "get_team", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeGetTeamResponse returns a decoder for responses returned by the surla
+// get_team endpoint. restoreBody controls whether the response body should be
+// restored after having been read.
+// DecodeGetTeamResponse may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeGetTeamResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_team", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_team", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body GetTeamResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_team", err)
+			}
+			err = ValidateGetTeamResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_team", err)
+			}
+			res := NewGetTeamTeamSnapshotOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body GetTeamForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_team", err)
+			}
+			err = ValidateGetTeamForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_team", err)
+			}
+			return nil, NewGetTeamForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_team", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "get_team", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildShowTeamPaneRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "show_team_pane" endpoint
+func (c *Client) BuildShowTeamPaneRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ShowTeamPaneSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "show_team_pane", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeShowTeamPaneRequest returns an encoder for requests sent to the surla
+// show_team_pane server.
+func EncodeShowTeamPaneRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.ShowTeamPanePayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "show_team_pane", "*surla.ShowTeamPanePayload", v)
+		}
+		body := NewShowTeamPaneRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "show_team_pane", err)
+		}
+		return nil
+	}
+}
+
+// DecodeShowTeamPaneResponse returns a decoder for responses returned by the
+// surla show_team_pane endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeShowTeamPaneResponse may return the following errors:
+//   - "window_busy" (type *goa.ServiceError): http.StatusConflict
+//   - "pane_unavailable" (type *goa.ServiceError): http.StatusConflict
+//   - "team_unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeShowTeamPaneResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "show_team_pane", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusNoContent:
+			return nil, nil
+		case http.StatusConflict:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "window_busy":
+				var (
+					body ShowTeamPaneWindowBusyResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+				}
+				err = ValidateShowTeamPaneWindowBusyResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "show_team_pane", err)
+				}
+				return nil, NewShowTeamPaneWindowBusy(&body)
+			case "pane_unavailable":
+				var (
+					body ShowTeamPanePaneUnavailableResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+				}
+				err = ValidateShowTeamPanePaneUnavailableResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "show_team_pane", err)
+				}
+				return nil, NewShowTeamPanePaneUnavailable(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "show_team_pane", resp.StatusCode, string(body))
+			}
+		case http.StatusServiceUnavailable:
+			var (
+				body ShowTeamPaneTeamUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+			}
+			err = ValidateShowTeamPaneTeamUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "show_team_pane", err)
+			}
+			return nil, NewShowTeamPaneTeamUnavailable(&body)
+		case http.StatusForbidden:
+			var (
+				body ShowTeamPaneForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+			}
+			err = ValidateShowTeamPaneForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "show_team_pane", err)
+			}
+			return nil, NewShowTeamPaneForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "show_team_pane", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "show_team_pane", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildStartTeamAgentsRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "start_team_agents" endpoint
+func (c *Client) BuildStartTeamAgentsRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: StartTeamAgentsSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "start_team_agents", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeStartTeamAgentsResponse returns a decoder for responses returned by
+// the surla start_team_agents endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeStartTeamAgentsResponse may return the following errors:
+//   - "window_busy" (type *goa.ServiceError): http.StatusConflict
+//   - "ambiguous_space" (type *surla.TeamSpaceConflict): http.StatusConflict
+//   - "team_unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeStartTeamAgentsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "start_team_agents", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body StartTeamAgentsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+			}
+			err = ValidateStartTeamAgentsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_team_agents", err)
+			}
+			res := NewStartTeamAgentsProjectTeamOK(&body)
+			return res, nil
+		case http.StatusConflict:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "window_busy":
+				var (
+					body StartTeamAgentsWindowBusyResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+				}
+				err = ValidateStartTeamAgentsWindowBusyResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_team_agents", err)
+				}
+				return nil, NewStartTeamAgentsWindowBusy(&body)
+			case "ambiguous_space":
+				var (
+					body StartTeamAgentsAmbiguousSpaceResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+				}
+				err = ValidateStartTeamAgentsAmbiguousSpaceResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_team_agents", err)
+				}
+				return nil, NewStartTeamAgentsAmbiguousSpace(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "start_team_agents", resp.StatusCode, string(body))
+			}
+		case http.StatusServiceUnavailable:
+			var (
+				body StartTeamAgentsTeamUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+			}
+			err = ValidateStartTeamAgentsTeamUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_team_agents", err)
+			}
+			return nil, NewStartTeamAgentsTeamUnavailable(&body)
+		case http.StatusForbidden:
+			var (
+				body StartTeamAgentsForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+			}
+			err = ValidateStartTeamAgentsForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_team_agents", err)
+			}
+			return nil, NewStartTeamAgentsForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_team_agents", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "start_team_agents", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildListChangesRequest instantiates a HTTP request object with method and
 // path set to call the "surla" service "list_changes" endpoint
 func (c *Client) BuildListChangesRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -4726,6 +5082,34 @@ func unmarshalTraceSpanResponseBodyToSurlaTraceSpan(v *TraceSpanResponseBody) *s
 		tk := key
 		tv := val
 		res.Attributes[tk] = tv
+	}
+
+	return res
+}
+
+// unmarshalTeamRoleStateResponseBodyToSurlaTeamRoleState builds a value of
+// type *surla.TeamRoleState from a value of type *TeamRoleStateResponseBody.
+func unmarshalTeamRoleStateResponseBodyToSurlaTeamRoleState(v *TeamRoleStateResponseBody) *surla.TeamRoleState {
+	res := &surla.TeamRoleState{
+		Role:       *v.Role,
+		Handle:     *v.Handle,
+		State:      *v.State,
+		Attention:  *v.Attention,
+		Watcher:    *v.Watcher,
+		Assignment: *v.Assignment,
+	}
+
+	return res
+}
+
+// unmarshalProjectTeamRoleResponseBodyToSurlaProjectTeamRole builds a value of
+// type *surla.ProjectTeamRole from a value of type
+// *ProjectTeamRoleResponseBody.
+func unmarshalProjectTeamRoleResponseBodyToSurlaProjectTeamRole(v *ProjectTeamRoleResponseBody) *surla.ProjectTeamRole {
+	res := &surla.ProjectTeamRole{
+		Role:    *v.Role,
+		Handle:  *v.Handle,
+		Running: *v.Running,
 	}
 
 	return res

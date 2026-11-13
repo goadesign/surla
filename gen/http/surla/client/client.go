@@ -108,6 +108,18 @@ type Client struct {
 	// get_story_refresh endpoint.
 	GetStoryRefreshDoer goahttp.Doer
 
+	// GetTeam Doer is the HTTP client used to make requests to the get_team
+	// endpoint.
+	GetTeamDoer goahttp.Doer
+
+	// ShowTeamPane Doer is the HTTP client used to make requests to the
+	// show_team_pane endpoint.
+	ShowTeamPaneDoer goahttp.Doer
+
+	// StartTeamAgents Doer is the HTTP client used to make requests to the
+	// start_team_agents endpoint.
+	StartTeamAgentsDoer goahttp.Doer
+
 	// ListChanges Doer is the HTTP client used to make requests to the
 	// list_changes endpoint.
 	ListChangesDoer goahttp.Doer
@@ -187,6 +199,9 @@ func NewClient(
 		ListTracesDoer:                doer,
 		RefreshStoryDoer:              doer,
 		GetStoryRefreshDoer:           doer,
+		GetTeamDoer:                   doer,
+		ShowTeamPaneDoer:              doer,
+		StartTeamAgentsDoer:           doer,
 		ListChangesDoer:               doer,
 		WaitForChangesDoer:            doer,
 		StartBuildDoer:                doer,
@@ -706,6 +721,68 @@ func (c *Client) GetStoryRefresh() goa.Endpoint {
 		resp, err := c.GetStoryRefreshDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_story_refresh", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// GetTeam returns an endpoint that makes HTTP requests to the surla service
+// get_team server.
+func (c *Client) GetTeam() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGetTeamResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGetTeamRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GetTeamDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "get_team", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ShowTeamPane returns an endpoint that makes HTTP requests to the surla
+// service show_team_pane server.
+func (c *Client) ShowTeamPane() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeShowTeamPaneRequest(c.encoder)
+		decodeResponse = DecodeShowTeamPaneResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildShowTeamPaneRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ShowTeamPaneDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "show_team_pane", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// StartTeamAgents returns an endpoint that makes HTTP requests to the surla
+// service start_team_agents server.
+func (c *Client) StartTeamAgents() goa.Endpoint {
+	var (
+		decodeResponse = DecodeStartTeamAgentsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildStartTeamAgentsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.StartTeamAgentsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "start_team_agents", err)
 		}
 		return decodeResponse(resp)
 	}

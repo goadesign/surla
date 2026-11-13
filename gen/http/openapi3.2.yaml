@@ -1436,7 +1436,7 @@ paths:
             tags:
                 - surla
             summary: wait_for_changes surla
-            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
             operationId: surla#wait_for_changes
             parameters:
                 - name: since
@@ -7145,6 +7145,182 @@ paths:
                                 name: update_not_confirmed
                                 temporary: false
                                 timeout: false
+    /team:
+        get:
+            tags:
+                - surla
+            summary: get_team surla
+            description: Read the project team's registered roles and current terminal, watcher and unread-assignment facts. Reading creates nothing and marks no assignment read. Only the user's browser session may call it. wait_for_changes covers this snapshot as well as the change list.
+            operationId: surla#get_team
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TeamSnapshot'
+                            example:
+                                roles:
+                                    - assignment: unknown
+                                      attention: auth
+                                      handle: Quae ea aut iusto ea blanditiis.
+                                      role: test_writer
+                                      state: waiting
+                                      watcher: unknown
+                                    - assignment: unknown
+                                      attention: auth
+                                      handle: Quae ea aut iusto ea blanditiis.
+                                      role: test_writer
+                                      state: waiting
+                                      watcher: unknown
+                                    - assignment: unknown
+                                      attention: auth
+                                      handle: Quae ea aut iusto ea blanditiis.
+                                      role: test_writer
+                                      state: waiting
+                                      watcher: unknown
+                                team: Autem explicabo omnis ipsam aut provident architecto.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+    /team/agents:
+        post:
+            tags:
+                - surla
+            summary: start_team_agents surla
+            description: Ask the project's existing team-start owner to prepare the registered roles and open the Chorus launcher when a listed role is not running. Only the user may call it. It has the same bounded server-owned lifetime and dialog, space and availability refusals as the management team-start operation.
+            operationId: surla#start_team_agents
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectTeam'
+                            example:
+                                dialog: already_open
+                                roles:
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                    - handle: Quo a est cumque quae quod velit.
+                                      role: builder
+                                      running: true
+                                space: Ut aut.
+                                team: c
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'window_busy: Close the open Herdr dialog before starting agents.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: window_busy
+                                temporary: false
+                                timeout: false
+                "503":
+                    description: 'team_unavailable: The project team could not be prepared.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: team_unavailable
+                                temporary: false
+                                timeout: false
+    /team/pane:
+        post:
+            tags:
+                - surla
+            summary: show_team_pane surla
+            description: Show this project's space and focus the requested registered role's pane, only at the user's request. Any open Herdr dialog prevents all window changes. Fresh project, handle and space labels must still identify the pane.
+            operationId: surla#show_team_pane
+            requestBody:
+                description: Request body for show_team_pane.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ShowTeamPaneRequestBody'
+                        example:
+                            role: test_writer
+            responses:
+                "204":
+                    description: No Content response.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'pane_unavailable: The requested registered role has no owned pane to show.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: pane_unavailable
+                                temporary: false
+                                timeout: false
+                "503":
+                    description: 'team_unavailable: Herdr could not establish the owned pane.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: team_unavailable
+                                temporary: false
+                                timeout: false
     /traces:
         get:
             tags:
@@ -12083,7 +12259,7 @@ components:
                           summary: Ut saepe incidunt odit.
                 version:
                     type: string
-                    description: Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.
+                    description: Opaque value identifying this exact list and the owner's current Story evaluation and public team snapshot; it changes whenever any listed value or team fact changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.
                     example: Voluptas voluptates.
             description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
             example:
@@ -13091,6 +13267,22 @@ components:
                 - request_revision
                 - prompt
                 - analysis
+        ShowTeamPaneRequestBody:
+            type: object
+            properties:
+                role:
+                    type: string
+                    description: Registered role whose pane the user requests.
+                    example: test_writer
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+            description: Request body for show_team_pane.
+            example:
+                role: test_writer
+            required:
+                - role
         StartBuildRequestBody:
             type: object
             properties:
@@ -15319,6 +15511,130 @@ components:
                 - name
                 - actors
                 - flows
+        TeamRoleState:
+            type: object
+            properties:
+                assignment:
+                    type: string
+                    description: unread when this role owes an assignment read, nothing_owed when the owner established none, unknown when the owner could not read assignments. The guide has no assignments.
+                    example: unknown
+                    enum:
+                        - unread
+                        - nothing_owed
+                        - unknown
+                attention:
+                    type: string
+                    description: Reported block kind or the reason a silent running agent needs the user.
+                    example: auth
+                    enum:
+                        - none
+                        - permission
+                        - question
+                        - auth
+                        - silent
+                        - unknown
+                handle:
+                    type: string
+                    description: Registered Chorus handle.
+                    example: Quae ea aut iusto ea blanditiis.
+                role:
+                    type: string
+                    description: Registered role.
+                    example: test_writer
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+                state:
+                    type: string
+                    description: Current terminal state; unknown means Herdr cannot establish it.
+                    example: waiting
+                    enum:
+                        - not_started
+                        - ended
+                        - starting
+                        - needs_you
+                        - working
+                        - waiting
+                        - error
+                        - unknown
+                watcher:
+                    type: string
+                    description: held when Chorus reports a watcher, gone after its absence grace, unknown otherwise.
+                    example: unknown
+                    enum:
+                        - held
+                        - gone
+                        - unknown
+            example:
+                assignment: unknown
+                attention: auth
+                handle: Quae ea aut iusto ea blanditiis.
+                role: test_writer
+                state: waiting
+                watcher: unknown
+            required:
+                - role
+                - handle
+                - state
+                - attention
+                - watcher
+                - assignment
+        TeamSnapshot:
+            type: object
+            properties:
+                roles:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/TeamRoleState'
+                    description: Registered roles in guide, builder, test_writer order; empty before registration.
+                    example:
+                        - assignment: unknown
+                          attention: auth
+                          handle: Quae ea aut iusto ea blanditiis.
+                          role: test_writer
+                          state: waiting
+                          watcher: unknown
+                        - assignment: unknown
+                          attention: auth
+                          handle: Quae ea aut iusto ea blanditiis.
+                          role: test_writer
+                          state: waiting
+                          watcher: unknown
+                        - assignment: unknown
+                          attention: auth
+                          handle: Quae ea aut iusto ea blanditiis.
+                          role: test_writer
+                          state: waiting
+                          watcher: unknown
+                team:
+                    type: string
+                    description: Stable team name, also returned before a team is prepared.
+                    example: Autem explicabo omnis ipsam aut provident architecto.
+            example:
+                roles:
+                    - assignment: unknown
+                      attention: auth
+                      handle: Quae ea aut iusto ea blanditiis.
+                      role: test_writer
+                      state: waiting
+                      watcher: unknown
+                    - assignment: unknown
+                      attention: auth
+                      handle: Quae ea aut iusto ea blanditiis.
+                      role: test_writer
+                      state: waiting
+                      watcher: unknown
+                    - assignment: unknown
+                      attention: auth
+                      handle: Quae ea aut iusto ea blanditiis.
+                      role: test_writer
+                      state: waiting
+                      watcher: unknown
+                team: Autem explicabo omnis ipsam aut provident architecto.
+            required:
+                - team
+                - roles
         TeamSpaceConflict:
             type: object
             properties:

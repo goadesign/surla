@@ -335,6 +335,17 @@ func (runtime projectRuntime) serve() (err error) {
 		return err
 	}
 	opts.TracerProvider = provider
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	team, err := runtime.teamDependencies(ctx)
+	if err != nil {
+		return err
+	}
+	management, err := project.NewServer(state, stop, team)
+	if err != nil {
+		return err
+	}
+	opts.Team = &controlplane.TeamBinding{Owner: state.Record.Owner, Service: management}
 	cp, err := controlplane.New(opts)
 	if err != nil {
 		return err
@@ -345,16 +356,6 @@ func (runtime projectRuntime) serve() (err error) {
 	listener, err := runtime.listen("tcp", state.Address())
 	if err != nil {
 		return fmt.Errorf("project port is occupied: %w", err)
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer stop()
-	team, err := runtime.teamDependencies(ctx)
-	if err != nil {
-		return errors.Join(err, listener.Close())
-	}
-	management, err := project.NewServer(state, stop, team)
-	if err != nil {
-		return errors.Join(err, listener.Close())
 	}
 	application := http.NewServeMux()
 	application.Handle("GET /views", controlplane.ViewsPage())

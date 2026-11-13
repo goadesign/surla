@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|ensure-team|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -152,6 +152,13 @@ func ParseEndpoint(
 
 		surlaGetStoryRefreshFlags = flag.NewFlagSet("get-story-refresh", flag.ExitOnError)
 
+		surlaGetTeamFlags = flag.NewFlagSet("get-team", flag.ExitOnError)
+
+		surlaShowTeamPaneFlags    = flag.NewFlagSet("show-team-pane", flag.ExitOnError)
+		surlaShowTeamPaneBodyFlag = new(cliStringFlag)
+
+		surlaStartTeamAgentsFlags = flag.NewFlagSet("start-team-agents", flag.ExitOnError)
+
 		surlaListChangesFlags = flag.NewFlagSet("list-changes", flag.ExitOnError)
 
 		surlaWaitForChangesFlags     = flag.NewFlagSet("wait-for-changes", flag.ExitOnError)
@@ -199,6 +206,7 @@ func ParseEndpoint(
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
 	surlaListTracesFlags.Var(surlaListTracesCursorFlag, "cursor", "")
+	surlaShowTeamPaneFlags.Var(surlaShowTeamPaneBodyFlag, "body", "")
 	surlaWaitForChangesFlags.Var(surlaWaitForChangesSinceFlag, "since", "")
 	surlaStartBuildFlags.Var(surlaStartBuildBodyFlag, "body", "")
 	surlaStartBuildFlags.Var(surlaStartBuildChangeIDFlag, "change-id", "Confirmed Change Card identifier.")
@@ -241,6 +249,9 @@ func ParseEndpoint(
 	surlaListTracesFlags.Usage = surlaListTracesUsage
 	surlaRefreshStoryFlags.Usage = surlaRefreshStoryUsage
 	surlaGetStoryRefreshFlags.Usage = surlaGetStoryRefreshUsage
+	surlaGetTeamFlags.Usage = surlaGetTeamUsage
+	surlaShowTeamPaneFlags.Usage = surlaShowTeamPaneUsage
+	surlaStartTeamAgentsFlags.Usage = surlaStartTeamAgentsUsage
 	surlaListChangesFlags.Usage = surlaListChangesUsage
 	surlaWaitForChangesFlags.Usage = surlaWaitForChangesUsage
 	surlaStartBuildFlags.Usage = surlaStartBuildUsage
@@ -381,6 +392,15 @@ func ParseEndpoint(
 			case "get-story-refresh":
 				epf = surlaGetStoryRefreshFlags
 
+			case "get-team":
+				epf = surlaGetTeamFlags
+
+			case "show-team-pane":
+				epf = surlaShowTeamPaneFlags
+
+			case "start-team-agents":
+				epf = surlaStartTeamAgentsFlags
+
 			case "list-changes":
 				epf = surlaListChangesFlags
 
@@ -517,6 +537,13 @@ func ParseEndpoint(
 				endpoint = c.RefreshStory()
 			case "get-story-refresh":
 				endpoint = c.GetStoryRefresh()
+			case "get-team":
+				endpoint = c.GetTeam()
+			case "show-team-pane":
+				endpoint = c.ShowTeamPane()
+				data, err = surlac.BuildShowTeamPanePayload(surlaShowTeamPaneBodyFlag.value)
+			case "start-team-agents":
+				endpoint = c.StartTeamAgents()
 			case "list-changes":
 				endpoint = c.ListChanges()
 			case "wait-for-changes":
@@ -713,8 +740,11 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the project owner's in-memory Story refresh operation for that workspace, which every caller acting for the owner reads. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
 	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the project owner's current in-memory Story refresh operation for the bound workspace, the same one for every caller acting for the owner: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
+	fmt.Fprintln(os.Stderr, `    get-team: Read the project team's registered roles and current terminal, watcher and unread-assignment facts. Reading creates nothing and marks no assignment read. Only the user's browser session may call it. wait_for_changes covers this snapshot as well as the change list.`)
+	fmt.Fprintln(os.Stderr, `    show-team-pane: Show this project's space and focus the requested registered role's pane, only at the user's request. Any open Herdr dialog prevents all window changes. Fresh project, handle and space labels must still identify the pane.`)
+	fmt.Fprintln(os.Stderr, `    start-team-agents: Ask the project's existing team-start owner to prepare the registered roles and open the Chorus launcher when a listed role is not running. Only the user may call it. It has the same bounded server-owned lifetime and dialog, space and availability refusals as the management team-start operation.`)
 	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
-	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
+	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
 	fmt.Fprintln(os.Stderr, `    start-build: The user starts building a confirmed change at its revision in force. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the one in force, is refused and nothing changes.`)
 	fmt.Fprintln(os.Stderr, `    get-build: Return a change's build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    list-builder-assignments: List the builder's assignments, one per change the user built, most recently started first, each with its change, revision and whether it was read. Reading the list records nothing.`)
@@ -1134,6 +1164,56 @@ func surlaGetStoryRefreshUsage() {
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-story-refresh")
 }
 
+func surlaGetTeamUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-team", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Read the project team's registered roles and current terminal, watcher and unread-assignment facts. Reading creates nothing and marks no assignment read. Only the user's browser session may call it. wait_for_changes covers this snapshot as well as the change list.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-team")
+}
+
+func surlaShowTeamPaneUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla show-team-pane", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Show this project's space and focus the requested registered role's pane, only at the user's request. Any open Herdr dialog prevents all window changes. Fresh project, handle and space labels must still identify the pane.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla show-team-pane --body '{\n      \"role\": \"test_writer\"\n   }'")
+}
+
+func surlaStartTeamAgentsUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla start-team-agents", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Ask the project's existing team-start owner to prepare the registered roles and open the Chorus launcher when a listed role is not running. Only the user may call it. It has the same bounded server-owned lifetime and dialog, space and availability refusals as the management team-start operation.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla start-team-agents")
+}
+
 func surlaListChangesUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla list-changes", os.Args[0])
@@ -1158,7 +1238,7 @@ func surlaWaitForChangesUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
+	fmt.Fprintln(os.Stderr, `Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -since STRING: `)
