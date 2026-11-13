@@ -110,9 +110,11 @@ and [Chorus](https://github.com/goadesign/chorus) v0.11.0 or newer, then run
 required programs and Chorus version and names the install or update step if
 anything is missing. It starts or attaches to one server in a parentless Herdr
 terminal, starts an absent Chorus service or Herdr window, and prepares this
-project's guide team. Choose an agent and model in the Chorus launcher in Herdr;
-the guide uses its own Surla connection to work through the Story and change
-with you. Surla then opens the views page through a short-lived link.
+project's guide team. If the server stops while starting, Surla shows its last
+lines, including its error, and removes its ended terminal. Choose an agent and
+model in the Chorus launcher in Herdr; the guide uses its own Surla connection
+to work through the Story and change with you. Surla then opens the views page
+through a short-lived link.
 
 Starting again reuses the team's stable handles and Herdr space. No launcher
 opens when every role listed in the roster is running. Surla opens the launcher
