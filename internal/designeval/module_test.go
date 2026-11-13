@@ -1,6 +1,7 @@
 package designeval
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/modfile"
 
 	"github.com/goadesign/surla"
 	"github.com/goadesign/surla/internal/testmodule"
@@ -119,5 +121,86 @@ func TestEvaluatorGoModIgnoresTheWorkingDirectory(t *testing.T) {
 		version, ok := requiredVersion(mod, core)
 		assert.True(t, ok, "Surla's go.mod requires %s", core)
 		assert.NotEmpty(t, version)
+	}
+}
+
+// TestALoadFailureNamesTheStoryRequirementStepOnlyWhenItIsMissing checks
+// which failures to load a design's dependencies name the step that requires
+// the Story module, from the snapshot alone, and that the step names the
+// version Surla's own go.mod requires.
+func TestALoadFailureNamesTheStoryRequirementStepOnlyWhenItIsMissing(t *testing.T) {
+	evalMod, err := evaluatorGoMod()
+	require.NoError(t, err)
+	surlaStory, ok := requiredVersion(evalMod, harnessStoryModule)
+	require.True(t, ok, "Surla's go.mod requires the Story module")
+	step := "\nThe design imports the Story language, but its module's go.mod does not require it. " +
+		"In the folder that holds that go.mod, run: go get github.com/goadesign/surla/story@" + surlaStory +
+		", commit go.mod and go.sum, then try again."
+	const (
+		plainMod   = "module example.com/orders\n\ngo 1.24\n"
+		storyFile  = "package design\n\nimport . \"github.com/goadesign/surla/story/dsl\"\n\nvar _ = Story(\"Orders\", func() {})\n"
+		plainFile  = "package design\n\nimport . \"goa.design/goa/v3/dsl\"\n\nvar _ = API(\"orders\", func() {})\n"
+		olderStory = "v0.0.0-20261110000000-000000000000"
+	)
+	for _, test := range []struct {
+		name  string
+		files map[string]string
+		step  bool
+	}{
+		{
+			name:  "the design imports the language and go.mod does not require it",
+			files: map[string]string{"go.mod": plainMod, "design/design.go": plainFile, "design/story.go": storyFile},
+			step:  true,
+		},
+		{
+			name: "a package under design imports the language and go.mod does not require it",
+			files: map[string]string{
+				"go.mod": plainMod, "design/design.go": plainFile, "design/stories/orders.go": storyFile,
+			},
+			step: true,
+		},
+		{
+			name: "the design imports the language and go.mod requires it",
+			files: map[string]string{
+				"go.mod":          plainMod + "\nrequire github.com/goadesign/surla/story " + surlaStory + "\n",
+				"design/story.go": storyFile,
+			},
+		},
+		{
+			name:  "the design does not import the language",
+			files: map[string]string{"go.mod": plainMod, "design/design.go": plainFile},
+		},
+		{
+			// Only a package outside design/ imports the language: the
+			// evaluator does not load it, so it is not why loading failed.
+			name:  "only a package outside the design imports the language",
+			files: map[string]string{"go.mod": plainMod, "design/design.go": plainFile, "stories/orders.go": storyFile},
+		},
+		{
+			// The requirement resolves, so loading does not fail for want
+			// of it, and the evaluation uses the project's version. Whether
+			// that version fits is the compiler's to say, in a later phase
+			// whose diagnostic carries the compiler's output.
+			name: "the design imports the language and go.mod requires another version",
+			files: map[string]string{
+				"go.mod":          plainMod + "\nrequire github.com/goadesign/surla/story " + olderStory + "\n",
+				"design/story.go": storyFile,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target, err := modfile.Parse("go.mod", []byte(test.files["go.mod"]), nil)
+			require.NoError(t, err)
+			cause := errors.New("go list -mod=readonly -deps ./design/...: exit status 1")
+			loadErr := withStoryRequirementStep(cause, test.files, target, evalMod)
+			assert.ErrorIs(t, loadErr, cause)
+			assert.Equal(t, cause.Error(), loadErr.Error(), "the CLI and trace text is unchanged")
+			diagnostic := GenerationDiagnostic(&phaseError{phase: phaseLoadModules, err: loadErr})
+			want := "Code generation failed while loading the design module dependencies."
+			if test.step {
+				want += step
+			}
+			assert.Equal(t, want, diagnostic)
+		})
 	}
 }

@@ -514,6 +514,50 @@ func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
 	})
 }
 
+// TestStoryRefreshNamesTheStepThatRequiresTheStoryLanguage verifies that a
+// refresh of a design that imports the Story language, in a project whose
+// go.mod does not require the Story module, fails with a diagnostic naming
+// the go get command at the Story version Surla's own go.mod requires.
+func TestStoryRefreshNamesTheStepThatRequiresTheStoryLanguage(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	wsDir := t.TempDir()
+	writeWorkspaceFiles(t, wsDir, validWorkspaceStub(
+		"package design\n\nimport . \"github.com/goadesign/surla/story/dsl\"\n\nvar _ = Story(\"Orders\", func() {})\n",
+	))
+
+	// The toolchain's go fails to load the design's dependencies, as Go
+	// does when no required module provides an import. Its output stays
+	// withheld from callers.
+	goroot := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(goroot, "bin"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(goroot, "bin", "go"), []byte("#!/bin/sh\n"+
+		"echo 'no required module provides package github.com/goadesign/surla/story/dsl' >&2\nexit 1\n"), 0o700))
+	// The go on PATH answers go env GOROOT GOMODCACHE with that toolchain.
+	installFakeGo(t, "#!/bin/sh\nprintf '%s\\n' '"+goroot+"' '"+filepath.Join(goroot, "modcache")+"'\n")
+
+	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
+	started, err := cp.RefreshStory(alice)
+	require.NoError(t, err)
+	require.NotNil(t, started.OpID)
+
+	var failed *gensurla.StoryRefreshResult
+	require.Eventually(t, func() bool {
+		cur, getErr := cp.GetStoryRefresh(alice)
+		if getErr != nil {
+			return false
+		}
+		failed = cur
+		return cur.State == storyRefreshStateFailed
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NotNil(t, failed.Diagnostic)
+	assert.Equal(t, "Story evaluation failed while loading the design module dependencies.\n"+
+		"The design imports the Story language, but its module's go.mod does not require it. "+
+		"In the folder that holds that go.mod, run: go get github.com/goadesign/surla/story@"+
+		testmodule.SurlaVersion(t, "github.com/goadesign/surla/story")+
+		", commit go.mod and go.sum, then try again.", *failed.Diagnostic)
+	assert.Equal(t, "Story refresh "+*started.OpID+" failed for workspace snapshot "+*started.SnapshotDigest+".", failed.Message)
+}
+
 // TestStoryRefreshOwnerIsolation verifies that callers acting for another
 // project owner cannot read or replace this owner's Story refresh operation.
 func TestStoryRefreshOwnerIsolation(t *testing.T) {
