@@ -323,16 +323,17 @@ server adopts exactly one local space matching its team name and physical
 folder, creates one if none matches, and refuses duplicates with their count.
 It removes only its own roster for a replaced space.
 
-When the guide is missing or its pane holds only an idle shell, Surla focuses
-this project's space and opens the Chorus launcher so the user can choose an
-agent and model. Surla reads open dialog names before changing the window. An
-already open
+When any role listed in the roster is missing or its pane holds only an idle
+shell, Surla focuses this project's space and opens the Chorus launcher so the
+user can choose an agent and model. A running guide with a missing listed
+builder still opens the launcher. Surla reads open dialog names before
+changing the window. An already open
 launcher stays open and keeps its captured project; choose agents there only
 if it is for this project, otherwise close it and run Surla again. Another
 open dialog must be closed before retrying. If this project has no saved or
 matching space and any dialog is open, startup refuses without creating a
-space, adding an agent, or saving team state. When the guide is running, no new
-dialog opens. Missing foreground information conservatively counts a live pane
+space, adding an agent, or saving team state. When every listed role is running,
+no new dialog opens. Missing foreground information conservatively counts a live pane
 as running. Surla
 prints the team and launcher state, then opens its views page. The guide works
 through the Story and change with the user; only the user confirms and approves
