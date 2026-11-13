@@ -38,7 +38,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/goadesign/surla/internal/controlplane"
 )
 
@@ -276,23 +275,15 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 	harness, err := filepath.Abs("../../ui/checkpoint/testing/browser_harness.cjs")
 	require.NoError(t, err)
 
-	vp := startViewsProject(t)
+	vp := startViewsProject(t, controlplane.Options{})
 	origin := vp.state.Origin()
-	management := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: vp.state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
-	agent, err := vp.server.Load().AddAgent(management, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
-	require.NoError(t, err)
-	guide, err := os.ReadFile(agent.CredentialFile)
-	require.NoError(t, err)
+	guide := vp.agent(t, "guide")
 	changeIDs := []string{"chg-refunds", "chg-invoices"}
 	for _, id := range changeIDs {
-		proposeChange(t, origin, string(guide), id)
+		proposeChange(t, origin, guide, id)
 	}
-	minted, err := vp.server.Load().BrowserLink(management)
+	link, err := vp.link()
 	require.NoError(t, err)
-	minturl, err := url.Parse(minted.URL)
-	require.NoError(t, err)
-	link := strings.TrimPrefix(minturl.Fragment, "link=")
-	require.NotEmpty(t, link)
 
 	other := startOtherOrigin(t, origin+"/views")
 	started := time.Now()
