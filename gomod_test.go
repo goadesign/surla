@@ -25,11 +25,12 @@ const storyModule = "github.com/goadesign/surla/story"
 // story/ differs from the Story module version Surla's go.mod requires:
 // Surla's Story reader is compiled against that version, and every new
 // starter requires it. It compares what the Go command compiles (Go sources
-// and the module files). Documents are left out, because a document cannot
-// change the language and should not force a new version; that holds only
-// while the module embeds no file, so an embed directive in story/ fails the
-// test too. The published module carries the repository's LICENSE, which
-// story/ does not.
+// and the module files). Markdown documents (files ending in .md) are left
+// out, because a document cannot change the language and should not force a
+// new version; that holds only while the module embeds no file, so a Go file
+// in story/ that contains the text of an embed directive fails the test too.
+// The published module carries the repository's LICENSE, which story/ does
+// not.
 func TestStoryRequirementMatchesTheStoryFolder(t *testing.T) {
 	mod, err := modfile.Parse("go.mod", []byte(GoMod()), nil)
 	require.NoError(t, err)
@@ -83,8 +84,11 @@ func TestStoryRequirementMatchesTheStoryFolder(t *testing.T) {
 
 // moduleFiles returns every regular file under dir that is not a Markdown
 // document, by its slash-separated path relative to dir. It fails the test
-// when a Go file embeds a file: an embedded document would be part of the
-// compiled module, and leaving documents out would then hide a difference.
+// when a Go file contains the text of an embed directive: an embedded
+// document would be part of the compiled module, and leaving documents out
+// would then hide a difference. The check is on the text, so a comment or a
+// string that only mentions the directive fails too, which errs on the safe
+// side.
 func moduleFiles(t *testing.T, dir string) map[string][]byte {
 	t.Helper()
 	files := map[string][]byte{}
@@ -100,8 +104,8 @@ func moduleFiles(t *testing.T, dir string) map[string][]byte {
 			return err
 		}
 		if filepath.Ext(path) == ".go" {
-			assert.NotContains(t, string(content), "//go:embed", "%s embeds a file: compare embedded "+
-				"documents too before leaving Markdown files out of this test", path)
+			assert.False(t, bytes.Contains(content, []byte("//go:embed")), "%s contains an embed "+
+				"directive: compare embedded documents too before leaving Markdown files out of this test", path)
 		}
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {
