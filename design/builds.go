@@ -95,7 +95,7 @@ var StartedBuild = Type("StartedBuild", func() {
 	Description("The build the user started for a change, with both assignments.")
 	Attribute("request_revision", String, "Change Card revision the user built.")
 	Attribute("started_at", String, "When the user started this build.", func() { Format(FormatDateTime) })
-	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.")
 	Attribute("builder", BuilderProgress, "The builder's assignment.")
 	Attribute("test_writer", TestWriterProgress, "The test writer's assignment.")
 	Required("request_revision", "started_at", "in_force", "builder", "test_writer")
@@ -124,7 +124,7 @@ var BuilderAssignment = Type("BuilderAssignment", func() {
 	Description("The builder's assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.")
 	Attribute("change_id", String, "Change Card to build; get_change takes it.")
 	Attribute("request_revision", String, "Change Card revision to build; verify_change takes it.")
-	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.")
 	Attribute("read", Boolean, "True once you read this assignment in full with get_builder_assignment.")
 	OneOf("written_tests", "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.", func() {
 		Meta("oneof:json:flatten")
@@ -158,7 +158,7 @@ var TestWriterAssignmentItem = Type("TestWriterAssignmentItem", func() {
 	Description("One of the test writer's assignments as list_test_writer_assignments reports it.")
 	Attribute("change_id", String, "Change Card the tests are for; get_test_writer_assignment takes it.")
 	Attribute("request_revision", String, "Change Card revision the tests are for.")
-	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.")
 	Attribute("progress", TestWriterProgress, "Where this assignment stands.")
 	Required("change_id", "request_revision", "in_force", "progress")
 })
@@ -175,7 +175,7 @@ var TestWriterAssignment = Type("TestWriterAssignment", func() {
 	Description("The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.")
 	Attribute("change_id", String, "Change Card the tests are for.")
 	Attribute("request_revision", String, "Change Card revision the tests are for; report_tests_finished takes it.")
-	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.")
+	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.")
 	Attribute("progress", TestWriterProgress, "Where this assignment stands, including Surla's findings when it needs changes.")
 	Attribute("working_folder", String, "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.")
@@ -187,15 +187,15 @@ var TestWriterAssignment = Type("TestWriterAssignment", func() {
 // assignment operations of the builder and the test writer.
 func buildMethods() {
 	Method("start_build", func() {
-		Description("The user starts building a confirmed change at its revision in force. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the one in force, is refused and nothing changes.")
+		Description("The user starts building a confirmed change at its agreed revision, the one in force; a revision the guide proposed beside it is built only after the user adopts it. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the agreed revision (such as a waiting proposal's), is refused and nothing changes.")
 		Payload(func() {
 			Attribute("change_id", String, "Confirmed Change Card identifier.", func() { MinLength(1) })
-			Attribute("request_revision", String, "The Change Card's confirmed revision in force.", func() { MinLength(1) })
+			Attribute("request_revision", String, "The Change Card's agreed revision, the one in force (not a waiting proposal's).", func() { MinLength(1) })
 			Required("change_id", "request_revision")
 		})
 		Result(StartedBuild)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The Change Card is not confirmed or request_revision is not its revision in force; nothing changed.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or request_revision is not its agreed revision (a waiting proposal's revision cannot be built); nothing changed.")
 		Error("unprocessable", ErrorResult, "The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.")
 		HTTP(func() {
 			POST("/changes/{change_id}/build")

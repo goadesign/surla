@@ -187,6 +187,20 @@ func (r storedChangeCard) latest() storedRevision {
 	return storedRevision{card: r.card, designSource: r.designSource, stories: r.stories}
 }
 
+// agreedRevision returns the revision the user agreed, which is the revision
+// in force: the card's revision once the user confirmed it, and still that
+// revision while a proposal waits beside it; "" while the change awaits its
+// first confirmation. A proposal never becomes in force until the user adopts
+// it. start_build accepts only this revision, get_build and every assignment
+// read report in_force against it, and confirm_intent and revise_change use
+// it to recognize the agreed revision while a proposal waits.
+func (r storedChangeCard) agreedRevision() string {
+	if r.card.Status != StatusConfirmed {
+		return ""
+	}
+	return r.card.RequestRevision
+}
+
 // checkLatestRevision refuses a revision request that does not name record's
 // latest revision. Naming the revision in force while a proposal waits gets a
 // message saying the proposal must be revised instead.
@@ -195,7 +209,7 @@ func checkLatestRevision(record storedChangeCard, requestRevision string) error 
 	switch {
 	case requestRevision == latest:
 		return nil
-	case record.proposed != nil && requestRevision == record.card.RequestRevision:
+	case record.proposed != nil && requestRevision == record.agreedRevision():
 		return gensurla.MakeConflict(fmt.Errorf(
 			"change_id %q has a proposed revision %q waiting beside the confirmed revision; read it with get_change and revise it by naming its request_revision",
 			record.card.ChangeID,

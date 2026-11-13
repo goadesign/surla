@@ -199,7 +199,8 @@ type ShowTeamPaneRequestBody struct {
 // StartBuildRequestBody is the type of the "surla" service "start_build"
 // endpoint HTTP request body.
 type StartBuildRequestBody struct {
-	// The Change Card's confirmed revision in force.
+	// The Change Card's agreed revision, the one in force (not a waiting
+	// proposal's).
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 }
 
@@ -848,9 +849,11 @@ type StartBuildResponseBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// When the user started this build.
 	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
-	// True when request_revision is the change's confirmed revision in force.
-	// False when the change was revised or confirmed again since: the assignments
-	// stay as they are, for this earlier revision, until the user builds again.
+	// True when request_revision is the change's agreed revision, the one in
+	// force. It stays true while a revision the guide proposed waits beside the
+	// agreed one, and turns false once the user adopts a proposed revision or
+	// confirms another revision: the assignments then stay as they are, for this
+	// earlier revision, until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// The builder's assignment.
 	Builder *BuilderProgressResponseBody `form:"builder,omitempty" json:"builder,omitempty" xml:"builder,omitempty"`
@@ -884,8 +887,9 @@ type GetBuilderAssignmentResponseBody struct {
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// True when request_revision is the change's confirmed revision in force, as
-	// get_build reports it. False when the user has since confirmed another
-	// revision or the change awaits confirmation of one: verify_change refuses
+	// get_build reports it. It stays true while a revision the guide proposed
+	// waits beside the agreed one, and is false once the user has adopted a
+	// proposed revision or confirmed another revision: verify_change then refuses
 	// this revision, and the assignment stays as it is until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// True once you read this assignment in full with get_builder_assignment.
@@ -913,9 +917,10 @@ type GetTestWriterAssignmentResponseBody struct {
 	// Change Card revision the tests are for; report_tests_finished takes it.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// True when request_revision is the change's confirmed revision in force, as
-	// get_build reports it. False when the user has since confirmed another
-	// revision or the change awaits confirmation of one: the assignment stays for
-	// this earlier revision until the user builds again.
+	// get_build reports it. It stays true while a revision the guide proposed
+	// waits beside the agreed one, and is false once the user has adopted a
+	// proposed revision or confirmed another revision: the assignment then stays
+	// for this earlier revision until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
@@ -939,9 +944,10 @@ type ReportTestsFinishedResponseBody struct {
 	// Change Card revision the tests are for.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// True when request_revision is the change's confirmed revision in force, as
-	// get_build reports it. False when the user has since confirmed another
-	// revision or the change awaits confirmation of one: the assignment stays for
-	// this earlier revision until the user builds again.
+	// get_build reports it. It stays true while a revision the guide proposed
+	// waits beside the agreed one, and is false once the user has adopted a
+	// proposed revision or confirmed another revision: the assignment then stays
+	// for this earlier revision until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`
@@ -3384,9 +3390,11 @@ type StartedBuildResponseBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// When the user started this build.
 	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
-	// True when request_revision is the change's confirmed revision in force.
-	// False when the change was revised or confirmed again since: the assignments
-	// stay as they are, for this earlier revision, until the user builds again.
+	// True when request_revision is the change's agreed revision, the one in
+	// force. It stays true while a revision the guide proposed waits beside the
+	// agreed one, and turns false once the user adopts a proposed revision or
+	// confirms another revision: the assignments then stay as they are, for this
+	// earlier revision, until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// The builder's assignment.
 	Builder *BuilderProgressResponseBody `form:"builder,omitempty" json:"builder,omitempty" xml:"builder,omitempty"`
@@ -3402,8 +3410,9 @@ type BuilderAssignmentResponseBody struct {
 	// Change Card revision to build; verify_change takes it.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// True when request_revision is the change's confirmed revision in force, as
-	// get_build reports it. False when the user has since confirmed another
-	// revision or the change awaits confirmation of one: verify_change refuses
+	// get_build reports it. It stays true while a revision the guide proposed
+	// waits beside the agreed one, and is false once the user has adopted a
+	// proposed revision or confirmed another revision: verify_change then refuses
 	// this revision, and the assignment stays as it is until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// True once you read this assignment in full with get_builder_assignment.
@@ -3428,9 +3437,10 @@ type TestWriterAssignmentItemResponseBody struct {
 	// Change Card revision the tests are for.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// True when request_revision is the change's confirmed revision in force, as
-	// get_build reports it. False when the user has since confirmed another
-	// revision or the change awaits confirmation of one: the assignment stays for
-	// this earlier revision until the user builds again.
+	// get_build reports it. It stays true while a revision the guide proposed
+	// waits beside the agreed one, and is false once the user has adopted a
+	// proposed revision or confirmed another revision: the assignment then stays
+	// for this earlier revision until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`

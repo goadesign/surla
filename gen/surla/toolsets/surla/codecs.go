@@ -3894,7 +3894,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+		Description: "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4225,7 +4225,7 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("read")},
@@ -5283,7 +5283,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
@@ -6142,7 +6142,7 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("read")},
@@ -6328,7 +6328,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress")},
@@ -8394,7 +8394,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("in_force")},
 		JSONType:    "boolean",
-		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+		Description: "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
@@ -21770,7 +21770,7 @@ func validateGetBuildResultStartedBuildTransportJSONValue(path string, value any
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+				typed[key], "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -22168,7 +22168,7 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.",
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -22368,7 +22368,7 @@ func validateListTestWriterAssignmentsResultTestWriterAssignmentItemTransportJSO
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 			); err != nil {
 				return err
 			}
@@ -22464,7 +22464,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.",
+				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
 			); err != nil {
 				return err
 			}

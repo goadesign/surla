@@ -3145,7 +3145,7 @@ paths:
             tags:
                 - surla
             summary: start_build surla
-            description: The user starts building a confirmed change at its revision in force. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the one in force, is refused and nothing changes.
+            description: The user starts building a confirmed change at its agreed revision, the one in force; a revision the guide proposed beside it is built only after the user adopts it. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the agreed revision (such as a waiting proposal's), is refused and nothing changes.
             operationId: surla#start_build
             parameters:
                 - name: change_id
@@ -3216,7 +3216,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: The Change Card is not confirmed or request_revision is not its revision in force; nothing changed.'
+                    description: 'conflict: The Change Card is not confirmed or request_revision is not its agreed revision (a waiting proposal''s revision cannot be built); nothing changed.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -16640,7 +16640,7 @@ components:
                     example: Et quos quod.
                 in_force:
                     type: boolean
-                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.'
+                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: verify_change then refuses this revision, and the assignment stays as it is until the user builds again.'
                     example: true
                 read:
                     type: boolean
@@ -17322,7 +17322,7 @@ components:
                                 $ref: '#/components/schemas/BuilderProgress'
                             in_force:
                                 type: boolean
-                                description: 'True when request_revision is the change''s confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.'
+                                description: 'True when request_revision is the change''s agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.'
                                 example: false
                             request_revision:
                                 type: string
@@ -22392,7 +22392,7 @@ components:
             properties:
                 request_revision:
                     type: string
-                    description: The Change Card's confirmed revision in force.
+                    description: The Change Card's agreed revision, the one in force (not a waiting proposal's).
                     example: q9g
                     minLength: 1
             description: Request body for start_build.
@@ -22420,7 +22420,7 @@ components:
                     $ref: '#/components/schemas/BuilderProgress'
                 in_force:
                     type: boolean
-                    description: 'True when request_revision is the change''s confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.'
+                    description: 'True when request_revision is the change''s agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.'
                     example: false
                 request_revision:
                     type: string
@@ -24767,7 +24767,7 @@ components:
                     example: Odio qui dolore.
                 in_force:
                     type: boolean
-                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.'
+                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.'
                     example: false
                 progress:
                     $ref: '#/components/schemas/TestWriterProgress'
@@ -27033,7 +27033,7 @@ components:
                     example: Veniam ex reiciendis.
                 in_force:
                     type: boolean
-                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: the assignment stays for this earlier revision until the user builds again.'
+                    description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.'
                     example: true
                 progress:
                     $ref: '#/components/schemas/TestWriterProgress'

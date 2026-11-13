@@ -382,7 +382,7 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 	switch {
 	case adopting:
 		base = *record.proposed
-	case record.proposed != nil && record.card.RequestRevision == p.RequestRevision:
+	case record.proposed != nil && record.agreedRevision() == p.RequestRevision:
 		return storedChangeCard{}, false, gensurla.MakeConflict(fmt.Errorf(
 			"change_id %q has a proposed revision %q waiting; Adopt it (confirm it with its request_revision) or Decline it (decline_revision) before refining the confirmed revision",
 			p.ChangeID,

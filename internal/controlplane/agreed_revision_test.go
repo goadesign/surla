@@ -32,6 +32,8 @@ var (
 	agreedGuide = WithPrincipal(context.Background(), Principal{ID: agreedOwner, CallerID: "guide", Kind: CallerGuide})
 	// agreedBuilder is the builder acting for agreedOwner.
 	agreedBuilder = WithPrincipal(context.Background(), Principal{ID: agreedOwner, CallerID: "builder", Kind: CallerBuilder})
+	// agreedTestWriter is the test writer acting for agreedOwner.
+	agreedTestWriter = WithPrincipal(context.Background(), Principal{ID: agreedOwner, CallerID: "tests", Kind: CallerTestWriter})
 )
 
 // TestARevisionOfAnAgreedChangeWaitsAndTheAgreedRevisionStaysInForce
@@ -530,6 +532,68 @@ func TestAWaitingProposalsDesignFilesBlockInitialization(t *testing.T) {
 	blocked, err = cp.cards.hasWorkspaceCardsWithFiles()
 	require.NoError(t, err)
 	assert.True(t, blocked, "a waiting proposal's design files block initialization")
+}
+
+// TestBuildsFollowTheAgreedRevision builds an agreed change while the guide's
+// proposal with another Story waits beside it: the proposal's revision cannot
+// be built, the agreed revision can, and the test writer's assignment holds
+// the agreed Story. Declining the proposal leaves the build in force on the
+// build read and on both roles' assignments; adopting a later proposal makes
+// it no longer in force on all three.
+func TestBuildsFollowTheAgreedRevision(t *testing.T) {
+	ws := t.TempDir()
+	writeWorkspaceFiles(t, ws, validWorkspaceStub("package design\n"))
+	cp := newControlPlane(t, Options{WorkspaceDir: ws})
+	agreedOp := seedStoryRefreshForTest(t, cp, agreedOwner, storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+	proposeWithStory(t, cp, agreedGuide, "chg", agreedOp)
+	proposed, err := cp.GetChange(agreedUser, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	agreed, err := cp.ConfirmIntent(agreedUser, &gensurla.ConfirmIntentPayload{
+		ChangeID: "chg", RequestRevision: proposed.RequestRevision, Answers: map[string]string{}, Examples: proposed.Examples,
+	})
+	require.NoError(t, err)
+	propose := func(rev string) *gensurla.ProposedRevisionItem {
+		t.Helper()
+		draftOp := seedStoryRefreshForTest(t, cp, agreedOwner, storyRefreshStateSucceeded, pageStories(), "")
+		payload := revisionPayload("chg", rev, "Refunds up to $60 are instant.", agreed.Examples[0].ID)
+		payload.StoryRefreshOpID = &draftOp
+		revised, err := cp.ReviseChange(agreedGuide, payload)
+		require.NoError(t, err)
+		require.NotNil(t, revised.ProposedRevision)
+		return revised.ProposedRevision
+	}
+	proposal := propose(agreed.RequestRevision)
+
+	_, err = cp.StartBuild(agreedUser, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: proposal.RequestRevision})
+	assertServiceError(t, err, "conflict")
+	started, err := cp.StartBuild(agreedUser, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: agreed.RequestRevision})
+	require.NoError(t, err, "the agreed revision is built while a proposal waits")
+	assert.Equal(t, agreed.RequestRevision, started.RequestRevision)
+	assert.True(t, started.InForce)
+	tests, err := cp.GetTestWriterAssignment(agreedTestWriter, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	assert.Equal(t, flowKeys(storySummaryItems(sampleAdoptedStories())), flowKeys(tests.Stories), "the build holds the agreed Story, not the proposal's")
+
+	inForce := func() map[string]bool {
+		t.Helper()
+		build := mustStartedBuild(t, cp, agreedUser, "chg")
+		builder, err := cp.GetBuilderAssignment(agreedBuilder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
+		require.NoError(t, err)
+		tests, err := cp.GetTestWriterAssignment(agreedTestWriter, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
+		require.NoError(t, err)
+		return map[string]bool{"build": build.InForce, "builder": builder.InForce, "test writer": tests.InForce}
+	}
+	all := func(want bool) map[string]bool {
+		return map[string]bool{"build": want, "builder": want, "test writer": want}
+	}
+	assert.Equal(t, all(true), inForce(), "a waiting proposal leaves the build in force")
+
+	_, err = cp.DeclineRevision(agreedUser, &gensurla.DeclineRevisionPayload{ChangeID: "chg", RequestRevision: proposal.RequestRevision})
+	require.NoError(t, err)
+	assert.Equal(t, all(true), inForce(), "declining leaves the build in force")
+
+	adoptProposal(t, cp, "chg", propose(agreed.RequestRevision))
+	assert.Equal(t, all(false), inForce(), "adopting makes the earlier build no longer in force")
 }
 
 // TestRevisionDescriptionsSayTheAgreedChangeStaysInForce checks the
