@@ -20,6 +20,7 @@ type Client struct {
 	ReviseChangeEndpoint              goa.Endpoint
 	ConfirmIntentEndpoint             goa.Endpoint
 	GetChangeEndpoint                 goa.Endpoint
+	DeclineRevisionEndpoint           goa.Endpoint
 	PreviewArchitectureEndpoint       goa.Endpoint
 	DraftOverrideEndpoint             goa.Endpoint
 	StartLiveTargetEndpoint           goa.Endpoint
@@ -53,13 +54,14 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
 	return &Client{
 		GoldenPathEndpoint:                goldenPath,
 		ProposeChangeEndpoint:             proposeChange,
 		ReviseChangeEndpoint:              reviseChange,
 		ConfirmIntentEndpoint:             confirmIntent,
 		GetChangeEndpoint:                 getChange,
+		DeclineRevisionEndpoint:           declineRevision,
 		PreviewArchitectureEndpoint:       previewArchitecture,
 		DraftOverrideEndpoint:             draftOverride,
 		StartLiveTargetEndpoint:           startLiveTarget,
@@ -124,8 +126,8 @@ func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (re
 // ReviseChange calls the "revise_change" endpoint of the "surla" service.
 // ReviseChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
-//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.
+//   - "conflict" (type *goa.ServiceError): request_revision does not name the latest revision (the waiting proposal's, when one waits); read the change with get_change.
+//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every example of the revision it revises exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res *ChangeCardResult, err error) {
@@ -140,7 +142,7 @@ func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res 
 // ConfirmIntent calls the "confirm_intent" endpoint of the "surla" service.
 // ConfirmIntent may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
+//   - "conflict" (type *goa.ServiceError): request_revision names neither the card's revision nor a waiting proposal's, or it names the confirmed revision while a proposal waits (adopt or decline the proposal first); read the change with get_change.
 //   - "unprocessable" (type *goa.ServiceError): The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
@@ -161,6 +163,21 @@ func (c *Client) ConfirmIntent(ctx context.Context, p *ConfirmIntentPayload) (re
 func (c *Client) GetChange(ctx context.Context, p *GetChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.GetChangeEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ChangeCardResult), nil
+}
+
+// DeclineRevision calls the "decline_revision" endpoint of the "surla" service.
+// DeclineRevision may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "conflict" (type *goa.ServiceError): No proposed revision waits, or request_revision does not name it; read the change with get_change.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) DeclineRevision(ctx context.Context, p *DeclineRevisionPayload) (res *ChangeCardResult, err error) {
+	var ires any
+	ires, err = c.DeclineRevisionEndpoint(ctx, p)
 	if err != nil {
 		return
 	}

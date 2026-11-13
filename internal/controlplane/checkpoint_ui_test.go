@@ -31,9 +31,12 @@ func checkpointUIProposal() *gensurla.CP1Analysis {
 
 // TestCheckpointUIEditorConfirmAndRevisionRecovery drives the editor: exact
 // whitespace survives confirmation and a no-edit refinement, a confirmation
-// shows one busy request, a stale revision keeps the user's edits and
-// recovers them beside the latest card, and incoming revisions wait while
-// the user has edits or a request in flight.
+// shows one busy request, and, on a change never confirmed (which a guide
+// revision replaces), a stale revision keeps the user's edits and recovers
+// them beside the latest card, and incoming revisions wait while the user has
+// edits or a request in flight. A revision the guide saves while the page's
+// own confirmation awaits its answer appears, as a proposal beside the now
+// confirmed change, only once the answer arrives.
 func TestCheckpointUIEditorConfirmAndRevisionRecovery(t *testing.T) {
 	cp := pageControlPlane(t, Options{})
 	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
@@ -81,10 +84,18 @@ expect(confirms()[1].body.examples[0].expected_outcome === "  Instant store cred
 expect(editor().dataset.requestRevision === r2, "no-edit refine changed request_revision");
 expect((await readCard("chg-ui-test")).examples[0].expected_outcome === "  Instant store credit\nup to $50.00  ", "the saved text lost its exact whitespace");
 
+// The recovery paths below need a change that was never confirmed, which a guide revision replaces.
+await propose("chg-ui-recovery", "Route refunds >= $50 to manager approval.", "Manager approval");
+page.$("#surla-nav-changes").click();
+await until(() => page.$("#surla-open-change-chg-ui-recovery"), "the second change did not appear");
+page.$("#surla-open-change-chg-ui-recovery").click();
+await until(() => editor().dataset.changeId === "chg-ui-recovery", "the second change did not open");
+const choice = (option) => page.$('[data-ambiguity-id="chg-ui-recovery-ambiguity-01"][data-option="' + option + '"]');
+
 // A confirmation against a revision the guide replaced keeps the edits and offers recovery.
 page.setHidden(true);
-const r3card = await revise(await readCard("chg-ui-test"), "Route refunds >= $50 to manager approval, with an audit.", "Audited approval");
-pill("total_with_tax").click();
+const r3card = await revise(await readCard("chg-ui-recovery"), "Route refunds >= $50 to manager approval, with an audit.", "Audited approval");
+choice("total_with_tax").click();
 page.type(outcome(), "Edited outcome preserved across stale error");
 page.$("#surla-confirm-submit").click();
 await until(() => page.$("#surla-confirm-error"), "a stale confirmation showed no error");
@@ -115,7 +126,7 @@ expect(page.$("#surla-replace-incoming-card").textContent.includes("Keep Unsaved
 page.$("#surla-replace-incoming-card").click();
 const switched = page.$("#surla-preserved-draft");
 const switchedText = switched ? switched.textContent : "";
-expect(editor().dataset.requestRevision === r4card.request_revision && editor().dataset.changeId === "chg-ui-test" && page.$("#surla-result-view").dataset.state === undefined && !page.$("#surla-replace-incoming-card"), "switching did not show the incoming card alone");
+expect(editor().dataset.requestRevision === r4card.request_revision && editor().dataset.changeId === "chg-ui-recovery" && page.$("#surla-result-view").dataset.state === undefined && !page.$("#surla-replace-incoming-card"), "switching did not show the incoming card alone");
 expect(switchedText.includes("Edited outcome preserved across stale error") && switchedText.includes("Dirty edit on confirmed card before incoming switch") && switchedText.includes(r3card.request_revision), "switching did not preserve earlier and new unsaved lines: " + switchedText);
 expect(outcome().value === r4card.examples[0].expected_outcome, "the switched form did not start from the incoming card's saved values");
 page.$("#surla-discard-draft").click();
@@ -125,7 +136,7 @@ expect(editor().dataset.requestRevision === r4card.request_revision && !page.$("
 page.type(outcome(), "Edit on R4 before the guide's revision");
 const r5card = await revise(r4card, "Route refunds >= $50 to manager approval, audited twice.", "Audited twice");
 await until(() => page.$("#surla-replace-incoming-card"), "R5 did not wait beside unsaved edits");
-pill("subtotal_only").click();
+choice("subtotal_only").click();
 await control(origin, "hold", { key: "POST /changes/confirm" });
 page.$("#surla-confirm-submit").click();
 page.$("#surla-replace-incoming-card").click();
@@ -139,20 +150,20 @@ page.$("#surla-discard-draft").click();
 
 // A revision another caller saves while the page's own confirmation awaits its answer is not shown as the page's own; it appears once the answer arrives.
 await control(origin, "answer-later", { key: "POST /changes/confirm" });
-pill("subtotal_only").click();
+choice("subtotal_only").click();
 page.$("#surla-confirm-submit").click();
-let confirmedR5 = await readCard("chg-ui-test");
+let confirmedR5 = await readCard("chg-ui-recovery");
 for (let tries = 0; confirmedR5.status !== "confirmed" && tries < 200; tries++) {
   await sleep(20);
-  confirmedR5 = await readCard("chg-ui-test");
+  confirmedR5 = await readCard("chg-ui-recovery");
 }
 expect(confirmedR5.status === "confirmed", "the held confirmation was not saved");
-const r6card = await revise(confirmedR5, "Route refunds >= $50 to manager approval, audited.", "Audited");
+const r6 = await revise(confirmedR5, "Route refunds >= $50 to manager approval, audited.", "Audited");
 await sleep(300);
-expect(!page.$("#surla-replace-incoming-card") && !page.status().includes("newer revision"), "a save during the page's own confirmation was announced before its answer");
+expect(!page.$("#surla-proposal") && !page.status().includes("proposed a new revision"), "a save during the page's own confirmation was announced before its answer");
 await control(origin, "release", { key: "POST /changes/confirm" });
-await until(() => editor().dataset.requestRevision === r6card.request_revision, "the revision saved during the confirmation did not appear after its answer");
-expect(page.$("#surla-prior-revision") && page.text("#surla-prior-revision").includes(confirmedR5.request_revision) && page.status().includes("newer revision"), "the newer revision does not show the confirmed card it replaced");
+await until(() => page.$("#surla-proposal") && page.$("#surla-proposal").dataset.requestRevision === r6.proposed_revision.request_revision, "the revision saved during the confirmation did not appear after its answer");
+expect(editor().dataset.requestRevision === confirmedR5.request_revision && page.status().includes("proposed a new revision"), "the guide's revision did not wait beside the confirmed change");
 page.close();
 `)
 }

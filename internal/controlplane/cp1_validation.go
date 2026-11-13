@@ -36,14 +36,21 @@ const (
 )
 
 // ConfirmIntent records the owner's complete answers and example table for a
-// Change Card that needs confirmation or is already confirmed. The caller
-// must be the card's owner and send the card's current request_revision, so
-// an edit based on an older revision fails. Every open ambiguity must have an
-// allowed answer. When a confirmed card's answers and examples are unchanged,
-// the card is returned as it is; otherwise the card is confirmed under a new
-// request_revision, so previews and verification reports bound to the earlier
-// revision no longer match it. The prompt, summary and preserved behaviors
-// never change here: a new requirement on an existing card uses revise_change.
+// Change Card that needs confirmation or is already confirmed, or adopts the
+// revision proposed beside a confirmed card. The caller must be the card's
+// owner and name a revision the change holds, so an edit based on an older
+// revision fails. Every open ambiguity must have an allowed answer.
+//
+// Naming the proposal's request_revision adopts it: the proposal, with these
+// answers and examples, becomes the confirmed revision in force under a new
+// request_revision with no approval, and the proposal slot is empty. While a
+// proposal waits, naming the confirmed revision is refused: the user adopts
+// or declines the proposal first. Otherwise, when a confirmed card's answers
+// and examples are unchanged, the card is returned as it is; when they
+// changed, the card is confirmed under a new request_revision, so previews
+// and verification reports bound to the earlier revision no longer match it.
+// The prompt, summary and preserved behaviors never change here: a new
+// requirement on an existing card uses revise_change.
 //
 // An unchanged submission returns the saved card the same way get_change
 // does: with its approval in Approval only while that approval still matches
@@ -57,13 +64,16 @@ func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmInt
 	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.RequestRevision) == "" {
 		return nil, gensurla.MakeUnprocessable(errors.New("change_id and request_revision are required"))
 	}
-	card, changed, err := c.confirm(principal, p)
-	if err != nil || changed {
-		return card, err
+	record, changed, err := c.confirm(principal, p)
+	if err != nil {
+		return nil, err
+	}
+	if changed {
+		return record.card, nil
 	}
 	// The saved card is checked against the promotion target after c.mu is
 	// released, because the target may be slow.
-	return c.currentCard(ctx, card)
+	return c.changeResult(ctx, record)
 }
 
 // proposedCardContent turns a proposal's analysis into Change Card content.
@@ -348,34 +358,47 @@ func cp1SafeFaultSummary(revise bool, stage cp1FaultStage) string {
 	}
 }
 
-// confirm applies a confirm_intent submission under c.mu. It returns the new
-// confirmed card and true when the answers or examples changed the revision,
-// or the unchanged saved card and false.
-func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, bool, error) {
+// confirm applies a confirm_intent submission under c.mu. It returns the
+// saved change and true when the submission adopted the proposal or changed
+// the answers or examples, or the unchanged saved change and false.
+func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPayload) (storedChangeCard, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	record, ok, err := c.cards.load(p.ChangeID)
 	if err != nil {
-		return nil, false, err
+		return storedChangeCard{}, false, err
 	}
 	if !ok {
-		return nil, false, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
+		return storedChangeCard{}, false, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if record.owner != principal.ID {
-		return nil, false, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
+		return storedChangeCard{}, false, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
-	existing := record.card
-	if existing.RequestRevision != p.RequestRevision {
-		return nil, false, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, existing.RequestRevision))
+	// base is the revision these answers and examples confirm: the proposal
+	// when the request adopts it, otherwise the revision in force.
+	base := storedRevision{card: record.card, designSource: record.designSource, stories: record.stories}
+	adopting := record.proposed != nil && record.proposed.card.RequestRevision == p.RequestRevision
+	switch {
+	case adopting:
+		base = *record.proposed
+	case record.proposed != nil && record.card.RequestRevision == p.RequestRevision:
+		return storedChangeCard{}, false, gensurla.MakeConflict(fmt.Errorf(
+			"change_id %q has a proposed revision %q waiting; Adopt it (confirm it with its request_revision) or Decline it (decline_revision) before refining the confirmed revision",
+			p.ChangeID,
+			record.proposed.card.RequestRevision,
+		))
+	case record.card.RequestRevision != p.RequestRevision:
+		return storedChangeCard{}, false, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.latest().card.RequestRevision))
 	}
+	existing := base.card
 
 	if err := validateAmbiguityAnswers(existing.Ambiguities, p.Answers); err != nil {
-		return nil, false, gensurla.MakeUnprocessable(err)
+		return storedChangeCard{}, false, gensurla.MakeUnprocessable(err)
 	}
 	examples, err := validateConfirmedExamples(p.Examples)
 	if err != nil {
-		return nil, false, gensurla.MakeUnprocessable(fmt.Errorf("invalid confirmed examples: %w", err))
+		return storedChangeCard{}, false, gensurla.MakeUnprocessable(fmt.Errorf("invalid confirmed examples: %w", err))
 	}
 	// confirmed carries no ui_composition: a composition describes only the
 	// revision it was composed for, and changed answers or examples produce a
@@ -391,25 +414,28 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 		Answers:            maps.Clone(p.Answers),
 		Examples:           examples,
 		PreservedBehaviors: slices.Clone(existing.PreservedBehaviors),
-		Stories:            storySummaryItemsOrNil(record.stories),
+		Stories:            storySummaryItemsOrNil(base.stories),
 		ConfirmedBy:        &confirmedBy,
 	}
-	rev, err := computeCanonicalRevision(confirmed, record.owner, record.designSource)
+	rev, err := computeCanonicalRevision(confirmed, record.owner, base.designSource)
 	if err != nil {
-		return nil, false, err
+		return storedChangeCard{}, false, err
 	}
-	if rev == existing.RequestRevision {
+	if rev == existing.RequestRevision && !adopting {
 		// Same answers and examples on an already confirmed card.
-		return existing, false, nil
+		return record, false, nil
 	}
 	confirmed.RequestRevision = rev
-	if err := c.cards.save(storedChangeCard{
+	// Adopting empties the proposal slot; the adopted revision carries no
+	// approval, since the user has approved no result of it.
+	saved := storedChangeCard{
 		card:         confirmed,
 		owner:        record.owner,
-		designSource: record.designSource,
-		stories:      cloneStorySummaries(record.stories),
-	}); err != nil {
-		return nil, false, err
+		designSource: base.designSource,
+		stories:      cloneStorySummaries(base.stories),
 	}
-	return confirmed, true, nil
+	if err := c.cards.save(saved); err != nil {
+		return storedChangeCard{}, false, err
+	}
+	return saved, true, nil
 }

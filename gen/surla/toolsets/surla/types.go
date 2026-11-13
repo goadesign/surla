@@ -68,6 +68,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItem
 	}
 	// CheckProjectPayload defines the JSON payload for the surla.check_project tool.
 	CheckProjectPayload = struct {
@@ -167,6 +171,70 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItem
+	}
+	// DeclineRevisionPayload defines the JSON payload for the surla.decline_revision tool.
+	DeclineRevisionPayload = struct {
+		// Change identifier.
+		ChangeID string
+		// request_revision of the proposed revision being declined
+		// (proposed_revision.request_revision).
+		RequestRevision string
+	}
+	// DeclineRevisionResult defines the JSON result for the surla.decline_revision tool.
+	DeclineRevisionResult = struct {
+		// Change identifier.
+		ChangeID string
+		// Checkpoint status (needs_confirmation or confirmed).
+		Status string
+		// Operator feature request for this revision.
+		Prompt string
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
+		Summary string
+		// Domain questions surfaced at CP1, retained for audit after confirmation.
+		Ambiguities []*AmbiguityQuestion
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
+		Answers map[string]string
+		// Concrete examples mapped to evaluator checks.
+		Examples []*ExampleItem
+		// Existing contract invariants preserved by this change.
+		PreservedBehaviors []string
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItem
+		// User who confirmed the Change Card.
+		ConfirmedBy *string
+		// SHA-256 digest of the canonical versioned Change Card.
+		RequestRevision string
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
+		// revision without it.
+		UIComposition *UICompositionItem
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
+		Approval *ApprovalItem
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItem
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItem
 	}
 	// DiffPayload defines the JSON payload for the surla.diff tool.
 	DiffPayload = struct {
@@ -318,6 +386,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItem
 	}
 	// GetStoryRefreshPayload defines the JSON payload for the surla.get_story_refresh tool.
 	GetStoryRefreshPayload = struct {
@@ -575,6 +647,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItem
 	}
 	// ReadCheckOutputPayload defines the JSON payload for the surla.read_check_output tool.
 	ReadCheckOutputPayload = struct {
@@ -644,7 +720,9 @@ type (
 	ReviseChangePayload = struct {
 		// Change identifier.
 		ChangeID string
-		// Current CP1 request_revision digest being revised.
+		// request_revision of the latest revision you read: the proposed revision's
+		// when the change shows one waiting (proposed_revision.request_revision),
+		// otherwise the change's own.
 		RequestRevision string
 		// Revised operator feature request.
 		Prompt string
@@ -706,6 +784,10 @@ type (
 		// of approval or unverified_approval is set. It is never saved to disk or
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
+		// The revision the guide proposed beside this confirmed revision, while it
+		// waits for the user to adopt or decline it; absent otherwise. This card's own
+		// fields describe the revision in force.
+		ProposedRevision *ProposedRevisionItem
 	}
 	// StartLiveTargetPayload defines the JSON payload for the surla.start_live_target tool.
 	StartLiveTargetPayload = struct {
@@ -992,6 +1074,10 @@ type (
 		// The Change Card's most recently accepted verification run; absent when none
 		// was started.
 		LatestVerification *LatestVerificationItem
+		// request_revision of the revision the guide proposed beside this confirmed
+		// change, while it waits for the user to adopt or decline it; absent
+		// otherwise. status and request_revision describe the revision in force.
+		ProposedRevision *string
 		// When the Change Card was last saved. It is not part of request_revision.
 		SavedAt string
 	}
@@ -1024,6 +1110,29 @@ type (
 		// when its report's verdict is known; not_completed when it stopped without a
 		// report.
 		State string
+	}
+	// ProposedRevisionItem is a nested type used by the generated JSON contract.
+	ProposedRevisionItem = struct {
+		// Operator feature request for this revision.
+		Prompt string
+		// Plain-English summary of the proposed change.
+		Summary string
+		// Domain questions the user answers when adopting this revision.
+		Ambiguities []*AmbiguityQuestion
+		// Concrete examples mapped to evaluator checks.
+		Examples []*ExampleItem
+		// Existing contract invariants preserved by this change.
+		PreservedBehaviors []string
+		// Evaluated domain Stories of this revision in declaration order; omitted when
+		// it has none. Included in its request_revision.
+		Stories []*StorySummaryItem
+		// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+		// decline_revision declines it, and revise_change replaces it when given this
+		// value.
+		RequestRevision string
+		// Decision view the guide composed for this revision in its analysis, when it
+		// sent one.
+		UIComposition *UICompositionItem
 	}
 	// RequiredTest is a nested type used by the generated JSON contract.
 	RequiredTest = struct {

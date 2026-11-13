@@ -122,6 +122,13 @@ function ChangeListRow({
       <Badge variant={item.status === "confirmed" ? "success" : "warning"}>
         {item.status === "confirmed" ? "Confirmed" : "Needs confirmation"}
       </Badge>{" "}
+      {item.proposed_revision ? (
+        <>
+          <Badge variant="warning" className="surla-proposal-badge">
+            New revision proposed
+          </Badge>{" "}
+        </>
+      ) : null}
       {item.latest_verification ? (
         <Badge
           variant={
@@ -145,6 +152,12 @@ function ChangeListRow({
         <p>
           change_id: <code>{item.change_id}</code> · request_revision:{" "}
           <code>{item.request_revision}</code>
+          {item.proposed_revision ? (
+            <>
+              {" "}
+              · proposed revision: <code>{item.proposed_revision}</code>
+            </>
+          ) : null}
           {item.latest_verification ? (
             <>
               {" "}

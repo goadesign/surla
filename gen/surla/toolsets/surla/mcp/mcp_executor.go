@@ -31,6 +31,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "configure_model", gensurla.SpecConfigureModel())
 		case gensurla.ConfirmIntent:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "confirm_intent", gensurla.SpecConfirmIntent())
+		case gensurla.DeclineRevision:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "decline_revision", gensurla.SpecDeclineRevision())
 		case gensurla.Diff:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "diff", gensurla.SpecDiff())
 		case gensurla.DraftOverride:

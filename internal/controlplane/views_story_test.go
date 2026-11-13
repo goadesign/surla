@@ -223,7 +223,7 @@ const cases = [
 ];
 for (const [name, want] of cases) {
   await control(origin, "act", { key: name });
-  await until(() => named() === JSON.stringify(want), name + ": the stage named " + named() + ", want " + JSON.stringify(want));
+  await until(() => named() === JSON.stringify(want), name + ": the stage did not name exactly " + JSON.stringify(want));
   expect(page.$("#surla-story-comparison").dataset.same === "false" && page.$("#surla-story-rule"), name + ": the difference does not state the rule");
 }
 page.close();

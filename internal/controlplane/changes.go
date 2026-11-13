@@ -150,6 +150,9 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		if run, ok := latest[record.card.ChangeID]; ok {
 			item.LatestVerification = latestVerification(run)
 		}
+		if record.proposed != nil {
+			item.ProposedRevision = &record.proposed.card.RequestRevision
+		}
 		items = append(items, item)
 	}
 	target, err := c.resolvePromotion(ctx)

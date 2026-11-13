@@ -37,6 +37,10 @@ type Client struct {
 	// endpoint.
 	GetChangeDoer goahttp.Doer
 
+	// DeclineRevision Doer is the HTTP client used to make requests to the
+	// decline_revision endpoint.
+	DeclineRevisionDoer goahttp.Doer
+
 	// PreviewArchitecture Doer is the HTTP client used to make requests to the
 	// preview_architecture endpoint.
 	PreviewArchitectureDoer goahttp.Doer
@@ -181,6 +185,7 @@ func NewClient(
 		ReviseChangeDoer:              doer,
 		ConfirmIntentDoer:             doer,
 		GetChangeDoer:                 doer,
+		DeclineRevisionDoer:           doer,
 		PreviewArchitectureDoer:       doer,
 		DraftOverrideDoer:             doer,
 		StartLiveTargetDoer:           doer,
@@ -324,6 +329,30 @@ func (c *Client) GetChange() goa.Endpoint {
 		resp, err := c.GetChangeDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_change", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// DeclineRevision returns an endpoint that makes HTTP requests to the surla
+// service decline_revision server.
+func (c *Client) DeclineRevision() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeDeclineRevisionRequest(c.encoder)
+		decodeResponse = DecodeDeclineRevisionResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildDeclineRevisionRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.DeclineRevisionDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "decline_revision", err)
 		}
 		return decodeResponse(resp)
 	}

@@ -355,8 +355,11 @@ The proposed builder-facing operations are:
 The authoring owner stores one immutable input for each confirmed request
 revision: its exact observed Story, included finished flows, and excluded
 drafts. Attempts refer to that input instead of copying it on each retry.
-Keeping the original input is necessary because a card is overwritten on
-revision; deleting it would make history depend on current requirements.
+Keeping the original input is necessary because a change keeps only its
+revision in force and at most one waiting proposal: a guide's revision of an
+agreed change waits as a proposal, but adopting it, or refining the agreed
+revision, replaces the earlier agreed revision. Deleting the input would make
+history depend on current requirements.
 The request revision already includes the card ID and owner. No per-flow
 fingerprint or scenario-tag protocol is needed.
 

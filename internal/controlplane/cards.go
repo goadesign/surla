@@ -73,7 +73,7 @@ type (
 	// cardFile is the saved form of one card. Saved cards that do not match
 	// this schema stop the calls that read them rather than being skipped.
 	cardFile struct {
-		// Card is the latest versioned Change Card.
+		// Card is the revision in force.
 		Card *savedCard `json:"card"`
 		// Owner is the authenticated principal that created the card.
 		Owner string `json:"owner"`
@@ -86,6 +86,20 @@ type (
 		// request_revision never covers it: saving the same content again
 		// keeps the revision and moves only this time.
 		SavedAt time.Time `json:"saved_at"`
+		// Proposed is the revision the guide proposed beside a confirmed Card,
+		// absent otherwise. It is checked against its own request_revision.
+		Proposed *proposedFile `json:"proposed,omitempty"`
+	}
+
+	// proposedFile is the saved form of a proposed revision: the revision with
+	// the design source and Stories it was made from.
+	proposedFile struct {
+		// Card is the proposed revision, in needs_confirmation status.
+		Card *savedCard `json:"card"`
+		// DesignSource is the Goa design source the proposal was made from.
+		DesignSource string `json:"design_source"`
+		// Stories holds the proposal's evaluated domain Stories.
+		Stories []designeval.StorySummary `json:"stories"`
 	}
 )
 
@@ -203,48 +217,84 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 	if hex.EncodeToString(sum[:])+".json" != fileName {
 		return storedChangeCard{}, fmt.Errorf("change card file for %q does not hold that card", label)
 	}
-	stories := cloneStorySummaries(f.Stories)
-	card := &gensurla.ChangeCardResult{
-		ChangeID:           f.Card.ChangeID,
-		Status:             f.Card.Status,
-		Prompt:             f.Card.Prompt,
-		Summary:            f.Card.Summary,
-		Ambiguities:        f.Card.Ambiguities,
-		Answers:            f.Card.Answers,
-		Examples:           f.Card.Examples,
-		PreservedBehaviors: f.Card.PreservedBehaviors,
-		Stories:            storySummaryItemsOrNil(stories),
-		ConfirmedBy:        f.Card.ConfirmedBy,
-		RequestRevision:    f.Card.RequestRevision,
-		UIComposition:      f.Card.UIComposition,
-		Approval:           f.Card.Approval,
-	}
-	if card.Status != StatusNeedsConfirmation && card.Status != StatusConfirmed {
-		return storedChangeCard{}, fmt.Errorf("change card %q has unknown status %q", label, card.Status)
-	}
-	// request_revision is the digest of the card's content, owner and design
-	// source, so recomputing it checks every field it covers.
-	rev, err := computeCanonicalRevision(card, f.Owner, f.DesignSource)
+	card, stories, err := decodeRevision(label, f.Owner, f.Card, f.DesignSource, f.Stories)
 	if err != nil {
 		return storedChangeCard{}, err
-	}
-	if rev != card.RequestRevision {
-		return storedChangeCard{}, fmt.Errorf("change card %q does not match its request_revision", label)
 	}
 	if f.SavedAt.IsZero() {
 		return storedChangeCard{}, fmt.Errorf("change card %q has no saved time", label)
 	}
-	return storedChangeCard{
+	record := storedChangeCard{
 		card:         card,
 		owner:        f.Owner,
 		designSource: f.DesignSource,
 		stories:      stories,
 		savedAt:      f.SavedAt,
-	}, nil
+	}
+	if f.Proposed == nil {
+		return record, nil
+	}
+	// A proposal waits only beside an agreed revision, and is itself an
+	// unconfirmed revision of the same change with nothing recorded on it.
+	if card.Status != StatusConfirmed {
+		return storedChangeCard{}, fmt.Errorf("change card %q has a proposed revision beside an unconfirmed one", label)
+	}
+	if f.Proposed.Card == nil || f.Proposed.Card.ChangeID != card.ChangeID {
+		return storedChangeCard{}, fmt.Errorf("change card %q has a proposed revision of another change", label)
+	}
+	proposal, proposalStories, err := decodeRevision(label, f.Owner, f.Proposed.Card, f.Proposed.DesignSource, f.Proposed.Stories)
+	if err != nil {
+		return storedChangeCard{}, fmt.Errorf("proposed revision: %w", err)
+	}
+	if proposal.Status != StatusNeedsConfirmation || len(proposal.Answers) > 0 ||
+		proposal.ConfirmedBy != nil || proposal.Approval != nil {
+		return storedChangeCard{}, fmt.Errorf("change card %q has a proposed revision that is not awaiting confirmation", label)
+	}
+	record.proposed = &storedRevision{card: proposal, designSource: f.Proposed.DesignSource, stories: proposalStories}
+	return record, nil
 }
 
-// save replaces the saved card for record.card.ChangeID and records the
-// current time as its saved time, ignoring record.savedAt. It writes and syncs
+// decodeRevision turns one saved revision into its Change Card and Stories,
+// checking its status and that it matches its own request_revision, which is
+// the digest of its content, owner and design source.
+func decodeRevision(
+	label, owner string,
+	saved *savedCard,
+	designSource string,
+	savedStories []designeval.StorySummary,
+) (*gensurla.ChangeCardResult, []designeval.StorySummary, error) {
+	stories := cloneStorySummaries(savedStories)
+	card := &gensurla.ChangeCardResult{
+		ChangeID:           saved.ChangeID,
+		Status:             saved.Status,
+		Prompt:             saved.Prompt,
+		Summary:            saved.Summary,
+		Ambiguities:        saved.Ambiguities,
+		Answers:            saved.Answers,
+		Examples:           saved.Examples,
+		PreservedBehaviors: saved.PreservedBehaviors,
+		Stories:            storySummaryItemsOrNil(stories),
+		ConfirmedBy:        saved.ConfirmedBy,
+		RequestRevision:    saved.RequestRevision,
+		UIComposition:      saved.UIComposition,
+		Approval:           saved.Approval,
+	}
+	if card.Status != StatusNeedsConfirmation && card.Status != StatusConfirmed {
+		return nil, nil, fmt.Errorf("change card %q has unknown status %q", label, card.Status)
+	}
+	rev, err := computeCanonicalRevision(card, owner, designSource)
+	if err != nil {
+		return nil, nil, err
+	}
+	if rev != card.RequestRevision {
+		return nil, nil, fmt.Errorf("change card %q does not match its request_revision", label)
+	}
+	return card, stories, nil
+}
+
+// save replaces the saved change for record.card.ChangeID, its revision in
+// force and any proposal beside it, in one file, and records the current time
+// as its saved time, ignoring record.savedAt. It writes and syncs
 // the card to the directory's one staging file, then renames that over the
 // card's file. Only one save runs at a time in a directory (the directory
 // lock and ControlPlane.mu), so one staging file suffices; a save that
@@ -256,31 +306,21 @@ func (s *cardStore) save(record storedChangeCard) error {
 	if s.lock == nil {
 		return errCardsClosed
 	}
-	persisted := &savedCard{
-		ChangeID:           record.card.ChangeID,
-		Status:             record.card.Status,
-		Prompt:             record.card.Prompt,
-		Summary:            record.card.Summary,
-		Ambiguities:        record.card.Ambiguities,
-		Answers:            record.card.Answers,
-		Examples:           record.card.Examples,
-		PreservedBehaviors: record.card.PreservedBehaviors,
-		ConfirmedBy:        record.card.ConfirmedBy,
-		RequestRevision:    record.card.RequestRevision,
-		UIComposition:      record.card.UIComposition,
-		Approval:           record.card.Approval,
-	}
-	persistedStories := cloneStorySummaries(record.stories)
-	if len(persistedStories) == 0 && len(record.card.Stories) > 0 {
-		persistedStories = canonicalStorySummariesFromItems(record.card.Stories)
-	}
-	data, err := json.Marshal(cardFile{
-		Card:         persisted,
+	file := cardFile{
+		Card:         savedCardOf(record.card),
 		Owner:        record.owner,
 		DesignSource: record.designSource,
-		Stories:      persistedStories,
+		Stories:      persistedStories(record.card, record.stories),
 		SavedAt:      time.Now().UTC(),
-	})
+	}
+	if p := record.proposed; p != nil {
+		file.Proposed = &proposedFile{
+			Card:         savedCardOf(p.card),
+			DesignSource: p.designSource,
+			Stories:      persistedStories(p.card, p.stories),
+		}
+	}
+	data, err := json.Marshal(file)
 	if err != nil {
 		return fmt.Errorf("encode change card %q: %w", record.card.ChangeID, err)
 	}
@@ -312,6 +352,35 @@ func (s *cardStore) save(record storedChangeCard) error {
 func (s *cardStore) path(changeID string) string {
 	sum := sha256.Sum256([]byte(changeID))
 	return filepath.Join(s.dir, hex.EncodeToString(sum[:])+".json")
+}
+
+// savedCardOf is card's saved form, without the response-only
+// UnverifiedApproval and ProposedRevision fields.
+func savedCardOf(card *gensurla.ChangeCardResult) *savedCard {
+	return &savedCard{
+		ChangeID:           card.ChangeID,
+		Status:             card.Status,
+		Prompt:             card.Prompt,
+		Summary:            card.Summary,
+		Ambiguities:        card.Ambiguities,
+		Answers:            card.Answers,
+		Examples:           card.Examples,
+		PreservedBehaviors: card.PreservedBehaviors,
+		ConfirmedBy:        card.ConfirmedBy,
+		RequestRevision:    card.RequestRevision,
+		UIComposition:      card.UIComposition,
+		Approval:           card.Approval,
+	}
+}
+
+// persistedStories returns the Stories saved with card: stories, or the
+// card's own Stories when stories is empty.
+func persistedStories(card *gensurla.ChangeCardResult, stories []designeval.StorySummary) []designeval.StorySummary {
+	out := cloneStorySummaries(stories)
+	if len(out) == 0 && len(card.Stories) > 0 {
+		out = canonicalStorySummariesFromItems(card.Stories)
+	}
+	return out
 }
 
 // all returns every saved card in s in directory order. Every saved card

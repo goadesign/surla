@@ -27,6 +27,7 @@ var ChangeListItem = Type("ChangeListItem", func() {
 	})
 	Attribute("request_revision", String, "Current request_revision of the Change Card.")
 	Attribute("latest_verification", LatestVerificationItem, "The Change Card's most recently accepted verification run; absent when none was started.")
+	Attribute("proposed_revision", String, "request_revision of the revision the guide proposed beside this confirmed change, while it waits for the user to adopt or decline it; absent otherwise. status and request_revision describe the revision in force.")
 	Attribute("saved_at", String, "When the Change Card was last saved. It is not part of request_revision.", func() {
 		Format(FormatDateTime)
 	})

@@ -49,7 +49,7 @@ var ProposeChangePayload = Type("ProposeChangePayload", func() {
 var ReviseChangePayload = Type("ReviseChangePayload", func() {
 	Description("Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.")
 	Attribute("change_id", String, "Change identifier.")
-	Attribute("request_revision", String, "Current CP1 request_revision digest being revised.")
+	Attribute("request_revision", String, "request_revision of the latest revision you read: the proposed revision's when the change shows one waiting (proposed_revision.request_revision), otherwise the change's own.")
 	Attribute("prompt", String, "Revised operator feature request.")
 	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and their design source are kept together.")
 	Attribute("analysis", CP1RevisionAnalysis, "Your analysis of the revised prompt against the current card and the target's current design.")
@@ -61,6 +61,14 @@ var GetChangePayload = Type("GetChangePayload", func() {
 	Description("Identifies the Change Card the authenticated owner wants to read.")
 	Attribute("change_id", String, "Change identifier.")
 	Required("change_id")
+})
+
+// DeclineRevisionPayload names the proposed revision the user declines.
+var DeclineRevisionPayload = Type("DeclineRevisionPayload", func() {
+	Description("Identifies the proposed revision of a confirmed Change Card that the user declines.")
+	Attribute("change_id", String, "Change identifier.")
+	Attribute("request_revision", String, "request_revision of the proposed revision being declined (proposed_revision.request_revision).")
+	Required("change_id", "request_revision")
 })
 
 // InitProjectPayload is the input to the init_project tool.
@@ -186,7 +194,7 @@ var UICompositionItem = Type("UICompositionItem", func() {
 // ApprovalItem records a passed CP5 promotion check for one Change Card
 // revision.
 var ApprovalItem = Type("ApprovalItem", func() {
-	Description("Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.")
+	Description("Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when the user refines the confirmed revision or adopts a proposed one with confirm_intent. A revise_change on a confirmed card leaves it on the confirmed revision, which stays in force until the user adopts the proposal. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.")
 	Attribute("approved_by", String, "User who approved the result.")
 	Attribute("report_digest", String, "SHA-256 digest of the approved CP4 verification report.")
 	Attribute("candidate_commit", String, "Candidate commit the report was checked against.")
@@ -207,7 +215,23 @@ var UnverifiedApprovalItem = Type("UnverifiedApprovalItem", func() {
 	Required("approval", "reason")
 })
 
-// ChangeCardResult is the output of CP1 propose_change, revise_change, confirm_intent and get_change.
+// ProposedRevisionItem is a revision the guide proposed beside a confirmed
+// Change Card, waiting for the user to adopt or decline it.
+var ProposedRevisionItem = Type("ProposedRevisionItem", func() {
+	Description("A revision the guide proposed with revise_change beside the confirmed revision in force. It waits until the user adopts it, by answering its questions and confirming its request_revision with confirm_intent, or declines it with decline_revision. Until then the confirmed revision stays in force with its answers, confirmation, approval, Stories and design source, and architecture preview, verification and approval keep working on it. A later revise_change naming this request_revision replaces it.")
+	Attribute("prompt", String, "Operator feature request for this revision.")
+	Attribute("summary", String, "Plain-English summary of the proposed change.")
+	Attribute("ambiguities", ArrayOf(AmbiguityQuestion), "Domain questions the user answers when adopting this revision.")
+	Attribute("examples", ArrayOf(ExampleItem), "Concrete examples mapped to evaluator checks.")
+	Attribute("preserved_behaviors", ArrayOf(String), "Existing contract invariants preserved by this change.")
+	Attribute("stories", ArrayOf(StorySummaryItem), "Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.")
+	Attribute("request_revision", String, "SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.")
+	Attribute("ui_composition", UICompositionItem, "Decision view the guide composed for this revision in its analysis, when it sent one.")
+	Required("prompt", "summary", "examples", "preserved_behaviors", "request_revision")
+})
+
+// ChangeCardResult is the output of CP1 propose_change, revise_change,
+// confirm_intent, decline_revision, approve_merge and get_change.
 var ChangeCardResult = Type("ChangeCardResult", func() {
 	Description("Checkpoint 1 Change Card containing examples, preserved behaviors, optional adopted domain Stories, and audit metadata.")
 	Attribute("change_id", String, "Change identifier.")
@@ -226,6 +250,7 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 	Attribute("ui_composition", UICompositionItem, "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.")
 	Attribute("approval", ApprovalItem, "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.")
 	Attribute("unverified_approval", UnverifiedApprovalItem, "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.")
+	Attribute("proposed_revision", ProposedRevisionItem, "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.")
 	Required("change_id", "status", "prompt", "summary", "examples", "preserved_behaviors", "request_revision")
 })
 
@@ -607,13 +632,13 @@ var _ = Service("surla", func() {
 	})
 
 	Method("revise_change", func() {
-		Description("Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
+		Description("Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the latest revision: the proposed revision's request_revision when one waits, otherwise the card's. On a card that was never confirmed, the new revision replaces it. On a confirmed card, the new revision is saved as the proposed revision beside the confirmed one, replacing any earlier proposal, and the confirmed revision stays in force with its answers, confirmation, approval, Stories and design source until the user adopts the proposal with confirm_intent or declines it. The analysis accounts for every example of the revision it revises exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for the user's review. The new revision has no answers, confirmed_by or approval: earlier decisions carry over only where the analysis restates them in its summary, examples or preserved behaviors. The result is the change as get_change returns it. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
 		Payload(ReviseChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
-		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.")
-		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. Pass story_refresh_op_id from a succeeded refresh_story operation to adopt an updated workspace Story, or omit story_refresh_op_id on a card with Stories to keep its agreed Story and its design source. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.")
+		Error("conflict", ErrorResult, "request_revision does not name the latest revision (the waiting proposal's, when one waits); read the change with get_change.")
+		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every example of the revision it revises exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.")
+		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements. Name the latest revision you read in request_revision: proposed_revision.request_revision when get_change shows a proposal waiting, otherwise the card's. Send the revised request in prompt with a new analysis made against that revision and the target's design: keep or edit each of its examples through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. Pass story_refresh_op_id from a succeeded refresh_story operation to adopt an updated workspace Story, or omit it to keep the Story and design source of the revision you revise. On a confirmed card your revision becomes a proposal beside the confirmed one, which stays in force until the user adopts or declines the proposal on the views page; you cannot withdraw a proposal, only replace it by revising again.")
 		HTTP(func() {
 			POST("/changes/revise")
 			Response(StatusOK)
@@ -624,13 +649,13 @@ var _ = Service("surla", func() {
 	})
 
 	Method("confirm_intent", func() {
-		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.")
+		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Naming the proposed revision's request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card's request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.")
 		Payload(ConfirmIntentPayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
+		Error("conflict", ErrorResult, "request_revision names neither the card's revision nor a waiting proposal's, or it names the confirmed revision while a proposal waits (adopt or decline the proposal first); read the change with get_change.")
 		Error("unprocessable", ErrorResult, "The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.")
-		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision. To record a decision that no option expresses, call revise_change with that decision in prompt.")
+		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision, or adopt a waiting proposed revision by naming its request_revision with answers to its questions. To record a decision that no option expresses, call revise_change with that decision in prompt.")
 		HTTP(func() {
 			POST("/changes/confirm")
 			Response(StatusOK)
@@ -641,15 +666,30 @@ var _ = Service("surla", func() {
 	})
 
 	Method("get_change", func() {
-		Description("Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.")
+		Description("Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.")
 		Payload(GetChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Tool("get_change", "Read the current Checkpoint 1 Change Card and its request_revision.")
+		Tool("get_change", "Read the current Checkpoint 1 Change Card, its request_revision, and any proposed revision waiting beside it.")
 		HTTP(func() {
 			GET("/changes/{change_id}")
 			Response(StatusOK)
 			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("decline_revision", func() {
+		Description("Decline the revision the guide proposed beside a confirmed Checkpoint 1 Change Card. The proposal is removed and the confirmed revision in force stays exactly as it was, with its answers, confirmation, approval, Stories and design source. Only the user may decline; the guide replaces a proposal by revising again. The result is the change as get_change returns it.")
+		Payload(DeclineRevisionPayload)
+		Result(ChangeCardResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("conflict", ErrorResult, "No proposed revision waits, or request_revision does not name it; read the change with get_change.")
+		Tool("decline_revision", "Decline the revision the guide proposed beside a confirmed Change Card, naming proposed_revision.request_revision; the confirmed revision stays in force.")
+		HTTP(func() {
+			POST("/changes/decline")
+			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
 		})
 	})
 

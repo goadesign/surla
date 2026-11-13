@@ -22,6 +22,10 @@ import { countsPhrase, storyCounts } from "./story";
 
 export interface CP1EditorProps {
   card: ChangeCardResult;
+  // proposalWaiting is true while a proposed revision waits beside the
+  // agreed card; refining the agreed card is then refused, so it is offered
+  // only after the user adopts or declines the proposal.
+  proposalWaiting: boolean;
   priorCard: ChangeCardResult | null;
   draftAnswers: Record<string, string>;
   draftExamples: ExampleItem[];
@@ -128,6 +132,7 @@ function FieldTextarea({
 // workspace (when present), and the canonical shadcn/ui CP1 inspector.
 export function CP1EditorView({
   card,
+  proposalWaiting,
   priorCard,
   draftAnswers,
   draftExamples,
@@ -681,11 +686,18 @@ export function CP1EditorView({
           </Button>
         </div>
 
+        {proposalWaiting ? (
+          <p id="surla-confirm-blocked">
+            A proposed revision waits above. Adopt or decline it before refining the agreed
+            revision.
+          </p>
+        ) : null}
         <div className="surla-field-row">
           <Button
             id="surla-confirm-submit"
             variant="primary"
-            disabled={rpcInFlight}
+            disabled={rpcInFlight || proposalWaiting}
+            aria-describedby={proposalWaiting ? "surla-confirm-blocked" : undefined}
             onClick={onSubmitConfirm}
           >
             {card.status === "needs_confirmation"

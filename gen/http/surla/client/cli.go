@@ -166,6 +166,28 @@ func BuildGetChangePayload(surlaGetChangeChangeID *string) (*surla.GetChangePayl
 	return v, nil
 }
 
+// BuildDeclineRevisionPayload builds the payload for the surla
+// decline_revision endpoint from CLI flags.
+func BuildDeclineRevisionPayload(surlaDeclineRevisionBody *string) (*surla.DeclineRevisionPayload, error) {
+	var err error
+	var body DeclineRevisionRequestBody
+	{
+		if surlaDeclineRevisionBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaDeclineRevisionBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"Commodi ex facilis.\",\n      \"request_revision\": \"Sequi dignissimos ut non quaerat et enim.\"\n   }'")
+		}
+	}
+	v := &surla.DeclineRevisionPayload{
+		ChangeID:        body.ChangeID,
+		RequestRevision: body.RequestRevision,
+	}
+
+	return v, nil
+}
+
 // BuildPreviewArchitecturePayload builds the payload for the surla
 // preview_architecture endpoint from CLI flags.
 func BuildPreviewArchitecturePayload(surlaPreviewArchitectureBody *string) (*surla.PreviewArchitecturePayload, error) {

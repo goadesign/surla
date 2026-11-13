@@ -39,7 +39,9 @@ type ProposeChangeRequestBody struct {
 type ReviseChangeRequestBody struct {
 	// Change identifier.
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
-	// Current CP1 request_revision digest being revised.
+	// request_revision of the latest revision you read: the proposed revision's
+	// when the change shows one waiting (proposed_revision.request_revision),
+	// otherwise the change's own.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 	// Revised operator feature request.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
@@ -71,6 +73,16 @@ type ConfirmIntentRequestBody struct {
 	// added. Keep an existing example's id when you edit it, and give an example
 	// you add a new, unique, non-blank id; ids are saved as sent.
 	Examples []*ExampleItemRequestBody `form:"examples" json:"examples" xml:"examples"`
+}
+
+// DeclineRevisionRequestBody is the type of the "surla" service
+// "decline_revision" endpoint HTTP request body.
+type DeclineRevisionRequestBody struct {
+	// Change identifier.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// request_revision of the proposed revision being declined
+	// (proposed_revision.request_revision).
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 }
 
 // PreviewArchitectureRequestBody is the type of the "surla" service
@@ -245,6 +257,10 @@ type ProposeChangeResponseBody struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposedRevisionItemResponseBody `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
 }
 
 // ReviseChangeResponseBody is the type of the "surla" service "revise_change"
@@ -295,6 +311,10 @@ type ReviseChangeResponseBody struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposedRevisionItemResponseBody `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
 }
 
 // ConfirmIntentResponseBody is the type of the "surla" service
@@ -345,6 +365,10 @@ type ConfirmIntentResponseBody struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposedRevisionItemResponseBody `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
 }
 
 // GetChangeResponseBody is the type of the "surla" service "get_change"
@@ -395,6 +419,64 @@ type GetChangeResponseBody struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposedRevisionItemResponseBody `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
+}
+
+// DeclineRevisionResponseBody is the type of the "surla" service
+// "decline_revision" endpoint HTTP response body.
+type DeclineRevisionResponseBody struct {
+	// Change identifier.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Checkpoint status (needs_confirmation or confirmed).
+	Status *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	// Operator feature request for this revision.
+	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Domain questions surfaced at CP1, retained for audit after confirmation.
+	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
+	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
+	// User who confirmed the Change Card.
+	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
+	// SHA-256 digest of the canonical versioned Change Card.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
+	// revision without it.
+	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
+	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposedRevisionItemResponseBody `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
 }
 
 // PreviewArchitectureResponseBody is the type of the "surla" service
@@ -552,6 +634,10 @@ type ApproveMergeResponseBody struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposedRevisionItemResponseBody `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
 }
 
 // DiffResponseBody is the type of the "surla" service "diff" endpoint HTTP
@@ -1097,6 +1183,60 @@ type GetChangeNotFoundResponseBody struct {
 // GetChangeForbiddenResponseBody is the type of the "surla" service
 // "get_change" endpoint HTTP response body for the "forbidden" error.
 type GetChangeForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// DeclineRevisionNotFoundResponseBody is the type of the "surla" service
+// "decline_revision" endpoint HTTP response body for the "not_found" error.
+type DeclineRevisionNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// DeclineRevisionConflictResponseBody is the type of the "surla" service
+// "decline_revision" endpoint HTTP response body for the "conflict" error.
+type DeclineRevisionConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// DeclineRevisionForbiddenResponseBody is the type of the "surla" service
+// "decline_revision" endpoint HTTP response body for the "forbidden" error.
+type DeclineRevisionForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2853,6 +2993,31 @@ type UnverifiedApprovalItemResponseBody struct {
 	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
 }
 
+// ProposedRevisionItemResponseBody is used to define fields on response body
+// types.
+type ProposedRevisionItemResponseBody struct {
+	// Operator feature request for this revision.
+	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
+	// Plain-English summary of the proposed change.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+}
+
 // C4ContainerItemResponseBody is used to define fields on response body types.
 type C4ContainerItemResponseBody struct {
 	// Stable container identifier.
@@ -3120,6 +3285,10 @@ type ChangeListItemResponseBody struct {
 	// The Change Card's most recently accepted verification run; absent when none
 	// was started.
 	LatestVerification *LatestVerificationItemResponseBody `form:"latest_verification,omitempty" json:"latest_verification,omitempty" xml:"latest_verification,omitempty"`
+	// request_revision of the revision the guide proposed beside this confirmed
+	// change, while it waits for the user to adopt or decline it; absent
+	// otherwise. status and request_revision describe the revision in force.
+	ProposedRevision *string `form:"proposed_revision,omitempty" json:"proposed_revision,omitempty" xml:"proposed_revision,omitempty"`
 	// When the Change Card was last saved. It is not part of request_revision.
 	SavedAt *string `form:"saved_at,omitempty" json:"saved_at,omitempty" xml:"saved_at,omitempty"`
 }
@@ -4406,6 +4575,16 @@ func NewConfirmIntentRequestBody(p *surla.ConfirmIntentPayload) *ConfirmIntentRe
 	return body
 }
 
+// NewDeclineRevisionRequestBody builds the HTTP request body from the payload
+// of the "decline_revision" endpoint of the "surla" service.
+func NewDeclineRevisionRequestBody(p *surla.DeclineRevisionPayload) *DeclineRevisionRequestBody {
+	body := &DeclineRevisionRequestBody{
+		ChangeID:        p.ChangeID,
+		RequestRevision: p.RequestRevision,
+	}
+	return body
+}
+
 // NewPreviewArchitectureRequestBody builds the HTTP request body from the
 // payload of the "preview_architecture" endpoint of the "surla" service.
 func NewPreviewArchitectureRequestBody(p *surla.PreviewArchitecturePayload) *PreviewArchitectureRequestBody {
@@ -4613,6 +4792,9 @@ func NewProposeChangeChangeCardResultOK(body *ProposeChangeResponseBody) *surla.
 	if body.UnverifiedApproval != nil {
 		v.UnverifiedApproval = unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(body.UnverifiedApproval)
 	}
+	if body.ProposedRevision != nil {
+		v.ProposedRevision = unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(body.ProposedRevision)
+	}
 
 	return v
 }
@@ -4721,6 +4903,9 @@ func NewReviseChangeChangeCardResultOK(body *ReviseChangeResponseBody) *surla.Ch
 	}
 	if body.UnverifiedApproval != nil {
 		v.UnverifiedApproval = unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(body.UnverifiedApproval)
+	}
+	if body.ProposedRevision != nil {
+		v.ProposedRevision = unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(body.ProposedRevision)
 	}
 
 	return v
@@ -4846,6 +5031,9 @@ func NewConfirmIntentChangeCardResultOK(body *ConfirmIntentResponseBody) *surla.
 	if body.UnverifiedApproval != nil {
 		v.UnverifiedApproval = unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(body.UnverifiedApproval)
 	}
+	if body.ProposedRevision != nil {
+		v.ProposedRevision = unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(body.ProposedRevision)
+	}
 
 	return v
 }
@@ -4970,6 +5158,9 @@ func NewGetChangeChangeCardResultOK(body *GetChangeResponseBody) *surla.ChangeCa
 	if body.UnverifiedApproval != nil {
 		v.UnverifiedApproval = unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(body.UnverifiedApproval)
 	}
+	if body.ProposedRevision != nil {
+		v.ProposedRevision = unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(body.ProposedRevision)
+	}
 
 	return v
 }
@@ -4992,6 +5183,118 @@ func NewGetChangeNotFound(body *GetChangeNotFoundResponseBody) *goa.ServiceError
 // NewGetChangeForbidden builds a surla service get_change endpoint forbidden
 // error.
 func NewGetChangeForbidden(body *GetChangeForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewDeclineRevisionChangeCardResultOK builds a "surla" service
+// "decline_revision" endpoint result from a HTTP "OK" response.
+func NewDeclineRevisionChangeCardResultOK(body *DeclineRevisionResponseBody) *surla.ChangeCardResult {
+	v := &surla.ChangeCardResult{
+		ChangeID:        *body.ChangeID,
+		Status:          *body.Status,
+		Prompt:          *body.Prompt,
+		Summary:         *body.Summary,
+		ConfirmedBy:     body.ConfirmedBy,
+		RequestRevision: *body.RequestRevision,
+	}
+	if body.Ambiguities != nil {
+		v.Ambiguities = make([]*surla.AmbiguityQuestion, len(body.Ambiguities))
+		for i, val := range body.Ambiguities {
+			if val == nil {
+				v.Ambiguities[i] = nil
+				continue
+			}
+			v.Ambiguities[i] = unmarshalAmbiguityQuestionResponseBodyToSurlaAmbiguityQuestion(val)
+		}
+	}
+	if body.Answers != nil {
+		v.Answers = make(map[string]string, len(body.Answers))
+		for key, val := range body.Answers {
+			tk := key
+			tv := val
+			v.Answers[tk] = tv
+		}
+	}
+	v.Examples = make([]*surla.ExampleItem, len(body.Examples))
+	for i, val := range body.Examples {
+		if val == nil {
+			v.Examples[i] = nil
+			continue
+		}
+		v.Examples[i] = unmarshalExampleItemResponseBodyToSurlaExampleItem(val)
+	}
+	v.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
+	for i, val := range body.PreservedBehaviors {
+		v.PreservedBehaviors[i] = val
+	}
+	if body.Stories != nil {
+		v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				v.Stories[i] = nil
+				continue
+			}
+			v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
+	}
+	if body.UIComposition != nil {
+		v.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(body.UIComposition)
+	}
+	if body.Approval != nil {
+		v.Approval = unmarshalApprovalItemResponseBodyToSurlaApprovalItem(body.Approval)
+	}
+	if body.UnverifiedApproval != nil {
+		v.UnverifiedApproval = unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(body.UnverifiedApproval)
+	}
+	if body.ProposedRevision != nil {
+		v.ProposedRevision = unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(body.ProposedRevision)
+	}
+
+	return v
+}
+
+// NewDeclineRevisionNotFound builds a surla service decline_revision endpoint
+// not_found error.
+func NewDeclineRevisionNotFound(body *DeclineRevisionNotFoundResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewDeclineRevisionConflict builds a surla service decline_revision endpoint
+// conflict error.
+func NewDeclineRevisionConflict(body *DeclineRevisionConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewDeclineRevisionForbidden builds a surla service decline_revision endpoint
+// forbidden error.
+func NewDeclineRevisionForbidden(body *DeclineRevisionForbiddenResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -5641,6 +5944,9 @@ func NewApproveMergeChangeCardResultOK(body *ApproveMergeResponseBody) *surla.Ch
 	}
 	if body.UnverifiedApproval != nil {
 		v.UnverifiedApproval = unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(body.UnverifiedApproval)
+	}
+	if body.ProposedRevision != nil {
+		v.ProposedRevision = unmarshalProposedRevisionItemResponseBodyToSurlaProposedRevisionItem(body.ProposedRevision)
 	}
 
 	return v
@@ -7037,6 +7343,11 @@ func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err err
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.ProposedRevision != nil {
+		if err2 := validateProposedRevisionItemResponseBody(body.ProposedRevision, "body.proposed_revision"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -7102,6 +7413,11 @@ func ValidateReviseChangeResponseBody(body *ReviseChangeResponseBody) (err error
 	}
 	if body.UnverifiedApproval != nil {
 		if err2 := validateUnverifiedApprovalItemResponseBody(body.UnverifiedApproval, "body.unverified_approval"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := validateProposedRevisionItemResponseBody(body.ProposedRevision, "body.proposed_revision"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -7173,6 +7489,11 @@ func ValidateConfirmIntentResponseBody(body *ConfirmIntentResponseBody) (err err
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.ProposedRevision != nil {
+		if err2 := validateProposedRevisionItemResponseBody(body.ProposedRevision, "body.proposed_revision"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -7238,6 +7559,84 @@ func ValidateGetChangeResponseBody(body *GetChangeResponseBody) (err error) {
 	}
 	if body.UnverifiedApproval != nil {
 		if err2 := validateUnverifiedApprovalItemResponseBody(body.UnverifiedApproval, "body.unverified_approval"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := validateProposedRevisionItemResponseBody(body.ProposedRevision, "body.proposed_revision"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateDeclineRevisionResponseBody runs the validations defined on
+// DeclineRevisionResponseBody
+func ValidateDeclineRevisionResponseBody(body *DeclineRevisionResponseBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "needs_confirmation" || *body.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	for _, e := range body.Ambiguities {
+		if e != nil {
+			if err2 := validateAmbiguityQuestionResponseBody(e, "body.ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := validateExampleItemResponseBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.UIComposition != nil {
+		if err2 := validateUICompositionItemResponseBody(body.UIComposition, "body.ui_composition"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.Approval != nil {
+		if err2 := validateApprovalItemResponseBody(body.Approval, "body.approval"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.UnverifiedApproval != nil {
+		if err2 := validateUnverifiedApprovalItemResponseBody(body.UnverifiedApproval, "body.unverified_approval"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := validateProposedRevisionItemResponseBody(body.ProposedRevision, "body.proposed_revision"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -7550,6 +7949,11 @@ func ValidateApproveMergeResponseBody(body *ApproveMergeResponseBody) (err error
 	}
 	if body.UnverifiedApproval != nil {
 		if err2 := validateUnverifiedApprovalItemResponseBody(body.UnverifiedApproval, "body.unverified_approval"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := validateProposedRevisionItemResponseBody(body.ProposedRevision, "body.proposed_revision"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -8359,6 +8763,78 @@ func ValidateGetChangeNotFoundResponseBody(body *GetChangeNotFoundResponseBody) 
 // ValidateGetChangeForbiddenResponseBody runs the validations defined on
 // GetChangeForbiddenResponseBody
 func ValidateGetChangeForbiddenResponseBody(body *GetChangeForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateDeclineRevisionNotFoundResponseBody runs the validations defined on
+// DeclineRevisionNotFoundResponseBody
+func ValidateDeclineRevisionNotFoundResponseBody(body *DeclineRevisionNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateDeclineRevisionConflictResponseBody runs the validations defined on
+// DeclineRevisionConflictResponseBody
+func ValidateDeclineRevisionConflictResponseBody(body *DeclineRevisionConflictResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateDeclineRevisionForbiddenResponseBody runs the validations defined on
+// DeclineRevisionForbiddenResponseBody
+func ValidateDeclineRevisionForbiddenResponseBody(body *DeclineRevisionForbiddenResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -10925,6 +11401,100 @@ func validateUnverifiedApprovalItemResponseBody(body *UnverifiedApprovalItemResp
 	}
 	if body.Approval != nil {
 		if err2 := validateApprovalItemResponseBody(body.Approval, path+".approval"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateProposedRevisionItemResponseBody runs the validations defined on
+// ProposedRevisionItem
+func ValidateProposedRevisionItemResponseBody(body *ProposedRevisionItemResponseBody) (err error) {
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range body.Ambiguities {
+		if e != nil {
+			if err2 := validateAmbiguityQuestionResponseBody(e, "body.ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := validateExampleItemResponseBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.UIComposition != nil {
+		if err2 := validateUICompositionItemResponseBody(body.UIComposition, "body.ui_composition"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// validateProposedRevisionItemResponseBody checks ProposedRevisionItem and
+// reports errors using the path supplied by its caller
+func validateProposedRevisionItemResponseBody(body *ProposedRevisionItemResponseBody, path string) (err error) {
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", path))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", path))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", path))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", path))
+	}
+	for _, e := range body.Ambiguities {
+		if e != nil {
+			if err2 := validateAmbiguityQuestionResponseBody(e, path+".ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := validateExampleItemResponseBody(e, path+".examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, path+".stories[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.UIComposition != nil {
+		if err2 := validateUICompositionItemResponseBody(body.UIComposition, path+".ui_composition"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}

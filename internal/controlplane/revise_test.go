@@ -30,7 +30,8 @@ import (
 // unknown, foreign and stale cards are refused; an analysis that repeats an
 // option or does not account for every current example exactly once is
 // unprocessable and leaves the saved card file byte for byte unchanged; and a
-// complete analysis saves a new revision in needs_confirmation.
+// complete analysis of the confirmed card saves a proposed revision in
+// needs_confirmation beside it, which a later revision over MCP replaces.
 func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
@@ -124,36 +125,42 @@ func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 	})
 	status, body := postJSON(t, srv.URL+"/changes/revise", "alice-token", string(httpBody))
 	require.Equal(t, http.StatusOK, status, body)
-	var httpCard struct {
-		Status          string `json:"status"`
-		Summary         string `json:"summary"`
-		RequestRevision string `json:"request_revision"`
+	type changeBody struct {
+		Status           string `json:"status"`
+		RequestRevision  string `json:"request_revision"`
+		ProposedRevision *struct {
+			Summary         string `json:"summary"`
+			RequestRevision string `json:"request_revision"`
+		} `json:"proposed_revision"`
 	}
+	var httpCard changeBody
 	require.NoError(t, json.Unmarshal([]byte(body), &httpCard))
-	assert.Equal(t, StatusNeedsConfirmation, httpCard.Status)
-	assert.Equal(t, "Refunds up to $100 are instant via HTTP.", httpCard.Summary)
+	assert.Equal(t, StatusConfirmed, httpCard.Status, "the agreed revision stays in force")
+	assert.Equal(t, r1.RequestRevision, httpCard.RequestRevision)
+	require.NotNil(t, httpCard.ProposedRevision)
+	assert.Equal(t, "Refunds up to $100 are instant via HTTP.", httpCard.ProposedRevision.Summary)
 
-	// MCP revise_change succeeds against the HTTP revision.
+	// MCP revise_change succeeds against the HTTP proposal and replaces it.
 	res, err = adapter.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{Name: "revise_change", Arguments: reviseArgs(t, &gensurla.ReviseChangePayload{
-		ChangeID: "chg-tx", RequestRevision: httpCard.RequestRevision, Prompt: "Refunds up to $150 are instant.",
+		ChangeID: "chg-tx", RequestRevision: httpCard.ProposedRevision.RequestRevision, Prompt: "Refunds up to $150 are instant.",
 		Analysis: revision("Refunds up to $150 are instant via MCP.", "check_01"),
 	})})
 	require.NoError(t, err)
 	complete, ok = res.Outcome.AsComplete()
 	require.True(t, ok)
 	require.False(t, complete.IsError != nil && *complete.IsError)
-	var mcpCard struct {
-		Status  string `json:"status"`
-		Summary string `json:"summary"`
-	}
+	var mcpCard changeBody
 	require.NoError(t, json.Unmarshal(complete.StructuredContent, &mcpCard))
-	assert.Equal(t, StatusNeedsConfirmation, mcpCard.Status)
-	assert.Equal(t, "Refunds up to $150 are instant via MCP.", mcpCard.Summary)
+	assert.Equal(t, StatusConfirmed, mcpCard.Status)
+	require.NotNil(t, mcpCard.ProposedRevision)
+	assert.Equal(t, "Refunds up to $150 are instant via MCP.", mcpCard.ProposedRevision.Summary)
+	assert.NotEqual(t, httpCard.ProposedRevision.RequestRevision, mcpCard.ProposedRevision.RequestRevision, "the second revision replaced the first proposal")
 }
 
 // TestReviseChangeSavesARevisionThatOnlyItsContentDetermines verifies what a
-// revision keeps and drops: it enters needs_confirmation and clears answers,
-// confirmed_by and a recorded approval, numbers its questions afresh from 01,
+// revision keeps and drops: it enters needs_confirmation with no answers,
+// confirmed_by or approval while the confirmed revision beside it keeps its
+// own, numbers its questions afresh from 01,
 // binds its ui_composition to its own request_revision, and gets the same
 // request_revision as an earlier revision whose saved content it repeats
 // exactly, because request_revision is a digest of that content alone.
@@ -161,7 +168,8 @@ func TestReviseChangeSavesARevisionThatOnlyItsContentDetermines(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp := newControlPlane(t, Options{})
 
-	// A confirmed card with a recorded approval loses both on revision.
+	// Revising a confirmed card with a recorded approval proposes a revision
+	// without one, and the approval stays on the confirmed revision.
 	approved := saveCard(t, cp, &gensurla.ApprovalItem{
 		ApprovedBy: "alice@example.com", ReportDigest: strings.Repeat("d", 64), CandidateCommit: strings.Repeat("c", 40),
 		SuiteID: "orders", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
@@ -182,15 +190,18 @@ func TestReviseChangeSavesARevisionThatOnlyItsContentDetermines(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, StatusNeedsConfirmation, revised.Status, "a revision without open questions still needs confirmation")
-	assert.Nil(t, revised.ConfirmedBy)
-	assert.Empty(t, revised.Answers)
-	assert.Nil(t, revised.Approval)
-	assert.Nil(t, revised.UnverifiedApproval)
+	assert.Equal(t, StatusConfirmed, revised.Status, "the confirmed revision stays in force")
+	assert.Equal(t, approved.RequestRevision, revised.RequestRevision)
+	require.NotNil(t, revised.UnverifiedApproval, "the confirmed revision keeps its approval")
 	stored, ok, err := cp.cards.load("chg")
 	require.NoError(t, err)
 	require.True(t, ok)
-	assert.Nil(t, stored.card.Approval, "the saved revision carries no approval")
+	require.NotNil(t, stored.card.Approval, "the saved confirmed revision keeps its approval")
+	require.NotNil(t, stored.proposed)
+	assert.Equal(t, StatusNeedsConfirmation, stored.proposed.card.Status, "a revision without open questions still needs confirmation")
+	assert.Nil(t, stored.proposed.card.ConfirmedBy)
+	assert.Empty(t, stored.proposed.card.Answers)
+	assert.Nil(t, stored.proposed.card.Approval, "the proposed revision carries no approval")
 
 	// R1 -> R2 -> R3, where R3 repeats R1's content exactly.
 	question := func(q string) []*gensurla.CP1AnalysisAmbiguity {
@@ -380,13 +391,15 @@ func TestSavedStoriesStayPairedWithTheirSourceAcrossConfirmAndRevise(t *testing.
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, StatusNeedsConfirmation, revised.Status)
-	assert.Equal(t, loaded.Stories, revised.Stories, "omitting story_refresh_op_id keeps the agreed Story")
+	proposal := proposalCard(t, revised)
+	assert.Equal(t, loaded.Stories, proposal.Stories, "omitting story_refresh_op_id keeps the agreed Story")
 	stored, ok, err := cp.cards.load("chg-story-saved")
 	require.NoError(t, err)
 	require.True(t, ok)
-	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource, "saved design_source carries over with the agreed Story")
-	assert.Equal(t, sampleAdoptedStories(), stored.stories)
+	require.NotNil(t, stored.proposed)
+	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.proposed.designSource, "saved design_source carries over with the agreed Story")
+	assert.Equal(t, sampleAdoptedStories(), stored.proposed.stories)
+	assert.Equal(t, stored.designSource, stored.proposed.designSource, "the confirmed revision keeps its own design source")
 
 	// Modifying any Story field on disk invalidates the saved request_revision.
 	tampered := strings.Replace(string(savedBytes), "Store credit is issued immediately", "Cash refund is issued immediately", 1)
@@ -902,4 +915,26 @@ func sampleAdoptedStories() []designeval.StorySummary {
 			},
 		},
 	}}
+}
+
+// proposalCard returns the revision proposed beside change as a
+// needs_confirmation card, failing the test when none waits. Revising a
+// confirmed card returns the change with the new revision in
+// ProposedRevision.
+func proposalCard(t *testing.T, change *gensurla.ChangeCardResult) *gensurla.ChangeCardResult {
+	t.Helper()
+	require.NotNil(t, change.ProposedRevision, "revising a confirmed change proposes a revision beside it")
+	p := change.ProposedRevision
+	return &gensurla.ChangeCardResult{
+		ChangeID:           change.ChangeID,
+		Status:             StatusNeedsConfirmation,
+		Prompt:             p.Prompt,
+		Summary:            p.Summary,
+		Ambiguities:        p.Ambiguities,
+		Examples:           p.Examples,
+		PreservedBehaviors: p.PreservedBehaviors,
+		Stories:            p.Stories,
+		RequestRevision:    p.RequestRevision,
+		UIComposition:      p.UIComposition,
+	}
 }

@@ -100,6 +100,11 @@ func ValidateApproveMergeResultTransport(body *ApproveMergeResultTransport) (err
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.ProposedRevision != nil {
+		if err2 := ValidateProposedRevisionItemTransport(body.ProposedRevision); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -242,6 +247,94 @@ func ValidateConfirmIntentResultTransport(body *ConfirmIntentResultTransport) (e
 	}
 	if body.UnverifiedApproval != nil {
 		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := ValidateProposedRevisionItemTransport(body.ProposedRevision); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateDeclineRevisionPayloadTransport runs the validations defined on DeclineRevisionPayloadTransport.
+func ValidateDeclineRevisionPayloadTransport(body *DeclineRevisionPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	return
+}
+
+// ValidateDeclineRevisionResultTransport runs the validations defined on DeclineRevisionResultTransport.
+func ValidateDeclineRevisionResultTransport(body *DeclineRevisionResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "needs_confirmation" || *body.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	for _, e := range body.Ambiguities {
+		if e != nil {
+			if err2 := ValidateAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := ValidateExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.UIComposition != nil {
+		if err2 := ValidateUICompositionItemTransport(body.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.Approval != nil {
+		if err2 := ValidateApprovalItemTransport(body.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.UnverifiedApproval != nil {
+		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := ValidateProposedRevisionItemTransport(body.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -511,6 +604,11 @@ func ValidateGetChangeResultTransport(body *GetChangeResultTransport) (err error
 	}
 	if body.UnverifiedApproval != nil {
 		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := ValidateProposedRevisionItemTransport(body.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -974,6 +1072,11 @@ func ValidateProposeChangeResultTransport(body *ProposeChangeResultTransport) (e
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.ProposedRevision != nil {
+		if err2 := ValidateProposedRevisionItemTransport(body.ProposedRevision); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -1151,6 +1254,11 @@ func ValidateReviseChangeResultTransport(body *ReviseChangeResultTransport) (err
 	}
 	if body.UnverifiedApproval != nil {
 		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.ProposedRevision != nil {
+		if err2 := ValidateProposedRevisionItemTransport(body.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -1753,6 +1861,52 @@ func ValidateLatestVerificationItemTransport(body *LatestVerificationItemTranspo
 	if body.State != nil {
 		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"running", "passed", "failed", "not_completed"}))
+		}
+	}
+	return
+}
+
+// ValidateProposedRevisionItemTransport runs the validations defined on ProposedRevisionItemTransport.
+func ValidateProposedRevisionItemTransport(body *ProposedRevisionItemTransport) (err error) {
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range body.Ambiguities {
+		if e != nil {
+			if err2 := ValidateAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := ValidateExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.UIComposition != nil {
+		if err2 := ValidateUICompositionItemTransport(body.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return

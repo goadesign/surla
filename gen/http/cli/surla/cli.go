@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|ensure-team|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -99,6 +99,9 @@ func ParseEndpoint(
 
 		surlaGetChangeFlags        = flag.NewFlagSet("get-change", flag.ExitOnError)
 		surlaGetChangeChangeIDFlag = new(cliStringFlag)
+
+		surlaDeclineRevisionFlags    = flag.NewFlagSet("decline-revision", flag.ExitOnError)
+		surlaDeclineRevisionBodyFlag = new(cliStringFlag)
 
 		surlaPreviewArchitectureFlags    = flag.NewFlagSet("preview-architecture", flag.ExitOnError)
 		surlaPreviewArchitectureBodyFlag = new(cliStringFlag)
@@ -192,6 +195,7 @@ func ParseEndpoint(
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
 	surlaConfirmIntentFlags.Var(surlaConfirmIntentBodyFlag, "body", "")
 	surlaGetChangeFlags.Var(surlaGetChangeChangeIDFlag, "change-id", "Change identifier.")
+	surlaDeclineRevisionFlags.Var(surlaDeclineRevisionBodyFlag, "body", "")
 	surlaPreviewArchitectureFlags.Var(surlaPreviewArchitectureBodyFlag, "body", "")
 	surlaDraftOverrideFlags.Var(surlaDraftOverrideBodyFlag, "body", "")
 	surlaStartLiveTargetFlags.Var(surlaStartLiveTargetBodyFlag, "body", "")
@@ -231,6 +235,7 @@ func ParseEndpoint(
 	surlaReviseChangeFlags.Usage = surlaReviseChangeUsage
 	surlaConfirmIntentFlags.Usage = surlaConfirmIntentUsage
 	surlaGetChangeFlags.Usage = surlaGetChangeUsage
+	surlaDeclineRevisionFlags.Usage = surlaDeclineRevisionUsage
 	surlaPreviewArchitectureFlags.Usage = surlaPreviewArchitectureUsage
 	surlaDraftOverrideFlags.Usage = surlaDraftOverrideUsage
 	surlaStartLiveTargetFlags.Usage = surlaStartLiveTargetUsage
@@ -337,6 +342,9 @@ func ParseEndpoint(
 
 			case "get-change":
 				epf = surlaGetChangeFlags
+
+			case "decline-revision":
+				epf = surlaDeclineRevisionFlags
 
 			case "preview-architecture":
 				epf = surlaPreviewArchitectureFlags
@@ -488,6 +496,9 @@ func ParseEndpoint(
 			case "get-change":
 				endpoint = c.GetChange()
 				data, err = surlac.BuildGetChangePayload(surlaGetChangeChangeIDFlag.value)
+			case "decline-revision":
+				endpoint = c.DeclineRevision()
+				data, err = surlac.BuildDeclineRevisionPayload(surlaDeclineRevisionBodyFlag.value)
 			case "preview-architecture":
 				endpoint = c.PreviewArchitecture()
 				data, err = surlac.BuildPreviewArchitecturePayload(surlaPreviewArchitectureBodyFlag.value)
@@ -719,9 +730,10 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, "COMMAND:")
 	fmt.Fprintln(os.Stderr, `    golden-path: Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms, followed by the decision component catalog for the optional ui_composition of a propose_change or revise_change analysis.`)
 	fmt.Fprintln(os.Stderr, `    propose-change: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the owner's current succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
-	fmt.Fprintln(os.Stderr, `    revise-change: Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
-	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
-	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
+	fmt.Fprintln(os.Stderr, `    revise-change: Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the latest revision: the proposed revision's request_revision when one waits, otherwise the card's. On a card that was never confirmed, the new revision replaces it. On a confirmed card, the new revision is saved as the proposed revision beside the confirmed one, replacing any earlier proposal, and the confirmed revision stays in force with its answers, confirmation, approval, Stories and design source until the user adopts the proposal with confirm_intent or declines it. The analysis accounts for every example of the revision it revises exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for the user's review. The new revision has no answers, confirmed_by or approval: earlier decisions carry over only where the analysis restates them in its summary, examples or preserved behaviors. The result is the change as get_change returns it. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
+	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Naming the proposed revision's request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card's request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
+	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
+	fmt.Fprintln(os.Stderr, `    decline-revision: Decline the revision the guide proposed beside a confirmed Checkpoint 1 Change Card. The proposal is removed and the confirmed revision in force stays exactly as it was, with its answers, confirmation, approval, Stories and design source. Only the user may decline; the guide replaces a proposal by revising again. The result is the change as get_change returns it.`)
 	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, and Goa-AI guardrails from a candidate Goa design bound to a confirmed Change Card. Surla reads the candidate module snapshot from the bound workspace. The result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
 	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
@@ -737,7 +749,7 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
 	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
 	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
-	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
+	fmt.Fprintln(os.Stderr, `    list-traces: Read the project owner's saved operation diagnostics from the control plane's private storage; the user, the guide and the builder act for the owner and read the same history. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the project owner's in-memory Story refresh operation for that workspace, which every caller acting for the owner reads. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
 	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the project owner's current in-memory Story refresh operation for the bound workspace, the same one for every caller acting for the owner: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
 	fmt.Fprintln(os.Stderr, `    get-team: Read the project team's registered roles and current terminal, watcher and unread-assignment facts. Reading creates nothing and marks no assignment read. Only the user's browser session may call it. wait_for_changes covers this snapshot as well as the change list.`)
@@ -798,7 +810,7 @@ func surlaReviseChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
+	fmt.Fprintln(os.Stderr, `Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the latest revision: the proposed revision's request_revision when one waits, otherwise the card's. On a card that was never confirmed, the new revision replaces it. On a confirmed card, the new revision is saved as the proposed revision beside the confirmed one, replacing any earlier proposal, and the confirmed revision stays in force with its answers, confirmation, approval, Stories and design source until the user adopts the proposal with confirm_intent or declines it. The analysis accounts for every example of the revision it revises exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for the user's review. The new revision has no answers, confirmed_by or approval: earlier decisions carry over only where the analysis restates them in its summary, examples or preserved behaviors. The result is the change as get_change returns it. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -816,7 +828,7 @@ func surlaConfirmIntentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
+	fmt.Fprintln(os.Stderr, `Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Naming the proposed revision's request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card's request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -834,7 +846,7 @@ func surlaGetChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
+	fmt.Fprintln(os.Stderr, `Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change identifier.`)
@@ -842,6 +854,24 @@ func surlaGetChangeUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-change --change-id \"Deleniti nobis.\"")
+}
+
+func surlaDeclineRevisionUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla decline-revision", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Decline the revision the guide proposed beside a confirmed Checkpoint 1 Change Card. The proposal is removed and the confirmed revision in force stays exactly as it was, with its answers, confirmation, approval, Stories and design source. Only the user may decline; the guide replaces a proposal by revising again. The result is the change as get_change returns it.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla decline-revision --body '{\n      \"change_id\": \"Commodi ex facilis.\",\n      \"request_revision\": \"Sequi dignissimos ut non quaerat et enim.\"\n   }'")
 }
 
 func surlaPreviewArchitectureUsage() {
@@ -1120,7 +1150,7 @@ func surlaListTracesUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
+	fmt.Fprintln(os.Stderr, `Read the project owner's saved operation diagnostics from the control plane's private storage; the user, the guide and the builder act for the owner and read the same history. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -status STRING: `)

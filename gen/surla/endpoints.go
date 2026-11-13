@@ -20,6 +20,7 @@ type Endpoints struct {
 	ReviseChange              goa.Endpoint
 	ConfirmIntent             goa.Endpoint
 	GetChange                 goa.Endpoint
+	DeclineRevision           goa.Endpoint
 	PreviewArchitecture       goa.Endpoint
 	DraftOverride             goa.Endpoint
 	StartLiveTarget           goa.Endpoint
@@ -60,6 +61,7 @@ func NewEndpoints(s Service) *Endpoints {
 		ReviseChange:              NewReviseChangeEndpoint(s),
 		ConfirmIntent:             NewConfirmIntentEndpoint(s),
 		GetChange:                 NewGetChangeEndpoint(s),
+		DeclineRevision:           NewDeclineRevisionEndpoint(s),
 		PreviewArchitecture:       NewPreviewArchitectureEndpoint(s),
 		DraftOverride:             NewDraftOverrideEndpoint(s),
 		StartLiveTarget:           NewStartLiveTargetEndpoint(s),
@@ -100,6 +102,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.ReviseChange = m(e.ReviseChange)
 	e.ConfirmIntent = m(e.ConfirmIntent)
 	e.GetChange = m(e.GetChange)
+	e.DeclineRevision = m(e.DeclineRevision)
 	e.PreviewArchitecture = m(e.PreviewArchitecture)
 	e.DraftOverride = m(e.DraftOverride)
 	e.StartLiveTarget = m(e.StartLiveTarget)
@@ -173,6 +176,15 @@ func NewGetChangeEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GetChangePayload)
 		return s.GetChange(ctx, p)
+	}
+}
+
+// NewDeclineRevisionEndpoint returns an endpoint function that calls the
+// method "decline_revision" of service "surla".
+func NewDeclineRevisionEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*DeclineRevisionPayload)
+		return s.DeclineRevision(ctx, p)
 	}
 }
 

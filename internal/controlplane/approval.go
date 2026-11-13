@@ -132,7 +132,9 @@ func (c *ControlPlane) ApproveMerge(
 	if err := c.cards.save(record); err != nil {
 		return nil, err
 	}
-	return &approved, nil
+	result := approved
+	result.ProposedRevision = proposedRevisionItem(record.proposed)
+	return &result, nil
 }
 
 // currentCard returns card as get_change and an unchanged confirm_intent

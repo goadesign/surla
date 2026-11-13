@@ -198,6 +198,7 @@ func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
 			Prompt:          "Revised feature.",
 		}, revisionJSON))
 		require.NoError(t, err)
+		revised = proposalCard(t, revised)
 		require.Len(t, revised.Examples, 3)
 		assert.Equal(t, "check_01", revised.Examples[0].ID)
 		assert.Equal(t, "check_05", revised.Examples[1].ID)
@@ -515,6 +516,7 @@ func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
 		Prompt:          "Remove custom and add a new row.",
 	}, reviseR2JSON))
 	require.NoError(t, err)
+	r2 = proposalCard(t, r2)
 	require.Len(t, r2.Examples, 2)
 	assert.Equal(t, " check_01 ", r2.Examples[0].ID, "kept example preserves exact whitespace-padded ID")
 	assert.Equal(t, "check_02", r2.Examples[1].ID, "allocator reserves trimmed 'check_01' so new row gets 'check_02'")
@@ -536,6 +538,7 @@ func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
 		Prompt:          "Remove padded check_01 and add a row.",
 	}, reviseR3JSON))
 	require.NoError(t, err)
+	r3 = proposalCard(t, r3)
 	require.Len(t, r3.Examples, 2)
 	assert.Equal(t, "check_02", r3.Examples[0].ID)
 	assert.Equal(t, "check_03", r3.Examples[1].ID, "removed ' check_01 ' is reserved during R3 construction")
@@ -547,6 +550,7 @@ func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
 		Prompt:          "Add another row in R4.",
 	}, reviseR4JSON))
 	require.NoError(t, err)
+	r4 = proposalCard(t, r4)
 	require.Len(t, r4.Examples, 3)
 	assert.Equal(t, "check_02", r4.Examples[0].ID)
 	assert.Equal(t, "check_03", r4.Examples[1].ID)

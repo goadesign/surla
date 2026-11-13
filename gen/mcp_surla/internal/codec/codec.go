@@ -183,6 +183,79 @@ func ValidateApproveMergeResultExampleItemTransport(value *ApproveMergeResultExa
 	return err
 }
 
+// ApproveMergeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
+type ApproveMergeResultProposedRevisionItemTransport struct {
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change.
+	Summary *string `json:"summary"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*ApproveMergeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ApproveMergeResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*ApproveMergeResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *ApproveMergeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+}
+
+// ValidateApproveMergeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultProposedRevisionItemTransport(value *ApproveMergeResultProposedRevisionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateApproveMergeResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
 // ApproveMergeResultStoryActorItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultStoryActorItemTransport struct {
 	// Story-scoped actor key.
@@ -431,6 +504,10 @@ type ApproveMergeResultTransport struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *ApproveMergeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ApproveMergeResultProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 }
 
 // ValidateApproveMergeResultTransport checks decoded JSON before it becomes a service value.
@@ -497,6 +574,11 @@ func ValidateApproveMergeResultTransport(value *ApproveMergeResultTransport) (er
 	}
 	if value.UnverifiedApproval != nil {
 		if err2 := ValidateApproveMergeResultUnverifiedApprovalItemTransport(value.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.ProposedRevision != nil {
+		if err2 := ValidateApproveMergeResultProposedRevisionItemTransport(value.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -866,6 +948,79 @@ func ValidateConfirmIntentResultExampleItemTransport(value *ConfirmIntentResultE
 	return err
 }
 
+// ConfirmIntentResultProposedRevisionItemTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultProposedRevisionItemTransport struct {
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change.
+	Summary *string `json:"summary"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*ConfirmIntentResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ConfirmIntentResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*ConfirmIntentResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *ConfirmIntentResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+}
+
+// ValidateConfirmIntentResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultProposedRevisionItemTransport(value *ConfirmIntentResultProposedRevisionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateConfirmIntentResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
 // ConfirmIntentResultStoryActorItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultStoryActorItemTransport struct {
 	// Story-scoped actor key.
@@ -1114,6 +1269,10 @@ type ConfirmIntentResultTransport struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *ConfirmIntentResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ConfirmIntentResultProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 }
 
 // ValidateConfirmIntentResultTransport checks decoded JSON before it becomes a service value.
@@ -1183,6 +1342,11 @@ func ValidateConfirmIntentResultTransport(value *ConfirmIntentResultTransport) (
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if value.ProposedRevision != nil {
+		if err2 := ValidateConfirmIntentResultProposedRevisionItemTransport(value.ProposedRevision); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return err
 }
 
@@ -1233,6 +1397,608 @@ func ValidateConfirmIntentResultUnverifiedApprovalItemTransport(value *ConfirmIn
 	}
 	if value.Approval != nil {
 		if err2 := ValidateConfirmIntentResultApprovalItemTransport(value.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// DeclineRevisionPayloadTransport stores JSON fields until they have been validated.
+type DeclineRevisionPayloadTransport struct {
+	// Change identifier.
+	ChangeID *string `json:"change_id"`
+	// request_revision of the proposed revision being declined
+	// (proposed_revision.request_revision).
+	RequestRevision *string `json:"request_revision"`
+}
+
+// ValidateDeclineRevisionPayloadTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionPayloadTransport(value *DeclineRevisionPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	return err
+}
+
+// DeclineRevisionResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultAmbiguityQuestionTransport struct {
+	// Stable question identifier.
+	ID *string `json:"id"`
+	// Plain-English question for the operator.
+	Question *string `json:"question"`
+	// Concrete resolution choices.
+	Options []string `json:"options"`
+}
+
+// ValidateDeclineRevisionResultAmbiguityQuestionTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultAmbiguityQuestionTransport(value *DeclineRevisionResultAmbiguityQuestionTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// DeclineRevisionResultApprovalItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultApprovalItemTransport struct {
+	// User who approved the result.
+	ApprovedBy *string `json:"approved_by"`
+	// SHA-256 digest of the approved CP4 verification report.
+	ReportDigest *string `json:"report_digest"`
+	// Candidate commit the report was checked against.
+	CandidateCommit *string `json:"candidate_commit"`
+	// Evaluator suite the promotion target requires.
+	SuiteID *string `json:"suite_id"`
+	// Evaluator suite commit the promotion target requires.
+	SuiteCommit *string `json:"suite_commit"`
+	// Dependency profile the promotion target requires, such as sim.
+	Environment *string `json:"environment"`
+	// SHA-256 digest of each candidate binary the promotion target measured, keyed
+	// by binary name.
+	Artifacts map[string]string `json:"artifacts"`
+	// Number of declared evaluator scenarios, every one of which passed.
+	ScenarioCount *int `json:"scenario_count"`
+}
+
+// ValidateDeclineRevisionResultApprovalItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultApprovalItemTransport(value *DeclineRevisionResultApprovalItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ApprovedBy == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approved_by", "body"))
+	}
+	if value.ReportDigest == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report_digest", "body"))
+	}
+	if value.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.SuiteID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("suite_id", "body"))
+	}
+	if value.SuiteCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
+	}
+	if value.Environment == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("environment", "body"))
+	}
+	if value.Artifacts == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("artifacts", "body"))
+	}
+	if value.ScenarioCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	return err
+}
+
+// DeclineRevisionResultExampleItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultExampleItemTransport struct {
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
+	ID *string `json:"id"`
+	// Plain-English scenario description.
+	Scenario *string `json:"scenario"`
+	// Representative user request and domain fixture state.
+	InputSummary *string `json:"input_summary"`
+	// Expected side effect and response behavior.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// Evaluator check classification (deterministic or model_judged).
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// ValidateDeclineRevisionResultExampleItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultExampleItemTransport(value *DeclineRevisionResultExampleItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
+// DeclineRevisionResultProposedRevisionItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultProposedRevisionItemTransport struct {
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change.
+	Summary *string `json:"summary"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*DeclineRevisionResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*DeclineRevisionResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*DeclineRevisionResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *DeclineRevisionResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+}
+
+// ValidateDeclineRevisionResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultProposedRevisionItemTransport(value *DeclineRevisionResultProposedRevisionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateDeclineRevisionResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// DeclineRevisionResultStoryActorItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateDeclineRevisionResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultStoryActorItemTransport(value *DeclineRevisionResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// DeclineRevisionResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*DeclineRevisionResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*DeclineRevisionResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateDeclineRevisionResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultStoryFlowItemTransport(value *DeclineRevisionResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// DeclineRevisionResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateDeclineRevisionResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultStoryQuestionItemTransport(value *DeclineRevisionResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// DeclineRevisionResultStoryStepItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*DeclineRevisionResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateDeclineRevisionResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultStoryStepItemTransport(value *DeclineRevisionResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// DeclineRevisionResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*DeclineRevisionResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*DeclineRevisionResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateDeclineRevisionResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultStorySummaryItemTransport(value *DeclineRevisionResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// DeclineRevisionResultTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultTransport struct {
+	// Change identifier.
+	ChangeID *string `json:"change_id"`
+	// Checkpoint status (needs_confirmation or confirmed).
+	Status *string `json:"status"`
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
+	Summary *string `json:"summary"`
+	// Domain questions surfaced at CP1, retained for audit after confirmation.
+	Ambiguities []*DeclineRevisionResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
+	Answers map[string]string `json:"answers,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*DeclineRevisionResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*DeclineRevisionResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// User who confirmed the Change Card.
+	ConfirmedBy *string `json:"confirmed_by,omitempty"`
+	// SHA-256 digest of the canonical versioned Change Card.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
+	// revision without it.
+	UIComposition *DeclineRevisionResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
+	Approval *DeclineRevisionResultApprovalItemTransport `json:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *DeclineRevisionResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *DeclineRevisionResultProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
+}
+
+// ValidateDeclineRevisionResultTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultTransport(value *DeclineRevisionResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.Status != nil {
+		if !(*value.Status == "needs_confirmation" || *value.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateDeclineRevisionResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateDeclineRevisionResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.Approval != nil {
+		if err2 := ValidateDeclineRevisionResultApprovalItemTransport(value.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.UnverifiedApproval != nil {
+		if err2 := ValidateDeclineRevisionResultUnverifiedApprovalItemTransport(value.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.ProposedRevision != nil {
+		if err2 := ValidateDeclineRevisionResultProposedRevisionItemTransport(value.ProposedRevision); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// DeclineRevisionResultUICompositionItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultUICompositionItemTransport struct {
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the views page validates it
+	// and shows its error state, with the rest of the card still usable, when the
+	// program is not a valid composition.
+	Program *string `json:"program"`
+	// request_revision of the Change Card this program was composed for.
+	ComposedForRevision *string `json:"composed_for_revision"`
+}
+
+// ValidateDeclineRevisionResultUICompositionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultUICompositionItemTransport(value *DeclineRevisionResultUICompositionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Program == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("program", "body"))
+	}
+	if value.ComposedForRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("composed_for_revision", "body"))
+	}
+	return err
+}
+
+// DeclineRevisionResultUnverifiedApprovalItemTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultUnverifiedApprovalItemTransport struct {
+	// Recorded promotion approval from the Change Card.
+	Approval *DeclineRevisionResultApprovalItemTransport `json:"approval"`
+	// Explanation of why the recorded approval could not be verified against
+	// current promotion inputs and how to recover.
+	Reason *string `json:"reason"`
+}
+
+// ValidateDeclineRevisionResultUnverifiedApprovalItemTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultUnverifiedApprovalItemTransport(value *DeclineRevisionResultUnverifiedApprovalItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Approval == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval", "body"))
+	}
+	if value.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", "body"))
+	}
+	if value.Approval != nil {
+		if err2 := ValidateDeclineRevisionResultApprovalItemTransport(value.Approval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -2079,6 +2845,79 @@ func ValidateGetChangeResultExampleItemTransport(value *GetChangeResultExampleIt
 	return err
 }
 
+// GetChangeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
+type GetChangeResultProposedRevisionItemTransport struct {
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change.
+	Summary *string `json:"summary"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*GetChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*GetChangeResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*GetChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *GetChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+}
+
+// ValidateGetChangeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultProposedRevisionItemTransport(value *GetChangeResultProposedRevisionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateGetChangeResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateGetChangeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateGetChangeResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
 // GetChangeResultStoryActorItemTransport stores JSON fields until they have been validated.
 type GetChangeResultStoryActorItemTransport struct {
 	// Story-scoped actor key.
@@ -2327,6 +3166,10 @@ type GetChangeResultTransport struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *GetChangeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *GetChangeResultProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 }
 
 // ValidateGetChangeResultTransport checks decoded JSON before it becomes a service value.
@@ -2393,6 +3236,11 @@ func ValidateGetChangeResultTransport(value *GetChangeResultTransport) (err erro
 	}
 	if value.UnverifiedApproval != nil {
 		if err2 := ValidateGetChangeResultUnverifiedApprovalItemTransport(value.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.ProposedRevision != nil {
+		if err2 := ValidateGetChangeResultProposedRevisionItemTransport(value.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -3797,6 +4645,10 @@ type ListChangesResultChangeListItemTransport struct {
 	// The Change Card's most recently accepted verification run; absent when none
 	// was started.
 	LatestVerification *ListChangesResultLatestVerificationItemTransport `json:"latest_verification,omitempty"`
+	// request_revision of the revision the guide proposed beside this confirmed
+	// change, while it waits for the user to adopt or decline it; absent
+	// otherwise. status and request_revision describe the revision in force.
+	ProposedRevision *string `json:"proposed_revision,omitempty"`
 	// When the Change Card was last saved. It is not part of request_revision.
 	SavedAt *string `json:"saved_at"`
 }
@@ -5375,6 +6227,79 @@ func ValidateProposeChangeResultExampleItemTransport(value *ProposeChangeResultE
 	return err
 }
 
+// ProposeChangeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
+type ProposeChangeResultProposedRevisionItemTransport struct {
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change.
+	Summary *string `json:"summary"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*ProposeChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ProposeChangeResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*ProposeChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *ProposeChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+}
+
+// ValidateProposeChangeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultProposedRevisionItemTransport(value *ProposeChangeResultProposedRevisionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateProposeChangeResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
 // ProposeChangeResultStoryActorItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultStoryActorItemTransport struct {
 	// Story-scoped actor key.
@@ -5623,6 +6548,10 @@ type ProposeChangeResultTransport struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *ProposeChangeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ProposeChangeResultProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 }
 
 // ValidateProposeChangeResultTransport checks decoded JSON before it becomes a service value.
@@ -5689,6 +6618,11 @@ func ValidateProposeChangeResultTransport(value *ProposeChangeResultTransport) (
 	}
 	if value.UnverifiedApproval != nil {
 		if err2 := ValidateProposeChangeResultUnverifiedApprovalItemTransport(value.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.ProposedRevision != nil {
+		if err2 := ValidateProposeChangeResultProposedRevisionItemTransport(value.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -6529,7 +7463,9 @@ func ValidateReviseChangePayloadCP1RevisionAnalysisTransport(value *ReviseChange
 type ReviseChangePayloadTransport struct {
 	// Change identifier.
 	ChangeID *string `json:"change_id"`
-	// Current CP1 request_revision digest being revised.
+	// request_revision of the latest revision you read: the proposed revision's
+	// when the change shows one waiting (proposed_revision.request_revision),
+	// otherwise the change's own.
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
@@ -6689,6 +7625,79 @@ func ValidateReviseChangeResultExampleItemTransport(value *ReviseChangeResultExa
 	if value.VerificationKind != nil {
 		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
+// ReviseChangeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
+type ReviseChangeResultProposedRevisionItemTransport struct {
+	// Operator feature request for this revision.
+	Prompt *string `json:"prompt"`
+	// Plain-English summary of the proposed change.
+	Summary *string `json:"summary"`
+	// Domain questions the user answers when adopting this revision.
+	Ambiguities []*ReviseChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ReviseChangeResultExampleItemTransport `json:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories of this revision in declaration order; omitted when
+	// it has none. Included in its request_revision.
+	Stories []*ReviseChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
+	// SHA-256 digest of this proposed revision: confirm_intent adopts it,
+	// decline_revision declines it, and revise_change replaces it when given this
+	// value.
+	RequestRevision *string `json:"request_revision"`
+	// Decision view the guide composed for this revision in its analysis, when it
+	// sent one.
+	UIComposition *ReviseChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
+}
+
+// ValidateReviseChangeResultProposedRevisionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultProposedRevisionItemTransport(value *ReviseChangeResultProposedRevisionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	for _, e := range value.Ambiguities {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if value.UIComposition != nil {
+		if err2 := ValidateReviseChangeResultUICompositionItemTransport(value.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return err
@@ -6942,6 +7951,10 @@ type ReviseChangeResultTransport struct {
 	// of approval or unverified_approval is set. It is never saved to disk or
 	// hashed into request_revision.
 	UnverifiedApproval *ReviseChangeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	// The revision the guide proposed beside this confirmed revision, while it
+	// waits for the user to adopt or decline it; absent otherwise. This card's own
+	// fields describe the revision in force.
+	ProposedRevision *ReviseChangeResultProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 }
 
 // ValidateReviseChangeResultTransport checks decoded JSON before it becomes a service value.
@@ -7008,6 +8021,11 @@ func ValidateReviseChangeResultTransport(value *ReviseChangeResultTransport) (er
 	}
 	if value.UnverifiedApproval != nil {
 		if err2 := ValidateReviseChangeResultUnverifiedApprovalItemTransport(value.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.ProposedRevision != nil {
+		if err2 := ValidateReviseChangeResultProposedRevisionItemTransport(value.ProposedRevision); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -9288,6 +10306,9 @@ func EncodeApproveMergeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		if in.UnverifiedApproval != nil {
 			body.UnverifiedApproval = encodeUnverifiedApprovalItemToApproveMergeResultUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 		}
+		if in.ProposedRevision != nil {
+			body.ProposedRevision = encodeProposedRevisionItemToApproveMergeResultProposedRevisionItemTransport(in.ProposedRevision)
+		}
 	}
 	if err := ValidateApproveMergeResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ApproveMergeResult JSON: %w", err)
@@ -9467,6 +10488,9 @@ func EncodeConfirmIntentResult(in *surla.ChangeCardResult) ([]byte, error) {
 		if in.UnverifiedApproval != nil {
 			body.UnverifiedApproval = encodeUnverifiedApprovalItemToConfirmIntentResultUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 		}
+		if in.ProposedRevision != nil {
+			body.ProposedRevision = encodeProposedRevisionItemToConfirmIntentResultProposedRevisionItemTransport(in.ProposedRevision)
+		}
 	}
 	if err := ValidateConfirmIntentResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ConfirmIntentResult JSON: %w", err)
@@ -9474,6 +10498,107 @@ func EncodeConfirmIntentResult(in *surla.ChangeCardResult) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("encode ConfirmIntentResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// DecodeDeclineRevisionPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeDeclineRevisionPayload(data []byte) (out *surla.DeclineRevisionPayload, err error) {
+	var body *DeclineRevisionPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode DeclineRevisionPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode DeclineRevisionPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode DeclineRevisionPayload JSON after first value: %w", err)
+	}
+	if err := ValidateDeclineRevisionPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate DeclineRevisionPayload JSON: %w", err)
+	}
+	{
+		out = &surla.DeclineRevisionPayload{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+		}
+	}
+	return out, nil
+}
+
+// EncodeDeclineRevisionResult turns a service value into JSON using the field names in the Goa design.
+func EncodeDeclineRevisionResult(in *surla.ChangeCardResult) ([]byte, error) {
+	var body *DeclineRevisionResultTransport
+	{
+		body = &DeclineRevisionResultTransport{
+			ChangeID:        &in.ChangeID,
+			Status:          &in.Status,
+			Prompt:          &in.Prompt,
+			Summary:         &in.Summary,
+			ConfirmedBy:     in.ConfirmedBy,
+			RequestRevision: &in.RequestRevision,
+		}
+		if in.Ambiguities != nil {
+			body.Ambiguities = make([]*DeclineRevisionResultAmbiguityQuestionTransport, len(in.Ambiguities))
+			for i, val := range in.Ambiguities {
+				if val == nil {
+					body.Ambiguities[i] = nil
+					continue
+				}
+				body.Ambiguities[i] = encodeAmbiguityQuestionToDeclineRevisionResultAmbiguityQuestionTransport(val)
+			}
+		}
+		if in.Answers != nil {
+			body.Answers = make(map[string]string, len(in.Answers))
+			for key, val := range in.Answers {
+				tk := key
+				tv := val
+				body.Answers[tk] = tv
+			}
+		}
+		body.Examples = make([]*DeclineRevisionResultExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToDeclineRevisionResultExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
+		if in.Stories != nil {
+			body.Stories = make([]*DeclineRevisionResultStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToDeclineRevisionResultStorySummaryItemTransport(val)
+			}
+		}
+		if in.UIComposition != nil {
+			body.UIComposition = encodeUICompositionItemToDeclineRevisionResultUICompositionItemTransport(in.UIComposition)
+		}
+		if in.Approval != nil {
+			body.Approval = encodeApprovalItemToDeclineRevisionResultApprovalItemTransport(in.Approval)
+		}
+		if in.UnverifiedApproval != nil {
+			body.UnverifiedApproval = encodeUnverifiedApprovalItemToDeclineRevisionResultUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+		}
+		if in.ProposedRevision != nil {
+			body.ProposedRevision = encodeProposedRevisionItemToDeclineRevisionResultProposedRevisionItemTransport(in.ProposedRevision)
+		}
+	}
+	if err := ValidateDeclineRevisionResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate DeclineRevisionResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode DeclineRevisionResult JSON: %w", err)
 	}
 	return data, nil
 }
@@ -9864,6 +10989,9 @@ func EncodeGetChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		}
 		if in.UnverifiedApproval != nil {
 			body.UnverifiedApproval = encodeUnverifiedApprovalItemToGetChangeResultUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+		}
+		if in.ProposedRevision != nil {
+			body.ProposedRevision = encodeProposedRevisionItemToGetChangeResultProposedRevisionItemTransport(in.ProposedRevision)
 		}
 	}
 	if err := ValidateGetChangeResultTransport(body); err != nil {
@@ -10454,6 +11582,9 @@ func EncodeProposeChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		if in.UnverifiedApproval != nil {
 			body.UnverifiedApproval = encodeUnverifiedApprovalItemToProposeChangeResultUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 		}
+		if in.ProposedRevision != nil {
+			body.ProposedRevision = encodeProposedRevisionItemToProposeChangeResultProposedRevisionItemTransport(in.ProposedRevision)
+		}
 	}
 	if err := ValidateProposeChangeResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ProposeChangeResult JSON: %w", err)
@@ -10678,6 +11809,9 @@ func EncodeReviseChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		}
 		if in.UnverifiedApproval != nil {
 			body.UnverifiedApproval = encodeUnverifiedApprovalItemToReviseChangeResultUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+		}
+		if in.ProposedRevision != nil {
+			body.ProposedRevision = encodeProposedRevisionItemToReviseChangeResultProposedRevisionItemTransport(in.ProposedRevision)
 		}
 	}
 	if err := ValidateReviseChangeResultTransport(body); err != nil {
@@ -11031,6 +12165,19 @@ func encodeAmbiguityQuestionToApproveMergeResultAmbiguityQuestionTransport(v *su
 	return res
 }
 
+func encodeAmbiguityQuestionToApproveMergeResultAmbiguityQuestionTransport2(v *surla.AmbiguityQuestion) *ApproveMergeResultAmbiguityQuestionTransport {
+	res := &ApproveMergeResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeAmbiguityQuestionToConfirmIntentResultAmbiguityQuestionTransport(v *surla.AmbiguityQuestion) *ConfirmIntentResultAmbiguityQuestionTransport {
 	res := &ConfirmIntentResultAmbiguityQuestionTransport{
 		ID:       &v.ID,
@@ -11044,7 +12191,59 @@ func encodeAmbiguityQuestionToConfirmIntentResultAmbiguityQuestionTransport(v *s
 	return res
 }
 
+func encodeAmbiguityQuestionToConfirmIntentResultAmbiguityQuestionTransport2(v *surla.AmbiguityQuestion) *ConfirmIntentResultAmbiguityQuestionTransport {
+	res := &ConfirmIntentResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeAmbiguityQuestionToDeclineRevisionResultAmbiguityQuestionTransport(v *surla.AmbiguityQuestion) *DeclineRevisionResultAmbiguityQuestionTransport {
+	res := &DeclineRevisionResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeAmbiguityQuestionToDeclineRevisionResultAmbiguityQuestionTransport2(v *surla.AmbiguityQuestion) *DeclineRevisionResultAmbiguityQuestionTransport {
+	res := &DeclineRevisionResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeAmbiguityQuestionToGetChangeResultAmbiguityQuestionTransport(v *surla.AmbiguityQuestion) *GetChangeResultAmbiguityQuestionTransport {
+	res := &GetChangeResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeAmbiguityQuestionToGetChangeResultAmbiguityQuestionTransport2(v *surla.AmbiguityQuestion) *GetChangeResultAmbiguityQuestionTransport {
 	res := &GetChangeResultAmbiguityQuestionTransport{
 		ID:       &v.ID,
 		Question: &v.Question,
@@ -11070,7 +12269,33 @@ func encodeAmbiguityQuestionToProposeChangeResultAmbiguityQuestionTransport(v *s
 	return res
 }
 
+func encodeAmbiguityQuestionToProposeChangeResultAmbiguityQuestionTransport2(v *surla.AmbiguityQuestion) *ProposeChangeResultAmbiguityQuestionTransport {
+	res := &ProposeChangeResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeAmbiguityQuestionToReviseChangeResultAmbiguityQuestionTransport(v *surla.AmbiguityQuestion) *ReviseChangeResultAmbiguityQuestionTransport {
+	res := &ReviseChangeResultAmbiguityQuestionTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeAmbiguityQuestionToReviseChangeResultAmbiguityQuestionTransport2(v *surla.AmbiguityQuestion) *ReviseChangeResultAmbiguityQuestionTransport {
 	res := &ReviseChangeResultAmbiguityQuestionTransport{
 		ID:       &v.ID,
 		Question: &v.Question,
@@ -11145,6 +12370,46 @@ func encodeApprovalItemToConfirmIntentResultApprovalItemTransport(v *surla.Appro
 
 func encodeApprovalItemToConfirmIntentResultApprovalItemTransport2(v *surla.ApprovalItem) *ConfirmIntentResultApprovalItemTransport {
 	res := &ConfirmIntentResultApprovalItemTransport{
+		ApprovedBy:      &v.ApprovedBy,
+		ReportDigest:    &v.ReportDigest,
+		CandidateCommit: &v.CandidateCommit,
+		SuiteID:         &v.SuiteID,
+		SuiteCommit:     &v.SuiteCommit,
+		Environment:     &v.Environment,
+		ScenarioCount:   &v.ScenarioCount,
+	}
+	res.Artifacts = make(map[string]string, len(v.Artifacts))
+	for key, val := range v.Artifacts {
+		tk := key
+		tv := val
+		res.Artifacts[tk] = tv
+	}
+
+	return res
+}
+
+func encodeApprovalItemToDeclineRevisionResultApprovalItemTransport(v *surla.ApprovalItem) *DeclineRevisionResultApprovalItemTransport {
+	res := &DeclineRevisionResultApprovalItemTransport{
+		ApprovedBy:      &v.ApprovedBy,
+		ReportDigest:    &v.ReportDigest,
+		CandidateCommit: &v.CandidateCommit,
+		SuiteID:         &v.SuiteID,
+		SuiteCommit:     &v.SuiteCommit,
+		Environment:     &v.Environment,
+		ScenarioCount:   &v.ScenarioCount,
+	}
+	res.Artifacts = make(map[string]string, len(v.Artifacts))
+	for key, val := range v.Artifacts {
+		tk := key
+		tv := val
+		res.Artifacts[tk] = tv
+	}
+
+	return res
+}
+
+func encodeApprovalItemToDeclineRevisionResultApprovalItemTransport2(v *surla.ApprovalItem) *DeclineRevisionResultApprovalItemTransport {
+	res := &DeclineRevisionResultApprovalItemTransport{
 		ApprovedBy:      &v.ApprovedBy,
 		ReportDigest:    &v.ReportDigest,
 		CandidateCommit: &v.CandidateCommit,
@@ -11419,11 +12684,12 @@ func encodeC4EdgeItemToPreviewArchitectureResultC4EdgeItemTransport(v *surla.C4E
 
 func encodeChangeListItemToListChangesResultChangeListItemTransport(v *surla.ChangeListItem) *ListChangesResultChangeListItemTransport {
 	res := &ListChangesResultChangeListItemTransport{
-		ChangeID:        &v.ChangeID,
-		Summary:         &v.Summary,
-		Status:          &v.Status,
-		RequestRevision: &v.RequestRevision,
-		SavedAt:         &v.SavedAt,
+		ChangeID:         &v.ChangeID,
+		Summary:          &v.Summary,
+		Status:           &v.Status,
+		RequestRevision:  &v.RequestRevision,
+		ProposedRevision: v.ProposedRevision,
+		SavedAt:          &v.SavedAt,
 	}
 	if v.LatestVerification != nil {
 		res.LatestVerification = encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v.LatestVerification)
@@ -11433,6 +12699,18 @@ func encodeChangeListItemToListChangesResultChangeListItemTransport(v *surla.Cha
 }
 
 func encodeExampleItemToApproveMergeResultExampleItemTransport(v *surla.ExampleItem) *ApproveMergeResultExampleItemTransport {
+	res := &ApproveMergeResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeExampleItemToApproveMergeResultExampleItemTransport2(v *surla.ExampleItem) *ApproveMergeResultExampleItemTransport {
 	res := &ApproveMergeResultExampleItemTransport{
 		ID:               &v.ID,
 		Scenario:         &v.Scenario,
@@ -11456,7 +12734,55 @@ func encodeExampleItemToConfirmIntentResultExampleItemTransport(v *surla.Example
 	return res
 }
 
+func encodeExampleItemToConfirmIntentResultExampleItemTransport2(v *surla.ExampleItem) *ConfirmIntentResultExampleItemTransport {
+	res := &ConfirmIntentResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeExampleItemToDeclineRevisionResultExampleItemTransport(v *surla.ExampleItem) *DeclineRevisionResultExampleItemTransport {
+	res := &DeclineRevisionResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeExampleItemToDeclineRevisionResultExampleItemTransport2(v *surla.ExampleItem) *DeclineRevisionResultExampleItemTransport {
+	res := &DeclineRevisionResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
 func encodeExampleItemToGetChangeResultExampleItemTransport(v *surla.ExampleItem) *GetChangeResultExampleItemTransport {
+	res := &GetChangeResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeExampleItemToGetChangeResultExampleItemTransport2(v *surla.ExampleItem) *GetChangeResultExampleItemTransport {
 	res := &GetChangeResultExampleItemTransport{
 		ID:               &v.ID,
 		Scenario:         &v.Scenario,
@@ -11480,7 +12806,31 @@ func encodeExampleItemToProposeChangeResultExampleItemTransport(v *surla.Example
 	return res
 }
 
+func encodeExampleItemToProposeChangeResultExampleItemTransport2(v *surla.ExampleItem) *ProposeChangeResultExampleItemTransport {
+	res := &ProposeChangeResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
 func encodeExampleItemToReviseChangeResultExampleItemTransport(v *surla.ExampleItem) *ReviseChangeResultExampleItemTransport {
+	res := &ReviseChangeResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeExampleItemToReviseChangeResultExampleItemTransport2(v *surla.ExampleItem) *ReviseChangeResultExampleItemTransport {
 	res := &ReviseChangeResultExampleItemTransport{
 		ID:               &v.ID,
 		Scenario:         &v.Scenario,
@@ -11496,6 +12846,276 @@ func encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransp
 	res := &ListChangesResultLatestVerificationItemTransport{
 		RunID: &v.RunID,
 		State: &v.State,
+	}
+
+	return res
+}
+
+func encodeProposedRevisionItemToApproveMergeResultProposedRevisionItemTransport(v *surla.ProposedRevisionItem) *ApproveMergeResultProposedRevisionItemTransport {
+	res := &ApproveMergeResultProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*ApproveMergeResultAmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToApproveMergeResultAmbiguityQuestionTransport2(val)
+		}
+	}
+	res.Examples = make([]*ApproveMergeResultExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToApproveMergeResultExampleItemTransport2(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*ApproveMergeResultStorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToApproveMergeResultStorySummaryItemTransport2(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToApproveMergeResultUICompositionItemTransport2(v.UIComposition)
+	}
+
+	return res
+}
+
+func encodeProposedRevisionItemToConfirmIntentResultProposedRevisionItemTransport(v *surla.ProposedRevisionItem) *ConfirmIntentResultProposedRevisionItemTransport {
+	res := &ConfirmIntentResultProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*ConfirmIntentResultAmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToConfirmIntentResultAmbiguityQuestionTransport2(val)
+		}
+	}
+	res.Examples = make([]*ConfirmIntentResultExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToConfirmIntentResultExampleItemTransport2(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*ConfirmIntentResultStorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToConfirmIntentResultStorySummaryItemTransport2(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToConfirmIntentResultUICompositionItemTransport2(v.UIComposition)
+	}
+
+	return res
+}
+
+func encodeProposedRevisionItemToDeclineRevisionResultProposedRevisionItemTransport(v *surla.ProposedRevisionItem) *DeclineRevisionResultProposedRevisionItemTransport {
+	res := &DeclineRevisionResultProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*DeclineRevisionResultAmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToDeclineRevisionResultAmbiguityQuestionTransport2(val)
+		}
+	}
+	res.Examples = make([]*DeclineRevisionResultExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToDeclineRevisionResultExampleItemTransport2(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*DeclineRevisionResultStorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToDeclineRevisionResultStorySummaryItemTransport2(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToDeclineRevisionResultUICompositionItemTransport2(v.UIComposition)
+	}
+
+	return res
+}
+
+func encodeProposedRevisionItemToGetChangeResultProposedRevisionItemTransport(v *surla.ProposedRevisionItem) *GetChangeResultProposedRevisionItemTransport {
+	res := &GetChangeResultProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*GetChangeResultAmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToGetChangeResultAmbiguityQuestionTransport2(val)
+		}
+	}
+	res.Examples = make([]*GetChangeResultExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToGetChangeResultExampleItemTransport2(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*GetChangeResultStorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToGetChangeResultStorySummaryItemTransport2(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToGetChangeResultUICompositionItemTransport2(v.UIComposition)
+	}
+
+	return res
+}
+
+func encodeProposedRevisionItemToProposeChangeResultProposedRevisionItemTransport(v *surla.ProposedRevisionItem) *ProposeChangeResultProposedRevisionItemTransport {
+	res := &ProposeChangeResultProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*ProposeChangeResultAmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToProposeChangeResultAmbiguityQuestionTransport2(val)
+		}
+	}
+	res.Examples = make([]*ProposeChangeResultExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToProposeChangeResultExampleItemTransport2(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*ProposeChangeResultStorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToProposeChangeResultStorySummaryItemTransport2(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToProposeChangeResultUICompositionItemTransport2(v.UIComposition)
+	}
+
+	return res
+}
+
+func encodeProposedRevisionItemToReviseChangeResultProposedRevisionItemTransport(v *surla.ProposedRevisionItem) *ReviseChangeResultProposedRevisionItemTransport {
+	res := &ReviseChangeResultProposedRevisionItemTransport{
+		Prompt:          &v.Prompt,
+		Summary:         &v.Summary,
+		RequestRevision: &v.RequestRevision,
+	}
+	if v.Ambiguities != nil {
+		res.Ambiguities = make([]*ReviseChangeResultAmbiguityQuestionTransport, len(v.Ambiguities))
+		for i, val := range v.Ambiguities {
+			if val == nil {
+				res.Ambiguities[i] = nil
+				continue
+			}
+			res.Ambiguities[i] = encodeAmbiguityQuestionToReviseChangeResultAmbiguityQuestionTransport2(val)
+		}
+	}
+	res.Examples = make([]*ReviseChangeResultExampleItemTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeExampleItemToReviseChangeResultExampleItemTransport2(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = val
+	}
+	if v.Stories != nil {
+		res.Stories = make([]*ReviseChangeResultStorySummaryItemTransport, len(v.Stories))
+		for i, val := range v.Stories {
+			if val == nil {
+				res.Stories[i] = nil
+				continue
+			}
+			res.Stories[i] = encodeStorySummaryItemToReviseChangeResultStorySummaryItemTransport2(val)
+		}
+	}
+	if v.UIComposition != nil {
+		res.UIComposition = encodeUICompositionItemToReviseChangeResultUICompositionItemTransport2(v.UIComposition)
 	}
 
 	return res
@@ -11534,6 +13154,16 @@ func encodeStoryActorItemToApproveMergeResultStoryActorItemTransport(v *surla.St
 	return res
 }
 
+func encodeStoryActorItemToApproveMergeResultStoryActorItemTransport2(v *surla.StoryActorItem) *ApproveMergeResultStoryActorItemTransport {
+	res := &ApproveMergeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
 func encodeStoryActorItemToConfirmIntentResultStoryActorItemTransport(v *surla.StoryActorItem) *ConfirmIntentResultStoryActorItemTransport {
 	res := &ConfirmIntentResultStoryActorItemTransport{
 		Key:         &v.Key,
@@ -11544,7 +13174,47 @@ func encodeStoryActorItemToConfirmIntentResultStoryActorItemTransport(v *surla.S
 	return res
 }
 
+func encodeStoryActorItemToConfirmIntentResultStoryActorItemTransport2(v *surla.StoryActorItem) *ConfirmIntentResultStoryActorItemTransport {
+	res := &ConfirmIntentResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToDeclineRevisionResultStoryActorItemTransport(v *surla.StoryActorItem) *DeclineRevisionResultStoryActorItemTransport {
+	res := &DeclineRevisionResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToDeclineRevisionResultStoryActorItemTransport2(v *surla.StoryActorItem) *DeclineRevisionResultStoryActorItemTransport {
+	res := &DeclineRevisionResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
 func encodeStoryActorItemToGetChangeResultStoryActorItemTransport(v *surla.StoryActorItem) *GetChangeResultStoryActorItemTransport {
+	res := &GetChangeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToGetChangeResultStoryActorItemTransport2(v *surla.StoryActorItem) *GetChangeResultStoryActorItemTransport {
 	res := &GetChangeResultStoryActorItemTransport{
 		Key:         &v.Key,
 		Title:       &v.Title,
@@ -11584,6 +13254,16 @@ func encodeStoryActorItemToProposeChangeResultStoryActorItemTransport(v *surla.S
 	return res
 }
 
+func encodeStoryActorItemToProposeChangeResultStoryActorItemTransport2(v *surla.StoryActorItem) *ProposeChangeResultStoryActorItemTransport {
+	res := &ProposeChangeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
 func encodeStoryActorItemToRefreshStoryResultStoryActorItemTransport(v *surla.StoryActorItem) *RefreshStoryResultStoryActorItemTransport {
 	res := &RefreshStoryResultStoryActorItemTransport{
 		Key:         &v.Key,
@@ -11595,6 +13275,16 @@ func encodeStoryActorItemToRefreshStoryResultStoryActorItemTransport(v *surla.St
 }
 
 func encodeStoryActorItemToReviseChangeResultStoryActorItemTransport(v *surla.StoryActorItem) *ReviseChangeResultStoryActorItemTransport {
+	res := &ReviseChangeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToReviseChangeResultStoryActorItemTransport2(v *surla.StoryActorItem) *ReviseChangeResultStoryActorItemTransport {
 	res := &ReviseChangeResultStoryActorItemTransport{
 		Key:         &v.Key,
 		Title:       &v.Title,
@@ -11631,6 +13321,33 @@ func encodeStoryFlowItemToApproveMergeResultStoryFlowItemTransport(v *surla.Stor
 	return res
 }
 
+func encodeStoryFlowItemToApproveMergeResultStoryFlowItemTransport2(v *surla.StoryFlowItem) *ApproveMergeResultStoryFlowItemTransport {
+	res := &ApproveMergeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ApproveMergeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToApproveMergeResultStoryStepItemTransport2(val)
+	}
+	res.Questions = make([]*ApproveMergeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport4(val)
+	}
+
+	return res
+}
+
 func encodeStoryFlowItemToConfirmIntentResultStoryFlowItemTransport(v *surla.StoryFlowItem) *ConfirmIntentResultStoryFlowItemTransport {
 	res := &ConfirmIntentResultStoryFlowItemTransport{
 		Key:         &v.Key,
@@ -11658,6 +13375,87 @@ func encodeStoryFlowItemToConfirmIntentResultStoryFlowItemTransport(v *surla.Sto
 	return res
 }
 
+func encodeStoryFlowItemToConfirmIntentResultStoryFlowItemTransport2(v *surla.StoryFlowItem) *ConfirmIntentResultStoryFlowItemTransport {
+	res := &ConfirmIntentResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ConfirmIntentResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToConfirmIntentResultStoryStepItemTransport2(val)
+	}
+	res.Questions = make([]*ConfirmIntentResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport4(val)
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToDeclineRevisionResultStoryFlowItemTransport(v *surla.StoryFlowItem) *DeclineRevisionResultStoryFlowItemTransport {
+	res := &DeclineRevisionResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*DeclineRevisionResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToDeclineRevisionResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*DeclineRevisionResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToDeclineRevisionResultStoryFlowItemTransport2(v *surla.StoryFlowItem) *DeclineRevisionResultStoryFlowItemTransport {
+	res := &DeclineRevisionResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*DeclineRevisionResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToDeclineRevisionResultStoryStepItemTransport2(val)
+	}
+	res.Questions = make([]*DeclineRevisionResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport4(val)
+	}
+
+	return res
+}
+
 func encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport(v *surla.StoryFlowItem) *GetChangeResultStoryFlowItemTransport {
 	res := &GetChangeResultStoryFlowItemTransport{
 		Key:         &v.Key,
@@ -11680,6 +13478,33 @@ func encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport(v *surla.StoryFl
 			continue
 		}
 		res.Questions[i] = encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport2(v *surla.StoryFlowItem) *GetChangeResultStoryFlowItemTransport {
+	res := &GetChangeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*GetChangeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToGetChangeResultStoryStepItemTransport2(val)
+	}
+	res.Questions = make([]*GetChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport4(val)
 	}
 
 	return res
@@ -11766,6 +13591,33 @@ func encodeStoryFlowItemToProposeChangeResultStoryFlowItemTransport(v *surla.Sto
 	return res
 }
 
+func encodeStoryFlowItemToProposeChangeResultStoryFlowItemTransport2(v *surla.StoryFlowItem) *ProposeChangeResultStoryFlowItemTransport {
+	res := &ProposeChangeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ProposeChangeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToProposeChangeResultStoryStepItemTransport2(val)
+	}
+	res.Questions = make([]*ProposeChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport4(val)
+	}
+
+	return res
+}
+
 func encodeStoryFlowItemToRefreshStoryResultStoryFlowItemTransport(v *surla.StoryFlowItem) *RefreshStoryResultStoryFlowItemTransport {
 	res := &RefreshStoryResultStoryFlowItemTransport{
 		Key:         &v.Key,
@@ -11820,6 +13672,33 @@ func encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport(v *surla.Stor
 	return res
 }
 
+func encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport2(v *surla.StoryFlowItem) *ReviseChangeResultStoryFlowItemTransport {
+	res := &ReviseChangeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ReviseChangeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToReviseChangeResultStoryStepItemTransport2(val)
+	}
+	res.Questions = make([]*ReviseChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport4(val)
+	}
+
+	return res
+}
+
 func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *ApproveMergeResultStoryQuestionItemTransport {
 	res := &ApproveMergeResultStoryQuestionItemTransport{
 		Key:         &v.Key,
@@ -11835,6 +13714,34 @@ func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport(v *su
 }
 
 func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *ApproveMergeResultStoryQuestionItemTransport {
+	res := &ApproveMergeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport3(v *surla.StoryQuestionItem) *ApproveMergeResultStoryQuestionItemTransport {
+	res := &ApproveMergeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport4(v *surla.StoryQuestionItem) *ApproveMergeResultStoryQuestionItemTransport {
 	res := &ApproveMergeResultStoryQuestionItemTransport{
 		Key:         &v.Key,
 		Prompt:      &v.Prompt,
@@ -11876,6 +13783,90 @@ func encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport2(v *
 	return res
 }
 
+func encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport3(v *surla.StoryQuestionItem) *ConfirmIntentResultStoryQuestionItemTransport {
+	res := &ConfirmIntentResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport4(v *surla.StoryQuestionItem) *ConfirmIntentResultStoryQuestionItemTransport {
+	res := &ConfirmIntentResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *DeclineRevisionResultStoryQuestionItemTransport {
+	res := &DeclineRevisionResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *DeclineRevisionResultStoryQuestionItemTransport {
+	res := &DeclineRevisionResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport3(v *surla.StoryQuestionItem) *DeclineRevisionResultStoryQuestionItemTransport {
+	res := &DeclineRevisionResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport4(v *surla.StoryQuestionItem) *DeclineRevisionResultStoryQuestionItemTransport {
+	res := &DeclineRevisionResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *GetChangeResultStoryQuestionItemTransport {
 	res := &GetChangeResultStoryQuestionItemTransport{
 		Key:         &v.Key,
@@ -11891,6 +13882,34 @@ func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport(v *surla
 }
 
 func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *GetChangeResultStoryQuestionItemTransport {
+	res := &GetChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport3(v *surla.StoryQuestionItem) *GetChangeResultStoryQuestionItemTransport {
+	res := &GetChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport4(v *surla.StoryQuestionItem) *GetChangeResultStoryQuestionItemTransport {
 	res := &GetChangeResultStoryQuestionItemTransport{
 		Key:         &v.Key,
 		Prompt:      &v.Prompt,
@@ -11988,6 +14007,34 @@ func encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport2(v *
 	return res
 }
 
+func encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport3(v *surla.StoryQuestionItem) *ProposeChangeResultStoryQuestionItemTransport {
+	res := &ProposeChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport4(v *surla.StoryQuestionItem) *ProposeChangeResultStoryQuestionItemTransport {
+	res := &ProposeChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *RefreshStoryResultStoryQuestionItemTransport {
 	res := &RefreshStoryResultStoryQuestionItemTransport{
 		Key:         &v.Key,
@@ -12044,6 +14091,34 @@ func encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport2(v *s
 	return res
 }
 
+func encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport3(v *surla.StoryQuestionItem) *ReviseChangeResultStoryQuestionItemTransport {
+	res := &ReviseChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport4(v *surla.StoryQuestionItem) *ReviseChangeResultStoryQuestionItemTransport {
+	res := &ReviseChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeStoryStepItemToApproveMergeResultStoryStepItemTransport(v *surla.StoryStepItem) *ApproveMergeResultStoryStepItemTransport {
 	res := &ApproveMergeResultStoryStepItemTransport{
 		Key:         &v.Key,
@@ -12059,6 +14134,26 @@ func encodeStoryStepItemToApproveMergeResultStoryStepItemTransport(v *surla.Stor
 			continue
 		}
 		res.Questions[i] = encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToApproveMergeResultStoryStepItemTransport2(v *surla.StoryStepItem) *ApproveMergeResultStoryStepItemTransport {
+	res := &ApproveMergeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ApproveMergeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport3(val)
 	}
 
 	return res
@@ -12084,6 +14179,66 @@ func encodeStoryStepItemToConfirmIntentResultStoryStepItemTransport(v *surla.Sto
 	return res
 }
 
+func encodeStoryStepItemToConfirmIntentResultStoryStepItemTransport2(v *surla.StoryStepItem) *ConfirmIntentResultStoryStepItemTransport {
+	res := &ConfirmIntentResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ConfirmIntentResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport3(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToDeclineRevisionResultStoryStepItemTransport(v *surla.StoryStepItem) *DeclineRevisionResultStoryStepItemTransport {
+	res := &DeclineRevisionResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*DeclineRevisionResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToDeclineRevisionResultStoryStepItemTransport2(v *surla.StoryStepItem) *DeclineRevisionResultStoryStepItemTransport {
+	res := &DeclineRevisionResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*DeclineRevisionResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToDeclineRevisionResultStoryQuestionItemTransport3(val)
+	}
+
+	return res
+}
+
 func encodeStoryStepItemToGetChangeResultStoryStepItemTransport(v *surla.StoryStepItem) *GetChangeResultStoryStepItemTransport {
 	res := &GetChangeResultStoryStepItemTransport{
 		Key:         &v.Key,
@@ -12099,6 +14254,26 @@ func encodeStoryStepItemToGetChangeResultStoryStepItemTransport(v *surla.StorySt
 			continue
 		}
 		res.Questions[i] = encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToGetChangeResultStoryStepItemTransport2(v *surla.StoryStepItem) *GetChangeResultStoryStepItemTransport {
+	res := &GetChangeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*GetChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport3(val)
 	}
 
 	return res
@@ -12164,6 +14339,26 @@ func encodeStoryStepItemToProposeChangeResultStoryStepItemTransport(v *surla.Sto
 	return res
 }
 
+func encodeStoryStepItemToProposeChangeResultStoryStepItemTransport2(v *surla.StoryStepItem) *ProposeChangeResultStoryStepItemTransport {
+	res := &ProposeChangeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ProposeChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport3(val)
+	}
+
+	return res
+}
+
 func encodeStoryStepItemToRefreshStoryResultStoryStepItemTransport(v *surla.StoryStepItem) *RefreshStoryResultStoryStepItemTransport {
 	res := &RefreshStoryResultStoryStepItemTransport{
 		Key:         &v.Key,
@@ -12204,6 +14399,26 @@ func encodeStoryStepItemToReviseChangeResultStoryStepItemTransport(v *surla.Stor
 	return res
 }
 
+func encodeStoryStepItemToReviseChangeResultStoryStepItemTransport2(v *surla.StoryStepItem) *ReviseChangeResultStoryStepItemTransport {
+	res := &ReviseChangeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ReviseChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport3(val)
+	}
+
+	return res
+}
+
 func encodeStorySummaryItemToApproveMergeResultStorySummaryItemTransport(v *surla.StorySummaryItem) *ApproveMergeResultStorySummaryItemTransport {
 	res := &ApproveMergeResultStorySummaryItemTransport{
 		Name:        &v.Name,
@@ -12224,6 +14439,31 @@ func encodeStorySummaryItemToApproveMergeResultStorySummaryItemTransport(v *surl
 			continue
 		}
 		res.Flows[i] = encodeStoryFlowItemToApproveMergeResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToApproveMergeResultStorySummaryItemTransport2(v *surla.StorySummaryItem) *ApproveMergeResultStorySummaryItemTransport {
+	res := &ApproveMergeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ApproveMergeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToApproveMergeResultStoryActorItemTransport2(val)
+	}
+	res.Flows = make([]*ApproveMergeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToApproveMergeResultStoryFlowItemTransport2(val)
 	}
 
 	return res
@@ -12254,6 +14494,81 @@ func encodeStorySummaryItemToConfirmIntentResultStorySummaryItemTransport(v *sur
 	return res
 }
 
+func encodeStorySummaryItemToConfirmIntentResultStorySummaryItemTransport2(v *surla.StorySummaryItem) *ConfirmIntentResultStorySummaryItemTransport {
+	res := &ConfirmIntentResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ConfirmIntentResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToConfirmIntentResultStoryActorItemTransport2(val)
+	}
+	res.Flows = make([]*ConfirmIntentResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToConfirmIntentResultStoryFlowItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToDeclineRevisionResultStorySummaryItemTransport(v *surla.StorySummaryItem) *DeclineRevisionResultStorySummaryItemTransport {
+	res := &DeclineRevisionResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*DeclineRevisionResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToDeclineRevisionResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*DeclineRevisionResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToDeclineRevisionResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToDeclineRevisionResultStorySummaryItemTransport2(v *surla.StorySummaryItem) *DeclineRevisionResultStorySummaryItemTransport {
+	res := &DeclineRevisionResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*DeclineRevisionResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToDeclineRevisionResultStoryActorItemTransport2(val)
+	}
+	res.Flows = make([]*DeclineRevisionResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToDeclineRevisionResultStoryFlowItemTransport2(val)
+	}
+
+	return res
+}
+
 func encodeStorySummaryItemToGetChangeResultStorySummaryItemTransport(v *surla.StorySummaryItem) *GetChangeResultStorySummaryItemTransport {
 	res := &GetChangeResultStorySummaryItemTransport{
 		Name:        &v.Name,
@@ -12274,6 +14589,31 @@ func encodeStorySummaryItemToGetChangeResultStorySummaryItemTransport(v *surla.S
 			continue
 		}
 		res.Flows[i] = encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToGetChangeResultStorySummaryItemTransport2(v *surla.StorySummaryItem) *GetChangeResultStorySummaryItemTransport {
+	res := &GetChangeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*GetChangeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToGetChangeResultStoryActorItemTransport2(val)
+	}
+	res.Flows = make([]*GetChangeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport2(val)
 	}
 
 	return res
@@ -12354,6 +14694,31 @@ func encodeStorySummaryItemToProposeChangeResultStorySummaryItemTransport(v *sur
 	return res
 }
 
+func encodeStorySummaryItemToProposeChangeResultStorySummaryItemTransport2(v *surla.StorySummaryItem) *ProposeChangeResultStorySummaryItemTransport {
+	res := &ProposeChangeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ProposeChangeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToProposeChangeResultStoryActorItemTransport2(val)
+	}
+	res.Flows = make([]*ProposeChangeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToProposeChangeResultStoryFlowItemTransport2(val)
+	}
+
+	return res
+}
+
 func encodeStorySummaryItemToRefreshStoryResultStorySummaryItemTransport(v *surla.StorySummaryItem) *RefreshStoryResultStorySummaryItemTransport {
 	res := &RefreshStoryResultStorySummaryItemTransport{
 		Name:        &v.Name,
@@ -12399,6 +14764,31 @@ func encodeStorySummaryItemToReviseChangeResultStorySummaryItemTransport(v *surl
 			continue
 		}
 		res.Flows[i] = encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToReviseChangeResultStorySummaryItemTransport2(v *surla.StorySummaryItem) *ReviseChangeResultStorySummaryItemTransport {
+	res := &ReviseChangeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ReviseChangeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToReviseChangeResultStoryActorItemTransport2(val)
+	}
+	res.Flows = make([]*ReviseChangeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport2(val)
 	}
 
 	return res
@@ -12992,6 +15382,15 @@ func encodeUICompositionItemToApproveMergeResultUICompositionItemTransport(v *su
 	return res
 }
 
+func encodeUICompositionItemToApproveMergeResultUICompositionItemTransport2(v *surla.UICompositionItem) *ApproveMergeResultUICompositionItemTransport {
+	res := &ApproveMergeResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
 func encodeUICompositionItemToConfirmIntentResultUICompositionItemTransport(v *surla.UICompositionItem) *ConfirmIntentResultUICompositionItemTransport {
 	res := &ConfirmIntentResultUICompositionItemTransport{
 		Program:             &v.Program,
@@ -13001,7 +15400,43 @@ func encodeUICompositionItemToConfirmIntentResultUICompositionItemTransport(v *s
 	return res
 }
 
+func encodeUICompositionItemToConfirmIntentResultUICompositionItemTransport2(v *surla.UICompositionItem) *ConfirmIntentResultUICompositionItemTransport {
+	res := &ConfirmIntentResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
+func encodeUICompositionItemToDeclineRevisionResultUICompositionItemTransport(v *surla.UICompositionItem) *DeclineRevisionResultUICompositionItemTransport {
+	res := &DeclineRevisionResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
+func encodeUICompositionItemToDeclineRevisionResultUICompositionItemTransport2(v *surla.UICompositionItem) *DeclineRevisionResultUICompositionItemTransport {
+	res := &DeclineRevisionResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
 func encodeUICompositionItemToGetChangeResultUICompositionItemTransport(v *surla.UICompositionItem) *GetChangeResultUICompositionItemTransport {
+	res := &GetChangeResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
+func encodeUICompositionItemToGetChangeResultUICompositionItemTransport2(v *surla.UICompositionItem) *GetChangeResultUICompositionItemTransport {
 	res := &GetChangeResultUICompositionItemTransport{
 		Program:             &v.Program,
 		ComposedForRevision: &v.ComposedForRevision,
@@ -13019,7 +15454,25 @@ func encodeUICompositionItemToProposeChangeResultUICompositionItemTransport(v *s
 	return res
 }
 
+func encodeUICompositionItemToProposeChangeResultUICompositionItemTransport2(v *surla.UICompositionItem) *ProposeChangeResultUICompositionItemTransport {
+	res := &ProposeChangeResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
 func encodeUICompositionItemToReviseChangeResultUICompositionItemTransport(v *surla.UICompositionItem) *ReviseChangeResultUICompositionItemTransport {
+	res := &ReviseChangeResultUICompositionItemTransport{
+		Program:             &v.Program,
+		ComposedForRevision: &v.ComposedForRevision,
+	}
+
+	return res
+}
+
+func encodeUICompositionItemToReviseChangeResultUICompositionItemTransport2(v *surla.UICompositionItem) *ReviseChangeResultUICompositionItemTransport {
 	res := &ReviseChangeResultUICompositionItemTransport{
 		Program:             &v.Program,
 		ComposedForRevision: &v.ComposedForRevision,
@@ -13042,6 +15495,15 @@ func encodeUnverifiedApprovalItemToConfirmIntentResultUnverifiedApprovalItemTran
 		Reason: &v.Reason,
 	}
 	res.Approval = encodeApprovalItemToConfirmIntentResultApprovalItemTransport2(v.Approval)
+
+	return res
+}
+
+func encodeUnverifiedApprovalItemToDeclineRevisionResultUnverifiedApprovalItemTransport(v *surla.UnverifiedApprovalItem) *DeclineRevisionResultUnverifiedApprovalItemTransport {
+	res := &DeclineRevisionResultUnverifiedApprovalItemTransport{
+		Reason: &v.Reason,
+	}
+	res.Approval = encodeApprovalItemToDeclineRevisionResultApprovalItemTransport2(v.Approval)
 
 	return res
 }

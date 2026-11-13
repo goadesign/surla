@@ -34,6 +34,11 @@ func GetChangeSurlaPath(changeID string) string {
 	return fmt.Sprintf("/changes/%v", changeID)
 }
 
+// DeclineRevisionSurlaPath returns the URL path to the surla service decline_revision HTTP endpoint.
+func DeclineRevisionSurlaPath() string {
+	return "/changes/decline"
+}
+
 // PreviewArchitectureSurlaPath returns the URL path to the surla service preview_architecture HTTP endpoint.
 func PreviewArchitectureSurlaPath() string {
 	return "/changes/preview"

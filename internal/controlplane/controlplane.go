@@ -193,10 +193,10 @@ type (
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
-	// owner principal, server-observed design source snapshot, and optional
-	// adopted domain Stories.
+	// owner principal, server-observed design source snapshot, optional
+	// adopted domain Stories, and the revision proposed beside it, if any.
 	storedChangeCard struct {
-		// card is the latest versioned ChangeCardResult.
+		// card is the revision in force.
 		card *gensurla.ChangeCardResult
 		// owner is the authenticated Principal.ID that created the card.
 		owner string
@@ -208,6 +208,22 @@ type (
 		// savedAt is when the card store last wrote this card; zero for a
 		// record not yet saved. It is not part of request_revision.
 		savedAt time.Time
+		// proposed is the revision the guide proposed beside a confirmed card,
+		// waiting for the user to adopt or decline it; nil otherwise. card
+		// stays the revision in force until then.
+		proposed *storedRevision
+	}
+
+	// storedRevision is a proposed revision saved beside a confirmed card, with
+	// the design source and Stories it was made from, so its request_revision
+	// is computed and checked on its own.
+	storedRevision struct {
+		// card is the proposed revision, always in needs_confirmation status.
+		card *gensurla.ChangeCardResult
+		// designSource is the Goa design source the proposal was made from.
+		designSource string
+		// stories holds the proposal's evaluated domain Stories, or nil.
+		stories []designeval.StorySummary
 	}
 
 	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
@@ -731,7 +747,8 @@ func (c *ControlPlane) Close() error {
 // never changes the card. A saved approval is returned in Approval only while
 // it still matches the promotion target's current inputs, or in
 // UnverifiedApproval when no promotion target is configured or the target
-// cannot report its current inputs (see currentCard).
+// cannot report its current inputs (see currentCard). A revision proposed
+// beside a confirmed card is returned in ProposedRevision while it waits.
 func (c *ControlPlane) GetChange(ctx context.Context, p *gensurla.GetChangePayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -749,7 +766,7 @@ func (c *ControlPlane) GetChange(ctx context.Context, p *gensurla.GetChangePaylo
 	if record.owner != principal.ID {
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
-	return c.currentCard(ctx, record.card)
+	return c.changeResult(ctx, record)
 }
 
 // PreviewArchitecture evaluates the candidate design module snapshot via the

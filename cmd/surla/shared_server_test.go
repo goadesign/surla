@@ -250,14 +250,15 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	})
 	revised, err := gensurla.DecodeChangeCardResult(revisedRaw)
 	require.NoError(t, err)
-	assert.Equal(t, controlplane.StatusNeedsConfirmation, revised.Status)
-	assert.NotEqual(t, reopened.RequestRevision, revised.RequestRevision)
+	assert.Equal(t, controlplane.StatusConfirmed, revised.Status, "the agreed revision stays in force")
+	assert.Equal(t, reopened.RequestRevision, revised.RequestRevision)
+	require.NotNil(t, revised.ProposedRevision, "the revision waits beside the agreed one")
 
 	reconfirmedRaw := s2.callTool("14", "confirm_intent", map[string]any{
 		"change_id":        "vip-refunds",
-		"request_revision": revised.RequestRevision,
+		"request_revision": revised.ProposedRevision.RequestRevision,
 		"answers":          map[string]string{},
-		"examples":         marshalConfirmationExamples(revised.Examples),
+		"examples":         marshalConfirmationExamples(revised.ProposedRevision.Examples),
 	})
 	reconfirmed, err := gensurla.DecodeChangeCardResult(reconfirmedRaw)
 	require.NoError(t, err)

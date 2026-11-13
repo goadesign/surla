@@ -36,6 +36,7 @@ const PAGE_OPERATIONS = [
   "surla#get_change",
   "surla#get_story_refresh",
   "surla#confirm_intent",
+  "surla#decline_revision",
   "surla#approve_merge",
   "surla#preview_architecture",
   "surla#list_verifications",

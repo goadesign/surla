@@ -24,6 +24,7 @@ type Server struct {
 	ReviseChange              http.Handler
 	ConfirmIntent             http.Handler
 	GetChange                 http.Handler
+	DeclineRevision           http.Handler
 	PreviewArchitecture       http.Handler
 	DraftOverride             http.Handler
 	StartLiveTarget           http.Handler
@@ -88,6 +89,7 @@ func New(
 			{"ReviseChange", "POST", "/changes/revise"},
 			{"ConfirmIntent", "POST", "/changes/confirm"},
 			{"GetChange", "GET", "/changes/{change_id}"},
+			{"DeclineRevision", "POST", "/changes/decline"},
 			{"PreviewArchitecture", "POST", "/changes/preview"},
 			{"DraftOverride", "POST", "/sandbox/draft"},
 			{"StartLiveTarget", "POST", "/live-target"},
@@ -124,6 +126,7 @@ func New(
 		ReviseChange:              NewReviseChangeHandler(e.ReviseChange, mux, decoder, encoder, errhandler, formatter),
 		ConfirmIntent:             NewConfirmIntentHandler(e.ConfirmIntent, mux, decoder, encoder, errhandler, formatter),
 		GetChange:                 NewGetChangeHandler(e.GetChange, mux, decoder, encoder, errhandler, formatter),
+		DeclineRevision:           NewDeclineRevisionHandler(e.DeclineRevision, mux, decoder, encoder, errhandler, formatter),
 		PreviewArchitecture:       NewPreviewArchitectureHandler(e.PreviewArchitecture, mux, decoder, encoder, errhandler, formatter),
 		DraftOverride:             NewDraftOverrideHandler(e.DraftOverride, mux, decoder, encoder, errhandler, formatter),
 		StartLiveTarget:           NewStartLiveTargetHandler(e.StartLiveTarget, mux, decoder, encoder, errhandler, formatter),
@@ -167,6 +170,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.ReviseChange = m(s.ReviseChange)
 	s.ConfirmIntent = m(s.ConfirmIntent)
 	s.GetChange = m(s.GetChange)
+	s.DeclineRevision = m(s.DeclineRevision)
 	s.PreviewArchitecture = m(s.PreviewArchitecture)
 	s.DraftOverride = m(s.DraftOverride)
 	s.StartLiveTarget = m(s.StartLiveTarget)
@@ -209,6 +213,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountReviseChangeHandler(mux, h.ReviseChange)
 	MountConfirmIntentHandler(mux, h.ConfirmIntent)
 	MountGetChangeHandler(mux, h.GetChange)
+	MountDeclineRevisionHandler(mux, h.DeclineRevision)
 	MountPreviewArchitectureHandler(mux, h.PreviewArchitecture)
 	MountDraftOverrideHandler(mux, h.DraftOverride)
 	MountStartLiveTargetHandler(mux, h.StartLiveTarget)
@@ -481,6 +486,59 @@ func NewGetChangeHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get_change")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountDeclineRevisionHandler configures the mux to serve the "surla" service
+// "decline_revision" endpoint.
+func MountDeclineRevisionHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/changes/decline", f)
+}
+
+// NewDeclineRevisionHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "decline_revision" endpoint.
+func NewDeclineRevisionHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeDeclineRevisionRequest(mux, decoder)
+		encodeResponse = EncodeDeclineRevisionResponse(encoder)
+		encodeError    = EncodeDeclineRevisionError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "decline_revision")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {
