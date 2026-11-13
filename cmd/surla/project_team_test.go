@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -79,7 +80,7 @@ func TestTeamPreflightVersionAndPrograms(t *testing.T) {
 					return "", assert.AnError
 				}
 				return name, nil
-			}, func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil })
+			}, func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil }, t.TempDir())
 			require.ErrorContains(t, err, missing)
 			assert.Contains(t, err.Error(), "install it with:")
 			assert.Zero(t, calls)
@@ -258,6 +259,28 @@ func TestEnsureTeamDeclaredErrorsAreFixed(t *testing.T) {
 	}
 }
 
+// TestTeamProgramInstalledOffPath tells the user to add the installers' folder to PATH when
+// a required program is installed there but not on PATH: installing it again would leave
+// PATH as it was and repeat the same refusal.
+func TestTeamProgramInstalledOffPath(t *testing.T) {
+	for _, missing := range []string{"herdr-core", "herdr-app", "chorus"} {
+		t.Run(missing, func(t *testing.T) {
+			installed := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(installed, missing), []byte("#!/bin/sh\n"), 0o755))
+			_, err := resolveTeamCommands(func(name string) (string, error) {
+				if name == missing {
+					return "", assert.AnError
+				}
+				return name, nil
+			}, func(context.Context, string, ...string) ([]byte, error) { return nil, nil }, installed)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), missing+" is installed in "+installed+", which is not on PATH")
+			assert.Contains(t, err.Error(), "add "+installed+" to PATH")
+			assert.NotContains(t, err.Error(), "install it with:")
+		})
+	}
+}
+
 // TestStartOpensViewsWhenTeamFails keeps the views page reachable whenever the server
 // answers: confirming and approving need no agent. The team failure follows the open
 // page with its own step, and the command still fails.
@@ -370,7 +393,7 @@ func TestTeamPreflightHasNoStateEffects(t *testing.T) {
 						return "", assert.AnError
 					}
 					return name, nil
-				}, func(context.Context, string, ...string) ([]byte, error) { return []byte("chorus v0.10.1"), nil })
+				}, func(context.Context, string, ...string) ([]byte, error) { return []byte("chorus v0.10.1"), nil }, t.TempDir())
 				if err != nil {
 					return err
 				}

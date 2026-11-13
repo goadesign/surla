@@ -458,8 +458,9 @@ Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum
 Run `surla` in a project folder to start or attach to its server and open the
 views page and prepare its guide team in Herdr. Before creating state or starting
 anything, Surla requires `herdr-core`, `herdr-app`, Chorus v0.11.0 or newer, and
-the platform browser opener. Missing programs name their install command; an
-older Chorus names `chorus update -yes`. Install
+the platform browser opener. Missing programs name their install command, and a
+Herdr or Chorus program installed in `~/.local/bin` but missing from PATH names
+that folder to add to PATH; an older Chorus names `chorus update -yes`. Install
 [Herdr core](https://herdr.dev/core/) with
 `curl -fsSL https://releases.herdr.dev/core/install.sh | sh`, the
 [Herdr app](https://herdr.dev/) with

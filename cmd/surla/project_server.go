@@ -77,7 +77,7 @@ func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
 		configRoot: os.UserConfigDir,
 		preflight: func() error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func productionProjectRuntime() projectRuntime {
 		},
 		teamDependencies: projectTeamDependencies,
 		startTeamPrograms: func(ctx context.Context) error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand)
+			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
 			if err != nil {
 				return err
 			}
