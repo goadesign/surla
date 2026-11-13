@@ -412,13 +412,15 @@ func recordReadError(dir, project string, err error) error {
 // state folder dir, and the step that repairs it: a record this account cannot read
 // gets its permissions back, and a damaged one is restored, or its folder set aside so
 // the project folder starts again as a new, empty project. Discovery walks up through
-// parent folders, so project can be a parent of the folder where surla runs.
+// parent folders, so project can be a parent of the folder where surla runs; the step
+// names project as the folder to run surla in, since a run in a subfolder would create
+// a new project for that subfolder instead.
 func stateFileError(dir, project string, err error) error {
 	path := filepath.Join(dir, "project.json")
 	if errors.Is(err, errNotPrivateFile) || errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.ELOOP) {
 		return fmt.Errorf("the record of the Surla project in %s cannot be read: %s: %w; make it a regular file of this account that only this account can read and write (chmod 600 %s, and chown it to this account if another account owns it), then run surla again", project, path, err, path)
 	}
-	return fmt.Errorf("the record of the Surla project in %s is damaged: %s: %w; restore it from a backup, or move the folder %s out of %s to start that project folder again as a new, empty Surla project", project, path, err, dir, filepath.Dir(dir))
+	return fmt.Errorf("the record of the Surla project in %s is damaged: %s: %w; restore it from a backup and run surla again, or move the folder %s out of %s and run surla in %s to start that project folder again as a new, empty Surla project", project, path, err, dir, filepath.Dir(dir), project)
 }
 
 // stateFolderError names a private state folder this account cannot use and its repair.

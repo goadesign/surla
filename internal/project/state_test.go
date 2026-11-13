@@ -188,7 +188,11 @@ func TestBrokenStateNamesPathAndStep(t *testing.T) {
 				require.NoError(t, os.WriteFile(record(state), []byte("{"), 0o600))
 			},
 			want: func(state *State) []string {
-				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup", "move the folder " + state.Dir}
+				return []string{
+					"Surla project in " + state.Record.Directory, record(state),
+					"restore it from a backup and run surla again",
+					"move the folder " + state.Dir, "run surla in " + state.Record.Directory,
+				}
 			},
 		},
 		{
