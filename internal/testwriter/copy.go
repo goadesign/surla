@@ -41,9 +41,9 @@ type listedCopy struct {
 	// branch is the full name of the branch checked out there, such as
 	// refs/heads/main, or empty when none is.
 	branch string
-	// prunable is set when git reports the working copy's folder gone, so
-	// git worktree prune would drop its registration.
-	prunable bool
+	// locked is set when the registration is locked (git worktree lock), so
+	// git worktree remove refuses it until it is unlocked.
+	locked bool
 }
 
 // WorkingCopy is the test writer's linked git working copy of one project.
@@ -90,9 +90,10 @@ var (
 	// ErrBranchInUse refuses to create the working copy while another working
 	// copy of the repository holds branch surla/tests: git checks a branch out
 	// in one folder at a time. The error wrapping it names that folder and the
-	// step to take: switch the folder to another branch when it exists, such
-	// as the project folder itself, or drop git's registration of a folder
-	// that is gone with git worktree prune.
+	// step to take, which touches only that registration: switch the folder
+	// to another branch when it exists, such as the project folder itself;
+	// otherwise remove git's registration of the folder that is gone with git
+	// worktree remove, after git worktree unlock when it is locked.
 	ErrBranchInUse = errors.New("branch " + Branch + ", which Surla reserves for the test writer's working copy, " +
 		"is held by another working copy")
 )
@@ -113,8 +114,9 @@ var (
 // ErrNoCommit, one whose .surla-tests entry is something else with
 // ErrFolderInUse, and one where another working copy holds branch
 // surla/tests with ErrBranchInUse, whose message names the step: switch that
-// folder to another branch, or, when its folder is gone, git worktree prune;
-// nothing is created in these cases. Other errors are git or file system failures.
+// folder to another branch, or, when its folder is gone, remove that one
+// registration with git worktree remove (unlocking it first when it is
+// locked); nothing is created in these cases. Other errors are git or file system failures.
 func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error) {
 	project, err := abspath.Eval(projectDir)
 	if err != nil {
@@ -164,12 +166,18 @@ func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error
 			// addCopy drops.
 			continue
 		}
-		if c.prunable {
-			return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it; "+
-				"remove that registration with git worktree prune in the project, then try again", ErrBranchInUse, c.path)
+		if _, err := os.Lstat(c.path); !errors.Is(err, fs.ErrNotExist) {
+			return WorkingCopy{}, fmt.Errorf("%w: %s has it checked out; switch that folder to another branch, "+
+				"then try again", ErrBranchInUse, c.path)
 		}
-		return WorkingCopy{}, fmt.Errorf("%w: %s has it checked out; switch that folder to another branch, then try again",
-			ErrBranchInUse, c.path)
+		if c.locked {
+			return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it, "+
+				"and that registration is locked; unlock and remove it with git worktree unlock %q and then "+
+				"git worktree remove %q in the project, then try again", ErrBranchInUse, c.path, c.path, c.path)
+		}
+		return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it; "+
+			"remove that registration with git worktree remove %q in the project, then try again",
+			ErrBranchInUse, c.path, c.path)
 	}
 	if err := excludeFolder(ctx, project); err != nil {
 		return WorkingCopy{}, err
@@ -290,8 +298,8 @@ func listCopies(ctx context.Context, project string) ([]listedCopy, error) {
 			listed = append(listed, listedCopy{path: path})
 		} else if branch, ok := strings.CutPrefix(field, "branch "); ok && len(listed) > 0 {
 			listed[len(listed)-1].branch = branch
-		} else if (field == "prunable" || strings.HasPrefix(field, "prunable ")) && len(listed) > 0 {
-			listed[len(listed)-1].prunable = true
+		} else if (field == "locked" || strings.HasPrefix(field, "locked ")) && len(listed) > 0 {
+			listed[len(listed)-1].locked = true
 		}
 	}
 	return listed, nil

@@ -1,6 +1,7 @@
 package testwriter
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,90 +67,142 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		// project returns the project folder to open.
-		project func(t *testing.T) string
+		// project returns the project folder to open and the steps the
+		// error must name, with any path in them.
+		project func(t *testing.T) (string, []string)
 		wantErr error
-		// wantStep is a fragment of the step the error names.
-		wantStep string
-		// notStep is a step the error must not name, because it would not
-		// work in that case.
-		notStep string
+		// notSteps are steps the error must not name, because they would not
+		// work in that case or would touch more than the one registration.
+		notSteps []string
 	}{
 		{
-			name:     "a folder outside git",
-			project:  func(t *testing.T) string { return t.TempDir() },
-			wantErr:  ErrNotRepository,
-			wantStep: "run git init in the project folder",
+			name: "a folder outside git",
+			project: func(t *testing.T) (string, []string) {
+				return t.TempDir(), []string{"run git init in the project folder"}
+			},
+			wantErr: ErrNotRepository,
 		},
 		{
 			name: "a repository without a commit",
-			project: func(t *testing.T) string {
+			project: func(t *testing.T) (string, []string) {
 				dir := t.TempDir()
 				runGit(t, dir, "init", "--quiet")
-				return dir
+				return dir, []string{"commit the project's files"}
 			},
-			wantErr:  ErrNoCommit,
-			wantStep: "commit the project's files",
+			wantErr: ErrNoCommit,
 		},
 		{
 			name: "a folder of the same name the user made",
-			project: func(t *testing.T) string {
+			project: func(t *testing.T) (string, []string) {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
 				writeFiles(t, repo, map[string]string{Folder + "/notes.txt": "mine\n"})
-				return repo
+				return repo, []string{"move it out of the project"}
 			},
-			wantErr:  ErrFolderInUse,
-			wantStep: "move it out of the project",
-		},
-		{
-			name: "the reserved branch checked out in the project folder",
-			project: func(t *testing.T) string {
-				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
-				runGit(t, repo, "switch", "--quiet", "--create", Branch)
-				return repo
-			},
-			wantErr:  ErrBranchInUse,
-			wantStep: "switch that folder to another branch",
-			notStep:  "git worktree prune",
-		},
-		{
-			name: "the reserved branch held by a deleted working copy elsewhere",
-			project: func(t *testing.T) string {
-				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
-				elsewhere := filepath.Join(t.TempDir(), "tests")
-				runGit(t, repo, "worktree", "add", "--quiet", "-b", Branch, elsewhere)
-				require.NoError(t, os.RemoveAll(elsewhere))
-				return repo
-			},
-			wantErr:  ErrBranchInUse,
-			wantStep: "remove that registration with git worktree prune in the project",
-			notStep:  "switch that folder",
+			wantErr: ErrFolderInUse,
 		},
 		{
 			name: "a file of the same name",
-			project: func(t *testing.T) string {
+			project: func(t *testing.T) (string, []string) {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
 				writeFiles(t, repo, map[string]string{Folder: "mine\n"})
-				return repo
+				return repo, []string{"move it out of the project"}
 			},
-			wantErr:  ErrFolderInUse,
-			wantStep: "move it out of the project",
+			wantErr: ErrFolderInUse,
+		},
+		{
+			name: "the reserved branch checked out in the project folder",
+			project: func(t *testing.T) (string, []string) {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				runGit(t, repo, "switch", "--quiet", "--create", Branch)
+				return repo, []string{repo + " has it checked out; switch that folder to another branch"}
+			},
+			wantErr:  ErrBranchInUse,
+			notSteps: []string{"git worktree"},
+		},
+		{
+			name: "the reserved branch held by a deleted working copy elsewhere",
+			project: func(t *testing.T) (string, []string) {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				elsewhere := heldElsewhere(t, repo, false)
+				return repo, []string{fmt.Sprintf("remove that registration with git worktree remove %q in the project", elsewhere)}
+			},
+			wantErr:  ErrBranchInUse,
+			notSteps: []string{"switch that folder", "git worktree prune", "unlock"},
+		},
+		{
+			name: "the reserved branch held by a locked, deleted working copy elsewhere",
+			project: func(t *testing.T) (string, []string) {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				elsewhere := heldElsewhere(t, repo, true)
+				return repo, []string{fmt.Sprintf("git worktree unlock %q and then git worktree remove %q in the project",
+					elsewhere, elsewhere)}
+			},
+			wantErr:  ErrBranchInUse,
+			notSteps: []string{"switch that folder", "git worktree prune"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			project := tc.project(t)
+			project, steps := tc.project(t)
 			before := folderState(t, project)
 			_, err := OpenWorkingCopy(t.Context(), project)
 			require.ErrorIs(t, err, tc.wantErr)
-			assert.ErrorContains(t, err, tc.wantStep)
-			if tc.notStep != "" {
-				assert.NotContains(t, err.Error(), tc.notStep)
+			for _, step := range steps {
+				assert.ErrorContains(t, err, step)
+			}
+			for _, step := range tc.notSteps {
+				assert.NotContains(t, err.Error(), step)
 			}
 			assert.Equal(t, before, folderState(t, project), "a refused project is left as it was")
 		})
 	}
+}
+
+// TestTheBranchRefusalsStepsWork follows the step each refusal for a deleted
+// working copy elsewhere names, unlocking first for a locked registration,
+// while an unrelated registration of a deleted folder sits beside it: the copy
+// then opens, and the unrelated registration is still there.
+func TestTheBranchRefusalsStepsWork(t *testing.T) {
+	t.Parallel()
+	for _, locked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("locked=%t", locked), func(t *testing.T) {
+			t.Parallel()
+			repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+			elsewhere := heldElsewhere(t, repo, locked)
+			unrelated := filepath.Join(t.TempDir(), "unrelated")
+			runGit(t, repo, "worktree", "add", "--quiet", "-b", "unrelated", unrelated)
+			require.NoError(t, os.RemoveAll(unrelated))
+			_, err := OpenWorkingCopy(t.Context(), repo)
+			require.ErrorIs(t, err, ErrBranchInUse)
+
+			if locked {
+				runGit(t, repo, "worktree", "unlock", elsewhere)
+			}
+			runGit(t, repo, "worktree", "remove", elsewhere)
+			wc, err := OpenWorkingCopy(t.Context(), repo)
+			require.NoError(t, err)
+			assert.Equal(t, "refs/heads/"+Branch, runGit(t, wc.Dir(), "symbolic-ref", "HEAD"))
+			assert.Contains(t, runGit(t, repo, "worktree", "list", "--porcelain"), "branch refs/heads/unrelated",
+				"the step touches only the one registration")
+		})
+	}
+}
+
+// heldElsewhere makes a linked working copy of repo outside the project hold
+// Branch, locks its registration when locked is set, deletes its folder with
+// the file system, and returns that folder's path as git records it.
+func heldElsewhere(t *testing.T, repo string, locked bool) string {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	elsewhere := filepath.Join(parent, "tests")
+	runGit(t, repo, "worktree", "add", "--quiet", "-b", Branch, elsewhere)
+	if locked {
+		runGit(t, repo, "worktree", "lock", "--reason", "on a removable disk", elsewhere)
+	}
+	require.NoError(t, os.RemoveAll(elsewhere))
+	return elsewhere
 }
 
 // TestOpenWorkingCopyRecreatesADeletedCopy deletes the copy's folder with the
