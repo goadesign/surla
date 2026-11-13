@@ -7,6 +7,7 @@ package controlplane
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,11 +90,9 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 	builder := asCaller("alice@example.com", CallerBuilder)
 	writtenTests := gensurla.NewTestSourceWrittenTests(&gensurla.AgentWrittenTests{Commit: repo.tests, Notice: writtenTestsNotice})
 
-	first, err := New(options())
-	require.NoError(t, err)
-	// Close is idempotent: this also covers a failure before the explicit
-	// Close below.
-	t.Cleanup(func() { assert.NoError(t, first.Close()) })
+	// Its Close at the test's end is idempotent, so the explicit Close below
+	// can reopen the card store.
+	first := newBuildControlPlane(t, options())
 
 	started, err := first.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: repo.candidate})
 	require.NoError(t, err, "a live copy needs no build")
@@ -112,11 +111,11 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 	card := confirmedChange(t, first, "chg")
 	verifyPayload := &gensurla.VerifyChangePayload{ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: repo.candidate}
 	_, err = first.VerifyChange(builder, verifyPayload)
-	assertRefusalSays(t, err, "conflict", "the user has not started a build of change \"chg\"")
+	assertRefusalSays(t, err, "no_build", "change \"chg\" has no build with a test writer")
 	_, err = first.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	require.NoError(t, err)
 	_, err = first.VerifyChange(builder, verifyPayload)
-	assertRefusalSays(t, err, "conflict", "the tests for this build are not accepted (state assigned)")
+	assertRefusalSays(t, err, "tests_not_accepted", "the tests of this build are not accepted; their state is assigned")
 	acceptTests(t, first, "chg", repo.tests)
 
 	for _, server := range []struct {
@@ -157,80 +156,147 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 	}
 }
 
-// TestVerificationAndLiveCopiesRefuseCommitsWithoutTheTestLayout verifies that
-// verify_change and start_live_target refuse, before any run or live copy
-// starts, a commit the repository does not hold, a candidate commit without
-// the service's command package, and accepted tests without their generated
-// entry point, each naming the commit and who acts; and that verify_change
-// refuses a build of another revision, naming both.
-func TestVerificationAndLiveCopiesRefuseCommitsWithoutTheTestLayout(t *testing.T) {
+// TestVerifyChangeRefusesWhatItCannotRunWithItsStep verifies each refusal of
+// verify_change in a project without stored verification settings, before
+// any run starts: called directly, over HTTP (409, the refusal's name, a
+// message that ends with its step) and through the MCP tool as the builder,
+// whose result is an error holding the reason and the step. Where a live copy
+// would read the same commit, start_live_target refuses it too.
+func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 	root := realTempDir(t)
 	repo := newLayoutRepo(t, filepath.Join(root, "repo"))
+	plain := filepath.Join(root, "plain", "shop")
+	writeStarterAt(t, plain, "example.com/shop")
 	unknown := strings.Repeat("e", 40)
+	const (
+		// noBuild starts no build.
+		noBuild = iota
+		// withoutTestWriter starts a build while the project has stored
+		// settings, which saves it without a test writer, and then serves
+		// the project without them.
+		withoutTestWriter
+		// assigned starts a build whose tests are not reported yet.
+		assigned
+		// accepted starts a build and accepts its tests at the case's commit.
+		accepted
+	)
 	cases := []struct {
 		name      string
-		candidate string
+		workspace string
+		build     int
 		tests     string
 		otherRev  bool
-		verify    string
-		live      string
+		candidate string
+		refusal   string
+		reason    string
+		step      string
+		live      bool
 	}{
 		{
-			name: "unknown candidate commit", candidate: unknown, tests: repo.tests,
-			verify: "the candidate commit " + unknown + " is not in the project's repository; commit it and try again",
-			live:   "the candidate commit " + unknown + " is not in the project's repository",
+			name: "no build", build: noBuild, candidate: repo.candidate,
+			refusal: "no_build", reason: `change "chg" has no build with a test writer, so no tests are accepted for revision`,
+			step: "the user starts a build on the views page",
 		},
 		{
-			name: "candidate without its command package", candidate: repo.noProgram, tests: repo.tests,
-			verify: "commit " + repo.noProgram + " does not have the test layout surla init makes (it has no folder services/shop/cmd/shop):" +
-				" the builder commits the layout surla init makes and verifies again",
-			live: "commit " + repo.noProgram + " does not have the test layout surla init makes (it has no folder services/shop/cmd/shop)",
+			name: "build started without a test writer", build: withoutTestWriter, candidate: repo.candidate,
+			refusal: "no_build", reason: `change "chg" has no build with a test writer, so no tests are accepted for revision`,
+			step: "the user starts a build on the views page",
 		},
 		{
-			name: "accepted tests without their entry point", candidate: repo.candidate, tests: repo.noEntry,
-			verify: "commit " + repo.noEntry + " does not have the test layout surla init makes (it has no folder services/shop/eval/gen/cmd/shop-evals):" +
-				" the test writer reports again, so Surla checks and records its tests again",
+			name: "build of another revision", build: accepted, tests: repo.tests, otherRev: true, candidate: repo.candidate,
+			refusal: "no_build", reason: `change "chg" is built at revision`, step: "on the views page",
 		},
 		{
-			name: "build of another revision", candidate: repo.candidate, tests: repo.tests, otherRev: true,
-			verify: "but the revision in force is",
+			name: "tests not accepted", build: assigned, candidate: repo.candidate,
+			refusal: "tests_not_accepted", reason: "the tests of this build are not accepted; their state is assigned",
+			step: "the test writer writes the required tests and reports them finished; verify again once Surla accepts them",
+		},
+		{
+			name: "unknown candidate commit", build: accepted, tests: repo.tests, candidate: unknown,
+			refusal: "conflict", reason: "the candidate commit " + unknown + " is not in the project's repository",
+			step: "commit it and try again", live: true,
+		},
+		{
+			name: "candidate without its command package", build: accepted, tests: repo.tests, candidate: repo.noProgram,
+			refusal: "no_test_layout",
+			reason:  "commit " + repo.noProgram + " does not have the test layout surla init makes (it has no folder services/shop/cmd/shop)",
+			step:    "the builder commits the layout surla init makes and verifies again", live: true,
+		},
+		{
+			name: "accepted tests without their entry point", build: accepted, tests: repo.noEntry, candidate: repo.candidate,
+			refusal: "no_test_layout",
+			reason:  "commit " + repo.noEntry + " does not have the test layout surla init makes (it has no folder services/shop/eval/gen/cmd/shop-evals)",
+			step:    "the test writer reports again, so Surla checks and records its tests again",
+		},
+		{
+			name: "project folder outside any git repository", workspace: plain, build: accepted, tests: repo.tests, candidate: repo.candidate,
+			refusal: "no_test_layout", reason: "the project folder " + plain + " is not inside a git repository, so it has no commits to verify",
+			step: "make the project folder a git repository and commit it", live: true,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			workspace := repo.workspace
+			if tc.workspace != "" {
+				workspace = tc.workspace
+			}
 			runsDir := filepath.Join(realTempDir(t), "runs")
 			self, err := os.Executable()
 			require.NoError(t, err)
-			cp := newControlPlane(t, Options{
-				WorkspaceDir:    repo.workspace,
+			opts := Options{
+				WorkspaceDir:    workspace,
 				RunsDir:         runsDir,
 				SurlaVersion:    testSurlaVersion,
 				WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
 				Live:            &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
-			})
-			user := asCaller("alice@example.com", CallerUser)
+			}
+			var cp *ControlPlane
+			var card *gensurla.ChangeCardResult
+			if tc.build == withoutTestWriter {
+				cp, card = builtWithoutTestWriter(t, opts)
+			} else {
+				cp = newBuildControlPlane(t, opts)
+				card = saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
+			}
 			builder := asCaller("alice@example.com", CallerBuilder)
-			card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
-			_, err = cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
-			require.NoError(t, err)
-			acceptTests(t, cp, "chg", tc.tests)
+			if tc.build == assigned || tc.build == accepted {
+				_, err = cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+				require.NoError(t, err)
+			}
+			if tc.build == accepted {
+				acceptTests(t, cp, "chg", tc.tests)
+			}
 			if tc.otherRev {
 				card = saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits for a manager"))
 			}
+			srv := roleServer(t, cp)
+			body := `{"request_revision":"` + card.RequestRevision + `","candidate_commit":"` + tc.candidate + `"}`
 
 			_, err = cp.VerifyChange(builder, &gensurla.VerifyChangePayload{ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: tc.candidate})
-			assertRefusalSays(t, err, "conflict", tc.verify)
-			entries, err := os.ReadDir(runsDir)
-			if !os.IsNotExist(err) {
-				require.NoError(t, err)
+			assertRefusalSays(t, err, tc.refusal, tc.reason)
+			status, raw := httpCall(t, srv.URL, "builder", http.MethodPost, "/changes/chg/verifications", body)
+			assert.Equal(t, http.StatusConflict, status, raw)
+			var refused struct {
+				Name    string `json:"name"`
+				Message string `json:"message"`
 			}
-			assert.Empty(t, entries, "no run is accepted")
+			require.NoError(t, json.Unmarshal([]byte(raw), &refused), raw)
+			assert.Equal(t, tc.refusal, refused.Name, "over HTTP")
+			assert.Contains(t, refused.Message, tc.reason, "over HTTP")
+			assert.True(t, strings.HasSuffix(refused.Message, tc.step), "over HTTP the message ends with its step: %s", refused.Message)
+			failure, _ := mcpToolCall(t, srv.URL, "builder", "verify_change",
+				`{"change_id":"chg","request_revision":"`+card.RequestRevision+`","candidate_commit":"`+tc.candidate+`"}`)
+			assert.Contains(t, failure, tc.reason, "through the MCP tool")
+			assert.Contains(t, failure, tc.step, "through the MCP tool")
+			runs, err := verifyrun.List(runsDir, "alice@example.com", "chg")
+			require.NoError(t, err)
+			assert.Empty(t, runs, "no run is accepted")
 
-			if tc.live == "" {
+			if !tc.live {
 				return
 			}
 			_, err = cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: tc.candidate})
-			assertRefusalSays(t, err, "live_target_failed", tc.live)
+			assertRefusalSays(t, err, "live_target_failed", tc.reason)
 			assert.Nil(t, cp.owned, "no live copy is started")
 		})
 	}
@@ -250,24 +316,24 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 	}{
 		{
 			name: "reported", tw: testWriterAssignment{State: testsReported, Findings: []string{}},
-			want: "(state reported): Surla is checking the test writer's report; verify again after its verdict",
+			want: "reported: Surla is checking the test writer's report; verify again after its verdict",
 		},
 		{
 			name: "needs changes", tw: testWriterAssignment{State: testsNeedChanges, Findings: []string{"refund_over_limit is missing"}, CheckedAt: time.Now()},
-			want: "(state needs_changes): the test writer fixes Surla's findings and reports again",
+			want: "needs changes: the test writer fixes Surla's findings and reports again; verify again once Surla accepts them",
 		},
 		{
 			name: "could not run", tw: testWriterAssignment{
 				State: testsCouldNotRun, Findings: []string{}, Reason: "git could not write the tests branch",
 				Step: "Free disk space, then report again.", CheckedAt: time.Now(),
 			},
-			want: "(state could_not_run): Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again.",
+			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again.",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			runsDir := filepath.Join(realTempDir(t), "runs")
-			cp := newControlPlane(t, Options{
+			cp := newBuildControlPlane(t, Options{
 				WorkspaceDir:    repo.workspace,
 				RunsDir:         runsDir,
 				SurlaVersion:    testSurlaVersion,
@@ -281,7 +347,7 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 			_, err = cp.VerifyChange(asCaller("alice@example.com", CallerBuilder), &gensurla.VerifyChangePayload{
 				ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: repo.candidate,
 			})
-			assertRefusalSays(t, err, "conflict", "the tests for this build are not accepted "+tc.want)
+			assertRefusalSays(t, err, "tests_not_accepted", "the tests of this build are not accepted; their state is "+tc.want)
 			_, err = os.Stat(runsDir)
 			assert.ErrorIs(t, err, os.ErrNotExist, "no run is accepted")
 		})
@@ -317,7 +383,7 @@ func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 			} else {
 				opts.WrittenTestRuns = &WrittenTestRuns{ReportDir: realTempDir(t), Command: exit, Timeout: time.Hour}
 			}
-			cp := newControlPlane(t, opts)
+			cp := newBuildControlPlane(t, opts)
 			user := asCaller("alice@example.com", CallerUser)
 			testWriter := asCaller("alice@example.com", CallerTestWriter)
 			card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
@@ -395,6 +461,28 @@ func gitForLayoutTest(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
+// builtWithoutTestWriter starts alice's build of the confirmed change "chg"
+// while the project has stored verification settings, which saves the build
+// without a test writer, and then returns a control plane on the same card
+// store with opts, which has none, together with the change.
+func builtWithoutTestWriter(t *testing.T, opts Options) (*ControlPlane, *gensurla.ChangeCardResult) {
+	t.Helper()
+	opts.CardsDir = filepath.Join(realTempDir(t), "cards")
+	stored := opts
+	stored.WrittenTestRuns, stored.Live = nil, nil
+	stored.Verification = &VerificationConfig{
+		RunsDir: opts.RunsDir, Plan: verify.Plan{ReportDir: realTempDir(t)},
+		Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour,
+	}
+	first := newBuildControlPlane(t, stored)
+	card := saveStoryCard(t, first, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
+	_, err := first.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	require.NoError(t, err)
+	assert.Equal(t, `"`+buildRolesBuilderOnly+`"`, jsonAt(t, readBuildFile(t, first, "chg"), "roles"), "a stored evaluator's build has no test writer")
+	require.NoError(t, first.Close())
+	return newControlPlane(t, opts), card
+}
+
 // layoutPlan returns the plan that builds candidate's shop program and runs
 // the generated entry point of the tests at tests, as starterPlanAt makes it
 // for repo, without the fields its callers add.
@@ -428,7 +516,8 @@ func acceptTests(t *testing.T, cp *ControlPlane, changeID, commit string) {
 }
 
 // saveTestWriter saves tw as the test writer's assignment of changeID's
-// build, through the build store's save path.
+// build, through the build store's save path, keeping the working folder the
+// build was started with, which no verdict changes.
 func saveTestWriter(t *testing.T, cp *ControlPlane, changeID string, tw testWriterAssignment) {
 	t.Helper()
 	cp.mu.Lock()
@@ -436,6 +525,7 @@ func saveTestWriter(t *testing.T, cp *ControlPlane, changeID string, tw testWrit
 	build, found, err := cp.cards.loadBuild(changeID)
 	require.NoError(t, err)
 	require.True(t, found, "change %q has a build", changeID)
+	tw.WorkingFolder = build.TestWriter.WorkingFolder
 	build.TestWriter = tw
 	require.NoError(t, cp.cards.saveBuild(build))
 }

@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/verify"
@@ -67,7 +68,7 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 	if err := c.verifiableCard(principal, p.ChangeID, p.RequestRevision); err != nil {
 		return nil, err
 	}
-	verCfg, err := c.verificationPlan(ctx, p.ChangeID, p.RequestRevision, p.CandidateCommit)
+	verCfg, err := c.verificationPlan(ctx, principal, p.ChangeID, p.RequestRevision, p.CandidateCommit)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +148,7 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 	}
 	if principal.Kind == CallerTestWriter {
 		c.mu.RLock()
-		holds, err := c.testWriterHolds(req.ChangeID)
+		holds, err := c.testWriterHolds(principal, req.ChangeID)
 		c.mu.RUnlock()
 		if err != nil {
 			return nil, err
@@ -184,7 +185,7 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	record, exists, err := c.cards.load(p.ChangeID)
 	if err == nil && exists && record.owner == principal.ID {
 		if principal.Kind == CallerTestWriter {
-			holds, holdErr := c.testWriterHolds(p.ChangeID)
+			holds, holdErr := c.testWriterHolds(principal, p.ChangeID)
 			if holdErr != nil || !holds {
 				c.mu.RUnlock()
 				if holdErr != nil {
@@ -234,15 +235,21 @@ func runTestSource(plan verify.Plan) gensurla.TestSource {
 	return gensurla.NewTestSourceWrittenTests(&gensurla.AgentWrittenTests{Commit: plan.SuiteCommit, Notice: writtenTestsNotice})
 }
 
-// testWriterHolds reports whether the test writer holds an assignment for
-// changeID: the project verifies without a stored evaluator, which leaves no
-// test writer, and the change has a saved build. Callers hold c.mu.
-func (c *ControlPlane) testWriterHolds(changeID string) (bool, error) {
+// testWriterHolds reports whether the test writer principal holds an
+// assignment for changeID: the project verifies without a stored evaluator,
+// which leaves no test writer, and ownedBuild finds a build of the change,
+// which without stored settings is one started with a test writer. Callers
+// hold c.mu.
+func (c *ControlPlane) testWriterHolds(principal Principal, changeID string) (bool, error) {
 	if c.storedEvaluator() {
 		return false, nil
 	}
-	_, found, err := c.cards.loadBuild(changeID)
-	return found, err
+	_, err := c.ownedBuild(principal, changeID)
+	var missing *goa.ServiceError
+	if errors.As(err, &missing) && missing.Name == "not_found" {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // statusResult returns the wire form of a run: its request and its state,

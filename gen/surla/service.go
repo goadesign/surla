@@ -1865,6 +1865,21 @@ func MakeLiveTargetStopFailed(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "live_target_stop_failed", false, false, false)
 }
 
+// MakeNoBuild builds a goa.ServiceError from an error.
+func MakeNoBuild(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_build", false, false, false)
+}
+
+// MakeTestsNotAccepted builds a goa.ServiceError from an error.
+func MakeTestsNotAccepted(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "tests_not_accepted", false, false, false)
+}
+
+// MakeNoTestLayout builds a goa.ServiceError from an error.
+func MakeNoTestLayout(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_test_layout", false, false, false)
+}
+
 // MakeNotImplemented builds a goa.ServiceError from an error.
 func MakeNotImplemented(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "not_implemented", false, false, false)
@@ -1898,11 +1913,6 @@ func MakeNotRepository(err error) *goa.ServiceError {
 // MakeNoCommit builds a goa.ServiceError from an error.
 func MakeNoCommit(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "no_commit", false, false, false)
-}
-
-// MakeNoTestLayout builds a goa.ServiceError from an error.
-func MakeNoTestLayout(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "no_test_layout", false, false, false)
 }
 
 // MakeGitIdentityMissing builds a goa.ServiceError from an error.

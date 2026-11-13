@@ -155,7 +155,7 @@ func TestStarterPlanRefusesUnusableRepositories(t *testing.T) {
 				require.NoError(t, os.Mkdir(workspace, 0o755))
 			},
 			refusal: &layoutRefusal{reason: refusedReplacedFolder},
-			wantErr: "was replaced or removed after Surla started: the user stops and starts Surla",
+			wantErr: "was replaced or removed after Surla started: stop and start Surla in the project folder, then try again",
 		},
 		{
 			name: "not a git repository",
@@ -165,7 +165,7 @@ func TestStarterPlanRefusesUnusableRepositories(t *testing.T) {
 				return dir, strings.Repeat("a", 40)
 			},
 			refusal: &layoutRefusal{reason: refusedNoRepository},
-			wantErr: "is not inside a git repository, so it has no commits to verify: the builder runs git init",
+			wantErr: "is not inside a git repository, so it has no commits to verify: make the project folder a git repository and commit it",
 		},
 		{
 			name: "test module never committed",

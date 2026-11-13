@@ -1365,6 +1365,9 @@ func EncodeVerifyChangeRequest(encoder func(*http.Request) goahttp.Encoder) func
 // DecodeVerifyChangeResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "no_build" (type *goa.ServiceError): http.StatusConflict
+//   - "tests_not_accepted" (type *goa.ServiceError): http.StatusConflict
+//   - "no_test_layout" (type *goa.ServiceError): http.StatusConflict
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
@@ -1419,19 +1422,71 @@ func DecodeVerifyChangeResponse(decoder func(*http.Response) goahttp.Decoder, re
 			}
 			return nil, NewVerifyChangeNotFound(&body)
 		case http.StatusConflict:
-			var (
-				body VerifyChangeConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "conflict":
+				var (
+					body VerifyChangeConflictResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeConflictResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeConflict(&body)
+			case "no_build":
+				var (
+					body VerifyChangeNoBuildResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeNoBuildResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeNoBuild(&body)
+			case "tests_not_accepted":
+				var (
+					body VerifyChangeTestsNotAcceptedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeTestsNotAcceptedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeTestsNotAccepted(&body)
+			case "no_test_layout":
+				var (
+					body VerifyChangeNoTestLayoutResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				err = ValidateVerifyChangeNoTestLayoutResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+				}
+				return nil, NewVerifyChangeNoTestLayout(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "verify_change", resp.StatusCode, string(body))
 			}
-			err = ValidateVerifyChangeConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "verify_change", err)
-			}
-			return nil, NewVerifyChangeConflict(&body)
 		case http.StatusNotImplemented:
 			var (
 				body VerifyChangeNotImplementedResponseBody

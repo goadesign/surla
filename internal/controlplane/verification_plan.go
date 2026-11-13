@@ -10,6 +10,8 @@ import (
 	"path"
 	"time"
 
+	goa "goa.design/goa/v3/pkg"
+
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verify"
@@ -114,10 +116,10 @@ func (r *layoutRefusal) Error() string {
 	switch r.reason {
 	case refusedReplacedFolder:
 		return fmt.Sprintf("the project folder %s was replaced or removed after Surla started:"+
-			" the user stops and starts Surla in the project folder, then the call is made again", r.folder)
+			" stop and start Surla in the project folder, then try again", r.folder)
 	case refusedNoRepository:
 		return fmt.Sprintf("the project folder %s is not inside a git repository, so it has no commits to verify:"+
-			" the builder runs git init, commits the project and verifies again", r.folder)
+			" make the project folder a git repository and commit it", r.folder)
 	case refusedUnknownCommit:
 		return fmt.Sprintf("the candidate commit %s is not in the project's repository; commit it and try again", r.commit)
 	}
@@ -141,12 +143,18 @@ func (r *layoutRefusal) Error() string {
 //     the tests from the accepted commit's, and the test command is that
 //     commit's generated entry point (scaffold.Layout.GeneratedSuiteCommand).
 //
-// The returned Plan carries the candidate commit, the revision and its test
-// source; the caller adds the run's work folder. It refuses with not
-// implemented when this control plane runs no verification, no_build,
-// tests_not_accepted and no_test_layout as the error constructors below
-// describe, and conflict when the repository does not hold candidateCommit.
-func (c *ControlPlane) verificationPlan(ctx context.Context, changeID, revision, candidateCommit string) (VerificationConfig, error) {
+// The build is read through ownedBuild, as get_build reads it, so a build
+// that read does not count (usableBuild) is no build. The returned Plan carries the
+// candidate commit, the revision and its test source; the caller adds the
+// run's work folder. It refuses with not_implemented when this control plane
+// runs no verification; no_build, tests_not_accepted and no_test_layout as
+// the error constructors below describe; and conflict when the repository
+// does not hold candidateCommit or the project folder was replaced.
+func (c *ControlPlane) verificationPlan(
+	ctx context.Context,
+	principal Principal,
+	changeID, revision, candidateCommit string,
+) (VerificationConfig, error) {
 	switch v := c.verifier.(type) {
 	case storedVerification:
 		cfg := *v.cfg
@@ -155,13 +163,19 @@ func (c *ControlPlane) verificationPlan(ctx context.Context, changeID, revision,
 		return cfg, nil
 	case writtenTestVerification:
 		c.mu.RLock()
-		build, found, err := c.cards.loadBuild(changeID)
+		held, err := c.ownedBuild(principal, changeID)
 		c.mu.RUnlock()
-		if err != nil {
+		var missing *goa.ServiceError
+		switch {
+		case errors.As(err, &missing) && missing.Name == "not_found":
+			// The caller checked the change, so what is missing is its build.
+			return VerificationConfig{}, refuseNoBuild(changeID, revision, buildFile{}, false)
+		case err != nil:
 			return VerificationConfig{}, err
 		}
-		if !found || build.RequestRevision != revision {
-			return VerificationConfig{}, refuseNoBuild(changeID, revision, build, found)
+		build := held.file
+		if build.RequestRevision != revision {
+			return VerificationConfig{}, refuseNoBuild(changeID, revision, build, true)
 		}
 		if build.TestWriter.State != testsAccepted {
 			return VerificationConfig{}, refuseTestsNotAccepted(build.TestWriter)
@@ -169,7 +183,7 @@ func (c *ControlPlane) verificationPlan(ctx context.Context, changeID, revision,
 		plan, err := c.starterPlanAt(ctx, candidateCommit, build.TestWriter.Commit, testWriterActs)
 		var refusal *layoutRefusal
 		switch {
-		case errors.As(err, &refusal) && refusal.reason == refusedNoLayout:
+		case errors.As(err, &refusal) && (refusal.reason == refusedNoLayout || refusal.reason == refusedNoRepository):
 			return VerificationConfig{}, refuseNoTestLayout(refusal)
 		case errors.As(err, &refusal):
 			return VerificationConfig{}, gensurla.MakeConflict(refusal)
@@ -340,40 +354,43 @@ func verifierRuns(v verifier) *VerificationConfig {
 	}
 }
 
-// refuseNoBuild is verify_change's refusal for a change with no build at
-// revision: it names the built revision when there is one, the revision in
-// force, and the user's step.
+// refuseNoBuild is verify_change's no_build refusal of changeID at revision:
+// ownedBuild found no build with a test writer (none was started, or the one
+// started while the project verified with stored settings has none), or the
+// build found is of another revision, which it names. It ends with the
+// user's step.
 func refuseNoBuild(changeID, revision string, build buildFile, found bool) error {
 	if !found {
-		return gensurla.MakeConflict(fmt.Errorf(
-			"the user has not started a build of change %q, so no tests are accepted for revision %s: the user starts a build on the views page",
+		return gensurla.MakeNoBuild(fmt.Errorf(
+			"change %q has no build with a test writer, so no tests are accepted for revision %s: the user starts a build on the views page",
 			changeID, revision))
 	}
-	return gensurla.MakeConflict(fmt.Errorf(
+	return gensurla.MakeNoBuild(fmt.Errorf(
 		"change %q is built at revision %s, but the revision in force is %s: the user starts a build of revision %s on the views page",
 		changeID, build.RequestRevision, revision, revision))
 }
 
-// refuseTestsNotAccepted is verify_change's refusal for a build whose tests
-// are not accepted: it names the test writer's state and who acts.
+// refuseTestsNotAccepted is verify_change's tests_not_accepted refusal of a
+// build whose tests are not accepted: it names the test writer's state in the
+// state's own words, then who acts, and ends with the step.
 func refuseTestsNotAccepted(saved testWriterAssignment) error {
-	var who string
+	var state, step string
 	switch saved.State {
 	case testsAssigned:
-		who = "the test writer writes the required tests and reports them finished"
+		state, step = "assigned", "the test writer writes the required tests and reports them finished; verify again once Surla accepts them"
 	case testsReported:
-		who = "Surla is checking the test writer's report; verify again after its verdict"
+		state, step = "reported", "Surla is checking the test writer's report; verify again after its verdict"
 	case testsNeedChanges:
-		who = "the test writer fixes Surla's findings and reports again"
+		state, step = "needs changes", "the test writer fixes Surla's findings and reports again; verify again once Surla accepts them"
 	case testsCouldNotRun:
-		who = "Surla's check could not run (" + saved.Reason + "); the user's step: " + saved.Step
+		state, step = "could not run", "Surla's check could not run ("+saved.Reason+"); the user's step: "+saved.Step
 	}
-	return gensurla.MakeConflict(fmt.Errorf("the tests for this build are not accepted (state %s): %s", saved.State, who))
+	return gensurla.MakeTestsNotAccepted(fmt.Errorf("the tests of this build are not accepted; their state is %s: %s", state, step))
 }
 
-// refuseNoTestLayout is verify_change's refusal for a commit without the test
-// layout `surla init` makes: it names the commit, what is missing and who
-// acts.
+// refuseNoTestLayout is verify_change's no_test_layout refusal of a commit
+// without the test layout `surla init` makes, or of a project folder outside
+// any git repository: it names what is missing and ends with the step.
 func refuseNoTestLayout(refusal *layoutRefusal) error {
-	return gensurla.MakeConflict(refusal)
+	return gensurla.MakeNoTestLayout(refusal)
 }

@@ -87,8 +87,8 @@ func toolErrorText(content []*genmcpsurla.ContentItem) string {
 
 // writeStarterVerification stores, through CLI management before the next
 // server start, the operator's verification settings for the starter at dir:
-// its service and test modules, with the tests at suiteCommit run by the
-// command the starter's layout names. With them, the project verifies every
+// its service and test modules, with the tests at suiteCommit run by their
+// generated entry point. With them, the project verifies every
 // change with that evaluator and needs no build.
 func writeStarterVerification(t *testing.T, workspace, dir, modulePath, suiteCommit string) {
 	t.Helper()
@@ -102,7 +102,7 @@ func writeStarterVerification(t *testing.T, workspace, dir, modulePath, suiteCom
 		"suite_repo":       dir,
 		"suite_commit":     suiteCommit,
 		"suite_module":     scaffold.SuiteDir,
-		"suite_command":    layout.SuiteCommand,
+		"suite_command":    layout.GeneratedSuiteCommand(),
 		"timeout":          defaultProjectVerifyTimeout.String(),
 	})
 	require.NoError(t, err)
@@ -147,7 +147,8 @@ func assertVerifyRefusedWithoutBuild(t *testing.T, ctx context.Context, client *
 	complete, ok := result.Outcome.AsComplete()
 	require.True(t, ok)
 	require.True(t, complete.IsError != nil && *complete.IsError, "verify_change without a build is refused")
-	assert.Contains(t, toolErrorText(complete.Content), "the user has not started a build of change \""+changeID+"\"")
+	assert.Contains(t, toolErrorText(complete.Content), "change \""+changeID+"\" has no build with a test writer")
+	assert.Contains(t, toolErrorText(complete.Content), "the user starts a build on the views page")
 	runs, err := verifyrun.List(runsDir, owner, changeID)
 	require.NoError(t, err)
 	assert.Empty(t, runs, "no run is accepted")

@@ -270,7 +270,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			var se *goa.ServiceError
 			require.ErrorAs(t, err, &se)
 			assert.Equal(t, "live_target_failed", se.GoaErrorName())
-			assert.Contains(t, se.Message, "is not inside a git repository, so it has no commits to verify: the builder runs git init")
+			assert.Contains(t, se.Message, "is not inside a git repository, so it has no commits to verify: make the project folder a git repository and commit it")
 		})
 	}
 }
