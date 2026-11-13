@@ -109,6 +109,18 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			wantStep: "switch that folder to another branch",
 		},
 		{
+			name: "the reserved branch held by a deleted working copy elsewhere",
+			project: func(t *testing.T) string {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				elsewhere := filepath.Join(t.TempDir(), "tests")
+				runGit(t, repo, "worktree", "add", "--quiet", "-b", Branch, elsewhere)
+				require.NoError(t, os.RemoveAll(elsewhere))
+				return repo
+			},
+			wantErr:  ErrBranchInUse,
+			wantStep: "switch that folder to another branch",
+		},
+		{
 			name: "a file of the same name",
 			project: func(t *testing.T) string {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
@@ -132,9 +144,11 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 	}
 }
 
-// TestOpenWorkingCopyRecreatesADeletedCopy deletes the copy's folder after a
-// commit on its branch: opening again checks the same branch out again, so
-// the commit is kept, and restores the exclude entry the user removed.
+// TestOpenWorkingCopyRecreatesADeletedCopy deletes the copy's folder with the
+// file system after a commit on its branch, while git still registers it as
+// holding the branch: opening again drops that registration of Surla's own
+// copy and checks the same branch out again, so the accepted commit is kept,
+// and restores the exclude entry the user removed.
 func TestOpenWorkingCopyRecreatesADeletedCopy(t *testing.T) {
 	t.Parallel()
 	repo, markers := newProject(t, map[string]string{"README.md": "shop\n"})
@@ -145,6 +159,9 @@ func TestOpenWorkingCopyRecreatesADeletedCopy(t *testing.T) {
 	runGit(t, wc.Dir(), "commit", "--quiet", "-m", "Accepted tests")
 	tip := runGit(t, wc.Dir(), "rev-parse", "HEAD")
 	require.NoError(t, os.RemoveAll(wc.Dir()))
+	listed := runGit(t, repo, "worktree", "list", "--porcelain")
+	require.Contains(t, listed, "worktree "+wc.Dir()+"\nHEAD "+tip+"\nbranch refs/heads/"+Branch+"\nprunable",
+		"git still registers the deleted copy as holding the branch")
 	exclude := runGit(t, repo, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude")
 	require.NoError(t, os.WriteFile(exclude, nil, 0o644))
 

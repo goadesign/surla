@@ -213,6 +213,14 @@ func (c *Checker) Prepare(
 // sandbox (candidate.ErrIsolationUnavailable), ctx ended, or git, the file
 // system or the build's process cleanup failed. ctx bounds the whole check,
 // including a --describe that never exits.
+//
+// Only ctx bounds the bytes the author's code writes to disk: what the
+// sandboxed build writes to its log and to the build cache in the Checker's
+// folder, and what --describe writes to its standard error and its state
+// folder. Its standard output is kept in memory, at most 1 MiB. The check's
+// own folder, holding that log, standard error and state, is removed when
+// Check returns; the build cache stays until the owner removes the Checker's
+// folder.
 func (c *Checker) Check(
 	ctx context.Context, wc WorkingCopy, s Suite, stories []designeval.StorySummary,
 ) (_ Verdict, err error) {
