@@ -316,8 +316,8 @@ type (
 		Read *bool `json:"read"`
 		// Where the test writer's tests for this build stand: not_used when no test
 		// writer is used because the project verifies with its stored evaluator;
-		// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-		// the commit Surla recorded them at.
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
 		WrittenTests *WrittenTests `json:"written_tests"`
 	}
 	// GetChangePayloadTransport is the internal JSON transport type for GetChangePayload.
@@ -1030,8 +1030,8 @@ type (
 		Read *bool `json:"read"`
 		// Where the test writer's tests for this build stand: not_used when no test
 		// writer is used because the project verifies with its stored evaluator;
-		// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-		// the commit Surla recorded them at.
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
 		WrittenTests *WrittenTests `json:"written_tests"`
 	}
 	// BuilderProgressTransport is the internal JSON transport type for BuilderProgressTransport.
@@ -1393,6 +1393,9 @@ type (
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read *bool `json:"read"`
+		// Number of the test writer's latest counted report of this build; 0 when none
+		// was counted. Reports are not counted yet, so it is 0.
+		Report *int `json:"report"`
 	}
 	// TestsAcceptedTransport is the internal JSON transport type for TestsAcceptedTransport.
 	// It lives in the toolset-local http package and is used only for JSON

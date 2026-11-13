@@ -4776,7 +4776,8 @@ func unmarshalBuilderProgressResponseBodyToSurlaBuilderProgress(v *BuilderProgre
 // *TestWriterProgressResponseBody.
 func unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(v *TestWriterProgressResponseBody) *surla.TestWriterProgress {
 	res := &surla.TestWriterProgress{
-		Read: *v.Read,
+		Read:   *v.Read,
+		Report: *v.Report,
 	}
 	switch string(v.Tests.Kind()) {
 	case "not_used":

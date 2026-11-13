@@ -262,8 +262,8 @@ type (
 		Read bool
 		// Where the test writer's tests for this build stand: not_used when no test
 		// writer is used because the project verifies with its stored evaluator;
-		// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-		// the commit Surla recorded them at.
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
 		WrittenTests WrittenTests
 	}
 	// GetChangePayload defines the JSON payload for the surla.get_change tool.
@@ -841,8 +841,8 @@ type (
 		Read bool
 		// Where the test writer's tests for this build stand: not_used when no test
 		// writer is used because the project verifies with its stored evaluator;
-		// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-		// the commit Surla recorded them at.
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
 		WrittenTests WrittenTests
 	}
 	// BuilderProgress is a nested type used by the generated JSON contract.
@@ -1138,6 +1138,9 @@ type (
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read bool
+		// Number of the test writer's latest counted report of this build; 0 when none
+		// was counted. Reports are not counted yet, so it is 0.
+		Report int
 	}
 	// TestsAccepted is a nested type used by the generated JSON contract.
 	TestsAccepted = struct {

@@ -3507,7 +3507,8 @@ func marshalSurlaBuilderProgressToBuilderProgressResponseBody(v *surla.BuilderPr
 // *surla.TestWriterProgress.
 func marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v *surla.TestWriterProgress) *TestWriterProgressResponseBody {
 	res := &TestWriterProgressResponseBody{
-		Read: v.Read,
+		Read:   v.Read,
+		Report: v.Report,
 	}
 	if v.Tests.Kind() != "" {
 		switch string(v.Tests.Kind()) {

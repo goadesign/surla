@@ -8,9 +8,9 @@ import (
 	. "goa.design/goa/v3/dsl"
 )
 
-// TestsNotUsed is the test writer's state when no test writer is used.
+// TestsNotUsed is how a build reads when no test writer is used.
 var TestsNotUsed = Type("TestsNotUsed", func() {
-	Description("No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.")
+	Description("No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.")
 })
 
 // TestsAssigned is the test writer's state before it reports its tests finished.
@@ -58,9 +58,9 @@ var TestsCouldNotRun = Type("TestsCouldNotRun", func() {
 	Required("reason", "step", "checked_at")
 })
 
-// TestsNotYetAccepted is the builder's view of tests Surla has not accepted.
+// TestsNotYetAccepted is the builder's view of a build with no accepted tests.
 var TestsNotYetAccepted = Type("TestsNotYetAccepted", func() {
-	Description("Surla has not accepted the test writer's tests for this build.")
+	Description("The build records no accepted tests.")
 })
 
 // TestWriterProgress is the test writer's state and whether it read its assignment.
@@ -77,7 +77,10 @@ var TestWriterProgress = Type("TestWriterProgress", func() {
 		Attribute("could_not_run", TestsCouldNotRun)
 	})
 	Attribute("read", Boolean, "True once the test writer read this assignment in full with get_test_writer_assignment.")
-	Required("tests", "read")
+	Attribute("report", Int, "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.", func() {
+		Minimum(0)
+	})
+	Required("tests", "read", "report")
 })
 
 // BuilderProgress says whether the builder read its assignment.
@@ -123,7 +126,7 @@ var BuilderAssignment = Type("BuilderAssignment", func() {
 	Attribute("request_revision", String, "Change Card revision to build; verify_change takes it.")
 	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.")
 	Attribute("read", Boolean, "True once you read this assignment in full with get_builder_assignment.")
-	OneOf("written_tests", "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.", func() {
+	OneOf("written_tests", "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
 		Attribute("not_used", TestsNotUsed)

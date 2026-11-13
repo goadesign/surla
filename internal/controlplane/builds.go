@@ -117,8 +117,9 @@ type (
 	// testsAccepted, Reason and Step exactly in testsCouldNotRun, and
 	// CheckedAt exactly in those three verdicts.
 	testWriterAssignment struct {
-		// State is one of testsNotUsed, testsAssigned, testsReported,
-		// testsNeedChanges, testsAccepted or testsCouldNotRun.
+		// State is one of testsAssigned, testsReported, testsNeedChanges,
+		// testsAccepted or testsCouldNotRun. That no test writer is used is
+		// never saved: reads derive it from storedEvaluator.
 		State string `json:"state"`
 		// Read records that the test writer read the assignment in full.
 		Read bool `json:"read"`
@@ -143,9 +144,6 @@ type (
 )
 
 const (
-	// testsNotUsed is the test writer's state when no test writer is used
-	// because the project verifies with its stored evaluator.
-	testsNotUsed = "not_used"
 	// testsAssigned is the test writer's state until it reports.
 	testsAssigned = "assigned"
 	// testsReported is the test writer's state after it reported its tests
@@ -465,15 +463,16 @@ func builderProgress(saved builderAssignment) *gensurla.BuilderProgress {
 	return &gensurla.BuilderProgress{Read: saved.Read}
 }
 
-// testWriterProgress converts the test writer's saved assignment. A project
-// that verifies with its stored evaluator uses no test writer, so its build
-// reads not_used whatever was saved. decodeBuild accepted only the six states
-// below, each with exactly its fields.
+// testWriterProgress converts the test writer's saved assignment and the
+// build's report number. A project that verifies with its stored evaluator
+// uses no test writer, so its build reads not_used whatever was saved.
+// decodeBuild accepted only the five saved states below, each with exactly
+// its fields.
 func testWriterProgress(held heldBuild) *gensurla.TestWriterProgress {
 	saved := held.file.TestWriter
 	var tests gensurla.Tests
 	switch {
-	case held.storedEvaluator || saved.State == testsNotUsed:
+	case held.storedEvaluator:
 		tests = gensurla.NewTestsNotUsed(&gensurla.TestsNotUsed{})
 	case saved.State == testsAssigned:
 		tests = gensurla.NewTestsAssigned(&gensurla.TestsAssigned{})
@@ -493,7 +492,7 @@ func testWriterProgress(held heldBuild) *gensurla.TestWriterProgress {
 			CheckedAt: verdictTime(saved.CheckedAt),
 		})
 	}
-	return &gensurla.TestWriterProgress{Tests: tests, Read: saved.Read}
+	return &gensurla.TestWriterProgress{Tests: tests, Read: saved.Read, Report: held.file.ReportNumber}
 }
 
 // writtenTests renders, for the builder, where the test writer's tests for
@@ -502,7 +501,7 @@ func testWriterProgress(held heldBuild) *gensurla.TestWriterProgress {
 func writtenTests(held heldBuild) gensurla.WrittenTests {
 	saved := held.file.TestWriter
 	switch {
-	case held.storedEvaluator || saved.State == testsNotUsed:
+	case held.storedEvaluator:
 		return gensurla.NewWrittenTestsNotUsed(&gensurla.TestsNotUsed{})
 	case saved.State == testsAccepted:
 		return gensurla.NewWrittenTestsAccepted(&gensurla.TestsAccepted{Commit: saved.Commit, CheckedAt: verdictTime(saved.CheckedAt)})
@@ -559,7 +558,7 @@ func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	noVerdictFields := tw.Reason == "" && tw.Step == ""
 	var valid, verdict bool
 	switch tw.State {
-	case testsNotUsed, testsAssigned, testsReported:
+	case testsAssigned, testsReported:
 		valid = len(tw.Findings) == 0 && tw.Commit == "" && noVerdictFields
 	case testsNeedChanges:
 		valid, verdict = len(tw.Findings) > 0 && tw.Commit == "" && noVerdictFields, true
@@ -732,6 +731,9 @@ func (s *cardStore) saveBuild(saved buildFile) error {
 	if s.lock == nil {
 		return errCardsClosed
 	}
+	// Times are saved in UTC, whatever location they were read or made in.
+	saved.StartedAt = saved.StartedAt.UTC()
+	saved.TestWriter.CheckedAt = saved.TestWriter.CheckedAt.UTC()
 	data, err := json.Marshal(saved)
 	if err != nil {
 		return fmt.Errorf("encode build of change %q: %w", saved.ChangeID, err)

@@ -128,6 +128,7 @@ paths:
                                       in_force: true
                                       progress:
                                         read: true
+                                        report: 7108203204833819401
                                         tests:
                                             checked_at: "1972-09-26T18:55:16Z"
                                             findings:
@@ -139,6 +140,7 @@ paths:
                                       in_force: true
                                       progress:
                                         read: true
+                                        report: 7108203204833819401
                                         tests:
                                             checked_at: "1972-09-26T18:55:16Z"
                                             findings:
@@ -150,6 +152,7 @@ paths:
                                       in_force: true
                                       progress:
                                         read: true
+                                        report: 7108203204833819401
                                         tests:
                                             checked_at: "1972-09-26T18:55:16Z"
                                             findings:
@@ -200,6 +203,7 @@ paths:
                                 in_force: false
                                 progress:
                                     read: true
+                                    report: 7108203204833819401
                                     tests:
                                         checked_at: "1972-09-26T18:55:16Z"
                                         findings:
@@ -1379,6 +1383,7 @@ paths:
                                 in_force: false
                                 progress:
                                     read: true
+                                    report: 7108203204833819401
                                     tests:
                                         checked_at: "1972-09-26T18:55:16Z"
                                         findings:
@@ -2234,6 +2239,7 @@ paths:
                                     state: started
                                     test_writer:
                                         read: true
+                                        report: 7108203204833819401
                                         tests:
                                             checked_at: "1972-09-26T18:55:16Z"
                                             findings:
@@ -2308,6 +2314,7 @@ paths:
                                 started_at: "2013-07-24T20:02:02Z"
                                 test_writer:
                                     read: true
+                                    report: 7108203204833819401
                                     tests:
                                         checked_at: "1972-09-26T18:55:16Z"
                                         findings:
@@ -10035,7 +10042,7 @@ components:
                     example: Incidunt enim in.
                 written_tests:
                     type: object
-                    description: 'Where the test writer''s tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer''s tests; accepted with the commit Surla recorded them at.'
+                    description: 'Where the test writer''s tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.'
                     example:
                         state: not_used
                     anyOf:
@@ -10682,6 +10689,7 @@ components:
                         state: started
                         test_writer:
                             read: true
+                            report: 7108203204833819401
                             tests:
                                 checked_at: "1972-09-26T18:55:16Z"
                                 findings:
@@ -10729,6 +10737,7 @@ components:
                             started_at: "1974-07-17T07:04:05Z"
                             test_writer:
                                 read: true
+                                report: 7108203204833819401
                                 tests:
                                     checked_at: "1972-09-26T18:55:16Z"
                                     findings:
@@ -10757,6 +10766,7 @@ components:
                     state: started
                     test_writer:
                         read: true
+                        report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
                             findings:
@@ -13135,6 +13145,7 @@ components:
                 started_at: "2013-07-24T20:02:02Z"
                 test_writer:
                     read: true
+                    report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
                         findings:
@@ -16469,6 +16480,7 @@ components:
                 in_force: false
                 progress:
                     read: true
+                    report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
                         findings:
@@ -17614,6 +17626,7 @@ components:
                 in_force: true
                 progress:
                     read: true
+                    report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
                         findings:
@@ -17639,6 +17652,7 @@ components:
                           in_force: true
                           progress:
                             read: true
+                            report: 7108203204833819401
                             tests:
                                 checked_at: "1972-09-26T18:55:16Z"
                                 findings:
@@ -17650,6 +17664,7 @@ components:
                           in_force: true
                           progress:
                             read: true
+                            report: 7108203204833819401
                             tests:
                                 checked_at: "1972-09-26T18:55:16Z"
                                 findings:
@@ -17661,6 +17676,7 @@ components:
                           in_force: true
                           progress:
                             read: true
+                            report: 7108203204833819401
                             tests:
                                 checked_at: "1972-09-26T18:55:16Z"
                                 findings:
@@ -17675,6 +17691,7 @@ components:
                       in_force: true
                       progress:
                         read: true
+                        report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
                             findings:
@@ -17686,6 +17703,7 @@ components:
                       in_force: true
                       progress:
                         read: true
+                        report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
                             findings:
@@ -17697,6 +17715,7 @@ components:
                       in_force: true
                       progress:
                         read: true
+                        report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
                             findings:
@@ -17713,6 +17732,12 @@ components:
                     type: boolean
                     description: True once the test writer read this assignment in full with get_test_writer_assignment.
                     example: true
+                report:
+                    type: integer
+                    description: Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.
+                    example: 7108203204833819401
+                    format: int64
+                    minimum: 0
                 tests:
                     type: object
                     description: 'The tests'' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla''s findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user''s step. Each verdict carries the time Surla reached it.'
@@ -17838,6 +17863,7 @@ components:
             description: Where the test writer's assignment for one build stands.
             example:
                 read: true
+                report: 7108203204833819401
                 tests:
                     checked_at: "1972-09-26T18:55:16Z"
                     findings:
@@ -17847,6 +17873,7 @@ components:
             required:
                 - tests
                 - read
+                - report
         ToolContractItem:
             type: object
             properties:

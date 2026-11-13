@@ -777,8 +777,8 @@ type GetBuilderAssignmentResponseBody struct {
 	Read bool `form:"read" json:"read" xml:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests WrittenTestsResponseBody `form:"written_tests" json:"written_tests" xml:"written_tests"`
 }
 
@@ -2938,6 +2938,9 @@ type TestWriterProgressResponseBody struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read bool `form:"read" json:"read" xml:"read"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report int `form:"report" json:"report" xml:"report"`
 }
 
 // TestsNotUsedResponseBody is used to define fields on response body types.
@@ -3016,8 +3019,8 @@ type BuilderAssignmentResponseBody struct {
 	Read bool `form:"read" json:"read" xml:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests WrittenTestsResponseBody `form:"written_tests" json:"written_tests" xml:"written_tests"`
 }
 

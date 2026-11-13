@@ -501,7 +501,25 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 			"state": "needs_changes", "findings": []string{"RefundOverLimit is not implemented"}, "checked_at": at,
 		}), tests: gensurla.TestsKindNeedsChanges},
 		{name: "accepted", edit: savedTestWriter(map[string]any{"state": "accepted", "commit": commit, "checked_at": at}), tests: gensurla.TestsKindAccepted},
-		{name: "not used", edit: savedTestWriter(map[string]any{"state": "not_used"}), tests: gensurla.TestsKindNotUsed},
+		{name: "not used is never saved", edit: savedTestWriter(map[string]any{"state": "not_used"}), refusal: "unknown test writer state"},
+		{name: "needs changes with a commit", edit: savedTestWriter(map[string]any{
+			"state": "needs_changes", "findings": []string{"RefundOverLimit is not implemented"}, "commit": commit, "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "needs changes with a reason", edit: savedTestWriter(map[string]any{
+			"state": "needs_changes", "findings": []string{"RefundOverLimit is not implemented"}, "reason": "git failed", "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "accepted with findings", edit: savedTestWriter(map[string]any{
+			"state": "accepted", "commit": commit, "findings": []string{"RefundOverLimit is not implemented"}, "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "accepted with a step", edit: savedTestWriter(map[string]any{
+			"state": "accepted", "commit": commit, "step": "Report again.", "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "could not run with findings", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": "git failed", "step": "Report again.", "findings": []string{"RefundOverLimit is not implemented"}, "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "could not run with a commit", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": "git failed", "step": "Report again.", "commit": commit, "checked_at": at,
+		}), refusal: "does not allow"},
 		{name: "could not run", edit: savedTestWriter(map[string]any{
 			"state": "could_not_run", "reason": "git could not write the tests branch", "step": "Free disk space, then report again.", "checked_at": at,
 		}), tests: gensurla.TestsKindCouldNotRun},

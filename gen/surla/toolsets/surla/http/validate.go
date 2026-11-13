@@ -1957,6 +1957,9 @@ func ValidateTestWriterProgressTransport(body *TestWriterProgressTransport) (err
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
+	}
 	if body.Tests != nil {
 
 		if err2 := body.Tests.Validate(); err2 != nil {
@@ -1987,6 +1990,11 @@ func ValidateTestWriterProgressTransport(body *TestWriterProgressTransport) (err
 			}
 		}
 
+	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *body.Report, 0, true))
+		}
 	}
 	return
 }

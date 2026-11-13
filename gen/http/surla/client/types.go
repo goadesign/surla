@@ -777,8 +777,8 @@ type GetBuilderAssignmentResponseBody struct {
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *WrittenTestsResponseBody `form:"written_tests,omitempty" json:"written_tests,omitempty" xml:"written_tests,omitempty"`
 }
 
@@ -2938,6 +2938,9 @@ type TestWriterProgressResponseBody struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *int `form:"report,omitempty" json:"report,omitempty" xml:"report,omitempty"`
 }
 
 // TestsNotUsedResponseBody is used to define fields on response body types.
@@ -3016,8 +3019,8 @@ type BuilderAssignmentResponseBody struct {
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *WrittenTestsResponseBody `form:"written_tests,omitempty" json:"written_tests,omitempty" xml:"written_tests,omitempty"`
 }
 
@@ -11161,6 +11164,9 @@ func ValidateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
+	}
 	if body.Tests != nil {
 
 		if err2 := body.Tests.Validate(); err2 != nil {
@@ -11192,6 +11198,11 @@ func ValidateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 		}
 
 	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *body.Report, 0, true))
+		}
+	}
 	return
 }
 
@@ -11203,6 +11214,9 @@ func validateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", path))
+	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", path))
 	}
 	if body.Tests != nil {
 
@@ -11234,6 +11248,11 @@ func validateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 			}
 		}
 
+	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError(path+".report", *body.Report, 0, true))
+		}
 	}
 	return
 }

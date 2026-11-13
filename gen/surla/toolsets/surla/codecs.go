@@ -2583,7 +2583,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Description: "No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -2801,6 +2801,17 @@ var getBuildResultFields = []tools.FieldMetadata{
 			},
 		},
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("report")},
+		JSONType:    "integer",
+		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
 }
 var getBuilderAssignmentPayloadFields = []tools.FieldMetadata{
 	{
@@ -2840,7 +2851,7 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -2854,7 +2865,7 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Description: "No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -2865,7 +2876,7 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "Surla has not accepted the test writer's tests for this build.",
+		Description: "The build records no accepted tests.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -3615,7 +3626,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Description: "No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -3770,6 +3781,11 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("read")},
 		JSONType:    "boolean",
 		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("report")},
+		JSONType:    "integer",
+		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("working_folder")},
@@ -4452,7 +4468,7 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -4466,7 +4482,7 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Description: "No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -4477,7 +4493,7 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "Surla has not accepted the test writer's tests for this build.",
+		Description: "The build records no accepted tests.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -4650,7 +4666,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Description: "No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -4805,6 +4821,11 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("read")},
 		JSONType:    "boolean",
 		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("report")},
+		JSONType:    "integer",
+		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
 	},
 }
 var listTracesPayloadFields = []tools.FieldMetadata{
@@ -6411,7 +6432,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Description: "No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6566,6 +6587,11 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("read")},
 		JSONType:    "boolean",
 		Description: "True once the test writer read this assignment in full with get_test_writer_assignment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("report")},
+		JSONType:    "integer",
+		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
 	},
 }
 var reviseChangePayloadFields = []tools.FieldMetadata{
@@ -19064,6 +19090,13 @@ func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, val
 			); err != nil {
 				return err
 			}
+		case "report":
+			if err := validateIntJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+			); err != nil {
+				return err
+			}
 		case "tests":
 			if err := validateGetBuildResultTestWriterProgressTransportTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -19074,6 +19107,7 @@ func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, val
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"read",
+				"report",
 				"tests",
 			})
 		}
@@ -19374,7 +19408,7 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 		case "written_tests":
 			if err := validateListBuilderAssignmentsResultBuilderAssignmentTransportWrittenTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 			); err != nil {
 				return err
 			}
@@ -20309,7 +20343,8 @@ func decodeBuilderProgressTransportToBuilderProgress(v *toolhttp.BuilderProgress
 }
 func decodeTestWriterProgressTransportToTestWriterProgress(v *toolhttp.TestWriterProgressTransport) *TestWriterProgress {
 	res := &TestWriterProgress{
-		Read: *v.Read,
+		Read:   *v.Read,
+		Report: *v.Report,
 	}
 	switch string(v.Tests.Kind()) {
 	case "not_used":
@@ -20438,7 +20473,8 @@ func encodeBuilderProgressToBuilderProgressTransport(v *BuilderProgress) *toolht
 }
 func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress) *toolhttp.TestWriterProgressTransport {
 	res := &toolhttp.TestWriterProgressTransport{
-		Read: &v.Read,
+		Read:   &v.Read,
+		Report: &v.Report,
 	}
 	var testsValue toolhttp.Tests
 	switch string(v.Tests.Kind()) {

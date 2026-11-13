@@ -1560,6 +1560,9 @@ type GetBuildResultTestWriterProgressTransport struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *int `json:"report"`
 }
 
 // ValidateGetBuildResultTestWriterProgressTransport checks decoded JSON before it becomes a service value.
@@ -1572,6 +1575,9 @@ func ValidateGetBuildResultTestWriterProgressTransport(value *GetBuildResultTest
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
 	}
 	if value.Tests != nil {
 
@@ -1603,6 +1609,11 @@ func ValidateGetBuildResultTestWriterProgressTransport(value *GetBuildResultTest
 			}
 		}
 
+	}
+	if value.Report != nil {
+		if *value.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *value.Report, 0, true))
+		}
 	}
 	return err
 }
@@ -1882,8 +1893,8 @@ type GetBuilderAssignmentResultTransport struct {
 	Read *bool `json:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *GetBuilderAssignmentResultwrittenTestsTransport `json:"written_tests"`
 }
 
@@ -2958,6 +2969,9 @@ type GetTestWriterAssignmentResultTestWriterProgressTransport struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *int `json:"report"`
 }
 
 // ValidateGetTestWriterAssignmentResultTestWriterProgressTransport checks decoded JSON before it becomes a service value.
@@ -2970,6 +2984,9 @@ func ValidateGetTestWriterAssignmentResultTestWriterProgressTransport(value *Get
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
 	}
 	if value.Tests != nil {
 
@@ -3001,6 +3018,11 @@ func ValidateGetTestWriterAssignmentResultTestWriterProgressTransport(value *Get
 			}
 		}
 
+	}
+	if value.Report != nil {
+		if *value.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *value.Report, 0, true))
+		}
 	}
 	return err
 }
@@ -3637,8 +3659,8 @@ type ListBuilderAssignmentsResultBuilderAssignmentTransport struct {
 	Read *bool `json:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *ListBuilderAssignmentsResultwrittenTestsTransport `json:"written_tests"`
 }
 
@@ -3934,6 +3956,9 @@ type ListTestWriterAssignmentsResultTestWriterProgressTransport struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *int `json:"report"`
 }
 
 // ValidateListTestWriterAssignmentsResultTestWriterProgressTransport checks decoded JSON before it becomes a service value.
@@ -3946,6 +3971,9 @@ func ValidateListTestWriterAssignmentsResultTestWriterProgressTransport(value *L
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
 	}
 	if value.Tests != nil {
 
@@ -3977,6 +4005,11 @@ func ValidateListTestWriterAssignmentsResultTestWriterProgressTransport(value *L
 			}
 		}
 
+	}
+	if value.Report != nil {
+		if *value.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *value.Report, 0, true))
+		}
 	}
 	return err
 }
@@ -6059,6 +6092,9 @@ type ReportTestsFinishedResultTestWriterProgressTransport struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *int `json:"report"`
 }
 
 // ValidateReportTestsFinishedResultTestWriterProgressTransport checks decoded JSON before it becomes a service value.
@@ -6071,6 +6107,9 @@ func ValidateReportTestsFinishedResultTestWriterProgressTransport(value *ReportT
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
 	}
 	if value.Tests != nil {
 
@@ -6102,6 +6141,11 @@ func ValidateReportTestsFinishedResultTestWriterProgressTransport(value *ReportT
 			}
 		}
 
+	}
+	if value.Report != nil {
+		if *value.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *value.Report, 0, true))
+		}
 	}
 	return err
 }
@@ -12374,7 +12418,8 @@ func encodeTestWriterAssignmentItemToListTestWriterAssignmentsResultTestWriterAs
 
 func encodeTestWriterProgressToGetBuildResultTestWriterProgressTransport(v *surla.TestWriterProgress) *GetBuildResultTestWriterProgressTransport {
 	res := &GetBuildResultTestWriterProgressTransport{
-		Read: &v.Read,
+		Read:   &v.Read,
+		Report: &v.Report,
 	}
 	var testsValue GetBuildResulttestsTransport
 	switch string(v.Tests.Kind()) {
@@ -12440,7 +12485,8 @@ func encodeTestWriterProgressToGetBuildResultTestWriterProgressTransport(v *surl
 
 func encodeTestWriterProgressToGetTestWriterAssignmentResultTestWriterProgressTransport(v *surla.TestWriterProgress) *GetTestWriterAssignmentResultTestWriterProgressTransport {
 	res := &GetTestWriterAssignmentResultTestWriterProgressTransport{
-		Read: &v.Read,
+		Read:   &v.Read,
+		Report: &v.Report,
 	}
 	var testsValue GetTestWriterAssignmentResulttestsTransport
 	switch string(v.Tests.Kind()) {
@@ -12506,7 +12552,8 @@ func encodeTestWriterProgressToGetTestWriterAssignmentResultTestWriterProgressTr
 
 func encodeTestWriterProgressToListTestWriterAssignmentsResultTestWriterProgressTransport(v *surla.TestWriterProgress) *ListTestWriterAssignmentsResultTestWriterProgressTransport {
 	res := &ListTestWriterAssignmentsResultTestWriterProgressTransport{
-		Read: &v.Read,
+		Read:   &v.Read,
+		Report: &v.Report,
 	}
 	var testsValue ListTestWriterAssignmentsResulttestsTransport
 	switch string(v.Tests.Kind()) {
@@ -12572,7 +12619,8 @@ func encodeTestWriterProgressToListTestWriterAssignmentsResultTestWriterProgress
 
 func encodeTestWriterProgressToReportTestsFinishedResultTestWriterProgressTransport(v *surla.TestWriterProgress) *ReportTestsFinishedResultTestWriterProgressTransport {
 	res := &ReportTestsFinishedResultTestWriterProgressTransport{
-		Read: &v.Read,
+		Read:   &v.Read,
+		Report: &v.Report,
 	}
 	var testsValue ReportTestsFinishedResulttestsTransport
 	switch string(v.Tests.Kind()) {

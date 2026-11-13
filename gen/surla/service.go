@@ -385,8 +385,8 @@ type BuilderAssignment struct {
 	Read bool
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests WrittenTests
 }
 
@@ -1207,6 +1207,9 @@ type TestWriterProgress struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read bool
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report int
 }
 
 // Surla checked the reported tests and recorded them as a commit.
@@ -1244,12 +1247,13 @@ type TestsNeedChanges struct {
 	CheckedAt string
 }
 
-// No test writer is used for this build: the project verifies with the
-// evaluator stored with surla verification set.
+// No test writer is used: the project verifies with the evaluator stored with
+// surla verification set. Every read of a build in such a project shows this,
+// whatever the build recorded.
 type TestsNotUsed struct {
 }
 
-// Surla has not accepted the test writer's tests for this build.
+// The build records no accepted tests.
 type TestsNotYetAccepted struct {
 }
 
@@ -1636,6 +1640,26 @@ func ValidatebuilderVerificationReportIntTransport(value builderVerificationRepo
 	return err
 }
 
+// changeBuildIntTransport stores JSON fields until they have been validated.
+type changeBuildIntTransport int
+
+// UnmarshalJSON reads an exact whole JSON number and stores it within this type's
+// declared range. Decimal and exponent spellings do not change its value.
+func (value *changeBuildIntTransport) UnmarshalJSON(data []byte) error {
+	number, err := rawjson.DecodeInteger[int](data)
+	if err != nil {
+		return fmt.Errorf("decode changeBuildIntTransport integer: %w", err)
+	}
+	*value = changeBuildIntTransport(number)
+	return nil
+}
+
+// ValidatechangeBuildIntTransport checks decoded JSON before it becomes a service value.
+func ValidatechangeBuildIntTransport(value changeBuildIntTransport) (err error) {
+
+	return err
+}
+
 // checkOutputPageInt64Transport stores JSON fields until they have been validated.
 type checkOutputPageInt64Transport int64
 
@@ -1967,8 +1991,8 @@ type jsonBuilderAssignmentTransport struct {
 	Read *bool `json:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
 	// writer is used because the project verifies with its stored evaluator;
-	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
-	// the commit Surla recorded them at.
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *jsonWrittenTestsTransport `json:"written_tests"`
 }
 
@@ -4019,6 +4043,9 @@ type jsonTestWriterProgressTransport struct {
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `json:"read"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *changeBuildIntTransport `json:"report"`
 }
 
 // validatejsonTestWriterProgressTransport checks decoded JSON before it becomes a service value.
@@ -4031,6 +4058,9 @@ func validatejsonTestWriterProgressTransport(value *jsonTestWriterProgressTransp
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
 	}
 	if value.Tests != nil {
 
@@ -4062,6 +4092,11 @@ func validatejsonTestWriterProgressTransport(value *jsonTestWriterProgressTransp
 			}
 		}
 
+	}
+	if value.Report != nil {
+		if int(*value.Report) < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", int(*value.Report), 0, true))
+		}
 	}
 	return err
 }
@@ -5250,6 +5285,9 @@ func validateTestWriterProgressOriginal(value *TestWriterProgress) (err error) {
 		}
 	}
 
+	if value.Report < 0 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.report", value.Report, 0, true))
+	}
 	return err
 }
 
@@ -13012,6 +13050,8 @@ func EncodeTestWriterProgress(in *TestWriterProgress) ([]byte, error) {
 		body = &jsonTestWriterProgressTransport{
 			Read: &in.Read,
 		}
+		report := changeBuildIntTransport(in.Report)
+		body.Report = &report
 		var testsValue jsonTestsTransport
 		switch string(in.Tests.Kind()) {
 		case "not_used":
@@ -13101,6 +13141,8 @@ func ValidateTestWriterProgressValue(in *TestWriterProgress) error {
 		body = &jsonTestWriterProgressTransport{
 			Read: &in.Read,
 		}
+		report := changeBuildIntTransport(in.Report)
+		body.Report = &report
 		var testsValue jsonTestsTransport
 		switch string(in.Tests.Kind()) {
 		case "not_used":
@@ -13192,7 +13234,8 @@ func DecodeTestWriterProgress(data []byte) (out *TestWriterProgress, err error) 
 	}
 	{
 		out = &TestWriterProgress{
-			Read: *body.Read,
+			Read:   *body.Read,
+			Report: int(*body.Report),
 		}
 		switch string(body.Tests.Kind()) {
 		case "not_used":
@@ -15911,7 +15954,8 @@ func decodeTestWriterAssignmentItemTransportToTestWriterAssignmentItem(v *jsonTe
 
 func decodeTestWriterProgressTransportToTestWriterProgress(v *jsonTestWriterProgressTransport) *TestWriterProgress {
 	res := &TestWriterProgress{
-		Read: *v.Read,
+		Read:   *v.Read,
+		Report: int(*v.Report),
 	}
 	switch string(v.Tests.Kind()) {
 	case "not_used":
@@ -16690,6 +16734,8 @@ func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress
 	res := &jsonTestWriterProgressTransport{
 		Read: &v.Read,
 	}
+	report := changeBuildIntTransport(v.Report)
+	res.Report = &report
 	var testsValue jsonTestsTransport
 	switch string(v.Tests.Kind()) {
 	case "not_used":
@@ -16756,6 +16802,8 @@ func encodeTestWriterProgressToTestWriterProgressTransport2(v *TestWriterProgres
 	res := &jsonTestWriterProgressTransport{
 		Read: &v.Read,
 	}
+	report := changeBuildIntTransport(v.Report)
+	res.Report = &report
 	var testsValue jsonTestsTransport
 	switch string(v.Tests.Kind()) {
 	case "not_used":
@@ -16822,6 +16870,8 @@ func encodeTestWriterProgressToTestWriterProgressTransport3(v *TestWriterProgres
 	res := &jsonTestWriterProgressTransport{
 		Read: &v.Read,
 	}
+	report := changeBuildIntTransport(v.Report)
+	res.Report = &report
 	var testsValue jsonTestsTransport
 	switch string(v.Tests.Kind()) {
 	case "not_used":
@@ -18173,7 +18223,7 @@ func validateBuilderAssignmentJSONValue(path string, value any, description stri
 		case "written_tests":
 			if err := validateBuilderAssignmentJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 			); err != nil {
 				return err
 			}
@@ -19404,6 +19454,13 @@ func validateChangeBuildJSONValue4(path string, value any, description string) e
 			); err != nil {
 				return err
 			}
+		case "report":
+			if err := validateAgentPolicyItemJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+			); err != nil {
+				return err
+			}
 		case "tests":
 			if err := validateChangeBuildJSONValue5(
 				generatedJSONChildPath(path, key, false),
@@ -19414,6 +19471,7 @@ func validateChangeBuildJSONValue4(path string, value any, description string) e
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"read",
+				"report",
 				"tests",
 			})
 		}

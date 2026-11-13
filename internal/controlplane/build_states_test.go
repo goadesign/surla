@@ -18,22 +18,25 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
-// TestBuildStatesReadTheSameOnBothInterfaces saves each test writer state and
-// reads it over HTTP and over MCP: the build read shows the test writer's
-// progress and the builder's assignment shows where the tests stand, both
-// with each verdict's time.
+// TestBuildStatesReadTheSameOnBothInterfaces saves each test writer state, or
+// binds a stored evaluator, and reads the build over HTTP and over MCP: the
+// build read shows the test writer's progress with its report number, and the
+// builder's assignment shows where the tests stand, both with each verdict's
+// time.
 func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 	commit := strings.Repeat("c", 40)
 	at := "2026-11-13T09:30:00Z"
 	cases := []struct {
 		name         string
 		saved        map[string]any
+		stored       bool
 		tests        string
 		writtenTests string
 	}{
 		{
 			name:         "not used",
-			saved:        map[string]any{"state": "not_used"},
+			saved:        map[string]any{"state": "assigned"},
+			stored:       true,
 			tests:        `{"state":"not_used"}`,
 			writtenTests: `{"state":"not_used"}`,
 		},
@@ -70,7 +73,11 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cp := newControlPlane(t, Options{})
+			opts := Options{}
+			if tc.stored {
+				opts.Verification = &VerificationConfig{RunsDir: t.TempDir()}
+			}
+			cp := newControlPlane(t, opts)
 			srv := roleServer(t, cp)
 			card := confirmedChange(t, cp, "chg")
 			_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
@@ -80,9 +87,11 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 			status, body := httpCall(t, srv.URL, "user", http.MethodGet, "/changes/chg/build", "")
 			require.Equal(t, http.StatusOK, status, body)
 			assert.JSONEq(t, tc.tests, jsonAt(t, []byte(body), "build", "test_writer", "tests"), "get_build over HTTP")
+			assert.JSONEq(t, "0", jsonAt(t, []byte(body), "build", "test_writer", "report"), "no report is counted")
 			failure, result := mcpToolCall(t, srv.URL, "guide", "get_build", `{"change_id":"chg"}`)
 			require.Empty(t, failure)
 			assert.JSONEq(t, tc.tests, jsonAt(t, result, "build", "test_writer", "tests"), "get_build over MCP")
+			assert.JSONEq(t, "0", jsonAt(t, result, "build", "test_writer", "report"), "no report is counted")
 
 			status, body = httpCall(t, srv.URL, "builder", http.MethodGet, "/assignments/builder/chg", "")
 			require.Equal(t, http.StatusOK, status, body)
@@ -92,6 +101,59 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 			assert.JSONEq(t, tc.writtenTests, jsonAt(t, result, "assignments", "0", "written_tests"), "list_builder_assignments over MCP")
 		})
 	}
+}
+
+// TestBuildReadsShowTheSavedReportNumber saves a report number and reads it
+// from every result that carries the test writer's progress, over HTTP and
+// over MCP.
+func TestBuildReadsShowTheSavedReportNumber(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	srv := roleServer(t, cp)
+	card := confirmedChange(t, cp, "chg")
+	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	require.NoError(t, err)
+	editBuildFile(t, cp, "chg", func(f map[string]any) map[string]any { f["report_number"] = 3; return f })
+	reads := []struct {
+		name, token, method, path string
+		keys                      []string
+	}{
+		{name: "get_build", token: "user", method: http.MethodGet, path: "/changes/chg/build", keys: []string{"build", "test_writer", "report"}},
+		{name: "get_test_writer_assignment", token: "tests", method: http.MethodGet, path: "/assignments/test-writer/chg", keys: []string{"progress", "report"}},
+		{name: "list_test_writer_assignments", token: "tests", method: http.MethodGet, path: "/assignments/test-writer", keys: []string{"assignments", "0", "progress", "report"}},
+	}
+	for _, r := range reads {
+		status, body := httpCall(t, srv.URL, r.token, r.method, r.path, "")
+		require.Equal(t, http.StatusOK, status, body)
+		assert.JSONEq(t, "3", jsonAt(t, []byte(body), r.keys...), r.name+" over HTTP")
+		arguments := `{"change_id":"chg"}`
+		if r.name == "list_test_writer_assignments" {
+			arguments = `{}`
+		}
+		failure, result := mcpToolCall(t, srv.URL, r.token, r.name, arguments)
+		require.Empty(t, failure)
+		assert.JSONEq(t, "3", jsonAt(t, result, r.keys...), r.name+" over MCP")
+	}
+}
+
+// TestVerdictTimesAreSavedAndReturnedInUTC saves a verdict time with another
+// offset, as a file could hold it, and checks that reads return it in UTC
+// and that the next save writes it in UTC.
+func TestVerdictTimesAreSavedAndReturnedInUTC(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	card := confirmedChange(t, cp, "chg")
+	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	require.NoError(t, err)
+	editBuildFile(t, cp, "chg", savedTestWriter(map[string]any{
+		"state": "accepted", "commit": strings.Repeat("c", 40), "checked_at": "2026-11-13T10:30:00+01:00",
+	}))
+	full, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	accepted, ok := full.Progress.Tests.AsAccepted()
+	require.True(t, ok)
+	assert.Equal(t, "2026-11-13T09:30:00Z", accepted.CheckedAt, "returned in UTC")
+	var file map[string]any
+	require.NoError(t, json.Unmarshal(readBuildFile(t, cp, "chg"), &file))
+	assert.Equal(t, "2026-11-13T09:30:00Z", file["test_writer"].(map[string]any)["checked_at"], "saved in UTC by the read that recorded the read")
 }
 
 // TestStoredEvaluatorBuildsReadNotUsed reads builds in a project that verifies
