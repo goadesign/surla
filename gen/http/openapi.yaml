@@ -18354,7 +18354,7 @@ definitions:
                 type: string
                 description: 'Folder to write the tests in: your own working copy of the project.'
                 example: Ut voluptatum vel totam.
-        description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.'
+        description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
         example:
             change_id: Odio qui dolore.
             design_source: Repellendus excepturi dignissimos vitae.
