@@ -57,7 +57,11 @@ func TestStoryRequirementMatchesTheStoryFolder(t *testing.T) {
 	got := moduleFiles(t, "story")
 	var differ []string
 	for name, content := range got {
-		if !bytes.Equal(content, want[name]) {
+		theirs, ok := want[name]
+		switch {
+		case !ok:
+			differ = append(differ, "story/"+name+" (not in the published version)")
+		case !bytes.Equal(content, theirs):
 			differ = append(differ, "story/"+name)
 		}
 	}
