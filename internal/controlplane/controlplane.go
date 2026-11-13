@@ -383,6 +383,11 @@ type (
 		// never while holding mu: those steps run for minutes, and mu guards
 		// every card and build read. Nothing takes it yet.
 		workingCopyTurn chan struct{}
+		// buildStartOps counts accepted starts, admitted through workspaceMu's
+		// existing shutdown barrier and drained before stores and evaluators close.
+		buildStartOps sync.WaitGroup
+		// buildStartTimeout replaces defaultBuildStartTimeout in focused tests.
+		buildStartTimeout time.Duration
 		// team is the single injected owner; teamWorker drains before stores close.
 		team       *TeamBinding
 		teamWorker sync.WaitGroup
@@ -725,6 +730,7 @@ func (c *ControlPlane) Close() error {
 	// admitCheckOperation).
 	c.workspaceMu.Lock()
 	c.workspaceMu.Unlock()
+	c.buildStartOps.Wait()
 	// Running checks see the server context end, remove their containers
 	// and return; then any container still unconfirmed gets one more try.
 	c.checkOps.Wait()

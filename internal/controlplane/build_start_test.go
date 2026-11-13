@@ -2,15 +2,75 @@
 package controlplane
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestBuildStartAdmissionOwnsCancellation keeps accepted work after a client
+// disconnect and makes Close cancel and drain it before stores are released.
+func TestBuildStartAdmissionOwnsCancellation(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	request, disconnect := context.WithCancel(asCaller("alice@example.com", CallerUser))
+	accepted, finish, err := cp.admitBuildStart(request)
+	require.NoError(t, err)
+	finishStart := sync.OnceFunc(finish)
+	defer finishStart()
+	disconnect()
+	assert.NoError(t, accepted.Err())
+	principal, ok := PrincipalFromContext(accepted)
+	assert.True(t, ok)
+	assert.Equal(t, "alice@example.com", principal.ID)
+	deadline, ok := accepted.Deadline()
+	assert.True(t, ok)
+	assert.InDelta(t, defaultBuildStartTimeout.Seconds(), time.Until(deadline).Seconds(), 1)
+
+	closed := make(chan error, 1)
+	go func() { closed <- cp.Close() }()
+	select {
+	case <-accepted.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Close did not cancel accepted work")
+	}
+	select {
+	case err := <-closed:
+		t.Fatalf("Close finished before accepted work drained: %v", err)
+	default:
+	}
+	finishStart()
+	select {
+	case err := <-closed:
+		assert.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Close did not finish after accepted work drained")
+	}
+	_, _, err = cp.admitBuildStart(request)
+	assertRefused(t, err, "unavailable")
+}
+
+// TestBuildStartLimitUsesTheDeadlineSeam expires accepted work with a short
+// limit while retaining the one production default of five minutes.
+func TestBuildStartLimitUsesTheDeadlineSeam(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	cp.buildStartTimeout = time.Millisecond
+	accepted, finish, err := cp.admitBuildStart(t.Context())
+	require.NoError(t, err)
+	defer finish()
+	select {
+	case <-accepted.Done():
+		assert.ErrorIs(t, accepted.Err(), context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		t.Fatal("accepted start did not reach its limit")
+	}
+}
 
 // TestBuildTeamOutcomeUsesTypedConditions keeps peer-authored messages out of
 // every warning and returns the original team result when admission succeeds.
