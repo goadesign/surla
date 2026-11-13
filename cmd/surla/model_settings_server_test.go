@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -68,12 +69,17 @@ func TestServeEntryRemovesProviderFamiliesAndKeepsHerdrsCopy(t *testing.T) {
 	require.NoError(t, err)
 	_, err = deps.Host.Overlays(t.Context())
 	require.NoError(t, err)
-	// The reader ends the subscriber once its output ends, which it reports as
-	// the stream not continuing; the stand-in has reported by then.
+	// The reader drains the subscriber's output and then reports the stream's
+	// end as its own error, so runTeamStream's answer does not depend on
+	// whether the subscriber exited before it was stopped; the stand-in has
+	// reported by the time its output ends.
+	errStreamEnded := errors.New("subscriber output ended")
+	var readErr error
 	err = runTeamStream(t.Context(), herdrEnv, "herdr-core", []string{"subscribe"}, func(r io.Reader) error {
-		_, err := io.Copy(io.Discard, r)
-		return err
+		_, readErr = io.Copy(io.Discard, r)
+		return errStreamEnded
 	})
+	require.NoError(t, readErr)
 	assert.EqualError(t, err, "Herdr event reader could not continue")
 	allSet := "ANTHROPIC_API_KEY=set\nANTHROPIC_AUTH_TOKEN=set\nANTHROPIC_BASE_URL=set\nANTHROPIC_ADMIN_KEY=set\nOPENAI_API_KEY=set\nARGS_HOLD_SENTINEL=no\n"
 	assert.Equal(t, allSet, readPresence(t, reports, "herdr-app"), "herdr-app gets Herdr's environment unchanged")
