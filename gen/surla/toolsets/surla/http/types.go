@@ -415,6 +415,23 @@ type (
 		// verify_change take this commit ID.
 		Commit *string `json:"commit"`
 	}
+	// ListChangesPayloadTransport is the internal JSON transport type for ListChangesPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListChangesPayloadTransport struct {
+	}
+	// ListChangesResultTransport is the internal JSON transport type for ListChangesResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListChangesResultTransport struct {
+		// Saved Change Cards, most recently saved first.
+		Changes []*ChangeListItemTransport `json:"changes"`
+		// Opaque value identifying this exact list; it changes whenever any listed
+		// value changes.
+		Version *string `json:"version"`
+	}
 	// ListTracesPayloadTransport is the internal JSON transport type for ListTracesPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -993,6 +1010,25 @@ type (
 		// renders it. Omit it when a plain card is clearer.
 		UIComposition *string `json:"ui_composition,omitempty"`
 	}
+	// ChangeListItemTransport is the internal JSON transport type for ChangeListItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ChangeListItemTransport struct {
+		// Change Card identifier; get_change takes it.
+		ChangeID *string `json:"change_id"`
+		// Plain-English summary of the current revision.
+		Summary *string `json:"summary"`
+		// Checkpoint status of the current revision.
+		Status *string `json:"status"`
+		// Current request_revision of the Change Card.
+		RequestRevision *string `json:"request_revision"`
+		// The Change Card's most recently accepted verification run; absent when none
+		// was started.
+		LatestVerification *LatestVerificationItemTransport `json:"latest_verification,omitempty"`
+		// When the Change Card was last saved. It is not part of request_revision.
+		SavedAt *string `json:"saved_at"`
+	}
 	// DesignSnapshotTransport is the internal JSON transport type for DesignSnapshotTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1019,6 +1055,18 @@ type (
 		ExpectedOutcome *string `json:"expected_outcome"`
 		// Evaluator check classification (deterministic or model_judged).
 		VerificationKind *string `json:"verification_kind"`
+	}
+	// LatestVerificationItemTransport is the internal JSON transport type for LatestVerificationItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LatestVerificationItemTransport struct {
+		// Verification run identifier; get_verification takes it.
+		RunID *string `json:"run_id"`
+		// running while the run builds or evaluates the candidate; passed or failed
+		// when its report's verdict is known; not_completed when it stopped without a
+		// report.
+		State *string `json:"state"`
 	}
 	// StoryActorItemTransport is the internal JSON transport type for StoryActorItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON

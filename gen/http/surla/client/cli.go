@@ -527,3 +527,29 @@ func BuildListTracesPayload(surlaListTracesStatus string, surlaListTracesLimit s
 
 	return v, nil
 }
+
+// BuildWaitForChangesPayload builds the payload for the surla wait_for_changes
+// endpoint from CLI flags.
+func BuildWaitForChangesPayload(surlaWaitForChangesSince *string) (*surla.WaitForChangesPayload, error) {
+	var err error
+	var since string
+	{
+		if surlaWaitForChangesSince == nil {
+			return nil, fmt.Errorf("missing required flag --since")
+		}
+		since = *surlaWaitForChangesSince
+		if utf8.RuneCountInString(since) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("since", since, utf8.RuneCountInString(since), 1, true))
+		}
+		if utf8.RuneCountInString(since) > 128 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("since", since, utf8.RuneCountInString(since), 128, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.WaitForChangesPayload{}
+	v.Since = since
+
+	return v, nil
+}

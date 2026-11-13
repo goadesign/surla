@@ -1,206 +1,284 @@
-// Package controlplane tests the stateless MCP Apps (`ui://surla/checkpoint`)
-// viewer and its JSON-RPC 2.0 host lifecycle bridge.
+// This file tests the views page's Change Card editor and architecture stage
+// through the requests the page sends to the real generated HTTP API: exact
+// text preservation, the busy state of a confirmation, stale-revision
+// recovery, incoming revisions, and the architecture drawing.
 package controlplane
 
 import (
 	"context"
-	"encoding/json"
-	"os/exec"
-	"strings"
+	"fmt"
 	"testing"
 
-	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/testmodule"
-	"goa.design/goa-ai/runtime/agent/prompt"
 )
 
-// TestCheckpointUIMCPAppsHandshakeAndToolResultRendering verifies that
-// `ui://surla/checkpoint` serves a stateless MCP Apps viewer that performs
-// the `ui/initialize` -> `ui/notifications/initialized` postMessage handshake
-// with `window.parent`, rejects cross-origin messages where `event.source !==
-// window.parent`, replaces prior views on each new tool result without server
-// preview state, and renders exact `request_revision` and `design_digest`
-// values for CP1, CP2, and CP3 tool results.
-func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
+// checkpointUIProposal is the guide's analysis the editor tests start from.
+func checkpointUIProposal() *gensurla.CP1Analysis {
+	return &gensurla.CP1Analysis{
+		Summary: "Route refunds >= $50 to manager approval.",
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+			Question: "Does the $50 limit include tax?",
+			Options:  []string{"subtotal_only", "total_with_tax"},
+		}},
+		Examples: []*gensurla.CP1AnalysisExample{{
+			Scenario: "Refund under $50", InputSummary: "$40 subtotal",
+			ExpectedOutcome: "Auto-approved", VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
+	}
+}
+
+// TestCheckpointUIEditorConfirmAndRevisionRecovery drives the editor: exact
+// whitespace survives confirmation and a no-edit refinement, a confirmation
+// shows one busy request, a stale revision keeps the user's edits and
+// recovers them beside the latest card, and incoming revisions wait while
+// the user has edits or a request in flight.
+func TestCheckpointUIEditorConfirmAndRevisionRecovery(t *testing.T) {
+	cp := pageControlPlane(t, Options{})
+	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
+	proposed := mustPropose(t, cp, guide, "chg-ui-test", "Route refunds >= $50 to manager approval.", checkpointUIProposal())
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, map[string]any{"r1": proposed.RequestRevision}, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+const editor = () => page.$("#surla-cp1-editor");
+const outcome = () => page.$('textarea[data-example-id="check_01"][data-field="expected_outcome"]');
+const pill = (option) => page.$('[data-ambiguity-id="chg-ui-test-ambiguity-01"][data-option="' + option + '"]');
+const confirms = () => page.sent("POST", "/changes/confirm");
+await until(() => editor().dataset.changeId === "chg-ui-test", "the change did not open");
+expect(page.state() === "cp1-change-card" && editor().dataset.requestRevision === input.r1, "unexpected CP1 dataset: " + JSON.stringify(editor().dataset));
+const cp1Text = page.text("#surla-checkpoint-view");
+expect(cp1Text.includes(input.r1) && cp1Text.includes("Does the $50 limit include tax?") && cp1Text.includes("Scenario:") && cp1Text.includes("Input:") && cp1Text.includes("Expected result:"), "CP1 view missing revision, ambiguity question, or visible field labels: " + cp1Text);
+
+// A confirmation sends exactly one request with the exact text and holds the form busy.
+pill("subtotal_only").click();
+page.type(outcome(), "  Instant store credit\nup to $50.00  ");
+await control(origin, "hold", { key: "POST /changes/confirm" });
+page.$("#surla-confirm-submit").click();
+page.$("#surla-confirm-submit").click();
+page.type(outcome(), "typed while saving");
+expect(confirms().length === 1, "a second click sent another confirmation");
+expect(page.$("#surla-cp1-form-card").getAttribute("aria-busy") === "true" && page.$("#surla-confirm-submit").disabled && outcome().disabled && page.$$('[data-ambiguity-id="chg-ui-test-ambiguity-01"]').every((p) => p.disabled), "controls were not busy and disabled while saving");
+expect(outcome().value === "  Instant store credit\nup to $50.00  ", "typing while saving changed the submitted text");
+const sentConfirm = confirms()[0].body;
+expect(sentConfirm.request_revision === input.r1 && sentConfirm.answers["chg-ui-test-ambiguity-01"] === "subtotal_only" && sentConfirm.examples[0].expected_outcome === "  Instant store credit\nup to $50.00  ", "unexpected confirm_intent payload: " + JSON.stringify(sentConfirm));
+await control(origin, "release", { key: "POST /changes/confirm" });
+await until(() => editor().dataset.requestRevision !== input.r1 && !page.$("#surla-cp1-form-card").getAttribute("aria-busy"), "the confirmed revision did not replace the busy form");
+const r2 = editor().dataset.requestRevision;
+
+// A later list change does not overwrite edits typed after the confirmation.
+page.type(outcome(), "post-confirm draft edit");
+const listReads = page.sent("GET", "/changes").length;
+await propose("chg-elsewhere", "Show carriers on receipts.", "Carrier shown");
+await until(() => page.sent("GET", "/changes").length > listReads, "the other change did not reach the page");
+expect(outcome().value === "post-confirm draft edit", "a list change overwrote a post-confirm edit");
+
+// Refining without edits keeps multiline, space-padded text and the revision.
+page.type(outcome(), "  Instant store credit\nup to $50.00  ");
+page.$("#surla-confirm-submit").click();
+await until(() => confirms().length === 2 && !page.$("#surla-confirm-submit").disabled, "the no-edit refinement did not finish");
+expect(confirms()[1].body.examples[0].expected_outcome === "  Instant store credit\nup to $50.00  ", "no-edit refine mutated multiline/whitespace field");
+expect(editor().dataset.requestRevision === r2, "no-edit refine changed request_revision");
+expect((await readCard("chg-ui-test")).examples[0].expected_outcome === "  Instant store credit\nup to $50.00  ", "the saved text lost its exact whitespace");
+
+// A confirmation against a revision the guide replaced keeps the edits and offers recovery.
+page.setHidden(true);
+const r3card = await revise(await readCard("chg-ui-test"), "Route refunds >= $50 to manager approval, with an audit.", "Audited approval");
+pill("total_with_tax").click();
+page.type(outcome(), "Edited outcome preserved across stale error");
+page.$("#surla-confirm-submit").click();
+await until(() => page.$("#surla-confirm-error"), "a stale confirmation showed no error");
+const staleText = page.text("#surla-cp1-editor");
+expect(page.status().includes("Change Card request failed; unsaved edits preserved.") && staleText.includes("request_revision mismatch") && staleText.includes("Your edited answers and examples remain in this form"), "stale submission did not explain itself: " + page.status() + " / " + staleText);
+expect(!outcome().disabled && outcome().value === "Edited outcome preserved across stale error", "stale submission lost edits or kept controls disabled");
+expect(page.doc.activeElement === page.$("#surla-confirm-error"), "the refused confirmation did not take focus");
+
+// Load Latest Card shows the latest saved card beside the preserved edits.
+page.$("#surla-load-latest-card").click();
+await until(() => editor().dataset.requestRevision === r3card.request_revision, "Load Latest Card did not show the latest card");
+const recovered = page.text("#surla-checkpoint-view");
+expect(page.$("#surla-preserved-draft") && recovered.includes("Preserved Unsaved Draft Edits") && recovered.includes("total_with_tax") && recovered.includes("Edited outcome preserved across stale error"), "recovery did not keep the preserved draft: " + recovered);
+
+// Recovering again keeps the lines already preserved.
+page.$("#surla-confirm-submit").click();
+await until(() => page.$("#surla-load-latest-card"), "an unanswered question did not offer recovery");
+page.$("#surla-load-latest-card").click();
+await until(() => !page.$("#surla-load-latest-card") || !page.$("#surla-load-latest-card").disabled, "the second recovery did not finish");
+expect(page.text("#surla-cp1-editor").includes("Edited outcome preserved across stale error"), "repeated recovery lost the preserved draft");
+
+// An incoming revision waits beside unsaved edits; switching keeps every unsaved line.
+page.type(outcome(), "Dirty edit on confirmed card before incoming switch");
+page.setHidden(false);
+const r4card = await revise(r3card, "Route refunds >= $50 to manager approval, with an audit and a notice.", "Audited approval with notice");
+await until(() => page.$("#surla-replace-incoming-card"), "an incoming revision did not wait beside unsaved edits");
+expect(page.$("#surla-replace-incoming-card").textContent.includes("Keep Unsaved Edits"), "expected the switch button to say it keeps unsaved edits");
+page.$("#surla-replace-incoming-card").click();
+const switched = page.$("#surla-preserved-draft");
+const switchedText = switched ? switched.textContent : "";
+expect(editor().dataset.requestRevision === r4card.request_revision && editor().dataset.changeId === "chg-ui-test" && page.$("#surla-result-view").dataset.state === undefined && !page.$("#surla-replace-incoming-card"), "switching did not show the incoming card alone");
+expect(switchedText.includes("Edited outcome preserved across stale error") && switchedText.includes("Dirty edit on confirmed card before incoming switch") && switchedText.includes(r3card.request_revision), "switching did not preserve earlier and new unsaved lines: " + switchedText);
+expect(outcome().value === r4card.examples[0].expected_outcome, "the switched form did not start from the incoming card's saved values");
+page.$("#surla-discard-draft").click();
+expect(editor().dataset.requestRevision === r4card.request_revision && !page.$("#surla-preserved-draft"), "Discard Unsaved Edits did not clear the preserved draft");
+
+// A revision held beside unsaved edits stays held while a confirmation is in flight and after its answer.
+page.type(outcome(), "Edit on R4 before the guide's revision");
+const r5card = await revise(r4card, "Route refunds >= $50 to manager approval, audited twice.", "Audited twice");
+await until(() => page.$("#surla-replace-incoming-card"), "R5 did not wait beside unsaved edits");
+pill("subtotal_only").click();
+await control(origin, "hold", { key: "POST /changes/confirm" });
+page.$("#surla-confirm-submit").click();
+page.$("#surla-replace-incoming-card").click();
+expect(page.status().includes("Wait for the pending CP1 Change Card request"), "switching during a pending confirmation did not ask to wait");
+await control(origin, "release", { key: "POST /changes/confirm" });
+await until(() => page.$("#surla-confirm-error"), "confirming a replaced revision was not refused");
+expect(page.$("#surla-replace-incoming-card") && page.$("#surla-result-view").dataset.requestRevision === r5card.request_revision, "the confirmation's answer dropped the held revision");
+page.$("#surla-replace-incoming-card").click();
+expect(editor().dataset.requestRevision === r5card.request_revision && page.$("#surla-prior-revision") && page.text("#surla-prior-revision").includes(r4card.request_revision) && page.text("#surla-preserved-draft").includes("Edit on R4 before the guide's revision"), "switching after the answer did not keep the previous revision and the unsaved edit");
+page.$("#surla-discard-draft").click();
+
+// A revision another caller saves while the page's own confirmation awaits its answer is not shown as the page's own; it appears once the answer arrives.
+await control(origin, "answer-later", { key: "POST /changes/confirm" });
+pill("subtotal_only").click();
+page.$("#surla-confirm-submit").click();
+let confirmedR5 = await readCard("chg-ui-test");
+for (let tries = 0; confirmedR5.status !== "confirmed" && tries < 200; tries++) {
+  await sleep(20);
+  confirmedR5 = await readCard("chg-ui-test");
+}
+expect(confirmedR5.status === "confirmed", "the held confirmation was not saved");
+const r6card = await revise(confirmedR5, "Route refunds >= $50 to manager approval, audited.", "Audited");
+await sleep(300);
+expect(!page.$("#surla-replace-incoming-card") && !page.status().includes("newer revision"), "a save during the page's own confirmation was announced before its answer");
+await control(origin, "release", { key: "POST /changes/confirm" });
+await until(() => editor().dataset.requestRevision === r6card.request_revision, "the revision saved during the confirmation did not appear after its answer");
+expect(page.$("#surla-prior-revision") && page.text("#surla-prior-revision").includes(confirmedR5.request_revision) && page.status().includes("newer revision"), "the newer revision does not show the confirmed card it replaced");
+page.close();
+`)
+}
+
+// TestCheckpointUIArchitecturePreviewOfTheBoundDesign opens the architecture
+// stage, which asks the server to evaluate the bound workspace design for
+// the exact confirmed revision shown, and checks the drawing it renders. An
+// unconfirmed card shows the server's own refusal.
+func TestCheckpointUIArchitecturePreviewOfTheBoundDesign(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	analysis := &gensurla.CP1Analysis{
-		Summary: "Route refunds >= $50 to manager approval.",
-		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{
-			{
-				Question: "Does the $50 limit include tax?",
-				Options:  []string{"subtotal_only", "total_with_tax"},
-			},
-		},
-		Examples: []*gensurla.CP1AnalysisExample{
-			{
-				Scenario:         "Refund under $50",
-				InputSummary:     "$40 subtotal",
-				ExpectedOutcome:  "Auto-approved",
-				VerificationKind: "deterministic",
-			},
-		},
-		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
-	}
-
-	targetStore := prompt.NewInMemoryStore()
-	promotionTarget := &promotionTargetStub{
-		inputs: PromotionInputs{
-			SuiteID:     "orders_acceptance",
-			SuiteCommit: "2222222222222222222222222222222222222222",
-			Environment: "sim",
-			Artifacts:   map[string]string{"orders": strings.Repeat("a", 64)},
-		},
-	}
 	workspace := t.TempDir()
-	cp := newControlPlane(t, Options{
-		WorkspaceDir:    workspace,
-		TargetUpdater:   &boundTargetPromptUpdater{store: targetStore},
-		PromotionTarget: promotionTarget,
-	})
-	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	writeWorkspaceFiles(t, workspace, testmodule.Snapshot(t, "", architectureTestDesign))
+	cp := pageControlPlane(t, Options{WorkspaceDir: workspace})
+	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
+	mustPropose(t, cp, guide, "chg-arch", "Route refunds >= $50 to manager approval.", checkpointUIProposal())
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-arch", "the change did not open");
+page.$("#surla-nav-cp2").click();
+await until(() => page.$("#surla-cp2-error"), "an unconfirmed card's architecture showed no refusal", 60000);
+expect(page.text("#surla-cp2-error").includes("must be confirmed before architecture preview"), "the page did not show the server's own error: " + page.text("#surla-cp2-error"));
+page.$("#surla-nav-cp1").click();
+page.$('[data-ambiguity-id="chg-arch-ambiguity-01"][data-option="subtotal_only"]').click();
+page.$("#surla-confirm-submit").click();
+await until(() => page.$("#surla-cp1-editor").textContent.includes("Confirmed Change Decision"), "confirmation did not finish");
+const revision = page.$("#surla-cp1-editor").dataset.requestRevision;
+page.$("#surla-nav-cp2").click();
+expect(page.$("#surla-cp2-loading") && page.$("#surla-cp2-loading").getAttribute("aria-busy") === "true", "evaluating showed no loading state");
+const previews = page.sent("POST", "/changes/preview");
+expect(JSON.stringify(previews[previews.length - 1].body) === JSON.stringify({ change_id: "chg-arch", request_revision: revision }), "the preview did not ask for the exact revision shown");
+const result = page.$("#surla-result-view");
+await until(() => result.dataset.designDigest, "the architecture was not drawn", 120000);
+const cp2Text = page.text("#surla-checkpoint-view");
+expect(page.state() === "cp2-architecture-preview" && result.dataset.requestRevision === revision, "unexpected CP2 dataset: " + JSON.stringify(result.dataset));
+expect(cp2Text.includes(revision) && cp2Text.includes(result.dataset.designDigest) && cp2Text.includes("Inject: tenant_id") && cp2Text.includes("Confirmation"), "CP2 view missing digests or guardrails: " + cp2Text);
+const wrap = page.$$(".surla-graph-wrap");
+const nodes = page.$$("#surla-c4-svg .surla-svg-node");
+const texts = page.$$("#surla-c4-svg text");
+expect(wrap.length === 1 && wrap[0].getAttribute("role") === "region" && wrap[0].getAttribute("aria-label") === "C4 architecture diagram" && wrap[0].getAttribute("tabindex") === "0", "the graph is not a focusable region");
+expect(nodes.length > 0 && nodes.length === page.$$("#surla-result-view .surla-arch-grid .surla-compact-list")[0].children.length, "the graph does not draw every container");
+expect(texts.length > 0 && texts.every((text) => text.getAttribute("fill") === "currentColor"), "SVG text does not follow the theme color");
+expect(!page.$("#surla-cp1-editor").dataset.changeId, "a clean editor stayed beside the architecture");
+page.close();
+`)
+}
 
-	resRead, err := adapter.ResourcesRead(ctx, &genmcpadapter.ResourcesReadPayload{URI: "ui://surla/checkpoint"})
-	if err != nil {
-		t.Fatalf("ResourcesRead(ui://surla/checkpoint): %v", err)
-	}
-	completeRes, ok := resRead.Outcome.AsComplete()
-	if !ok || len(completeRes.Contents) != 1 || completeRes.Contents[0].Text == nil || completeRes.Contents[0].MimeType == nil {
-		t.Fatalf("unexpected ResourcesRead outcome: %+v", resRead)
-	}
-	if got := *completeRes.Contents[0].MimeType; got != "text/html;profile=mcp-app" {
-		t.Fatalf("MimeType = %q, want %q", got, "text/html;profile=mcp-app")
-	}
-	htmlDoc := *completeRes.Contents[0].Text
-	for _, want := range []string{
-		`http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';"`,
-		`data-profile="mcp-app"`,
-		`"ui/initialize"`,
-		`"ui/notifications/initialized"`,
-		`"ui/notifications/tool-input"`,
-		`"ui/notifications/tool-input-partial"`,
-		`"ui/notifications/host-context-changed"`,
-		`"ui/notifications/tool-cancelled"`,
-		`"ui/notifications/tool-result"`,
-		`"ui/resource-teardown"`,
-		`event.source !== window.parent`,
-	} {
-		if !strings.Contains(htmlDoc, want) {
-			t.Fatalf("checkpointUIHTML missing %q", want)
+// TestCheckpointUIArchitectureDrawingGeometry draws a 15-container preview
+// with colliding names, an intra-column cycle and a self-loop, served by the
+// generated encoder, and checks the drawing's fixed geometry.
+func TestCheckpointUIArchitectureDrawingGeometry(t *testing.T) {
+	cp := pageControlPlane(t, Options{})
+	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
+	mustPropose(t, cp, guide, "chg-geometry", "Draw a large architecture.", refundAnalysis("Draw a large architecture."))
+	containers := make([]*gensurla.C4ContainerItem, 0, 15)
+	for i := 1; i <= 15; i++ {
+		kind := "container"
+		switch {
+		case i == 1:
+			kind = "person"
+		case i <= 8:
+			kind = "service"
 		}
+		name := fmt.Sprintf("Container %d", i)
+		if i <= 3 {
+			name = "Duplicate Display Name"
+		}
+		containers = append(containers, &gensurla.C4ContainerItem{
+			ID: fmt.Sprintf("node-%d", i), Name: name, Kind: kind, Description: fmt.Sprintf("Description for node-%d", i),
+		})
 	}
-
-	// Execute real MCP ToolsCall operations for CP1, CP2, and CP3 to obtain wire results.
-	proposeArgs, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
-		ChangeID: "chg-ui-test",
-		Prompt:   "Route refunds >= $50 to manager approval.",
-		Analysis: analysis,
-	})
-	if err != nil {
-		t.Fatalf("marshal proposeArgs: %v", err)
-	}
-	proposeCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "propose_change",
-		Arguments: proposeArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(propose_change): %v", err)
-	}
-	proposeOut, ok := proposeCall.Outcome.AsComplete()
-	if !ok || len(proposeOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected propose_change outcome: %+v", proposeCall)
-	}
-	var proposedWire struct {
-		ChangeID        string `json:"change_id"`
-		RequestRevision string `json:"request_revision"`
-	}
-	if err := json.Unmarshal(proposeOut.StructuredContent, &proposedWire); err != nil {
-		t.Fatalf("unmarshal proposedWire: %v", err)
-	}
-
-	confirmArgs, err := json.Marshal(map[string]any{
-		"change_id":        proposedWire.ChangeID,
-		"request_revision": proposedWire.RequestRevision,
-		"answers": map[string]string{
-			"chg-ui-test-ambiguity-01": "subtotal_only",
+	ps := startPageServer(t, &previewFixture{ControlPlane: cp, preview: &gensurla.ArchitecturePreviewResult{
+		DesignDigest: "d" + fmt.Sprintf("%063d", 0), SystemName: "orders", Banner: "15 containers evaluated",
+		Containers: containers,
+		Edges: []*gensurla.C4EdgeItem{
+			{FromID: "node-1", ToID: "node-2", Protocol: "HTTPS"},
+			{FromID: "node-2", ToID: "node-3", Protocol: "gRPC"},
+			{FromID: "node-3", ToID: "node-2", Protocol: "Callback gRPC"},
+			{FromID: "node-2", ToID: "node-2", Protocol: "Self Loop"},
+			{FromID: "node-8", ToID: "node-15", Protocol: "SQLite"},
 		},
-		"examples": []map[string]any{
-			{
-				"id":                "check_01",
-				"scenario":          "Refund under $50",
-				"input_summary":     "$40 subtotal",
-				"expected_outcome":  "  Instant store credit\nup to $50.00  ",
-				"verification_kind": "deterministic",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("marshal confirmArgs: %v", err)
-	}
-	confirmCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "confirm_intent",
-		Arguments: confirmArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(confirm_intent): %v", err)
-	}
-	confirmOut, ok := confirmCall.Outcome.AsComplete()
-	if !ok || len(confirmOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected confirm_intent outcome: %+v", confirmCall)
-	}
-	var confirmedWire struct {
-		ChangeID        string `json:"change_id"`
-		RequestRevision string `json:"request_revision"`
-	}
-	if err := json.Unmarshal(confirmOut.StructuredContent, &confirmedWire); err != nil {
-		t.Fatalf("unmarshal confirmedWire: %v", err)
-	}
+		AgentPolicies: []*gensurla.AgentPolicyItem{},
+		Tools:         []*gensurla.ToolContractItem{},
+	}})
+	runPageScript(t, ps, nil, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-geometry", "the change did not open");
+page.$("#surla-nav-cp2").click();
+await until(() => page.$("#surla-c4-svg"), "the architecture was not drawn");
+const svg = page.$$("#surla-c4-svg");
+const nodes = page.$$("#surla-c4-svg .surla-svg-node");
+const edges = page.$$("#surla-c4-svg .surla-svg-edge");
+const scope = page.$("#surla-cp2-scope-note");
+const confirmation = page.$("#surla-cp2-confirmation-note");
+expect(scope && scope.textContent.includes("does not compare the design with the Change Card") && confirmation && confirmation.textContent.includes("does not show that the service asks the right person") && confirmation.textContent.includes("examples/orders"), "expected the scope and confirmation notes");
+const edge23 = edges[1].children[0].getAttribute("d");
+const edge32 = edges[2].children[0].getAttribute("d");
+const text = page.text("#surla-checkpoint-view");
+expect(svg.length === 1 && svg[0].getAttribute("width") === "840" && nodes.length === 15 && edges.length === 5 && edge23 !== edge32 && edge23.includes("Q 526") && edge32.includes("Q 544") && text.includes("node-15") && text.includes("Self Loop"), "expected 840px SVG with 15 nodes and distinct intra-column cyclic/self-loop edges, got width=" + (svg[0] && svg[0].getAttribute("width")) + " e23=" + edge23 + " e32=" + edge32);
+page.close();
+`)
+}
 
-	getChangeArgs, err := json.Marshal(map[string]any{
-		"change_id": confirmedWire.ChangeID,
-	})
-	if err != nil {
-		t.Fatalf("marshal getChangeArgs: %v", err)
-	}
-	getChangeCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "get_change",
-		Arguments: getChangeArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(get_change): %v", err)
-	}
-	getChangeOut, ok := getChangeCall.Outcome.AsComplete()
-	if !ok || len(getChangeOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected get_change outcome: %+v", getChangeCall)
-	}
+// previewFixture answers preview_architecture with a fixed drawing bound to
+// the requested card, through the real generated encoder.
+type previewFixture struct {
+	*ControlPlane
+	// preview is the drawing returned for every request.
+	preview *gensurla.ArchitecturePreviewResult
+}
 
-	const candidateCommit = "1111111111111111111111111111111111111111"
-	promotionTarget.report = passingReport(t, confirmedWire.RequestRevision, candidateCommit, promotionTarget.inputs)
-	approveArgs, err := json.Marshal(map[string]any{
-		"change_id":        confirmedWire.ChangeID,
-		"request_revision": confirmedWire.RequestRevision,
-		"candidate_commit": candidateCommit,
-		"report_digest":    promotionTarget.report.Digest,
-	})
-	if err != nil {
-		t.Fatalf("marshal approveArgs: %v", err)
-	}
-	approveCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "approve_merge",
-		Arguments: approveArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(approve_merge): %v", err)
-	}
-	approveOut, ok := approveCall.Outcome.AsComplete()
-	if !ok || len(approveOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected approve_merge outcome: %+v", approveCall)
-	}
+// PreviewArchitecture returns the fixed drawing for the requested revision.
+func (p *previewFixture) PreviewArchitecture(
+	_ context.Context,
+	req *gensurla.PreviewArchitecturePayload,
+) (*gensurla.ArchitecturePreviewResult, error) {
+	out := *p.preview
+	out.ChangeID, out.RequestRevision = req.ChangeID, req.RequestRevision
+	return &out, nil
+}
 
-	candidateDesign := `package design
+// architectureTestDesign declares an agent whose tool injects tenant_id and
+// requires confirmation, so the preview shows both guardrails.
+const architectureTestDesign = `package design
 
 import (
 	. "goa.design/goa/v3/dsl"
@@ -241,878 +319,3 @@ var _ = Service("orders", func() {
 	})
 })
 `
-	writeWorkspaceFiles(t, workspace, testmodule.Snapshot(t, "", candidateDesign))
-	previewArgs, err := json.Marshal(map[string]any{
-		"change_id":        confirmedWire.ChangeID,
-		"request_revision": confirmedWire.RequestRevision,
-	})
-	if err != nil {
-		t.Fatalf("marshal previewArgs: %v", err)
-	}
-	previewCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "preview_architecture",
-		Arguments: previewArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(preview_architecture): %v", err)
-	}
-	previewOut, ok := previewCall.Outcome.AsComplete()
-	if !ok || len(previewOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected preview_architecture outcome: %+v", previewCall)
-	}
-	var previewWire struct {
-		DesignDigest string `json:"design_digest"`
-	}
-	if err := json.Unmarshal(previewOut.StructuredContent, &previewWire); err != nil {
-		t.Fatalf("unmarshal previewWire: %v", err)
-	}
-
-	draftArgs, err := json.Marshal(map[string]any{
-		"target_kind": TargetKindPromptTemplate,
-		"prompt_id":   "orders.refund.system",
-		"new_content": "You are a concise refund specialist.",
-	})
-	if err != nil {
-		t.Fatalf("marshal draftArgs: %v", err)
-	}
-	draftCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "draft_override",
-		Arguments: draftArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(draft_override): %v", err)
-	}
-	draftOut, ok := draftCall.Outcome.AsComplete()
-	if !ok || len(draftOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected draft_override outcome: %+v", draftCall)
-	}
-
-	stopLiveCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "stop_live_target",
-		Arguments: json.RawMessage(`{}`),
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(stop_live_target): %v", err)
-	}
-	stopLiveOut, ok := stopLiveCall.Outcome.AsComplete()
-	if !ok || len(stopLiveOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected stop_live_target outcome: %+v", stopLiveCall)
-	}
-
-	staleConfirmCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "confirm_intent",
-		Arguments: confirmArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(confirm_intent stale): %v", err)
-	}
-	staleConfirmOut, ok := staleConfirmCall.Outcome.AsComplete()
-	if !ok || staleConfirmOut.IsError == nil || !*staleConfirmOut.IsError || len(staleConfirmOut.Content) == 0 || staleConfirmOut.Content[0].Text == nil {
-		t.Fatalf("expected stale confirm_intent tool error outcome, got: %+v", staleConfirmCall)
-	}
-
-	baselineDesign := `package design
-
-import . "goa.design/goa/v3/dsl"
-
-var _ = API("orders", func() {})
-
-var _ = Service("orders", func() {
-	Description("Baseline Orders service")
-})
-`
-	diffArgs, err := json.Marshal(map[string]any{
-		"old": map[string]any{
-			"files": testmodule.Snapshot(t, "", baselineDesign),
-		},
-		"new": map[string]any{
-			"files": testmodule.Snapshot(t, "", candidateDesign),
-		},
-	})
-	if err != nil {
-		t.Fatalf("marshal diffArgs: %v", err)
-	}
-	diffCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      "diff",
-		Arguments: diffArgs,
-	})
-	if err != nil {
-		t.Fatalf("ToolsCall(diff): %v", err)
-	}
-	diffOut, ok := diffCall.Outcome.AsComplete()
-	if !ok || len(diffOut.StructuredContent) == 0 {
-		t.Fatalf("unexpected diff outcome: %+v", diffCall)
-	}
-
-	nodePath, err := exec.LookPath("node")
-	if err != nil {
-		return
-	}
-	ensureCheckpointUIDeps(t)
-
-	scriptBody := extractCheckpointScript(t, htmlDoc)
-	harnessInput, err := json.Marshal(map[string]any{
-		"htmlDoc":                htmlDoc,
-		"script":                 scriptBody,
-		"cp1Structured":          json.RawMessage(proposeOut.StructuredContent),
-		"cp1ConfirmedStructured": json.RawMessage(confirmOut.StructuredContent),
-		"cp5ApprovedStructured":  json.RawMessage(approveOut.StructuredContent),
-		"getChangeStructured":    json.RawMessage(getChangeOut.StructuredContent),
-		"cp2Structured":          json.RawMessage(previewOut.StructuredContent),
-		"diffStructured":         json.RawMessage(diffOut.StructuredContent),
-		"cp3Structured":          json.RawMessage(draftOut.StructuredContent),
-		"cp3StopLiveStructured":  json.RawMessage(stopLiveOut.StructuredContent),
-		"staleErrorText":         *staleConfirmOut.Content[0].Text,
-		"wantCP1Revision":        proposedWire.RequestRevision,
-		"wantCP2Revision":        confirmedWire.RequestRevision,
-		"wantDesignDigest":       previewWire.DesignDigest,
-		"wantReportDigest":       promotionTarget.report.Digest,
-		"wantCandidateCommit":    candidateCommit,
-		"wantAmbiguityText":      "Does the $50 limit include tax?",
-	})
-	if err != nil {
-		t.Fatalf("marshal harnessInput: %v", err)
-	}
-
-	nodeHarness := `
-const fs = require("fs");
-const { JSDOM } = require("../../ui/checkpoint/node_modules/jsdom");
-const input = JSON.parse(fs.readFileSync(0, "utf8"));
-
-const dom = new JSDOM(input.htmlDoc, {
-  url: "https://sandbox.mcp.local/",
-  runScripts: "outside-only",
-  pretendToBeVisual: true
-});
-const guestWindow = dom.window;
-const documentObj = guestWindow.document;
-const root = documentObj.getElementById("surla-checkpoint-root");
-const statusEl = documentObj.getElementById("surla-checkpoint-status");
-const viewEl = documentObj.getElementById("surla-checkpoint-view");
-
-const hostMessages = [];
-let messageListener = null;
-const parentWindow = {
-  postMessage(msg, targetOrigin) {
-    hostMessages.push({ msg, targetOrigin });
-  }
-};
-Object.defineProperty(guestWindow, "parent", { value: parentWindow, configurable: true });
-const origAddEventListener = guestWindow.addEventListener.bind(guestWindow);
-guestWindow.addEventListener = function(type, fn, opts) {
-  if (type === "message") messageListener = fn;
-  return origAddEventListener(type, fn, opts);
-};
-
-guestWindow.Element.prototype.dispatch = function(type) {
-  if (type === "click") {
-    this.click();
-    return;
-  }
-  this.dispatchEvent(new guestWindow.Event(type, { bubbles: true, cancelable: true }));
-};
-
-function wrapNode(node) {
-  if (!node) return node;
-  const raw = node.__rawNode || node;
-  if (raw.nodeType !== 1) return raw;
-  return new Proxy(raw, {
-    get(target, prop) {
-      if (prop === "__rawNode") return target;
-      if (prop === "attributes") {
-        const m = {};
-        for (let i = 0; i < target.attributes.length; i++) {
-          const a = target.attributes[i];
-          m[a.name] = a.value;
-        }
-        return m;
-      }
-      if (prop === "tagName") {
-        return String(target.tagName || "").toUpperCase();
-      }
-      if (prop === "className" && target.namespaceURI === "http://www.w3.org/2000/svg") {
-        return { baseVal: target.getAttribute("class") || "" };
-      }
-      if (prop === "children") {
-        return Array.from(target.children || []).map(wrapNode);
-      }
-      const val = target[prop];
-      return typeof val === "function" ? val.bind(target) : val;
-    },
-    set(target, prop, value) {
-      target[prop] = value;
-      return true;
-    }
-  });
-}
-
-function findAll(node, pred, acc) {
-  const out = acc || [];
-  const raw = node && (node.__rawNode || node);
-  if (!raw || raw.nodeType !== 1) return out;
-  const wrapped = wrapNode(raw);
-  if (pred(wrapped)) out.push(wrapped);
-  const children = raw.children || [];
-  for (let i = 0; i < children.length; i++) {
-    findAll(children[i], pred, out);
-  }
-  return out;
-}
-
-function renderText(node) {
-  if (!node) return "";
-  return node.textContent || "";
-}
-
-guestWindow.eval(input.script);
-
-if (typeof messageListener !== "function") {
-  throw new Error("guest did not register window message listener");
-}
-if (hostMessages.length !== 1 || hostMessages[0].msg.method !== "ui/initialize" || hostMessages[0].msg.id !== 1) {
-  throw new Error("expected initial ui/initialize request, got: " + JSON.stringify(hostMessages));
-}
-
-// 1. Forged message from non-parent source must be ignored.
-messageListener({
-  source: {},
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: input.cp1Structured }
-  }
-});
-if (root.dataset.state !== "waiting") {
-  throw new Error("forged non-parent message mutated state: " + root.dataset.state);
-}
-
-// 2. Host replies to ui/initialize -> guest sends ui/notifications/initialized.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    id: 1,
-    result: {
-      protocolVersion: "2026-01-26",
-      hostInfo: {
-        name: "surla-test-host",
-        version: "1.0.0"
-      },
-      hostCapabilities: {}
-    }
-  }
-});
-if (hostMessages.length !== 2 || hostMessages[1].msg.method !== "ui/notifications/initialized") {
-  throw new Error("expected ui/notifications/initialized after init response, got: " + JSON.stringify(hostMessages));
-}
-if (root.dataset.initialized !== "true") {
-  throw new Error("expected root.dataset.initialized === 'true'");
-}
-
-// 3. Deliver CP1 ChangeCardResult via ui/notifications/tool-result and exercise interactive confirm_intent form.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: input.cp1Structured }
-  }
-});
-const editorRegion = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp1-editor")[0];
-const resultRegion = findAll(viewEl, (n) => n.attributes["id"] === "surla-result-view")[0];
-const cp1Text = renderText(viewEl);
-if (root.dataset.state !== "cp1-change-card" || editorRegion.dataset.requestRevision !== input.wantCP1Revision) {
-  throw new Error("unexpected CP1 dataset: " + JSON.stringify(editorRegion.dataset));
-}
-if (!cp1Text.includes(input.wantCP1Revision) ||
-    !cp1Text.includes(input.wantAmbiguityText) ||
-    !cp1Text.includes("Scenario:") ||
-    !cp1Text.includes("Input:") ||
-    !cp1Text.includes("Expected result:")) {
-  throw new Error("CP1 view missing revision, ambiguity question, or visible field labels: " + cp1Text);
-}
-
-// 3a. Click an ambiguity option pill, edit an example outcome input, and submit confirm_intent via tools/call.
-const optionPills = findAll(viewEl, (n) => n.attributes["data-ambiguity-id"] === "chg-ui-test-ambiguity-01" && n.attributes["data-option"] === "subtotal_only");
-if (optionPills.length !== 1) {
-  throw new Error("expected ambiguity option pill button, got: " + optionPills.length);
-}
-optionPills[0].dispatch("click");
-const outcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
-if (outcomeInputs.length !== 1 || outcomeInputs[0].tagName !== "TEXTAREA") {
-  throw new Error("expected example expected_outcome textarea, got: " + outcomeInputs.length);
-}
-outcomeInputs[0].value = "  Instant store credit\nup to $50.00  ";
-outcomeInputs[0].dispatch("input", { target: outcomeInputs[0] });
-const submitBtns = findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit");
-if (submitBtns.length !== 1) {
-  throw new Error("expected #surla-confirm-submit button");
-}
-const msgCountBeforeConfirm = hostMessages.length;
-submitBtns[0].dispatch("click");
-// Duplicate click or input edits while in flight must be ignored and all edit controls disabled.
-submitBtns[0].dispatch("click");
-const inFlightPills = findAll(viewEl, (n) => n.attributes["data-ambiguity-id"] === "chg-ui-test-ambiguity-01");
-const inFlightFormCards = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp1-form-card");
-outcomeInputs[0].value = "typed while saving";
-outcomeInputs[0].dispatch("input", { target: outcomeInputs[0] });
-if (hostMessages.length !== msgCountBeforeConfirm + 1 ||
-    inFlightFormCards.length !== 1 ||
-    inFlightFormCards[0].attributes["aria-busy"] !== "true" ||
-    submitBtns[0].disabled !== true ||
-    outcomeInputs[0].disabled !== true ||
-    !inFlightPills.every((p) => p.disabled === true) ||
-    outcomeInputs[0].value !== "  Instant store credit\nup to $50.00  ") {
-  throw new Error("expected single tools/call request, aria-busy=true on #surla-cp1-form-card, and all edit controls disabled while in flight");
-}
-const confirmReq = hostMessages[msgCountBeforeConfirm].msg;
-if (confirmReq.method !== "tools/call" ||
-    confirmReq.params.name !== "confirm_intent" ||
-    confirmReq.params.arguments.request_revision !== input.wantCP1Revision ||
-    confirmReq.params.arguments.answers["chg-ui-test-ambiguity-01"] !== "subtotal_only" ||
-    confirmReq.params.arguments.examples[0].expected_outcome !== "  Instant store credit\nup to $50.00  ") {
-  throw new Error("unexpected confirm_intent tools/call payload: " + JSON.stringify(confirmReq));
-}
-
-// Uncorrelated tool-cancelled while confirm is pending must NOT clear pendingRequests or replace the active CP1 editor.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-cancelled", params: { reason: "uncorrelated cancel" } } });
-if (root.dataset.state !== "cp1-change-card" || outcomeInputs[0].disabled !== true) {
-  throw new Error("tool-cancelled while confirm pending deleted CP1 editor or re-enabled controls");
-}
-// Host replies with confirmed ChangeCardResult -> guest transitions to confirmed revision.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: confirmReq.id, result: { content: [], structuredContent: input.cp1ConfirmedStructured } } });
-if (root.dataset.state !== "cp1-change-card" ||
-    editorRegion.dataset.requestRevision !== input.wantCP2Revision ||
-    findAll(viewEl, (n) => n.attributes["id"] === "surla-cp1-form-card")[0].attributes["aria-busy"] !== undefined) {
-  throw new Error("expected confirmed CP1 revision and cleared aria-busy after tools/call reply, got: " + JSON.stringify(editorRegion.dataset));
-}
-// Typing into confirmed card and receiving a late tool-result notification must NOT overwrite post-reply edits.
-const postConfirmInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
-postConfirmInputs[0].value = "post-confirm draft edit";
-postConfirmInputs[0].dispatch("input", { target: postConfirmInputs[0] });
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1ConfirmedStructured } } });
-if (postConfirmInputs[0].value !== "post-confirm draft edit") {
-  throw new Error("late tool-result notification overwrote post-confirm edit");
-}
-postConfirmInputs[0].value = "  Instant store credit\nup to $50.00  ";
-postConfirmInputs[0].dispatch("input", { target: postConfirmInputs[0] });
-// Clicking Refine with no edits on a whitespace/newline-bearing saved card must preserve verbatim text.
-const noEditSubmitBtns = findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit");
-const msgCountBeforeNoEdit = hostMessages.length;
-noEditSubmitBtns[0].dispatch("click");
-const noEditRefineReq = hostMessages[msgCountBeforeNoEdit].msg;
-if (noEditRefineReq.params.arguments.examples[0].expected_outcome !== "  Instant store credit\nup to $50.00  ") {
-  throw new Error("no-edit refine mutated multiline/whitespace field: " + JSON.stringify(noEditRefineReq));
-}
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: noEditRefineReq.id, result: { content: [], structuredContent: input.cp1ConfirmedStructured } } });
-
-// 3a-cp5. Deliver CP5 approve_merge ChangeCardResult on the same request_revision -> updates active editor in place, renders #surla-cp5-approval, and shows #surla-cp5-approval-dirty-warning when local draft edits would supersede the approved revision.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp5ApprovedStructured } } });
-const approvalPanels = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval");
-const approvalText = approvalPanels.length === 1 ? renderText(approvalPanels[0]) : "";
-if (approvalPanels.length !== 1 ||
-    !approvalText.includes("Approval recorded") ||
-    approvalText.includes("In-memory approval") ||
-    approvalText.includes("in control-plane memory") ||
-    !approvalText.includes("No merge or deploy side effect") ||
-    !approvalText.includes("alice@example.com") ||
-    !approvalText.includes(input.wantCandidateCommit) ||
-    !approvalText.includes(input.wantReportDigest) ||
-    !approvalText.includes("orders_acceptance") ||
-    findAll(approvalPanels[0], (n) => n.attributes["id"] === "surla-cp5-approval-details").length !== 1 ||
-    findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval-dirty-warning").length !== 0) {
-  throw new Error("expected #surla-cp5-approval panel without dirty warning on clean approved card, got: " + approvalText);
-}
-const approvedOutcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
-approvedOutcomeInputs[0].value = "edited after approval";
-approvedOutcomeInputs[0].dispatch("input", { target: approvedOutcomeInputs[0] });
-if (findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval-dirty-warning").length !== 1) {
-  throw new Error("expected #surla-cp5-approval-dirty-warning when approved card has unsaved draft edits");
-}
-approvedOutcomeInputs[0].value = "  Instant store credit\nup to $50.00  ";
-approvedOutcomeInputs[0].dispatch("input", { target: approvedOutcomeInputs[0] });
-if (findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval-dirty-warning").length !== 0) {
-  throw new Error("expected #surla-cp5-approval-dirty-warning to clear when draft matches saved approved card");
-}
-
-// 3b. Exercise stale-revision CP1 form submission with broadcast error notification arriving BEFORE direct RPC error reply.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1Structured } } });
-const stalePills = findAll(viewEl, (n) => n.attributes["data-ambiguity-id"] === "chg-ui-test-ambiguity-01" && n.attributes["data-option"] === "total_with_tax");
-stalePills[0].dispatch("click");
-const staleOutcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
-staleOutcomeInputs[0].value = "Edited outcome preserved across stale error";
-staleOutcomeInputs[0].dispatch("input", { target: staleOutcomeInputs[0] });
-const staleSubmitBtns = findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit");
-const msgCountBeforeStale = hostMessages.length;
-staleSubmitBtns[0].dispatch("click");
-const staleReq = hostMessages[msgCountBeforeStale].msg;
-// Host broadcasts uncorrelated ui/notifications/tool-result {isError:true} BEFORE delivering the matching RPC error response -> renders error in resultRegion while retaining CP1 editor and keeping controls disabled until matching RPC error response arrives.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { isError: true, content: [{ type: "text", text: "preview_architecture failed: invalid design" }] } } });
-if (resultRegion.dataset.state !== "error" || staleOutcomeInputs[0].disabled !== true || renderText(editorRegion).includes("Change Card request failed:")) {
-  throw new Error("uncorrelated error notification replaced CP1 editor, routed into editor feedback, or prematurely re-enabled controls");
-}
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: staleReq.id, result: { isError: true, content: [{ type: "text", text: input.staleErrorText }] } } });
-const staleViewText = renderText(editorRegion);
-if (editorRegion.dataset.state !== "cp1-change-card" ||
-    staleOutcomeInputs[0].disabled !== false ||
-    !statusEl.textContent.includes("Change Card request failed; unsaved edits preserved.") ||
-    !staleViewText.includes(input.staleErrorText) ||
-    !staleViewText.includes("Your edited answers and examples remain in this form") ||
-    staleOutcomeInputs[0].value !== "Edited outcome preserved across stale error") {
-  throw new Error("stale form submission did not update status, re-enable controls, preserve edits, or show recovery guidance: " + statusEl.textContent + " / " + staleViewText);
-}
-
-// 3c. Click #surla-load-latest-card after stale error -> guest calls get_change and renders latest card alongside #surla-preserved-draft.
-const loadLatestBtns = findAll(viewEl, (n) => n.attributes["id"] === "surla-load-latest-card");
-if (loadLatestBtns.length !== 1) {
-  throw new Error("expected #surla-load-latest-card button after stale error");
-}
-const msgCountBeforeGetChange = hostMessages.length;
-loadLatestBtns[0].dispatch("click");
-if (hostMessages.length !== msgCountBeforeGetChange + 1) {
-  throw new Error("expected tools/call get_change request after clicking load latest card");
-}
-const getChangeReq = hostMessages[msgCountBeforeGetChange].msg;
-if (getChangeReq.method !== "tools/call" ||
-    getChangeReq.params.name !== "get_change" ||
-    getChangeReq.params.arguments.change_id !== "chg-ui-test") {
-  throw new Error("unexpected get_change tools/call payload: " + JSON.stringify(getChangeReq));
-}
-// Host broadcasts ui/notifications/tool-result BEFORE delivering the tools/call get_change JSON-RPC response -> must retain active editor while get_change is pending, then render latest card + #surla-preserved-draft on the matching tools/call reply.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1ConfirmedStructured } } });
-if (editorRegion.dataset.requestRevision !== input.wantCP1Revision) {
-  throw new Error("interleaved ui/notifications/tool-result replaced active editor before get_change reply");
-}
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: getChangeReq.id, result: { content: [], structuredContent: input.getChangeStructured } } });
-// Same successful host tool-result notification arriving AFTER get_change reply must NOT drop #surla-preserved-draft.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.getChangeStructured } } });
-const recoveredViewText = renderText(viewEl);
-const preservedPanels = findAll(viewEl, (n) => n.attributes["id"] === "surla-preserved-draft");
-if (root.dataset.state !== "cp1-change-card" ||
-    editorRegion.dataset.requestRevision !== input.wantCP2Revision ||
-    preservedPanels.length !== 1 ||
-    !recoveredViewText.includes("Preserved Unsaved Draft Edits") ||
-    !recoveredViewText.includes("total_with_tax") ||
-    !recoveredViewText.includes("Edited outcome preserved across stale error")) {
-  throw new Error("get_change recovery did not retain latest card + preserved draft panel after late tool-result: " + recoveredViewText);
-}
-
-// 3d. Cross-view draft preservation, per-region dataset bindings, and pending-RPC result retention:
-// Delivering diff while editor has preserved/dirty state keeps CP1 editor + preserved draft mounted AND renders diff in result region with region-scoped dataset bindings.
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.diffStructured } } });
-if (root.dataset.state !== "cp2-diff" ||
-    editorRegion.dataset.requestRevision !== input.wantCP2Revision ||
-    resultRegion.dataset.state !== "cp2-diff" ||
-    resultRegion.dataset.changeId !== undefined ||
-    resultRegion.dataset.requestRevision !== undefined ||
-    root.dataset.changeId !== undefined ||
-    root.dataset.requestRevision !== undefined ||
-    findAll(viewEl, (n) => n.attributes["id"] === "surla-preserved-draft").length !== 1 ||
-    !renderText(viewEl).includes("refund_agent")) {
-  throw new Error("diff notification during recovery dropped preserved draft, failed to render diff, or leaked dataset bindings");
-}
-// Repeated get_change recovery without new form edits must retain the already-preserved draft lines.
-findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit")[0].dispatch("click");
-const staleReq2 = hostMessages[hostMessages.length - 1].msg;
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: staleReq2.id, result: { isError: true, content: [{ type: "text", text: input.staleErrorText }] } } });
-findAll(viewEl, (n) => n.attributes["id"] === "surla-load-latest-card")[0].dispatch("click");
-const getChangeReq2 = hostMessages[hostMessages.length - 1].msg;
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: getChangeReq2.id, result: { content: [], structuredContent: input.getChangeStructured } } });
-if (!renderText(editorRegion).includes("Edited outcome preserved across stale error")) {
-  throw new Error("repeated get_change recovery lost prior preserved draft");
-}
-// Switching to an incoming card while the editor has both prior preserved draft lines and new dirty edits must preserve both in #surla-preserved-draft and initialize the form from the incoming card's own saved values.
-const dirtyBeforeSwitchInputs = findAll(editorRegion, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
-dirtyBeforeSwitchInputs[0].value = "Dirty edit on confirmed card before incoming switch";
-dirtyBeforeSwitchInputs[0].dispatch("input", { target: dirtyBeforeSwitchInputs[0] });
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1Structured } } });
-const incomingSwitchBtns = findAll(resultRegion, (n) => n.attributes["id"] === "surla-replace-incoming-card");
-if (incomingSwitchBtns.length !== 1 || !renderText(incomingSwitchBtns[0]).includes("Keep Unsaved Edits")) {
-  throw new Error("expected #surla-replace-incoming-card button with Keep Unsaved Edits label");
-}
-incomingSwitchBtns[0].dispatch("click");
-const switchedOutcomeInputs = findAll(editorRegion, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
-const switchedPreservedPanels = findAll(editorRegion, (n) => n.attributes["id"] === "surla-preserved-draft");
-const switchedPreservedText = switchedPreservedPanels.length === 1 ? renderText(switchedPreservedPanels[0]) : "";
-if (editorRegion.dataset.requestRevision !== input.wantCP1Revision ||
-    editorRegion.dataset.changeId !== "chg-ui-test" ||
-    resultRegion.dataset.state !== undefined ||
-    findAll(resultRegion, (n) => n.attributes["id"] === "surla-replace-incoming-card").length !== 0 ||
-    switchedPreservedPanels.length !== 1 ||
-    !switchedPreservedText.includes("Edited outcome preserved across stale error") ||
-    !switchedPreservedText.includes("Dirty edit on confirmed card before incoming switch") ||
-    !switchedPreservedText.includes(input.wantCP2Revision) ||
-    switchedOutcomeInputs[0].value !== input.cp1Structured.examples[0].expected_outcome) {
-  throw new Error("switching to incoming card did not preserve prior+dirty draft lines or initialize incoming card form values: " + switchedPreservedText);
-}
-// Clicking Discard Unsaved Edits after switching clears #surla-preserved-draft while keeping the switched card mounted.
-findAll(editorRegion, (n) => n.attributes["id"] === "surla-discard-draft")[0].dispatch("click");
-if (editorRegion.dataset.requestRevision !== input.wantCP1Revision ||
-    findAll(editorRegion, (n) => n.attributes["id"] === "surla-preserved-draft").length !== 0) {
-  throw new Error("Discard Unsaved Edits after incoming switch did not clear #surla-preserved-draft");
-}
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1ConfirmedStructured } } });
-// Submitting confirm_intent while an incoming card B arrives in flight retains B and its switch button after A's reply completes.
-findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit")[0].dispatch("click");
-const pendingIncomingConfirmReq = hostMessages[hostMessages.length - 1].msg;
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1Structured } } });
-findAll(resultRegion, (n) => n.attributes["id"] === "surla-replace-incoming-card")[0].dispatch("click");
-if (!statusEl.textContent.includes("Wait for the pending CP1 Change Card request")) {
-  throw new Error("clicking switch button during pending RPC did not update status message");
-}
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: pendingIncomingConfirmReq.id, result: { content: [], structuredContent: input.cp1ConfirmedStructured } } });
-if (findAll(resultRegion, (n) => n.attributes["id"] === "surla-replace-incoming-card").length !== 1 ||
-    editorRegion.dataset.requestRevision !== input.wantCP2Revision ||
-    resultRegion.dataset.requestRevision !== input.wantCP1Revision) {
-  throw new Error("matching confirm_intent reply cleared incoming card B or broke per-region dataset bindings");
-}
-// Submitting confirm_intent while a diff arrives in flight retains the diff and per-region dataset bindings after the matching confirm_intent reply completes.
-const pendingConfirmSubmit = findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit")[0];
-const msgCountBeforePendingDiff = hostMessages.length;
-pendingConfirmSubmit.dispatch("click");
-const pendingDiffConfirmReq = hostMessages[msgCountBeforePendingDiff].msg;
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.diffStructured } } });
-messageListener({ source: parentWindow, data: { jsonrpc: "2.0", id: pendingDiffConfirmReq.id, result: { content: [], structuredContent: input.cp1ConfirmedStructured } } });
-if (root.dataset.state !== "cp1-change-card" ||
-    editorRegion.dataset.requestRevision !== input.wantCP2Revision ||
-    resultRegion.dataset.state !== "cp2-diff" ||
-    resultRegion.dataset.requestRevision !== undefined ||
-    root.dataset.requestRevision !== undefined ||
-    !renderText(viewEl).includes("refund_agent")) {
-  throw new Error("diff arriving during pending confirm_intent was lost or leaked root dataset bindings after matching confirm_intent reply");
-}
-
-// 4. Deliver CP2 ArchitecturePreviewResult when CP1 editor is clean -> replaces clean CP1 view completely and renders both SVG graph and inspectable list.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: input.cp2Structured }
-  }
-});
-const cp2Text = renderText(viewEl);
-if (root.dataset.state !== "cp2-architecture-preview" ||
-    resultRegion.dataset.requestRevision !== input.wantCP2Revision ||
-    resultRegion.dataset.designDigest !== input.wantDesignDigest) {
-  throw new Error("unexpected CP2 dataset: " + JSON.stringify(resultRegion.dataset));
-}
-if (cp2Text.includes(input.wantAmbiguityText)) {
-  throw new Error("CP2 view retained stale CP1 ambiguity text: " + cp2Text);
-}
-if (!cp2Text.includes(input.wantCP2Revision) ||
-    !cp2Text.includes(input.wantDesignDigest) ||
-    !cp2Text.includes("Inject: tenant_id") ||
-    !cp2Text.includes("Confirmation")) {
-  throw new Error("CP2 view missing expected digests, guardrails: " + cp2Text);
-}
-const cp2GraphWrap = findAll(viewEl, (n) => n.attributes["class"] === "surla-graph-wrap");
-const cp2Svg = findAll(viewEl, (n) => n.attributes["id"] === "surla-c4-svg");
-const cp2SvgNodes = findAll(viewEl, (n) => n.attributes["class"] === "surla-svg-node" && n.className && n.className.baseVal === "surla-svg-node");
-const cp2SvgTexts = findAll(viewEl, (n) => n.tagName === "TEXT" && n.namespaceURI === "http://www.w3.org/2000/svg");
-if (cp2GraphWrap.length !== 1 ||
-    cp2GraphWrap[0].attributes["role"] !== "region" ||
-    cp2GraphWrap[0].attributes["aria-label"] !== "C4 architecture diagram" ||
-    cp2GraphWrap[0].attributes["tabindex"] !== "0" ||
-    cp2Svg.length !== 1 ||
-    cp2SvgNodes.length !== input.cp2Structured.containers.length ||
-    cp2SvgTexts.length === 0 ||
-    !cp2SvgTexts.every((t) => t.attributes["fill"] === "currentColor")) {
-  throw new Error("expected focusable CP2 SVG graph region with all containers and fill=currentColor on all SVG text, got svg=" + cp2Svg.length + " nodes=" + cp2SvgNodes.length);
-}
-
-// 4a. Deliver 15-node cyclic + colliding-name + self-loop CP2 fixture -> no node cutoff, all 15 nodes and cyclic/self-loop edges rendered alongside inspectable list.
-const largeContainers = [];
-for (let i = 1; i <= 15; i++) {
-  largeContainers.push({
-    id: "node-" + i,
-    name: i <= 3 ? "Duplicate Display Name" : "Container " + i,
-    kind: i === 1 ? "person" : (i <= 8 ? "service" : "container"),
-    description: "Description for node-" + i
-  });
-}
-const cyclicEdges = [
-  { from_id: "node-1", to_id: "node-2", protocol: "HTTPS" },
-  { from_id: "node-2", to_id: "node-3", protocol: "gRPC" },
-  { from_id: "node-3", to_id: "node-2", protocol: "Callback gRPC" },
-  { from_id: "node-2", to_id: "node-2", protocol: "Self Loop" },
-  { from_id: "node-8", to_id: "node-15", protocol: "SQLite" }
-];
-const largePreview = Object.assign({}, input.cp2Structured, {
-  containers: largeContainers,
-  edges: cyclicEdges,
-});
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: largePreview }
-  }
-});
-const largeSvg = findAll(viewEl, (n) => n.attributes["id"] === "surla-c4-svg");
-const largeSvgNodes = findAll(viewEl, (n) => n.attributes["class"] === "surla-svg-node");
-const largeSvgEdges = findAll(viewEl, (n) => n.attributes["class"] === "surla-svg-edge");
-const scopeNote = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp2-scope-note");
-const confirmationNote = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp2-confirmation-note");
-if (scopeNote.length !== 1 ||
-    !renderText(scopeNote[0]).includes("does not compare the design with the Change Card") ||
-    confirmationNote.length !== 1 ||
-    !renderText(confirmationNote[0]).includes("does not show that the service asks the right person") ||
-    !renderText(confirmationNote[0]).includes("examples/orders")) {
-  throw new Error("expected #surla-cp2-scope-note (declarations, not requirement coverage) and #surla-cp2-confirmation-note (badge is not a working approval flow, see examples/orders)");
-}
-const largeText = renderText(viewEl);
-const edge23Path = largeSvgEdges[1].children[0].attributes["d"];
-const edge32Path = largeSvgEdges[2].children[0].attributes["d"];
-if (largeSvg.length !== 1 ||
-    largeSvg[0].attributes["width"] !== "840" ||
-    largeSvgNodes.length !== 15 ||
-    largeSvgEdges.length !== 5 ||
-    edge23Path === edge32Path ||
-    !edge23Path.includes("Q 526") ||
-    !edge32Path.includes("Q 544") ||
-    !largeText.includes("node-15") ||
-    !largeText.includes("Self Loop")) {
-  throw new Error("expected 840px SVG with 15 nodes, distinct intra-column cyclic/self-loop edges, got width=" + (largeSvg[0] && largeSvg[0].attributes["width"]) + " e23=" + edge23Path + " e32=" + edge32Path);
-}
-
-// 4b. Deliver CP2 DiffResult from MCP diff codec -> renders unbound structural diff and clears CP1/CP2 dataset keys.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: input.diffStructured }
-  }
-});
-const diffText = renderText(viewEl);
-if (root.dataset.state !== "cp2-diff" ||
-    resultRegion.dataset.hasChanges !== "true" ||
-    resultRegion.dataset.changeId !== undefined ||
-    resultRegion.dataset.requestRevision !== undefined ||
-    resultRegion.dataset.designDigest !== undefined) {
-  throw new Error("unexpected cp2-diff dataset: " + JSON.stringify(resultRegion.dataset));
-}
-if (!diffText.includes("Standalone structural comparison") || !diffText.includes("refund_agent")) {
-  throw new Error("cp2-diff view missing unbound label or added declaration: " + diffText);
-}
-
-// 5. Deliver CP3 DraftOverrideResult -> replaces CP2 view.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: input.cp3Structured }
-  }
-});
-const cp3Text = renderText(viewEl);
-if (root.dataset.state !== "cp3-draft-override" || resultRegion.dataset.designDigest !== undefined) {
-  throw new Error("unexpected CP3 dataset: " + JSON.stringify(resultRegion.dataset));
-}
-if (!cp3Text.includes("applied_in_store=true") || !cp3Text.includes("requires_rebuild=false")) {
-  throw new Error("CP3 view missing fast-draft badges: " + cp3Text);
-}
-
-// 5b. Deliver a start_live_target result -> renders the running live target.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: {
-      candidate_commit: "4f0b3c1d2e5a6978877665544332211009988776",
-      url: "http://127.0.0.1:41234",
-      message: "Live target for commit 4f0b3c1d2e5a6978877665544332211009988776 is running at http://127.0.0.1:41234."
-    } }
-  }
-});
-const liveText = renderText(viewEl);
-if (root.dataset.state !== "cp3-live-target" || !liveText.includes("Live Target Running") ||
-    !liveText.includes("http://127.0.0.1:41234") || !liveText.includes("Drafts are not verified") || !liveText.includes("loopback address on the Surla server's host")) {
-  throw new Error("unexpected live target view: " + root.dataset.state + " / " + liveText);
-}
-
-// 5c. Deliver the stop_live_target result the MCP codec produced -> no target ran.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: input.cp3StopLiveStructured }
-  }
-});
-if (root.dataset.state !== "cp3-live-target" || !renderText(viewEl).includes("No Live Target Running")) {
-  throw new Error("unexpected stop live target view: " + renderText(viewEl));
-}
-
-// 6. Deliver tool-input notification -> transitions back to waiting state.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-input",
-    params: { arguments: { change_id: "chg-next" } }
-  }
-});
-if (root.dataset.state !== "waiting") {
-  throw new Error("expected waiting state on tool-input notification, got: " + root.dataset.state);
-}
-
-// 7. Deliver isError tool-result -> transitions to explicit error state with error text.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: {
-      isError: true,
-      content: [{ type: "text", text: "stale request_revision" }]
-    }
-  }
-});
-if (root.dataset.state !== "error" || !renderText(viewEl).includes("stale request_revision")) {
-  throw new Error("expected error state with tool error text, got: " + root.dataset.state + " / " + renderText(viewEl));
-}
-
-// 8. Deliver malformed tool-result -> transitions to explicit error state.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-result",
-    params: { structuredContent: { bogus: true } }
-  }
-});
-if (root.dataset.state !== "error") {
-  throw new Error("expected error state on malformed payload, got: " + root.dataset.state);
-}
-
-// 9. Deliver tool-cancelled notification -> clears attribution and transitions to cancelled state.
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    method: "ui/notifications/tool-cancelled",
-    params: { reason: "user aborted" }
-  }
-});
-if (root.dataset.state !== "cancelled" || root.dataset.requestRevision !== undefined || !renderText(viewEl).includes("user aborted")) {
-  throw new Error("expected cancelled state with cleared attribution, got: " + JSON.stringify(root.dataset) + " / " + renderText(viewEl));
-}
-
-// 10. Deliver host ping and ui/resource-teardown requests with id === 1 (same as INIT_REQUEST_ID) -> must respond with JSON-RPC results, not misclassify as init response.
-const beforeCount = hostMessages.length;
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "ping",
-    params: {}
-  }
-});
-if (hostMessages.length !== beforeCount + 1 || hostMessages[beforeCount].msg.id !== 1 || !hostMessages[beforeCount].msg.result) {
-  throw new Error("expected ping result for id=1, got: " + JSON.stringify(hostMessages.slice(beforeCount)));
-}
-
-messageListener({
-  source: parentWindow,
-  data: {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "ui/resource-teardown",
-    params: {}
-  }
-});
-if (hostMessages.length !== beforeCount + 2 || hostMessages[beforeCount + 1].msg.id !== 1 || !hostMessages[beforeCount + 1].msg.result || root.dataset.state !== "terminated") {
-  throw new Error("expected resource-teardown result for id=1 and terminated state, got: " + JSON.stringify(hostMessages.slice(beforeCount)) + " / " + root.dataset.state);
-}
-
-process.stdout.write(JSON.stringify({
-  confirmCall: noEditRefineReq.params,
-  staleCall: staleReq.params,
-  getChangeCall: getChangeReq.params
-}));
-`
-	cmd := exec.CommandContext(ctx, nodePath, "-e", nodeHarness)
-	cmd.Stdin = strings.NewReader(string(harnessInput))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("MCP Apps JS bridge harness failed: %v\n%s", err, string(out))
-	}
-
-	// Execute the exact guest-emitted tools/call payloads through the real MCP adapter.
-	var captured struct {
-		ConfirmCall struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		} `json:"confirmCall"`
-		StaleCall struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		} `json:"staleCall"`
-		GetChangeCall struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		} `json:"getChangeCall"`
-	}
-	if err := json.Unmarshal(out, &captured); err != nil {
-		t.Fatalf("unmarshal guest tools/call output: %v (raw=%s)", err, string(out))
-	}
-	guestGetRes, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      captured.GetChangeCall.Name,
-		Arguments: captured.GetChangeCall.Arguments,
-	})
-	if err != nil {
-		t.Fatalf("adapter.ToolsCall(guest get_change): %v", err)
-	}
-	if getComplete, ok := guestGetRes.Outcome.AsComplete(); !ok || len(getComplete.StructuredContent) == 0 {
-		t.Fatalf("unexpected guest get_change outcome: %+v", guestGetRes)
-	}
-	guestStaleRes, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      captured.StaleCall.Name,
-		Arguments: captured.StaleCall.Arguments,
-	})
-	if err != nil {
-		t.Fatalf("adapter.ToolsCall(guest stale confirm_intent): %v", err)
-	}
-	if staleComplete, ok := guestStaleRes.Outcome.AsComplete(); !ok || staleComplete.IsError == nil || !*staleComplete.IsError {
-		t.Fatalf("expected guest stale confirm_intent to return tool error, got: %+v", guestStaleRes)
-	}
-	guestRefineRes, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
-		Name:      captured.ConfirmCall.Name,
-		Arguments: captured.ConfirmCall.Arguments,
-	})
-	if err != nil {
-		t.Fatalf("adapter.ToolsCall(guest confirm_intent no-edit refine): %v", err)
-	}
-	refineComplete, ok := guestRefineRes.Outcome.AsComplete()
-	if !ok || len(refineComplete.StructuredContent) == 0 {
-		t.Fatalf("unexpected guest confirm_intent refine outcome: %+v", guestRefineRes)
-	}
-	var refinedWire struct {
-		RequestRevision string `json:"request_revision"`
-	}
-	if err := json.Unmarshal(refineComplete.StructuredContent, &refinedWire); err != nil {
-		t.Fatalf("unmarshal refinedWire: %v", err)
-	}
-	if refinedWire.RequestRevision != confirmedWire.RequestRevision || !strings.Contains(string(refineComplete.StructuredContent), `  Instant store credit\nup to $50.00  `) {
-		t.Fatalf("no-edit refine altered request_revision or multiline/whitespace field: got %q, want %q", refinedWire.RequestRevision, confirmedWire.RequestRevision)
-	}
-}
-
-// extractCheckpointScript extracts the embedded <script>...</script> body from
-// the CheckpointUI HTML document.
-func extractCheckpointScript(t *testing.T, htmlDoc string) string {
-	t.Helper()
-	const openTag = "<script>"
-	const closeTag = "</script>"
-	start := strings.Index(htmlDoc, openTag)
-	end := strings.LastIndex(htmlDoc, closeTag)
-	if start < 0 || end < 0 || end <= start+len(openTag) {
-		t.Fatal("checkpointUIHTML missing <script>...</script> block")
-	}
-	return htmlDoc[start+len(openTag) : end]
-}

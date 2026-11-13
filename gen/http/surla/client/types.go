@@ -685,22 +685,22 @@ type GetStoryRefreshResponseBody struct {
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 }
 
-// CheckpointUIForbiddenResponseBody is the type of the "surla" service
-// "checkpoint_ui" endpoint HTTP response body for the "forbidden" error.
-type CheckpointUIForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+// ListChangesResponseBody is the type of the "surla" service "list_changes"
+// endpoint HTTP response body.
+type ListChangesResponseBody struct {
+	// Saved Change Cards, most recently saved first.
+	Changes []*ChangeListItemResponseBody `form:"changes,omitempty" json:"changes,omitempty" xml:"changes,omitempty"`
+	// Opaque value identifying this exact list; it changes whenever any listed
+	// value changes.
+	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
+}
+
+// WaitForChangesResponseBody is the type of the "surla" service
+// "wait_for_changes" endpoint HTTP response body.
+type WaitForChangesResponseBody struct {
+	// Version of the current change list; it equals since when nothing changed
+	// during the wait.
+	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
 }
 
 // GoldenPathForbiddenResponseBody is the type of the "surla" service
@@ -2069,6 +2069,42 @@ type GetStoryRefreshForbiddenResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// ListChangesForbiddenResponseBody is the type of the "surla" service
+// "list_changes" endpoint HTTP response body for the "forbidden" error.
+type ListChangesForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// WaitForChangesForbiddenResponseBody is the type of the "surla" service
+// "wait_for_changes" endpoint HTTP response body for the "forbidden" error.
+type WaitForChangesForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2429,6 +2465,34 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened *bool `form:"shortened,omitempty" json:"shortened,omitempty" xml:"shortened,omitempty"`
+}
+
+// ChangeListItemResponseBody is used to define fields on response body types.
+type ChangeListItemResponseBody struct {
+	// Change Card identifier; get_change takes it.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Plain-English summary of the current revision.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Checkpoint status of the current revision.
+	Status *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	// Current request_revision of the Change Card.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// The Change Card's most recently accepted verification run; absent when none
+	// was started.
+	LatestVerification *LatestVerificationItemResponseBody `form:"latest_verification,omitempty" json:"latest_verification,omitempty" xml:"latest_verification,omitempty"`
+	// When the Change Card was last saved. It is not part of request_revision.
+	SavedAt *string `form:"saved_at,omitempty" json:"saved_at,omitempty" xml:"saved_at,omitempty"`
+}
+
+// LatestVerificationItemResponseBody is used to define fields on response body
+// types.
+type LatestVerificationItemResponseBody struct {
+	// Verification run identifier; get_verification takes it.
+	RunID *string `form:"run_id,omitempty" json:"run_id,omitempty" xml:"run_id,omitempty"`
+	// running while the run builds or evaluates the candidate; passed or failed
+	// when its report's verdict is known; not_completed when it stopped without a
+	// report.
+	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -2917,21 +2981,6 @@ func NewReadCheckOutputRequestBody(p *surla.ReadCheckOutputPayload) *ReadCheckOu
 		Cursor: p.Cursor,
 	}
 	return body
-}
-
-// NewCheckpointUIForbidden builds a surla service checkpoint_ui endpoint
-// forbidden error.
-func NewCheckpointUIForbidden(body *CheckpointUIForbiddenResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
 }
 
 // NewGoldenPathForbidden builds a surla service golden_path endpoint forbidden
@@ -4739,6 +4788,64 @@ func NewGetStoryRefreshForbidden(body *GetStoryRefreshForbiddenResponseBody) *go
 	return v
 }
 
+// NewListChangesChangeListOK builds a "surla" service "list_changes" endpoint
+// result from a HTTP "OK" response.
+func NewListChangesChangeListOK(body *ListChangesResponseBody) *surla.ChangeList {
+	v := &surla.ChangeList{
+		Version: *body.Version,
+	}
+	v.Changes = make([]*surla.ChangeListItem, len(body.Changes))
+	for i, val := range body.Changes {
+		if val == nil {
+			v.Changes[i] = nil
+			continue
+		}
+		v.Changes[i] = unmarshalChangeListItemResponseBodyToSurlaChangeListItem(val)
+	}
+
+	return v
+}
+
+// NewListChangesForbidden builds a surla service list_changes endpoint
+// forbidden error.
+func NewListChangesForbidden(body *ListChangesForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewWaitForChangesChangeListVersionOK builds a "surla" service
+// "wait_for_changes" endpoint result from a HTTP "OK" response.
+func NewWaitForChangesChangeListVersionOK(body *WaitForChangesResponseBody) *surla.ChangeListVersion {
+	v := &surla.ChangeListVersion{
+		Version: *body.Version,
+	}
+
+	return v
+}
+
+// NewWaitForChangesForbidden builds a surla service wait_for_changes endpoint
+// forbidden error.
+func NewWaitForChangesForbidden(body *WaitForChangesForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeResponseBody runs the validations defined on
 // ProposeChangeResponseBody
 func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err error) {
@@ -5526,26 +5633,30 @@ func ValidateGetStoryRefreshResponseBody(body *GetStoryRefreshResponseBody) (err
 	return
 }
 
-// ValidateCheckpointUIForbiddenResponseBody runs the validations defined on
-// CheckpointUIForbiddenResponseBody
-func ValidateCheckpointUIForbiddenResponseBody(body *CheckpointUIForbiddenResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+// ValidateListChangesResponseBody runs the validations defined on
+// ListChangesResponseBody
+func ValidateListChangesResponseBody(body *ListChangesResponseBody) (err error) {
+	if body.Changes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changes", "body"))
 	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	if body.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
 	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	for _, e := range body.Changes {
+		if e != nil {
+			if err2 := validateChangeListItemResponseBody(e, "body.changes[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	return
+}
+
+// ValidateWaitForChangesResponseBody runs the validations defined on
+// WaitForChangesResponseBody
+func ValidateWaitForChangesResponseBody(body *WaitForChangesResponseBody) (err error) {
+	if body.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
 	}
 	return
 }
@@ -7350,6 +7461,54 @@ func ValidateGetStoryRefreshForbiddenResponseBody(body *GetStoryRefreshForbidden
 	return
 }
 
+// ValidateListChangesForbiddenResponseBody runs the validations defined on
+// ListChangesForbiddenResponseBody
+func ValidateListChangesForbiddenResponseBody(body *ListChangesForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateWaitForChangesForbiddenResponseBody runs the validations defined on
+// WaitForChangesForbiddenResponseBody
+func ValidateWaitForChangesForbiddenResponseBody(body *WaitForChangesForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateAmbiguityQuestionResponseBody runs the validations defined on
 // AmbiguityQuestion
 func ValidateAmbiguityQuestionResponseBody(body *AmbiguityQuestionResponseBody) (err error) {
@@ -8548,6 +8707,108 @@ func validateTraceSpanResponseBody(body *TraceSpanResponseBody, path string) (er
 	if body.Status != nil {
 		if !(*body.Status == "unset" || *body.Status == "ok" || *body.Status == "error") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".status", *body.Status, []any{"unset", "ok", "error"}))
+		}
+	}
+	return
+}
+
+// ValidateChangeListItemResponseBody runs the validations defined on
+// ChangeListItem
+func ValidateChangeListItemResponseBody(body *ChangeListItemResponseBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.SavedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("saved_at", "body"))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "needs_confirmation" || *body.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	if body.LatestVerification != nil {
+		if err2 := validateLatestVerificationItemResponseBody(body.LatestVerification, "body.latest_verification"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.SavedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.saved_at", *body.SavedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// validateChangeListItemResponseBody checks ChangeListItem and reports errors
+// using the path supplied by its caller
+func validateChangeListItemResponseBody(body *ChangeListItemResponseBody, path string) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", path))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", path))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", path))
+	}
+	if body.SavedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("saved_at", path))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "needs_confirmation" || *body.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".status", *body.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	if body.LatestVerification != nil {
+		if err2 := validateLatestVerificationItemResponseBody(body.LatestVerification, path+".latest_verification"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.SavedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".saved_at", *body.SavedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateLatestVerificationItemResponseBody runs the validations defined on
+// LatestVerificationItem
+func ValidateLatestVerificationItemResponseBody(body *LatestVerificationItemResponseBody) (err error) {
+	if body.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.State != nil {
+		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"running", "passed", "failed", "not_completed"}))
+		}
+	}
+	return
+}
+
+// validateLatestVerificationItemResponseBody checks LatestVerificationItem and
+// reports errors using the path supplied by its caller
+func validateLatestVerificationItemResponseBody(body *LatestVerificationItemResponseBody, path string) (err error) {
+	if body.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", path))
+	}
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", path))
+	}
+	if body.State != nil {
+		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".state", *body.State, []any{"running", "passed", "failed", "not_completed"}))
 		}
 	}
 	return

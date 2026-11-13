@@ -82,7 +82,9 @@ func (t diagnosticTracer) Start(
 	principal, ok := PrincipalFromContext(ctx)
 	next, span := t.Tracer.Start(ctx, name, opts...)
 	// The browser waiting read stays in exported traces without adding periodic observations to local operation history.
-	if !span.IsRecording() || !ok || name == "surla.request.wait_for_changes" {
+	// Both its request boundary span and its inner span are excluded: the views page always keeps one waiting read
+	// open, and saving either would fill the bounded history and push real operations out of view.
+	if !span.IsRecording() || !ok || name == "surla.request.wait_for_changes" || name == waitForChangesSpan {
 		return next, span
 	}
 	return next, &diagnosticSpan{

@@ -20,12 +20,13 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 	roles := []CallerKind{CallerUser, CallerGuide, CallerBuilder, CallerTestWriter, CallerManagement, ""}
 	common := []CallerKind{CallerUser, CallerGuide, CallerBuilder}
 	expected := map[string][]CallerKind{
-		"checkpoint_ui": {CallerUser}, "golden_path": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
+		"golden_path":    {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
 		"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
 		"propose_change": {CallerGuide}, "revise_change": {CallerGuide}, "refresh_story": {CallerGuide}, "init_project": {CallerGuide},
 		"generate_code": {CallerBuilder}, "check_project": {CallerBuilder}, "update_dependencies": {CallerBuilder}, "start_live_target": {CallerBuilder}, "draft_override": {CallerBuilder}, "verify_change": {CallerBuilder},
 		"stop_live_target": {CallerUser, CallerBuilder},
 		"get_change":       common, "preview_architecture": common, "diff": common, "get_verification": common, "list_verifications": common, "list_traces": common, "read_check_output": common, "get_story_refresh": common,
+		"list_changes": common, "wait_for_changes": {CallerUser},
 	}
 	assert.Len(t, expected, len(gensurla.MethodNames))
 	for _, name := range gensurla.MethodNames {
@@ -78,9 +79,5 @@ func endpointField(operation string) string {
 	for index, word := range words {
 		words[index] = strings.ToUpper(word[:1]) + word[1:]
 	}
-	field := strings.Join(words, "")
-	if operation == "checkpoint_ui" {
-		field = "CheckpointUI"
-	}
-	return field
+	return strings.Join(words, "")
 }

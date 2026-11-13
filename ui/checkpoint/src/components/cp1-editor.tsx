@@ -267,6 +267,7 @@ export function CP1EditorView({
           className="surla-card"
           role="region"
           aria-label="Recorded Promotion Approval"
+          tabIndex={-1}
         >
           <div className="surla-region-header">
             <div className="surla-field-row">
@@ -680,7 +681,7 @@ export function CP1EditorView({
 
         <div id="surla-confirm-feedback">
           {formError ? (
-            <Alert variant="destructive" role="alert">
+            <Alert id="surla-confirm-error" variant="destructive" role="alert" tabIndex={-1}>
               <strong>Change Card request failed: </strong>
               <p>{formError}</p>
               Your edited answers and examples remain in this form. Click{" "}

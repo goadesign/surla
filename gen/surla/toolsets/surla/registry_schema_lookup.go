@@ -39,28 +39,30 @@ func ToolSchema(name tools.Ident) (*genregistry.ToolSchema, bool) {
 		return declarations.schema440(), true
 	case "surla.init_project":
 		return declarations.schema486(), true
-	case "surla.list_traces":
+	case "surla.list_changes":
 		return declarations.schema501(), true
+	case "surla.list_traces":
+		return declarations.schema519(), true
 	case "surla.list_verifications":
-		return declarations.schema530(), true
+		return declarations.schema548(), true
 	case "surla.preview_architecture":
-		return declarations.schema579(), true
+		return declarations.schema597(), true
 	case "surla.propose_change":
-		return declarations.schema637(), true
+		return declarations.schema655(), true
 	case "surla.read_check_output":
-		return declarations.schema766(), true
+		return declarations.schema784(), true
 	case "surla.refresh_story":
-		return declarations.schema781(), true
+		return declarations.schema799(), true
 	case "surla.revise_change":
-		return declarations.schema829(), true
+		return declarations.schema847(), true
 	case "surla.start_live_target":
-		return declarations.schema966(), true
+		return declarations.schema984(), true
 	case "surla.stop_live_target":
-		return declarations.schema978(), true
+		return declarations.schema996(), true
 	case "surla.update_dependencies":
-		return declarations.schema987(), true
+		return declarations.schema1005(), true
 	case "surla.verify_change":
-		return declarations.schema998(), true
+		return declarations.schema1016(), true
 	default:
 		return nil, false
 	}

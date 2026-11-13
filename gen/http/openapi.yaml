@@ -13,6 +13,71 @@ produces:
     - application/xml
     - application/gob
 paths:
+    /change-updates:
+        get:
+            tags:
+                - surla
+            summary: wait_for_changes surla
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            operationId: surla#wait_for_changes
+            parameters:
+                - name: since
+                  in: query
+                  description: version of the change list the caller last read.
+                  required: true
+                  type: string
+                  maxLength: 128
+                  minLength: 1
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ChangeListVersion'
+                        required:
+                            - version
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaWaitForChangesForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /changes:
+        get:
+            tags:
+                - surla
+            summary: list_changes surla
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            operationId: surla#list_changes
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ChangeList'
+                        required:
+                            - changes
+                            - version
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaListChangesForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
     /changes/{change_id}:
         get:
             tags:
@@ -1331,32 +1396,6 @@ paths:
                             id: 123abc
                             message: parameter 'p' must be an integer
                             name: not_implemented
-                            temporary: false
-                            timeout: false
-            schemes:
-                - http
-    /ui/checkpoint:
-        get:
-            tags:
-                - surla
-            summary: checkpoint_ui surla
-            description: Serve the interactive MCP Apps HTML host for Surla checkpoints.
-            operationId: surla#checkpoint_ui
-            responses:
-                "200":
-                    description: OK response.
-                    schema:
-                        type: string
-                "403":
-                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
-                    schema:
-                        $ref: '#/definitions/SurlaCheckpointUIForbiddenResponseBody'
-                    examples:
-                        application/vnd.goa.error:
-                            fault: false
-                            id: 123abc
-                            message: parameter 'p' must be an integer
-                            name: forbidden
                             temporary: false
                             timeout: false
             schemes:
@@ -4124,6 +4163,118 @@ definitions:
             - examples
             - preserved_behaviors
             - request_revision
+    ChangeList:
+        title: ChangeList
+        type: object
+        properties:
+            changes:
+                type: array
+                items:
+                    $ref: '#/definitions/ChangeListItem'
+                description: Saved Change Cards, most recently saved first.
+                example:
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+            version:
+                type: string
+                description: Opaque value identifying this exact list; it changes whenever any listed value changes.
+                example: Voluptas voluptates.
+        description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
+        example:
+            changes:
+                - change_id: Consequatur nemo.
+                  latest_verification:
+                    run_id: Voluptas veritatis excepturi fuga enim et.
+                    state: not_completed
+                  request_revision: Quas odit et aut consequuntur ullam mollitia.
+                  saved_at: "2015-06-29T05:47:08Z"
+                  status: needs_confirmation
+                  summary: Ut saepe incidunt odit.
+                - change_id: Consequatur nemo.
+                  latest_verification:
+                    run_id: Voluptas veritatis excepturi fuga enim et.
+                    state: not_completed
+                  request_revision: Quas odit et aut consequuntur ullam mollitia.
+                  saved_at: "2015-06-29T05:47:08Z"
+                  status: needs_confirmation
+                  summary: Ut saepe incidunt odit.
+            version: Voluptas voluptates.
+        required:
+            - changes
+            - version
+    ChangeListItem:
+        title: ChangeListItem
+        type: object
+        properties:
+            change_id:
+                type: string
+                description: Change Card identifier; get_change takes it.
+                example: Consequatur nemo.
+            latest_verification:
+                $ref: '#/definitions/LatestVerificationItem'
+            request_revision:
+                type: string
+                description: Current request_revision of the Change Card.
+                example: Quas odit et aut consequuntur ullam mollitia.
+            saved_at:
+                type: string
+                description: When the Change Card was last saved. It is not part of request_revision.
+                example: "2015-06-29T05:47:08Z"
+                format: date-time
+            status:
+                type: string
+                description: Checkpoint status of the current revision.
+                example: needs_confirmation
+                enum:
+                    - needs_confirmation
+                    - confirmed
+            summary:
+                type: string
+                description: Plain-English summary of the current revision.
+                example: Ut saepe incidunt odit.
+        description: One saved Change Card of the project as list_changes reports it.
+        example:
+            change_id: Consequatur nemo.
+            latest_verification:
+                run_id: Voluptas veritatis excepturi fuga enim et.
+                state: not_completed
+            request_revision: Quas odit et aut consequuntur ullam mollitia.
+            saved_at: "2015-06-29T05:47:08Z"
+            status: needs_confirmation
+            summary: Ut saepe incidunt odit.
+        required:
+            - change_id
+            - summary
+            - status
+            - request_revision
+            - saved_at
+    ChangeListVersion:
+        title: ChangeListVersion
+        type: object
+        properties:
+            version:
+                type: string
+                description: Version of the current change list; it equals since when nothing changed during the wait.
+                example: Rerum illum facilis doloribus id ea.
+        description: The version of the change list when the wait ended.
+        example:
+            version: Rerum illum facilis doloribus id ea.
+        required:
+            - version
     CheckOutputPage:
         title: CheckOutputPage
         type: object
@@ -4593,6 +4744,30 @@ definitions:
             - module_path
             - service_name
             - commit
+    LatestVerificationItem:
+        title: LatestVerificationItem
+        type: object
+        properties:
+            run_id:
+                type: string
+                description: Verification run identifier; get_verification takes it.
+                example: Voluptas veritatis excepturi fuga enim et.
+            state:
+                type: string
+                description: running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.
+                example: not_completed
+                enum:
+                    - running
+                    - passed
+                    - failed
+                    - not_completed
+        description: The most recently accepted Checkpoint 4 verification run of a Change Card.
+        example:
+            run_id: Voluptas veritatis excepturi fuga enim et.
+            state: not_completed
+        required:
+            - run_id
+            - state
     LiveTargetResult:
         title: LiveTargetResult
         type: object
@@ -8269,49 +8444,6 @@ definitions:
             - temporary
             - timeout
             - fault
-    SurlaCheckpointUIForbiddenResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: true
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: true
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: true
-        description: Error response result type (default view)
-        example:
-            fault: true
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: true
-            timeout: true
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
     SurlaConfigureModelForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -9552,6 +9684,49 @@ definitions:
             name: bad_request
             temporary: true
             timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaListChangesForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
         required:
             - name
             - id
@@ -11142,6 +11317,49 @@ definitions:
             message: parameter 'p' must be an integer
             name: bad_request
             temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaWaitForChangesForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
             timeout: true
         required:
             - name

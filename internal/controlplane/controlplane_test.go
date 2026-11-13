@@ -607,38 +607,24 @@ var _ = Service("orders", func() {
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
 		"check_project", "update_dependencies", "read_check_output",
-		"list_traces", "refresh_story", "get_story_refresh",
+		"list_traces", "refresh_story", "get_story_refresh", "list_changes",
 	}, toolNames)
-	// Every checkpoint tool, diff included, links the checkpoint viewer so an
-	// MCP Apps host can render its result; configure_model, init_project,
-	// generate_code, check_project, update_dependencies, read_check_output,
-	// refresh_story and get_story_refresh are server/workspace tools without a
-	// checkpoint UI view. list_traces is also a data tool; the viewer reads it
-	// through its separate Traces control.
-	workspaceTools := map[string]bool{
-		"configure_model": true, "init_project": true, "generate_code": true,
-		"check_project": true, "update_dependencies": true, "read_check_output": true,
-		"list_traces": true, "refresh_story": true, "get_story_refresh": true,
-	}
+	// The views page reads the server directly; no tool asks a client to
+	// embed a page for its result.
 	for _, tool := range toolsRes.Tools {
-		if workspaceTools[tool.Name] {
-			if strings.Contains(string(tool.Meta), "resourceUri") {
-				t.Fatalf("tool %q unexpectedly links a UI resource: _meta=%s", tool.Name, tool.Meta)
-			}
-			continue
-		}
-		if !strings.Contains(string(tool.Meta), `"resourceUri":"ui://surla/checkpoint"`) {
-			t.Fatalf("tool %q does not link ui://surla/checkpoint: _meta=%s", tool.Name, tool.Meta)
+		if strings.Contains(string(tool.Meta), "resourceUri") {
+			t.Fatalf("tool %q links a UI resource: _meta=%s", tool.Name, tool.Meta)
 		}
 	}
-	resRead, err := adapter.ResourcesRead(ctx, &genmcpadapter.ResourcesReadPayload{URI: "ui://surla/checkpoint"})
+	resources, err := adapter.ResourcesList(ctx, &genmcpadapter.ResourcesListPayload{})
 	if err != nil {
-		t.Fatalf("ResourcesRead(ui://surla/checkpoint) failed: %v", err)
+		t.Fatalf("ResourcesList: %v", err)
 	}
-	completeRes, ok := resRead.Outcome.AsComplete()
-	if !ok || len(completeRes.Contents) != 1 || completeRes.Contents[0].Text == nil || !strings.Contains(*completeRes.Contents[0].Text, "surla-checkpoint-root") {
-		t.Fatalf("unexpected ResourcesRead content: %+v", resRead)
+	resourceURIs := make([]string, 0, len(resources.Resources))
+	for _, resource := range resources.Resources {
+		resourceURIs = append(resourceURIs, resource.URI)
 	}
+	assert.Equal(t, []string{goldenpath.ResourceURI}, resourceURIs, "the Golden Path is the only MCP resource")
 
 	goldenRes, err := adapter.ResourcesRead(ctx, &genmcpadapter.ResourcesReadPayload{URI: goldenpath.ResourceURI})
 	if err != nil {

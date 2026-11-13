@@ -553,6 +553,24 @@ func ValidateInitProjectResultTransport(body *InitProjectResultTransport) (err e
 	return
 }
 
+// ValidateListChangesResultTransport runs the validations defined on ListChangesResultTransport.
+func ValidateListChangesResultTransport(body *ListChangesResultTransport) (err error) {
+	if body.Changes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changes", "body"))
+	}
+	if body.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	for _, e := range body.Changes {
+		if e != nil {
+			if err2 := ValidateChangeListItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateListTracesPayloadTransport runs the validations defined on ListTracesPayloadTransport.
 func ValidateListTracesPayloadTransport(body *ListTracesPayloadTransport) (err error) {
 	if body.Status != nil {
@@ -1388,6 +1406,39 @@ func ValidateCP1RevisionAnalysisTransport(body *CP1RevisionAnalysisTransport) (e
 	return
 }
 
+// ValidateChangeListItemTransport runs the validations defined on ChangeListItemTransport.
+func ValidateChangeListItemTransport(body *ChangeListItemTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.SavedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("saved_at", "body"))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "needs_confirmation" || *body.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	if body.LatestVerification != nil {
+		if err2 := ValidateLatestVerificationItemTransport(body.LatestVerification); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.SavedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.saved_at", *body.SavedAt, goa.FormatDateTime))
+	}
+	return
+}
+
 // ValidateDesignSnapshotTransport runs the validations defined on DesignSnapshotTransport.
 func ValidateDesignSnapshotTransport(body *DesignSnapshotTransport) (err error) {
 	if body.Files == nil {
@@ -1416,6 +1467,22 @@ func ValidateExampleItemTransport(body *ExampleItemTransport) (err error) {
 	if body.VerificationKind != nil {
 		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// ValidateLatestVerificationItemTransport runs the validations defined on LatestVerificationItemTransport.
+func ValidateLatestVerificationItemTransport(body *LatestVerificationItemTransport) (err error) {
+	if body.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.State != nil {
+		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"running", "passed", "failed", "not_completed"}))
 		}
 	}
 	return

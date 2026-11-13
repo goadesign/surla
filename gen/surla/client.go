@@ -15,7 +15,6 @@ import (
 
 // Client is the "surla" service client.
 type Client struct {
-	CheckpointUIEndpoint        goa.Endpoint
 	GoldenPathEndpoint          goa.Endpoint
 	ProposeChangeEndpoint       goa.Endpoint
 	ReviseChangeEndpoint        goa.Endpoint
@@ -39,12 +38,13 @@ type Client struct {
 	ListTracesEndpoint          goa.Endpoint
 	RefreshStoryEndpoint        goa.Endpoint
 	GetStoryRefreshEndpoint     goa.Endpoint
+	ListChangesEndpoint         goa.Endpoint
+	WaitForChangesEndpoint      goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, listChanges, waitForChanges goa.Endpoint) *Client {
 	return &Client{
-		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
 		ProposeChangeEndpoint:       proposeChange,
 		ReviseChangeEndpoint:        reviseChange,
@@ -68,20 +68,9 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		ListTracesEndpoint:          listTraces,
 		RefreshStoryEndpoint:        refreshStory,
 		GetStoryRefreshEndpoint:     getStoryRefresh,
+		ListChangesEndpoint:         listChanges,
+		WaitForChangesEndpoint:      waitForChanges,
 	}
-}
-
-// CheckpointUI calls the "checkpoint_ui" endpoint of the "surla" service.
-// CheckpointUI may return the following errors:
-//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
-//   - error: internal error
-func (c *Client) CheckpointUI(ctx context.Context) (res string, err error) {
-	var ires any
-	ires, err = c.CheckpointUIEndpoint(ctx, nil)
-	if err != nil {
-		return
-	}
-	return ires.(string), nil
 }
 
 // GoldenPath calls the "golden_path" endpoint of the "surla" service.
@@ -439,4 +428,30 @@ func (c *Client) GetStoryRefresh(ctx context.Context) (res *StoryRefreshResult, 
 		return
 	}
 	return ires.(*StoryRefreshResult), nil
+}
+
+// ListChanges calls the "list_changes" endpoint of the "surla" service.
+// ListChanges may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) ListChanges(ctx context.Context) (res *ChangeList, err error) {
+	var ires any
+	ires, err = c.ListChangesEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*ChangeList), nil
+}
+
+// WaitForChanges calls the "wait_for_changes" endpoint of the "surla" service.
+// WaitForChanges may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (res *ChangeListVersion, err error) {
+	var ires any
+	ires, err = c.WaitForChangesEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ChangeListVersion), nil
 }

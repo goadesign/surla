@@ -153,48 +153,29 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 		rawTools = append(rawTools, tools...)
 	}
 	toolNames := map[string]bool{}
-	uiTools := map[string]bool{}
 	for _, item := range rawTools {
 		toolMap, isMap := item.(map[string]any)
 		require.True(t, isMap)
 		name, _ := toolMap["name"].(string)
 		toolNames[name] = true
-		if toolMeta, hasMeta := toolMap["_meta"].(map[string]any); hasMeta {
-			if uiMeta, hasUI := toolMeta["ui"].(map[string]any); hasUI {
-				if uri, _ := uiMeta["resourceUri"].(string); uri == "ui://surla/checkpoint" {
-					uiTools[name] = true
-				}
-			}
-		}
+		toolMeta, _ := toolMap["_meta"].(map[string]any)
+		assert.NotContains(t, toolMeta, "ui", "tool %s must not ask a client to embed a page", name)
 	}
-	for _, wantTool := range []string{"refresh_story", "get_story_refresh"} {
+	for _, wantTool := range []string{"refresh_story", "get_story_refresh", "list_changes"} {
 		assert.True(t, toolNames[wantTool], "tool %s must be listed in tools/list", wantTool)
-		assert.False(t, uiTools[wantTool], "tool %s must not advertise ui://surla/checkpoint", wantTool)
-	}
-	for _, wantUITool := range []string{
-		"propose_change", "revise_change", "confirm_intent", "get_change",
-		"preview_architecture", "draft_override", "verify_change",
-		"get_verification", "list_verifications", "approve_merge",
-		"diff",
-	} {
-		assert.True(t, uiTools[wantUITool], "tool %s must advertise ui://surla/checkpoint", wantUITool)
 	}
 
 	resourcesRes := s1.call("3", "resources/list", map[string]any{})
 	rawResources, ok := resourcesRes["resources"].([]any)
 	require.True(t, ok)
-	assert.Len(t, rawResources, 2)
-	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources))
+	assert.Len(t, rawResources, 1)
+	// wait_for_changes is the views page's HTTP-only waiting read, not a tool.
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-1)
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)
 	assert.Equal(t, "text/markdown", gpContents["mimeType"])
 	assert.Contains(t, gpContents["text"], "# Golden Path\n")
-
-	uiRead := s1.call("5", "resources/read", map[string]any{"uri": "ui://surla/checkpoint"})
-	uiContents := requireResourceContents(t, uiRead)
-	assert.Equal(t, "text/html;profile=mcp-app", uiContents["mimeType"])
-	assert.Contains(t, strings.ToLower(fmt.Sprint(uiContents["text"])), "<html")
 
 	proposedRaw := s1.callTool("6", "propose_change", map[string]any{
 		"change_id": "vip-refunds",

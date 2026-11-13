@@ -25,14 +25,14 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|list-changes|wait-for-changes)",
 	}
 }
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
 	return os.Args[0] + " " + "project identity" + "\n" +
-		os.Args[0] + " " + "surla checkpoint-ui" + "\n" +
+		os.Args[0] + " " + "surla golden-path" + "\n" +
 		""
 }
 
@@ -83,8 +83,6 @@ func ParseEndpoint(
 		projectExchangeBrowserLinkBodyFlag = new(cliStringFlag)
 
 		surlaFlags = flag.NewFlagSet("surla", flag.ContinueOnError)
-
-		surlaCheckpointUIFlags = flag.NewFlagSet("checkpoint-ui", flag.ExitOnError)
 
 		surlaGoldenPathFlags = flag.NewFlagSet("golden-path", flag.ExitOnError)
 
@@ -151,6 +149,11 @@ func ParseEndpoint(
 		surlaRefreshStoryFlags = flag.NewFlagSet("refresh-story", flag.ExitOnError)
 
 		surlaGetStoryRefreshFlags = flag.NewFlagSet("get-story-refresh", flag.ExitOnError)
+
+		surlaListChangesFlags = flag.NewFlagSet("list-changes", flag.ExitOnError)
+
+		surlaWaitForChangesFlags     = flag.NewFlagSet("wait-for-changes", flag.ExitOnError)
+		surlaWaitForChangesSinceFlag = new(cliStringFlag)
 	)
 	projectAddAgentFlags.Var(projectAddAgentBodyFlag, "body", "")
 	projectRemoveAgentFlags.Var(projectRemoveAgentActorIDFlag, "actor-id", "Agent identifier.")
@@ -173,6 +176,7 @@ func ParseEndpoint(
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
 	surlaListTracesFlags.Var(surlaListTracesCursorFlag, "cursor", "")
+	surlaWaitForChangesFlags.Var(surlaWaitForChangesSinceFlag, "since", "")
 
 	projectFlags.Usage = projectUsage
 	projectIdentityFlags.Usage = projectIdentityUsage
@@ -183,7 +187,6 @@ func ParseEndpoint(
 	projectExchangeBrowserLinkFlags.Usage = projectExchangeBrowserLinkUsage
 
 	surlaFlags.Usage = surlaUsage
-	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
 	surlaGoldenPathFlags.Usage = surlaGoldenPathUsage
 	surlaProposeChangeFlags.Usage = surlaProposeChangeUsage
 	surlaReviseChangeFlags.Usage = surlaReviseChangeUsage
@@ -207,6 +210,8 @@ func ParseEndpoint(
 	surlaListTracesFlags.Usage = surlaListTracesUsage
 	surlaRefreshStoryFlags.Usage = surlaRefreshStoryUsage
 	surlaGetStoryRefreshFlags.Usage = surlaGetStoryRefreshUsage
+	surlaListChangesFlags.Usage = surlaListChangesUsage
+	surlaWaitForChangesFlags.Usage = surlaWaitForChangesUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -266,9 +271,6 @@ func ParseEndpoint(
 
 		case "surla":
 			switch epn {
-			case "checkpoint-ui":
-				epf = surlaCheckpointUIFlags
-
 			case "golden-path":
 				epf = surlaGoldenPathFlags
 
@@ -338,6 +340,12 @@ func ParseEndpoint(
 			case "get-story-refresh":
 				epf = surlaGetStoryRefreshFlags
 
+			case "list-changes":
+				epf = surlaListChangesFlags
+
+			case "wait-for-changes":
+				epf = surlaWaitForChangesFlags
+
 			}
 
 		}
@@ -382,8 +390,6 @@ func ParseEndpoint(
 		case "surla":
 			c := surlac.NewClient(scheme, host, doer, enc, dec, restore)
 			switch epn {
-			case "checkpoint-ui":
-				endpoint = c.CheckpointUI()
 			case "golden-path":
 				endpoint = c.GoldenPath()
 			case "propose-change":
@@ -447,6 +453,11 @@ func ParseEndpoint(
 				endpoint = c.RefreshStory()
 			case "get-story-refresh":
 				endpoint = c.GetStoryRefresh()
+			case "list-changes":
+				endpoint = c.ListChanges()
+			case "wait-for-changes":
+				endpoint = c.WaitForChanges()
+				data, err = surlac.BuildWaitForChangesPayload(surlaWaitForChangesSinceFlag.value)
 			}
 		}
 	}
@@ -579,7 +590,6 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `Surla MCP software factory control plane.`)
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] surla COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
-	fmt.Fprintln(os.Stderr, `    checkpoint-ui: Serve the interactive MCP Apps HTML host for Surla checkpoints.`)
 	fmt.Fprintln(os.Stderr, `    golden-path: Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms, followed by the decision component catalog for the optional ui_composition of a propose_change or revise_change analysis.`)
 	fmt.Fprintln(os.Stderr, `    propose-change: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. Every card waits for user confirmation, including a card without ambiguities. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
 	fmt.Fprintln(os.Stderr, `    revise-change: Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.`)
@@ -603,26 +613,12 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
 	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
+	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
 }
-func surlaCheckpointUIUsage() {
-	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] surla checkpoint-ui", os.Args[0])
-	fmt.Fprintln(os.Stderr)
-
-	// Description
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Serve the interactive MCP Apps HTML host for Surla checkpoints.`)
-
-	// Flags list
-
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla checkpoint-ui")
-}
-
 func surlaGoldenPathUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla golden-path", os.Args[0])
@@ -1029,4 +1025,38 @@ func surlaGetStoryRefreshUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-story-refresh")
+}
+
+func surlaListChangesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla list-changes", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-changes")
+}
+
+func surlaWaitForChangesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla wait-for-changes", os.Args[0])
+	fmt.Fprint(os.Stderr, " -since STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -since STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla wait-for-changes --since \"fj8\"")
 }

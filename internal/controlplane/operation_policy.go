@@ -46,7 +46,8 @@ var operationRoles = map[string][]CallerKind{
 	"list_traces":          {CallerUser, CallerGuide, CallerBuilder},
 	"read_check_output":    {CallerUser, CallerGuide, CallerBuilder},
 	"golden_path":          {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
-	"checkpoint_ui":        {CallerUser},
+	"list_changes":         {CallerUser, CallerGuide, CallerBuilder},
+	"wait_for_changes":     {CallerUser},
 }
 
 // OperationAllowed reports the same policy used by both transports and tool listing.
@@ -85,7 +86,6 @@ func authorizeOperation(name string, next goa.Endpoint, recorder trace.Tracer) g
 // applyOperationPolicy wraps the one endpoint set supplied to both generated transports.
 func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	wrap := func(name string, next goa.Endpoint) goa.Endpoint { return authorizeOperation(name, next, recorder) }
-	e.CheckpointUI = wrap("checkpoint_ui", e.CheckpointUI)
 	e.GoldenPath = wrap("golden_path", e.GoldenPath)
 	e.ProposeChange = wrap("propose_change", e.ProposeChange)
 	e.ReviseChange = wrap("revise_change", e.ReviseChange)
@@ -109,6 +109,8 @@ func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	e.ListTraces = wrap("list_traces", e.ListTraces)
 	e.RefreshStory = wrap("refresh_story", e.RefreshStory)
 	e.GetStoryRefresh = wrap("get_story_refresh", e.GetStoryRefresh)
+	e.ListChanges = wrap("list_changes", e.ListChanges)
+	e.WaitForChanges = wrap("wait_for_changes", e.WaitForChanges)
 }
 
 // filterMCPDiscovery derives each caller's catalog from the invocation policy.

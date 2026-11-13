@@ -8,6 +8,94 @@ servers:
       name: surla
       description: Default server for surla
 paths:
+    /change-updates:
+        get:
+            tags:
+                - surla
+            summary: wait_for_changes surla
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The views page keeps one such read open and calls list_changes again only when the version changed. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            operationId: surla#wait_for_changes
+            parameters:
+                - name: since
+                  in: query
+                  description: version of the change list the caller last read.
+                  allowEmptyValue: true
+                  required: true
+                  schema:
+                    type: string
+                    description: version of the change list the caller last read.
+                    example: fj8
+                    minLength: 1
+                    maxLength: 128
+                  example: fj8
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ChangeListVersion'
+                            example:
+                                version: Rerum illum facilis doloribus id ea.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+    /changes:
+        get:
+            tags:
+                - surla
+            summary: list_changes surla
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, current request_revision, the state of its most recently accepted verification run, and when it was last saved. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            operationId: surla#list_changes
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ChangeList'
+                            example:
+                                changes:
+                                    - change_id: Consequatur nemo.
+                                      latest_verification:
+                                        run_id: Voluptas veritatis excepturi fuga enim et.
+                                        state: not_completed
+                                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                                      saved_at: "2015-06-29T05:47:08Z"
+                                      status: needs_confirmation
+                                      summary: Ut saepe incidunt odit.
+                                    - change_id: Consequatur nemo.
+                                      latest_verification:
+                                        run_id: Voluptas veritatis excepturi fuga enim et.
+                                        state: not_completed
+                                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                                      saved_at: "2015-06-29T05:47:08Z"
+                                      status: needs_confirmation
+                                      summary: Ut saepe incidunt odit.
+                                version: Voluptas voluptates.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /changes/{change_id}:
         get:
             tags:
@@ -5517,35 +5605,6 @@ paths:
                                 name: not_implemented
                                 temporary: false
                                 timeout: false
-    /ui/checkpoint:
-        get:
-            tags:
-                - surla
-            summary: checkpoint_ui surla
-            description: Serve the interactive MCP Apps HTML host for Surla checkpoints.
-            operationId: surla#checkpoint_ui
-            responses:
-                "200":
-                    description: OK response.
-                    content:
-                        application/json:
-                            schema:
-                                type: string
-                                example: Commodi et adipisci ipsa sit.
-                            example: Commodi et adipisci ipsa sit.
-                "403":
-                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
-                    content:
-                        application/vnd.goa.error:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: forbidden
-                                temporary: false
-                                timeout: false
     /verifications/{run_id}:
         get:
             tags:
@@ -10087,6 +10146,115 @@ components:
                 - examples
                 - preserved_behaviors
                 - request_revision
+        ChangeList:
+            type: object
+            properties:
+                changes:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ChangeListItem'
+                    description: Saved Change Cards, most recently saved first.
+                    example:
+                        - change_id: Consequatur nemo.
+                          latest_verification:
+                            run_id: Voluptas veritatis excepturi fuga enim et.
+                            state: not_completed
+                          request_revision: Quas odit et aut consequuntur ullam mollitia.
+                          saved_at: "2015-06-29T05:47:08Z"
+                          status: needs_confirmation
+                          summary: Ut saepe incidunt odit.
+                        - change_id: Consequatur nemo.
+                          latest_verification:
+                            run_id: Voluptas veritatis excepturi fuga enim et.
+                            state: not_completed
+                          request_revision: Quas odit et aut consequuntur ullam mollitia.
+                          saved_at: "2015-06-29T05:47:08Z"
+                          status: needs_confirmation
+                          summary: Ut saepe incidunt odit.
+                version:
+                    type: string
+                    description: Opaque value identifying this exact list; it changes whenever any listed value changes.
+                    example: Voluptas voluptates.
+            description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
+            example:
+                changes:
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+                    - change_id: Consequatur nemo.
+                      latest_verification:
+                        run_id: Voluptas veritatis excepturi fuga enim et.
+                        state: not_completed
+                      request_revision: Quas odit et aut consequuntur ullam mollitia.
+                      saved_at: "2015-06-29T05:47:08Z"
+                      status: needs_confirmation
+                      summary: Ut saepe incidunt odit.
+                version: Voluptas voluptates.
+            required:
+                - changes
+                - version
+        ChangeListItem:
+            type: object
+            properties:
+                change_id:
+                    type: string
+                    description: Change Card identifier; get_change takes it.
+                    example: Consequatur nemo.
+                latest_verification:
+                    $ref: '#/components/schemas/LatestVerificationItem'
+                request_revision:
+                    type: string
+                    description: Current request_revision of the Change Card.
+                    example: Quas odit et aut consequuntur ullam mollitia.
+                saved_at:
+                    type: string
+                    description: When the Change Card was last saved. It is not part of request_revision.
+                    example: "2015-06-29T05:47:08Z"
+                    format: date-time
+                status:
+                    type: string
+                    description: Checkpoint status of the current revision.
+                    example: needs_confirmation
+                    enum:
+                        - needs_confirmation
+                        - confirmed
+                summary:
+                    type: string
+                    description: Plain-English summary of the current revision.
+                    example: Ut saepe incidunt odit.
+            description: One saved Change Card of the project as list_changes reports it.
+            example:
+                change_id: Consequatur nemo.
+                latest_verification:
+                    run_id: Voluptas veritatis excepturi fuga enim et.
+                    state: not_completed
+                request_revision: Quas odit et aut consequuntur ullam mollitia.
+                saved_at: "2015-06-29T05:47:08Z"
+                status: needs_confirmation
+                summary: Ut saepe incidunt odit.
+            required:
+                - change_id
+                - summary
+                - status
+                - request_revision
+                - saved_at
+        ChangeListVersion:
+            type: object
+            properties:
+                version:
+                    type: string
+                    description: Version of the current change list; it equals since when nothing changed during the wait.
+                    example: Rerum illum facilis doloribus id ea.
+            description: The version of the change list when the wait ended.
+            example:
+                version: Rerum illum facilis doloribus id ea.
+            required:
+                - version
         CheckOutputPage:
             type: object
             properties:
@@ -10615,6 +10783,29 @@ components:
                 - module_path
                 - service_name
                 - commit
+        LatestVerificationItem:
+            type: object
+            properties:
+                run_id:
+                    type: string
+                    description: Verification run identifier; get_verification takes it.
+                    example: Voluptas veritatis excepturi fuga enim et.
+                state:
+                    type: string
+                    description: running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.
+                    example: not_completed
+                    enum:
+                        - running
+                        - passed
+                        - failed
+                        - not_completed
+            description: The most recently accepted Checkpoint 4 verification run of a Change Card.
+            example:
+                run_id: Voluptas veritatis excepturi fuga enim et.
+                state: not_completed
+            required:
+                - run_id
+                - state
         LiveTargetResult:
             type: object
             properties:

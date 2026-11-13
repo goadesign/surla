@@ -190,7 +190,8 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 			for _, tool := range body.Result.Tools {
 				listed[tool.Name] = true
 			}
-			httpOrResourceOnly := map[string]bool{"golden_path": true, "checkpoint_ui": true}
+			// wait_for_changes is the views page's HTTP-only waiting read, so it is not listed as a tool.
+			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true}
 			for _, name := range gensurla.MethodNames {
 				if !httpOrResourceOnly[name] {
 					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
@@ -215,7 +216,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 				names = append(names, resource.Name)
 			}
 			expected := []string{}
-			for _, name := range []string{"golden_path", "checkpoint_ui"} {
+			for _, name := range []string{"golden_path"} {
 				if controlplane.OperationAllowed(tc.role, name) {
 					expected = append(expected, name)
 				}
@@ -414,7 +415,6 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 	revision := card.RequestRevision
 	revise := fmt.Sprintf(`{"change_id":"change","request_revision":%q,"prompt":"Keep refunds bounded","analysis":{"summary":"Bound refunds","ambiguities":[],"examples":[{"prior_id":"check_01","scenario":"refund","input_summary":"refund 10","expected_outcome":"refund 10","verification_kind":"deterministic"}],"removed_example_ids":[],"preserved_behaviors":[]}}`, revision)
 	return []policyHTTPRequest{
-		{"checkpoint_ui", "GET", "/ui/checkpoint", ""},
 		{"golden_path", "GET", "/golden-path", ""},
 		{"propose_change", "POST", "/changes/propose", propose},
 		{"revise_change", "POST", "/changes/revise", revise},
@@ -438,5 +438,7 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 		{"list_traces", "GET", "/traces", ""},
 		{"refresh_story", "POST", "/workspace/story/refresh", ""},
 		{"get_story_refresh", "GET", "/workspace/story/refresh?op_id=op", ""},
+		{"list_changes", "GET", "/changes", ""},
+		{"wait_for_changes", "GET", "/change-updates?since=version", ""},
 	}
 }

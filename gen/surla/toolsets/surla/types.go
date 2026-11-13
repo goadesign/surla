@@ -349,6 +349,17 @@ type (
 		// verify_change take this commit ID.
 		Commit string
 	}
+	// ListChangesPayload defines the JSON payload for the surla.list_changes tool.
+	ListChangesPayload = struct {
+	}
+	// ListChangesResult defines the JSON result for the surla.list_changes tool.
+	ListChangesResult = struct {
+		// Saved Change Cards, most recently saved first.
+		Changes []*ChangeListItem
+		// Opaque value identifying this exact list; it changes whenever any listed
+		// value changes.
+		Version string
+	}
 	// ListTracesPayload defines the JSON payload for the surla.list_traces tool.
 	ListTracesPayload = struct {
 		// all for every status, error for recorded failures, or ok for spans without
@@ -828,6 +839,22 @@ type (
 		// checking it needs judgment.
 		VerificationKind string
 	}
+	// ChangeListItem is a nested type used by the generated JSON contract.
+	ChangeListItem = struct {
+		// Change Card identifier; get_change takes it.
+		ChangeID string
+		// Plain-English summary of the current revision.
+		Summary string
+		// Checkpoint status of the current revision.
+		Status string
+		// Current request_revision of the Change Card.
+		RequestRevision string
+		// The Change Card's most recently accepted verification run; absent when none
+		// was started.
+		LatestVerification *LatestVerificationItem
+		// When the Change Card was last saved. It is not part of request_revision.
+		SavedAt string
+	}
 	// DesignSnapshot is a nested type used by the generated JSON contract.
 	DesignSnapshot = struct {
 		// File contents keyed by module-relative path, such as design/design.go or
@@ -848,6 +875,15 @@ type (
 		ExpectedOutcome string
 		// Evaluator check classification (deterministic or model_judged).
 		VerificationKind string
+	}
+	// LatestVerificationItem is a nested type used by the generated JSON contract.
+	LatestVerificationItem = struct {
+		// Verification run identifier; get_verification takes it.
+		RunID string
+		// running while the run builds or evaluates the candidate; passed or failed
+		// when its report's verdict is known; not_completed when it stopped without a
+		// report.
+		State string
 	}
 	// StoryActorItem is a nested type used by the generated JSON contract.
 	StoryActorItem = struct {

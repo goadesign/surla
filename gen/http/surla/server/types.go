@@ -685,22 +685,22 @@ type GetStoryRefreshResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
-// CheckpointUIForbiddenResponseBody is the type of the "surla" service
-// "checkpoint_ui" endpoint HTTP response body for the "forbidden" error.
-type CheckpointUIForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
+// ListChangesResponseBody is the type of the "surla" service "list_changes"
+// endpoint HTTP response body.
+type ListChangesResponseBody struct {
+	// Saved Change Cards, most recently saved first.
+	Changes []*ChangeListItemResponseBody `form:"changes" json:"changes" xml:"changes"`
+	// Opaque value identifying this exact list; it changes whenever any listed
+	// value changes.
+	Version string `form:"version" json:"version" xml:"version"`
+}
+
+// WaitForChangesResponseBody is the type of the "surla" service
+// "wait_for_changes" endpoint HTTP response body.
+type WaitForChangesResponseBody struct {
+	// Version of the current change list; it equals since when nothing changed
+	// during the wait.
+	Version string `form:"version" json:"version" xml:"version"`
 }
 
 // GoldenPathForbiddenResponseBody is the type of the "surla" service
@@ -2069,6 +2069,42 @@ type GetStoryRefreshForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// ListChangesForbiddenResponseBody is the type of the "surla" service
+// "list_changes" endpoint HTTP response body for the "forbidden" error.
+type ListChangesForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// WaitForChangesForbiddenResponseBody is the type of the "surla" service
+// "wait_for_changes" endpoint HTTP response body for the "forbidden" error.
+type WaitForChangesForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2429,6 +2465,34 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened bool `form:"shortened" json:"shortened" xml:"shortened"`
+}
+
+// ChangeListItemResponseBody is used to define fields on response body types.
+type ChangeListItemResponseBody struct {
+	// Change Card identifier; get_change takes it.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Plain-English summary of the current revision.
+	Summary string `form:"summary" json:"summary" xml:"summary"`
+	// Checkpoint status of the current revision.
+	Status string `form:"status" json:"status" xml:"status"`
+	// Current request_revision of the Change Card.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// The Change Card's most recently accepted verification run; absent when none
+	// was started.
+	LatestVerification *LatestVerificationItemResponseBody `form:"latest_verification,omitempty" json:"latest_verification,omitempty" xml:"latest_verification,omitempty"`
+	// When the Change Card was last saved. It is not part of request_revision.
+	SavedAt string `form:"saved_at" json:"saved_at" xml:"saved_at"`
+}
+
+// LatestVerificationItemResponseBody is used to define fields on response body
+// types.
+type LatestVerificationItemResponseBody struct {
+	// Verification run identifier; get_verification takes it.
+	RunID string `form:"run_id" json:"run_id" xml:"run_id"`
+	// running while the run builds or evaluates the candidate; passed or failed
+	// when its report's verdict is known; not_completed when it stopped without a
+	// report.
+	State string `form:"state" json:"state" xml:"state"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -3518,16 +3582,32 @@ func NewGetStoryRefreshResponseBody(res *surla.StoryRefreshResult) *GetStoryRefr
 	return body
 }
 
-// NewCheckpointUIForbiddenResponseBody builds the HTTP response body from the
-// result of the "checkpoint_ui" endpoint of the "surla" service.
-func NewCheckpointUIForbiddenResponseBody(res *goa.ServiceError) *CheckpointUIForbiddenResponseBody {
-	body := &CheckpointUIForbiddenResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
+// NewListChangesResponseBody builds the HTTP response body from the result of
+// the "list_changes" endpoint of the "surla" service.
+func NewListChangesResponseBody(res *surla.ChangeList) *ListChangesResponseBody {
+	body := &ListChangesResponseBody{
+		Version: res.Version,
+	}
+	if res.Changes != nil {
+		body.Changes = make([]*ChangeListItemResponseBody, len(res.Changes))
+		for i, val := range res.Changes {
+			if val == nil {
+				body.Changes[i] = nil
+				continue
+			}
+			body.Changes[i] = marshalSurlaChangeListItemToChangeListItemResponseBody(val)
+		}
+	} else {
+		body.Changes = []*ChangeListItemResponseBody{}
+	}
+	return body
+}
+
+// NewWaitForChangesResponseBody builds the HTTP response body from the result
+// of the "wait_for_changes" endpoint of the "surla" service.
+func NewWaitForChangesResponseBody(res *surla.ChangeListVersion) *WaitForChangesResponseBody {
+	body := &WaitForChangesResponseBody{
+		Version: res.Version,
 	}
 	return body
 }
@@ -4590,6 +4670,34 @@ func NewGetStoryRefreshForbiddenResponseBody(res *goa.ServiceError) *GetStoryRef
 	return body
 }
 
+// NewListChangesForbiddenResponseBody builds the HTTP response body from the
+// result of the "list_changes" endpoint of the "surla" service.
+func NewListChangesForbiddenResponseBody(res *goa.ServiceError) *ListChangesForbiddenResponseBody {
+	body := &ListChangesForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewWaitForChangesForbiddenResponseBody builds the HTTP response body from
+// the result of the "wait_for_changes" endpoint of the "surla" service.
+func NewWaitForChangesForbiddenResponseBody(res *goa.ServiceError) *WaitForChangesForbiddenResponseBody {
+	body := &WaitForChangesForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -4780,6 +4888,15 @@ func NewListTracesPayload(status string, limit int, cursor *string) *surla.ListT
 	v.Status = status
 	v.Limit = limit
 	v.Cursor = cursor
+
+	return v
+}
+
+// NewWaitForChangesPayload builds a surla service wait_for_changes endpoint
+// payload.
+func NewWaitForChangesPayload(since string) *surla.WaitForChangesPayload {
+	v := &surla.WaitForChangesPayload{}
+	v.Since = since
 
 	return v
 }

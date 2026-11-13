@@ -198,6 +198,22 @@ func InitProjectResultCodec() tools.JSONCodec[*InitProjectResult] {
 	}
 }
 
+// ListChangesPayloadCodec returns a fresh codec for *ListChangesPayload.
+func ListChangesPayloadCodec() tools.JSONCodec[*ListChangesPayload] {
+	return tools.JSONCodec[*ListChangesPayload]{
+		ToJSON:   MarshalListChangesPayload,
+		FromJSON: UnmarshalListChangesPayload,
+	}
+}
+
+// ListChangesResultCodec returns a fresh codec for *ListChangesResult.
+func ListChangesResultCodec() tools.JSONCodec[*ListChangesResult] {
+	return tools.JSONCodec[*ListChangesResult]{
+		ToJSON:   MarshalListChangesResult,
+		FromJSON: UnmarshalListChangesResult,
+	}
+}
+
 // ListTracesPayloadCodec returns a fresh codec for *ListTracesPayload.
 func ListTracesPayloadCodec() tools.JSONCodec[*ListTracesPayload] {
 	return tools.JSONCodec[*ListTracesPayload]{
@@ -659,6 +675,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalInitProjectResult(data)
+		},
+	}
+	// listChangesPayloadCodec provides an untyped codec for *ListChangesPayload.
+	listChangesPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListChangesPayload); ok {
+				return MarshalListChangesPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListChangesPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListChangesPayload(data)
+		},
+	}
+	// listChangesResultCodec provides an untyped codec for *ListChangesResult.
+	listChangesResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListChangesResult); ok {
+				return MarshalListChangesResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListChangesResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListChangesResult(data)
 		},
 	}
 	// listTracesPayloadCodec provides an untyped codec for *ListTracesPayload.
@@ -3209,6 +3251,72 @@ var initProjectResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("commit")},
 		JSONType:    "string",
 		Description: "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
+	},
+}
+var listChangesPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var listChangesResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "The project's saved Change Cards, most recently saved first (tie-broken by change_id).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes")},
+		JSONType:    "array",
+		Description: "Saved Change Cards, most recently saved first.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Saved Change Cards, most recently saved first.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change Card identifier; get_change takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of the current revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("status")},
+		JSONType:    "string",
+		Description: "Checkpoint status of the current revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Current request_revision of the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("latest_verification")},
+		JSONType:    "object",
+		Description: "The Change Card's most recently accepted verification run; absent when none was started.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("latest_verification"), tools.FixedField("run_id")},
+		JSONType:    "string",
+		Description: "Verification run identifier; get_verification takes it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("latest_verification"), tools.FixedField("state")},
+		JSONType:    "string",
+		Description: "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("saved_at")},
+		JSONType:    "string",
+		Description: "When the Change Card was last saved. It is not part of request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("version")},
+		JSONType:    "string",
+		Description: "Opaque value identifying this exact list; it changes whenever any listed value changes.",
 	},
 }
 var listTracesPayloadFields = []tools.FieldMetadata{
@@ -6148,6 +6256,23 @@ func enrichInitProjectResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichListChangesResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(listChangesResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichListTracesPayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -7133,6 +7258,68 @@ func invalidInitProjectResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(initProjectResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListChangesPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListChangesPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listChangesPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListChangesResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListChangesResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listChangesResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -9234,6 +9421,94 @@ func UnmarshalInitProjectResult(data []byte) (*InitProjectResult, error) {
 	return out, nil
 }
 
+// MarshalListChangesPayload serializes *ListChangesPayload into JSON.
+func MarshalListChangesPayload(v *ListChangesPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listChangesPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListChangesPayloadTransport
+	out = &toolhttp.ListChangesPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalListChangesPayload deserializes JSON into *ListChangesPayload.
+func UnmarshalListChangesPayload(data []byte) (*ListChangesPayload, error) {
+	if len(data) == 0 {
+		var v *ListChangesPayload
+		return v, nil
+	}
+	var tv toolhttp.ListChangesPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidListChangesPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListChangesPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *ListChangesPayload
+	out = &ListChangesPayload{}
+	return out, nil
+}
+
+// MarshalListChangesResult serializes *ListChangesResult into JSON.
+func MarshalListChangesResult(v *ListChangesResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listChangesResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListChangesResultTransport
+	out = &toolhttp.ListChangesResultTransport{
+		Version: &in.Version,
+	}
+	out.Changes = make([]*toolhttp.ChangeListItemTransport, len(in.Changes))
+	for i, val := range in.Changes {
+		if val == nil {
+			out.Changes[i] = nil
+			continue
+		}
+		out.Changes[i] = encodeChangeListItemToChangeListItemTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalListChangesResult deserializes JSON into *ListChangesResult.
+func UnmarshalListChangesResult(data []byte) (*ListChangesResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("listChangesResult JSON is empty")
+	}
+	var tv toolhttp.ListChangesResultTransport
+	if err := validateListChangesResultJSON(data); err != nil {
+		return nil, invalidListChangesResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListChangesResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateListChangesResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichListChangesResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ListChangesResult
+	out = &ListChangesResult{
+		Version: *in.Version,
+	}
+	out.Changes = make([]*ChangeListItem, len(in.Changes))
+	for i, val := range in.Changes {
+		if val == nil {
+			out.Changes[i] = nil
+			continue
+		}
+		out.Changes[i] = decodeChangeListItemTransportToChangeListItem(val)
+	}
+	return out, nil
+}
+
 // MarshalListTracesPayload serializes *ListTracesPayload into JSON.
 func MarshalListTracesPayload(v *ListTracesPayload) ([]byte, error) {
 	if v == nil {
@@ -10902,6 +11177,16 @@ func validateRefreshStoryResultJSON(data []byte) error {
 		return err
 	}
 	return validateRefreshStoryResultJSONValue("", root, "")
+}
+
+// validateListChangesResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateListChangesResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListChangesResultJSONValue("", root, "")
 }
 
 // readStrictToolJSON checks the complete JSON document for malformed text and
@@ -15391,6 +15676,194 @@ func validateRefreshStoryResultJSONValue(path string, value any, description str
 	return nil
 }
 
+// validateListChangesResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListChangesResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "changes":
+			if err := validateListChangesResultRootChangesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Saved Change Cards, most recently saved first.",
+			); err != nil {
+				return err
+			}
+		case "version":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Opaque value identifying this exact list; it changes whenever any listed value changes.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"changes",
+				"version",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListChangesResultRootChangesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListChangesResultRootChangesJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateListChangesResultChangeListItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateListChangesResultChangeListItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListChangesResultChangeListItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier; get_change takes it.",
+			); err != nil {
+				return err
+			}
+		case "latest_verification":
+			if err := validateListChangesResultLatestVerificationItemTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The Change Card's most recently accepted verification run; absent when none was started.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Current request_revision of the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "saved_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the Change Card was last saved. It is not part of request_revision.",
+			); err != nil {
+				return err
+			}
+		case "status":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Checkpoint status of the current revision.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English summary of the current revision.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"latest_verification",
+				"request_revision",
+				"saved_at",
+				"status",
+				"summary",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListChangesResultLatestVerificationItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListChangesResultLatestVerificationItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "run_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Verification run identifier; get_verification takes it.",
+			); err != nil {
+				return err
+			}
+		case "state":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"run_id",
+				"state",
+			})
+		}
+	}
+	return nil
+}
+
 // generatedJSONChildPath keeps fixed object fields dotted. After an array index
 // or caller-defined map key, it uses slash-separated paths so later keys stay clear.
 func generatedJSONChildPath(path, key string, useSlashPath bool) string {
@@ -16004,6 +16477,50 @@ func encodeVerificationNotCompletedToVerificationNotCompletedTransport(v *Verifi
 		Kind:    &v.Kind,
 		Stage:   &v.Stage,
 		Summary: &v.Summary,
+	}
+
+	return res
+}
+func decodeChangeListItemTransportToChangeListItem(v *toolhttp.ChangeListItemTransport) *ChangeListItem {
+	res := &ChangeListItem{
+		ChangeID:        *v.ChangeID,
+		Summary:         *v.Summary,
+		Status:          *v.Status,
+		RequestRevision: *v.RequestRevision,
+		SavedAt:         *v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = decodeLatestVerificationItemTransportToLatestVerificationItem(v.LatestVerification)
+	}
+
+	return res
+}
+func decodeLatestVerificationItemTransportToLatestVerificationItem(v *toolhttp.LatestVerificationItemTransport) *LatestVerificationItem {
+	res := &LatestVerificationItem{
+		RunID: *v.RunID,
+		State: *v.State,
+	}
+
+	return res
+}
+func encodeChangeListItemToChangeListItemTransport(v *ChangeListItem) *toolhttp.ChangeListItemTransport {
+	res := &toolhttp.ChangeListItemTransport{
+		ChangeID:        &v.ChangeID,
+		Summary:         &v.Summary,
+		Status:          &v.Status,
+		RequestRevision: &v.RequestRevision,
+		SavedAt:         &v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = encodeLatestVerificationItemToLatestVerificationItemTransport(v.LatestVerification)
+	}
+
+	return res
+}
+func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVerificationItem) *toolhttp.LatestVerificationItemTransport {
+	res := &toolhttp.LatestVerificationItemTransport{
+		RunID: &v.RunID,
+		State: &v.State,
 	}
 
 	return res

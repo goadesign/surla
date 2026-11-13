@@ -8,7 +8,6 @@ package controlplane
 import (
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -216,6 +215,9 @@ type (
 		// stories holds the evaluated domain Stories adopted for this revision,
 		// or nil when none were adopted.
 		stories []designeval.StorySummary
+		// savedAt is when the card store last wrote this card; zero for a
+		// record not yet saved. It is not part of request_revision.
+		savedAt time.Time
 	}
 
 	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
@@ -351,6 +353,9 @@ type (
 		storyRefreshOps sync.WaitGroup
 		// storyRefreshTimeout overrides defaultStoryRefreshTimeout in tests when positive.
 		storyRefreshTimeout time.Duration
+		// changesWait and changesPoll override defaultChangesWait and
+		// defaultChangesPoll in tests when positive.
+		changesWait, changesPoll time.Duration
 		// newGenerator constructs a fresh scaffold.Generator for each
 		// InitProject call when non-nil.
 		newGenerator func() scaffold.Generator
@@ -377,15 +382,6 @@ const (
 	TargetKindPromptTemplate = "prompt_template"
 	// TargetKindCompiledRule identifies a compiled Go business rule that cannot be overridden via prompt store.
 	TargetKindCompiledRule = "compiled_rule"
-)
-
-var (
-	// checkpointUIHTML is the stateless MCP Apps (`ui://surla/checkpoint`,
-	// `text/html;profile=mcp-app`) HTML document host embedded from
-	// checkpoint.html.
-	//
-	//go:embed checkpoint.html
-	checkpointUIHTML string
 )
 
 // WithPrincipal returns a child context carrying the authenticated Principal.
@@ -565,11 +561,6 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 		r = r.WithContext(WithPrincipal(r.Context(), principal))
 		mux.ServeHTTP(w, r)
 	})
-}
-
-// CheckpointUI returns the interactive MCP Apps HTML host for `ui://surla/checkpoint`.
-func (c *ControlPlane) CheckpointUI(_ context.Context) (string, error) {
-	return checkpointUIHTML, nil
 }
 
 // GoldenPath returns the Markdown `surla://golden-path` serves: the Golden

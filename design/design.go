@@ -581,16 +581,6 @@ var _ = Service("surla", func() {
 		POST("/mcp")
 	})
 
-	Method("checkpoint_ui", func() {
-		Description("Serve the interactive MCP Apps HTML host for Surla checkpoints.")
-		Result(String)
-		Resource("checkpoint_ui", "ui://surla/checkpoint", "text/html;profile=mcp-app")
-		HTTP(func() {
-			GET("/ui/checkpoint")
-			Response(StatusOK)
-		})
-	})
-
 	Method("golden_path", func() {
 		Description("Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms, followed by the decision component catalog for the optional ui_composition of a propose_change or revise_change analysis.")
 		Result(String)
@@ -607,9 +597,7 @@ var _ = Service("surla", func() {
 		Result(ChangeCardResult)
 		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; nothing was saved.")
-		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. When adopting a workspace Story, pass the succeeded refresh_story operation's op_id in story_refresh_op_id. Surla assigns the IDs and request_revision and saves the card; every card awaits the user's confirmation, including a card without open questions. When story_refresh_op_id is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. When adopting a workspace Story, pass the succeeded refresh_story operation's op_id in story_refresh_op_id. Surla assigns the IDs and request_revision and saves the card; every card awaits the user's confirmation, including a card without open questions. When story_refresh_op_id is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.")
 		HTTP(func() {
 			POST("/changes/propose")
 			Response(StatusOK)
@@ -625,9 +613,7 @@ var _ = Service("surla", func() {
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.")
-		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. Pass story_refresh_op_id from a succeeded refresh_story operation to adopt an updated workspace Story, or omit story_refresh_op_id on a card with Stories to keep its agreed Story and its design source. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. Pass story_refresh_op_id from a succeeded refresh_story operation to adopt an updated workspace Story, or omit story_refresh_op_id on a card with Stories to keep its agreed Story and its design source. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.")
 		HTTP(func() {
 			POST("/changes/revise")
 			Response(StatusOK)
@@ -644,9 +630,7 @@ var _ = Service("surla", func() {
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.")
-		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision. To record a decision that no option expresses, call revise_change with that decision in prompt.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision. To record a decision that no option expresses, call revise_change with that decision in prompt.")
 		HTTP(func() {
 			POST("/changes/confirm")
 			Response(StatusOK)
@@ -661,9 +645,7 @@ var _ = Service("surla", func() {
 		Payload(GetChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Tool("get_change", "Read the current Checkpoint 1 Change Card and its request_revision.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("get_change", "Read the current Checkpoint 1 Change Card and its request_revision.")
 		HTTP(func() {
 			GET("/changes/{change_id}")
 			Response(StatusOK)
@@ -678,9 +660,7 @@ var _ = Service("surla", func() {
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.")
-		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology and Goa-AI guardrails for a confirmed Change Card. Surla reads the candidate module from the bound workspace. It reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology and Goa-AI guardrails for a confirmed Change Card. Surla reads the candidate module from the bound workspace. It reports what the design declares; it does not compare the design with the Change Card's requirements.")
 		HTTP(func() {
 			POST("/changes/preview")
 			Response(StatusOK)
@@ -699,9 +679,7 @@ var _ = Service("surla", func() {
 		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
 		Error("target_rejected_credential", ErrorResult, "The live target rejected this server's key; nothing changed. Start the target again with start_live_target.")
 		Error("update_not_confirmed", ErrorResult, "The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.")
-		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on the project server, call start_live_target with a candidate commit first.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on the project server, call start_live_target with a candidate commit first.")
 		HTTP(func() {
 			POST("/sandbox/draft")
 			Response(StatusOK)
@@ -719,9 +697,7 @@ var _ = Service("surla", func() {
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
 		HTTP(func() {
 			POST("/live-target")
 			Response(StatusOK)
@@ -734,9 +710,7 @@ var _ = Service("surla", func() {
 		Description("Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.")
 		Result(StopLiveTargetResult)
 		Error("live_target_stop_failed", ErrorResult, "The live target's processes could not be confirmed stopped; stop and start Surla.")
-		Tool("stop_live_target", "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("stop_live_target", "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.")
 		HTTP(func() {
 			DELETE("/live-target")
 			Response(StatusOK)
@@ -751,9 +725,7 @@ var _ = Service("surla", func() {
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
 		HTTP(func() {
 			POST("/changes/{change_id}/verifications")
 			Response(StatusOK)
@@ -769,9 +741,7 @@ var _ = Service("surla", func() {
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No verification run exists with this run_id.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot read verification runs.")
-		Tool("get_verification", "Read the state of a CP4 verification run started by verify_change.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("get_verification", "Read the state of a CP4 verification run started by verify_change.")
 		HTTP(func() {
 			GET("/verifications/{run_id}")
 			Response(StatusOK)
@@ -786,9 +756,7 @@ var _ = Service("surla", func() {
 		Result(VerificationListResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot list verification runs.")
-		Tool("list_verifications", "List all CP4 verification runs started for a Change Card, newest first.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("list_verifications", "List all CP4 verification runs started for a Change Card, newest first.")
 		HTTP(func() {
 			GET("/changes/{change_id}/verifications")
 			Response(StatusOK)
@@ -805,9 +773,7 @@ var _ = Service("surla", func() {
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The verification report did not pass or does not match the Change Card and promotion target inputs.")
 		Error("not_implemented", ErrorResult, "This control plane has no promotion target bound to it.")
-		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, configured with surla promotion set.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, configured with surla promotion set.")
 		HTTP(func() {
 			POST("/changes/approve")
 			Response(StatusOK)
@@ -822,9 +788,7 @@ var _ = Service("surla", func() {
 		Description("Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.")
 		Payload(DiffPayload)
 		Result(DiffResult)
-		Tool("diff", "Compute structural Goa design and go.mod dependency diffs.", func() {
-			ToolUI("ui://surla/checkpoint")
-		})
+		Tool("diff", "Compute structural Goa design and go.mod dependency diffs.")
 		HTTP(func() {
 			POST("/diff")
 			Response(StatusOK)
@@ -926,4 +890,5 @@ var _ = Service("surla", func() {
 	})
 	traceMethods()
 	storyRefreshMethods()
+	changeListMethods()
 })

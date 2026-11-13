@@ -269,7 +269,7 @@ func (runtime projectRuntime) serve() (err error) {
 	defer stop()
 	management := project.NewServer(state, stop)
 	application := http.NewServeMux()
-	application.Handle("GET /views", viewsPageHandler())
+	application.Handle("GET /views", controlplane.ViewsPage())
 	application.Handle("/", controlplane.NewHTTPHandler(cp, management.Authenticate))
 	server := &http.Server{Handler: management.Handler(application), ReadHeaderTimeout: 10 * time.Second}
 	if err := state.SaveRunning(project.Running{PID: os.Getpid(), Terminal: os.Getenv("HC_TERMINAL_ID")}); err != nil {
@@ -293,16 +293,6 @@ func (runtime projectRuntime) serve() (err error) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return server.Shutdown(shutdownCtx)
-}
-
-// viewsPageHandler is the fixed data-free bootstrap boundary replaced by the views implementation.
-func viewsPageHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if _, err := io.WriteString(w, "<!doctype html><title>Surla</title><p>Open this project's views with surla.</p>"); err != nil {
-			otel.Handle(err)
-		}
-	})
 }
 
 // parseProjectArgs accepts no caller-selected server options; serve is an internal entrypoint.

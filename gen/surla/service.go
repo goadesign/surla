@@ -23,8 +23,6 @@ import (
 
 // Surla MCP software factory control plane.
 type Service interface {
-	// Serve the interactive MCP Apps HTML host for Surla checkpoints.
-	CheckpointUI(context.Context) (res string, err error)
 	// Serve the Surla Golden Path architecture playbook for Goa-AI agentic
 	// platforms, followed by the decision component catalog for the optional
 	// ui_composition of a propose_change or revise_change analysis.
@@ -198,6 +196,19 @@ type Service interface {
 	// yet in this server process for the bound workspace, state is none with a
 	// message instructing the caller to run refresh_story.
 	GetStoryRefresh(context.Context) (res *StoryRefreshResult, err error)
+	// List the owner's saved Change Cards for this project, most recently saved
+	// first, with each card's summary, status, current request_revision, the state
+	// of its most recently accepted verification run, and when it was last saved.
+	// The views page opens on this list; agents use it to find a change_id.
+	// Reading changes nothing.
+	ListChanges(context.Context) (res *ChangeList, err error)
+	// Return the current change list's version as soon as it differs from since,
+	// the version of the list the caller last read, or after a bounded wait of a
+	// few seconds when nothing changed. The views page keeps one such read open
+	// and calls list_changes again only when the version changed. Each call is
+	// traced but never saved in the diagnostics history list_traces reads, so an
+	// open page does not push real operations out of view.
+	WaitForChanges(context.Context, *WaitForChangesPayload) (res *ChangeListVersion, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -214,7 +225,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [24]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh"}
+var MethodNames = [25]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "list_changes", "wait_for_changes"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -523,6 +534,40 @@ type ChangeCardResult struct {
 	UnverifiedApproval *UnverifiedApprovalItem
 }
 
+// ChangeList is the result type of the surla service list_changes method.
+type ChangeList struct {
+	// Saved Change Cards, most recently saved first.
+	Changes []*ChangeListItem
+	// Opaque value identifying this exact list; it changes whenever any listed
+	// value changes.
+	Version string
+}
+
+// One saved Change Card of the project as list_changes reports it.
+type ChangeListItem struct {
+	// Change Card identifier; get_change takes it.
+	ChangeID string
+	// Plain-English summary of the current revision.
+	Summary string
+	// Checkpoint status of the current revision.
+	Status string
+	// Current request_revision of the Change Card.
+	RequestRevision string
+	// The Change Card's most recently accepted verification run; absent when none
+	// was started.
+	LatestVerification *LatestVerificationItem
+	// When the Change Card was last saved. It is not part of request_revision.
+	SavedAt string
+}
+
+// ChangeListVersion is the result type of the surla service wait_for_changes
+// method.
+type ChangeListVersion struct {
+	// Version of the current change list; it equals since when nothing changed
+	// during the wait.
+	Version string
+}
+
 // CheckOutputPage is the result type of the surla service read_check_output
 // method.
 type CheckOutputPage struct {
@@ -716,6 +761,16 @@ type InitProjectResult struct {
 	// repository (40 or 64 lowercase hex characters); start_live_target and
 	// verify_change take this commit ID.
 	Commit string
+}
+
+// The most recently accepted Checkpoint 4 verification run of a Change Card.
+type LatestVerificationItem struct {
+	// Verification run identifier; get_verification takes it.
+	RunID string
+	// running while the run builds or evaluates the candidate; passed or failed
+	// when its report's verdict is known; not_completed when it stopped without a
+	// report.
+	State string
 }
 
 // ListTracesPayload is the payload type of the surla service list_traces
@@ -1161,6 +1216,13 @@ type VerifyChangePayload struct {
 	// Full commit ID of the candidate to build and verify (40 or 64 lowercase hex
 	// characters).
 	CandidateCommit string
+}
+
+// WaitForChangesPayload is the payload type of the surla service
+// wait_for_changes method.
+type WaitForChangesPayload struct {
+	// version of the change list the caller last read.
+	Since string
 }
 
 // MakeForbidden builds a goa.ServiceError from an error.
@@ -2126,6 +2188,107 @@ func validatejsonChangeCardResultTransport(value *jsonChangeCardResultTransport)
 	return err
 }
 
+// jsonChangeListItemTransport stores JSON fields until they have been validated.
+type jsonChangeListItemTransport struct {
+	// Change Card identifier; get_change takes it.
+	ChangeID *string `json:"change_id"`
+	// Plain-English summary of the current revision.
+	Summary *string `json:"summary"`
+	// Checkpoint status of the current revision.
+	Status *string `json:"status"`
+	// Current request_revision of the Change Card.
+	RequestRevision *string `json:"request_revision"`
+	// The Change Card's most recently accepted verification run; absent when none
+	// was started.
+	LatestVerification *jsonLatestVerificationItemTransport `json:"latest_verification,omitempty"`
+	// When the Change Card was last saved. It is not part of request_revision.
+	SavedAt *string `json:"saved_at"`
+}
+
+// validatejsonChangeListItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonChangeListItemTransport(value *jsonChangeListItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.SavedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("saved_at", "body"))
+	}
+	if value.Status != nil {
+		if !(*value.Status == "needs_confirmation" || *value.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	if value.LatestVerification != nil {
+		if err2 := validatejsonLatestVerificationItemTransport(value.LatestVerification); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.SavedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.saved_at", *value.SavedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
+// jsonChangeListTransport stores JSON fields until they have been validated.
+type jsonChangeListTransport struct {
+	// Saved Change Cards, most recently saved first.
+	Changes []*jsonChangeListItemTransport `json:"changes"`
+	// Opaque value identifying this exact list; it changes whenever any listed
+	// value changes.
+	Version *string `json:"version"`
+}
+
+// validatejsonChangeListTransport checks decoded JSON before it becomes a service value.
+func validatejsonChangeListTransport(value *jsonChangeListTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Changes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changes", "body"))
+	}
+	if value.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	for _, e := range value.Changes {
+		if e != nil {
+			if err2 := validatejsonChangeListItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonChangeListVersionTransport stores JSON fields until they have been validated.
+type jsonChangeListVersionTransport struct {
+	// Version of the current change list; it equals since when nothing changed
+	// during the wait.
+	Version *string `json:"version"`
+}
+
+// validatejsonChangeListVersionTransport checks decoded JSON before it becomes a service value.
+func validatejsonChangeListVersionTransport(value *jsonChangeListVersionTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	return err
+}
+
 // jsonCheckOutputPageTransport stores JSON fields until they have been validated.
 type jsonCheckOutputPageTransport struct {
 	// The page text.
@@ -2607,6 +2770,35 @@ func validatejsonInitProjectResultTransport(value *jsonInitProjectResultTranspor
 	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// jsonLatestVerificationItemTransport stores JSON fields until they have been validated.
+type jsonLatestVerificationItemTransport struct {
+	// Verification run identifier; get_verification takes it.
+	RunID *string `json:"run_id"`
+	// running while the run builds or evaluates the candidate; passed or failed
+	// when its report's verdict is known; not_completed when it stopped without a
+	// report.
+	State *string `json:"state"`
+}
+
+// validatejsonLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonLatestVerificationItemTransport(value *jsonLatestVerificationItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"running", "passed", "failed", "not_completed"}))
+		}
 	}
 	return err
 }
@@ -4187,6 +4379,43 @@ func validateUnverifiedApprovalItemOriginal(value *UnverifiedApprovalItem) (err 
 		if err2 := validateApprovalItemOriginal(value.Approval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
+	}
+	return err
+}
+
+// validateChangeListOriginal checks the original typed value before JSON conversion.
+func validateChangeListOriginal(value *ChangeList) (err error) {
+	if value.Changes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changes", "value"))
+	}
+	for _, e := range value.Changes {
+		if e != nil {
+			if err2 := validateChangeListItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateChangeListItemOriginal checks the original typed value before JSON conversion.
+func validateChangeListItemOriginal(value *ChangeListItem) (err error) {
+	if !(value.Status == "needs_confirmation" || value.Status == "confirmed") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.status", value.Status, []any{"needs_confirmation", "confirmed"}))
+	}
+	if value.LatestVerification != nil {
+		if err2 := validateLatestVerificationItemOriginal(value.LatestVerification); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.saved_at", value.SavedAt, goa.FormatDateTime))
+	return err
+}
+
+// validateLatestVerificationItemOriginal checks the original typed value before JSON conversion.
+func validateLatestVerificationItemOriginal(value *LatestVerificationItem) (err error) {
+	if !(value.State == "running" || value.State == "passed" || value.State == "failed" || value.State == "not_completed") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.state", value.State, []any{"running", "passed", "failed", "not_completed"}))
 	}
 	return err
 }
@@ -6472,6 +6701,294 @@ func DecodeChangeCardResult(data []byte) (out *ChangeCardResult, err error) {
 	return out, nil
 }
 
+// EncodeChangeList turns a service value into JSON using the field names in the Goa design.
+func EncodeChangeList(in *ChangeList) ([]byte, error) {
+	if err := checkChangeListValue(in); err != nil {
+		return nil, fmt.Errorf("encode ChangeList JSON: %w", err)
+	}
+	if err := validateChangeListOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ChangeList value: %w", err)
+	}
+	var body *jsonChangeListTransport
+	{
+		body = &jsonChangeListTransport{
+			Version: &in.Version,
+		}
+		body.Changes = make([]*jsonChangeListItemTransport, len(in.Changes))
+		for i, val := range in.Changes {
+			if val == nil {
+				body.Changes[i] = nil
+				continue
+			}
+			body.Changes[i] = encodeChangeListItemToChangeListItemTransport(val)
+		}
+	}
+	if err := validatejsonChangeListTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ChangeList JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ChangeList JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateChangeListValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateChangeListValue(in *ChangeList) error {
+	if err := checkChangeListValue(in); err != nil {
+		return fmt.Errorf("validate ChangeList value: %w", err)
+	}
+	if err := validateChangeListOriginal(in); err != nil {
+		return fmt.Errorf("validate ChangeList value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ChangeList")
+	}
+
+	var body *jsonChangeListTransport
+	{
+		body = &jsonChangeListTransport{
+			Version: &in.Version,
+		}
+		body.Changes = make([]*jsonChangeListItemTransport, len(in.Changes))
+		for i, val := range in.Changes {
+			if val == nil {
+				body.Changes[i] = nil
+				continue
+			}
+			body.Changes[i] = encodeChangeListItemToChangeListItemTransport(val)
+		}
+	}
+	if err := validatejsonChangeListTransport(body); err != nil {
+		return fmt.Errorf("validate ChangeList value: %w", err)
+	}
+	return nil
+}
+
+// DecodeChangeList checks JSON field names from the Goa design and returns a service value.
+func DecodeChangeList(data []byte) (out *ChangeList, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ChangeList JSON: %w", err)
+	}
+	if err := validateChangeListJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ChangeList JSON: %w", err)
+	}
+	var body *jsonChangeListTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ChangeList JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ChangeList JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ChangeList JSON after first value: %w", err)
+	}
+	if err := validatejsonChangeListTransport(body); err != nil {
+		return out, fmt.Errorf("validate ChangeList JSON: %w", err)
+	}
+	{
+		out = &ChangeList{
+			Version: *body.Version,
+		}
+		out.Changes = make([]*ChangeListItem, len(body.Changes))
+		for i, val := range body.Changes {
+			if val == nil {
+				out.Changes[i] = nil
+				continue
+			}
+			out.Changes[i] = decodeChangeListItemTransportToChangeListItem(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeChangeListItem turns a service value into JSON using the field names in the Goa design.
+func EncodeChangeListItem(in *ChangeListItem) ([]byte, error) {
+	if err := checkChangeListItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode ChangeListItem JSON: %w", err)
+	}
+	if err := validateChangeListItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ChangeListItem value: %w", err)
+	}
+	var body *jsonChangeListItemTransport
+	{
+		body = &jsonChangeListItemTransport{
+			ChangeID:        &in.ChangeID,
+			Summary:         &in.Summary,
+			Status:          &in.Status,
+			RequestRevision: &in.RequestRevision,
+			SavedAt:         &in.SavedAt,
+		}
+		if in.LatestVerification != nil {
+			body.LatestVerification = encodeLatestVerificationItemToLatestVerificationItemTransport(in.LatestVerification)
+		}
+	}
+	if err := validatejsonChangeListItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ChangeListItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ChangeListItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateChangeListItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateChangeListItemValue(in *ChangeListItem) error {
+	if err := checkChangeListItemValue(in); err != nil {
+		return fmt.Errorf("validate ChangeListItem value: %w", err)
+	}
+	if err := validateChangeListItemOriginal(in); err != nil {
+		return fmt.Errorf("validate ChangeListItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ChangeListItem")
+	}
+
+	var body *jsonChangeListItemTransport
+	{
+		body = &jsonChangeListItemTransport{
+			ChangeID:        &in.ChangeID,
+			Summary:         &in.Summary,
+			Status:          &in.Status,
+			RequestRevision: &in.RequestRevision,
+			SavedAt:         &in.SavedAt,
+		}
+		if in.LatestVerification != nil {
+			body.LatestVerification = encodeLatestVerificationItemToLatestVerificationItemTransport(in.LatestVerification)
+		}
+	}
+	if err := validatejsonChangeListItemTransport(body); err != nil {
+		return fmt.Errorf("validate ChangeListItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeChangeListItem checks JSON field names from the Goa design and returns a service value.
+func DecodeChangeListItem(data []byte) (out *ChangeListItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ChangeListItem JSON: %w", err)
+	}
+	if err := validateChangeListJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ChangeListItem JSON: %w", err)
+	}
+	var body *jsonChangeListItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ChangeListItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ChangeListItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ChangeListItem JSON after first value: %w", err)
+	}
+	if err := validatejsonChangeListItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate ChangeListItem JSON: %w", err)
+	}
+	{
+		out = &ChangeListItem{
+			ChangeID:        *body.ChangeID,
+			Summary:         *body.Summary,
+			Status:          *body.Status,
+			RequestRevision: *body.RequestRevision,
+			SavedAt:         *body.SavedAt,
+		}
+		if body.LatestVerification != nil {
+			out.LatestVerification = decodeLatestVerificationItemTransportToLatestVerificationItem(body.LatestVerification)
+		}
+	}
+	return out, nil
+}
+
+// EncodeChangeListVersion turns a service value into JSON using the field names in the Goa design.
+func EncodeChangeListVersion(in *ChangeListVersion) ([]byte, error) {
+	if err := checkChangeListVersionValue(in); err != nil {
+		return nil, fmt.Errorf("encode ChangeListVersion JSON: %w", err)
+	}
+	var body *jsonChangeListVersionTransport
+	{
+		body = &jsonChangeListVersionTransport{
+			Version: &in.Version,
+		}
+	}
+	if err := validatejsonChangeListVersionTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ChangeListVersion JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ChangeListVersion JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateChangeListVersionValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateChangeListVersionValue(in *ChangeListVersion) error {
+	if err := checkChangeListVersionValue(in); err != nil {
+		return fmt.Errorf("validate ChangeListVersion value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ChangeListVersion")
+	}
+
+	var body *jsonChangeListVersionTransport
+	{
+		body = &jsonChangeListVersionTransport{
+			Version: &in.Version,
+		}
+	}
+	if err := validatejsonChangeListVersionTransport(body); err != nil {
+		return fmt.Errorf("validate ChangeListVersion value: %w", err)
+	}
+	return nil
+}
+
+// DecodeChangeListVersion checks JSON field names from the Goa design and returns a service value.
+func DecodeChangeListVersion(data []byte) (out *ChangeListVersion, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ChangeListVersion JSON: %w", err)
+	}
+	if err := validateChangeListVersionJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ChangeListVersion JSON: %w", err)
+	}
+	var body *jsonChangeListVersionTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ChangeListVersion JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ChangeListVersion JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ChangeListVersion JSON after first value: %w", err)
+	}
+	if err := validatejsonChangeListVersionTransport(body); err != nil {
+		return out, fmt.Errorf("validate ChangeListVersion JSON: %w", err)
+	}
+	{
+		out = &ChangeListVersion{
+			Version: *body.Version,
+		}
+	}
+	return out, nil
+}
+
 // EncodeCheckOutputPage turns a service value into JSON using the field names in the Goa design.
 func EncodeCheckOutputPage(in *CheckOutputPage) ([]byte, error) {
 	if err := checkCheckOutputPageValue(in); err != nil {
@@ -7961,6 +8478,92 @@ func DecodeInitProjectResult(data []byte) (out *InitProjectResult, err error) {
 			ModulePath:  *body.ModulePath,
 			ServiceName: *body.ServiceName,
 			Commit:      *body.Commit,
+		}
+	}
+	return out, nil
+}
+
+// EncodeLatestVerificationItem turns a service value into JSON using the field names in the Goa design.
+func EncodeLatestVerificationItem(in *LatestVerificationItem) ([]byte, error) {
+	if err := checkLatestVerificationItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode LatestVerificationItem JSON: %w", err)
+	}
+	if err := validateLatestVerificationItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate LatestVerificationItem value: %w", err)
+	}
+	var body *jsonLatestVerificationItemTransport
+	{
+		body = &jsonLatestVerificationItemTransport{
+			RunID: &in.RunID,
+			State: &in.State,
+		}
+	}
+	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate LatestVerificationItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode LatestVerificationItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateLatestVerificationItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateLatestVerificationItemValue(in *LatestVerificationItem) error {
+	if err := checkLatestVerificationItemValue(in); err != nil {
+		return fmt.Errorf("validate LatestVerificationItem value: %w", err)
+	}
+	if err := validateLatestVerificationItemOriginal(in); err != nil {
+		return fmt.Errorf("validate LatestVerificationItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "LatestVerificationItem")
+	}
+
+	var body *jsonLatestVerificationItemTransport
+	{
+		body = &jsonLatestVerificationItemTransport{
+			RunID: &in.RunID,
+			State: &in.State,
+		}
+	}
+	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
+		return fmt.Errorf("validate LatestVerificationItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeLatestVerificationItem checks JSON field names from the Goa design and returns a service value.
+func DecodeLatestVerificationItem(data []byte) (out *LatestVerificationItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode LatestVerificationItem JSON: %w", err)
+	}
+	if err := validateChangeListJSONValue4("", root, ""); err != nil {
+		return out, fmt.Errorf("decode LatestVerificationItem JSON: %w", err)
+	}
+	var body *jsonLatestVerificationItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode LatestVerificationItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode LatestVerificationItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode LatestVerificationItem JSON after first value: %w", err)
+	}
+	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate LatestVerificationItem JSON: %w", err)
+	}
+	{
+		out = &LatestVerificationItem{
+			RunID: *body.RunID,
+			State: *body.State,
 		}
 	}
 	return out, nil
@@ -11397,6 +12000,21 @@ func decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(v *jsonCP1RevisionA
 	return res
 }
 
+func decodeChangeListItemTransportToChangeListItem(v *jsonChangeListItemTransport) *ChangeListItem {
+	res := &ChangeListItem{
+		ChangeID:        *v.ChangeID,
+		Summary:         *v.Summary,
+		Status:          *v.Status,
+		RequestRevision: *v.RequestRevision,
+		SavedAt:         *v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = decodeLatestVerificationItemTransportToLatestVerificationItem(v.LatestVerification)
+	}
+
+	return res
+}
+
 func decodeDesignSnapshotTransportToDesignSnapshot(v *jsonDesignSnapshotTransport) *DesignSnapshot {
 	res := &DesignSnapshot{}
 	res.Files = make(map[string]string, len(v.Files))
@@ -11416,6 +12034,15 @@ func decodeExampleItemTransportToExampleItem(v *jsonExampleItemTransport) *Examp
 		InputSummary:     *v.InputSummary,
 		ExpectedOutcome:  *v.ExpectedOutcome,
 		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+
+func decodeLatestVerificationItemTransportToLatestVerificationItem(v *jsonLatestVerificationItemTransport) *LatestVerificationItem {
+	res := &LatestVerificationItem{
+		RunID: *v.RunID,
+		State: *v.State,
 	}
 
 	return res
@@ -11929,6 +12556,21 @@ func encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(v *CP1RevisionAnaly
 	return res
 }
 
+func encodeChangeListItemToChangeListItemTransport(v *ChangeListItem) *jsonChangeListItemTransport {
+	res := &jsonChangeListItemTransport{
+		ChangeID:        &v.ChangeID,
+		Summary:         &v.Summary,
+		Status:          &v.Status,
+		RequestRevision: &v.RequestRevision,
+		SavedAt:         &v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = encodeLatestVerificationItemToLatestVerificationItemTransport(v.LatestVerification)
+	}
+
+	return res
+}
+
 func encodeDesignSnapshotToDesignSnapshotTransport(v *DesignSnapshot) *jsonDesignSnapshotTransport {
 	res := &jsonDesignSnapshotTransport{}
 	res.Files = make(map[string]string, len(v.Files))
@@ -11960,6 +12602,15 @@ func encodeExampleItemToExampleItemTransport(v *ExampleItem) *jsonExampleItemTra
 		InputSummary:     &v.InputSummary,
 		ExpectedOutcome:  &v.ExpectedOutcome,
 		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVerificationItem) *jsonLatestVerificationItemTransport {
+	res := &jsonLatestVerificationItemTransport{
+		RunID: &v.RunID,
+		State: &v.State,
 	}
 
 	return res
@@ -14934,6 +15585,233 @@ func validateChangeCardResultJSONValue12(path string, value any, description str
 			return unknownJSONFieldError(path, key, []string{
 				"approval",
 				"reason",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeListJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "changes":
+			if err := validateChangeListJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Saved Change Cards, most recently saved first.",
+			); err != nil {
+				return err
+			}
+		case "version":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Opaque value identifying this exact list; it changes whenever any listed value changes.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"changes",
+				"version",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeListJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeListJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeListJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeListJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier; get_change takes it.",
+			); err != nil {
+				return err
+			}
+		case "latest_verification":
+			if err := validateChangeListJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The Change Card's most recently accepted verification run; absent when none was started.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Current request_revision of the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "saved_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the Change Card was last saved. It is not part of request_revision.",
+			); err != nil {
+				return err
+			}
+		case "status":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Checkpoint status of the current revision.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English summary of the current revision.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"latest_verification",
+				"request_revision",
+				"saved_at",
+				"status",
+				"summary",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeListJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeListJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "run_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Verification run identifier; get_verification takes it.",
+			); err != nil {
+				return err
+			}
+		case "state":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"run_id",
+				"state",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeListVersionJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeListVersionJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "version":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Version of the current change list; it equals since when nothing changed during the wait.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"version",
 			})
 		}
 	}
@@ -18460,6 +19338,139 @@ func checkChangeCardResultUnverifiedApprovalItemValue(in *UnverifiedApprovalItem
 	return nil
 }
 
+// checkChangeListValue checks text and cycles before conversion.
+func checkChangeListValue(in *ChangeList) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeListChangeListValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkChangeListChangeListValue checks one generated value on the active path.
+func checkChangeListChangeListValue(in *ChangeList, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for index1, item1 := range in.Changes {
+			_ = index1
+			_ = item1
+			if err := checkChangeListChangeListItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "changes", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		if !utf8.ValidString(string(in.Version)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "version", false))
+		}
+	}
+	return nil
+}
+
+// checkChangeListChangeListItemValue checks one generated value on the active path.
+func checkChangeListChangeListItemValue(in *ChangeListItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.Summary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
+		}
+		if !utf8.ValidString(string(in.Status)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "status", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if err := checkChangeListLatestVerificationItemValue(in.LatestVerification, generatedJSONChildPath(field, "latest_verification", false), active); err != nil {
+			return err
+		}
+		if !utf8.ValidString(string(in.SavedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "saved_at", false))
+		}
+	}
+	return nil
+}
+
+// checkChangeListLatestVerificationItemValue checks one generated value on the active path.
+func checkChangeListLatestVerificationItemValue(in *LatestVerificationItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.RunID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "run_id", false))
+		}
+		if !utf8.ValidString(string(in.State)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "state", false))
+		}
+	}
+	return nil
+}
+
+// checkChangeListItemValue checks text and cycles before conversion.
+func checkChangeListItemValue(in *ChangeListItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeListChangeListItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkChangeListVersionValue checks text and cycles before conversion.
+func checkChangeListVersionValue(in *ChangeListVersion) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeListVersionChangeListVersionValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkChangeListVersionChangeListVersionValue checks one generated value on the active path.
+func checkChangeListVersionChangeListVersionValue(in *ChangeListVersion, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Version)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "version", false))
+		}
+	}
+	return nil
+}
+
 // checkCheckOutputPageValue checks text and cycles before conversion.
 func checkCheckOutputPageValue(in *CheckOutputPage) error {
 	if in == nil {
@@ -19037,6 +20048,18 @@ func checkInitProjectResultInitProjectResultValue(in *InitProjectResult, field s
 		if !utf8.ValidString(string(in.Commit)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
 		}
+	}
+	return nil
+}
+
+// checkLatestVerificationItemValue checks text and cycles before conversion.
+func checkLatestVerificationItemValue(in *LatestVerificationItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeListLatestVerificationItemValue(in, "$", active); err != nil {
+		return err
 	}
 	return nil
 }

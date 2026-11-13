@@ -20,47 +20,6 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
-// EncodeCheckpointUIResponse returns an encoder for responses returned by the
-// surla checkpoint_ui endpoint.
-func EncodeCheckpointUIResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
-	return func(ctx context.Context, w http.ResponseWriter, v any) error {
-		res, _ := v.(string)
-		enc := encoder(ctx, w)
-		body := res
-		w.WriteHeader(http.StatusOK)
-		return enc.Encode(body)
-	}
-}
-
-// EncodeCheckpointUIError returns an encoder for errors returned by the
-// checkpoint_ui surla endpoint.
-func EncodeCheckpointUIError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
-	encodeError := goahttp.ErrorEncoder(encoder, formatter)
-	return func(ctx context.Context, w http.ResponseWriter, v error) error {
-		var en goa.GoaErrorNamer
-		if !errors.As(v, &en) {
-			return encodeError(ctx, w, v)
-		}
-		switch en.GoaErrorName() {
-		case "forbidden":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewCheckpointUIForbiddenResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusForbidden)
-			return enc.Encode(body)
-		default:
-			return encodeError(ctx, w, v)
-		}
-	}
-}
-
 // EncodeGoldenPathResponse returns an encoder for responses returned by the
 // surla golden_path endpoint.
 func EncodeGoldenPathResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -2187,6 +2146,116 @@ func EncodeGetStoryRefreshError(encoder func(context.Context, http.ResponseWrite
 	}
 }
 
+// EncodeListChangesResponse returns an encoder for responses returned by the
+// surla list_changes endpoint.
+func EncodeListChangesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ChangeList)
+		enc := encoder(ctx, w)
+		body := NewListChangesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeListChangesError returns an encoder for errors returned by the
+// list_changes surla endpoint.
+func EncodeListChangesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListChangesForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeWaitForChangesResponse returns an encoder for responses returned by
+// the surla wait_for_changes endpoint.
+func EncodeWaitForChangesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ChangeListVersion)
+		enc := encoder(ctx, w)
+		body := NewWaitForChangesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeWaitForChangesRequest returns a decoder for requests sent to the surla
+// wait_for_changes endpoint.
+func DecodeWaitForChangesRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.WaitForChangesPayload, error) {
+	return func(r *http.Request) (*surla.WaitForChangesPayload, error) {
+		var payload *surla.WaitForChangesPayload
+		var (
+			since string
+			err   error
+		)
+		since = r.URL.Query().Get("since")
+		if since == "" {
+			err = goa.MergeErrors(err, goa.MissingFieldError("since", "query string"))
+		}
+		if utf8.RuneCountInString(since) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("since", since, utf8.RuneCountInString(since), 1, true))
+		}
+		if utf8.RuneCountInString(since) > 128 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("since", since, utf8.RuneCountInString(since), 128, false))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewWaitForChangesPayload(since)
+
+		return payload, nil
+	}
+}
+
+// EncodeWaitForChangesError returns an encoder for errors returned by the
+// wait_for_changes surla endpoint.
+func EncodeWaitForChangesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewWaitForChangesForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis builds a value of type
 // *surla.CP1Analysis from a value of type *CP1AnalysisRequestBody.
 func unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(v *CP1AnalysisRequestBody) *surla.CP1Analysis {
@@ -2826,6 +2895,35 @@ func marshalSurlaTraceSpanToTraceSpanResponseBody(v *surla.TraceSpan) *TraceSpan
 			tv := val
 			res.Attributes[tk] = tv
 		}
+	}
+
+	return res
+}
+
+// marshalSurlaChangeListItemToChangeListItemResponseBody builds a value of
+// type *ChangeListItemResponseBody from a value of type *surla.ChangeListItem.
+func marshalSurlaChangeListItemToChangeListItemResponseBody(v *surla.ChangeListItem) *ChangeListItemResponseBody {
+	res := &ChangeListItemResponseBody{
+		ChangeID:        v.ChangeID,
+		Summary:         v.Summary,
+		Status:          v.Status,
+		RequestRevision: v.RequestRevision,
+		SavedAt:         v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = marshalSurlaLatestVerificationItemToLatestVerificationItemResponseBody(v.LatestVerification)
+	}
+
+	return res
+}
+
+// marshalSurlaLatestVerificationItemToLatestVerificationItemResponseBody
+// builds a value of type *LatestVerificationItemResponseBody from a value of
+// type *surla.LatestVerificationItem.
+func marshalSurlaLatestVerificationItemToLatestVerificationItemResponseBody(v *surla.LatestVerificationItem) *LatestVerificationItemResponseBody {
+	res := &LatestVerificationItemResponseBody{
+		RunID: v.RunID,
+		State: v.State,
 	}
 
 	return res

@@ -21,82 +21,6 @@ import (
 	goahttp "goa.design/goa/v3/http"
 )
 
-// BuildCheckpointUIRequest instantiates a HTTP request object with method and
-// path set to call the "surla" service "checkpoint_ui" endpoint
-func (c *Client) BuildCheckpointUIRequest(ctx context.Context, v any) (*http.Request, error) {
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: CheckpointUISurlaPath()}
-	req, err := http.NewRequest("GET", u.String(), nil)
-	if err != nil {
-		return nil, goahttp.ErrInvalidURL("surla", "checkpoint_ui", u.String(), err)
-	}
-	if ctx != nil {
-		req = req.WithContext(ctx)
-	}
-
-	return req, nil
-}
-
-// DecodeCheckpointUIResponse returns a decoder for responses returned by the
-// surla checkpoint_ui endpoint. restoreBody controls whether the response body
-// should be restored after having been read.
-// DecodeCheckpointUIResponse may return the following errors:
-//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
-//   - error: internal error
-func DecodeCheckpointUIResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
-	return func(resp *http.Response) (result any, decodeErr error) {
-		responseBody := resp.Body
-		if restoreBody {
-			b, readErr := io.ReadAll(responseBody)
-			closeErr := responseBody.Close()
-			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "checkpoint_ui", err)
-			}
-			resp.Body = io.NopCloser(bytes.NewBuffer(b))
-			defer func() {
-				resp.Body = io.NopCloser(bytes.NewBuffer(b))
-			}()
-		} else {
-			defer func() {
-				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "checkpoint_ui", err))
-				}
-			}()
-		}
-		switch resp.StatusCode {
-		case http.StatusOK:
-			var (
-				body string
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "checkpoint_ui", err)
-			}
-			return body, nil
-		case http.StatusForbidden:
-			var (
-				body CheckpointUIForbiddenResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "checkpoint_ui", err)
-			}
-			err = ValidateCheckpointUIForbiddenResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "checkpoint_ui", err)
-			}
-			return nil, NewCheckpointUIForbidden(&body)
-		default:
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "checkpoint_ui", err)
-			}
-			return nil, goahttp.ErrInvalidResponse("surla", "checkpoint_ui", resp.StatusCode, string(body))
-		}
-	}
-}
-
 // BuildGoldenPathRequest instantiates a HTTP request object with method and
 // path set to call the "surla" service "golden_path" endpoint
 func (c *Client) BuildGoldenPathRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -3022,6 +2946,183 @@ func DecodeGetStoryRefreshResponse(decoder func(*http.Response) goahttp.Decoder,
 	}
 }
 
+// BuildListChangesRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "list_changes" endpoint
+func (c *Client) BuildListChangesRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListChangesSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "list_changes", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeListChangesResponse returns a decoder for responses returned by the
+// surla list_changes endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeListChangesResponse may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeListChangesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_changes", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_changes", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ListChangesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_changes", err)
+			}
+			err = ValidateListChangesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_changes", err)
+			}
+			res := NewListChangesChangeListOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body ListChangesForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_changes", err)
+			}
+			err = ValidateListChangesForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_changes", err)
+			}
+			return nil, NewListChangesForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_changes", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "list_changes", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildWaitForChangesRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "wait_for_changes" endpoint
+func (c *Client) BuildWaitForChangesRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: WaitForChangesSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "wait_for_changes", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeWaitForChangesRequest returns an encoder for requests sent to the
+// surla wait_for_changes server.
+func EncodeWaitForChangesRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.WaitForChangesPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "wait_for_changes", "*surla.WaitForChangesPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("since", p.Since)
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeWaitForChangesResponse returns a decoder for responses returned by the
+// surla wait_for_changes endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeWaitForChangesResponse may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeWaitForChangesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "wait_for_changes", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "wait_for_changes", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body WaitForChangesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "wait_for_changes", err)
+			}
+			err = ValidateWaitForChangesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "wait_for_changes", err)
+			}
+			res := NewWaitForChangesChangeListVersionOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body WaitForChangesForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "wait_for_changes", err)
+			}
+			err = ValidateWaitForChangesForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "wait_for_changes", err)
+			}
+			return nil, NewWaitForChangesForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "wait_for_changes", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "wait_for_changes", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // marshalSurlaCP1AnalysisToCP1AnalysisRequestBody builds a value of type
 // *CP1AnalysisRequestBody from a value of type *surla.CP1Analysis.
 func marshalSurlaCP1AnalysisToCP1AnalysisRequestBody(v *surla.CP1Analysis) *CP1AnalysisRequestBody {
@@ -3816,6 +3917,35 @@ func unmarshalTraceSpanResponseBodyToSurlaTraceSpan(v *TraceSpanResponseBody) *s
 		tk := key
 		tv := val
 		res.Attributes[tk] = tv
+	}
+
+	return res
+}
+
+// unmarshalChangeListItemResponseBodyToSurlaChangeListItem builds a value of
+// type *surla.ChangeListItem from a value of type *ChangeListItemResponseBody.
+func unmarshalChangeListItemResponseBodyToSurlaChangeListItem(v *ChangeListItemResponseBody) *surla.ChangeListItem {
+	res := &surla.ChangeListItem{
+		ChangeID:        *v.ChangeID,
+		Summary:         *v.Summary,
+		Status:          *v.Status,
+		RequestRevision: *v.RequestRevision,
+		SavedAt:         *v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem(v.LatestVerification)
+	}
+
+	return res
+}
+
+// unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem
+// builds a value of type *surla.LatestVerificationItem from a value of type
+// *LatestVerificationItemResponseBody.
+func unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem(v *LatestVerificationItemResponseBody) *surla.LatestVerificationItem {
+	res := &surla.LatestVerificationItem{
+		RunID: *v.RunID,
+		State: *v.State,
 	}
 
 	return res

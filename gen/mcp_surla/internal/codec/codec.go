@@ -2611,6 +2611,118 @@ func ValidateInitProjectResultTransport(value *InitProjectResultTransport) (err 
 	return err
 }
 
+// ListChangesResultChangeListItemTransport stores JSON fields until they have been validated.
+type ListChangesResultChangeListItemTransport struct {
+	// Change Card identifier; get_change takes it.
+	ChangeID *string `json:"change_id"`
+	// Plain-English summary of the current revision.
+	Summary *string `json:"summary"`
+	// Checkpoint status of the current revision.
+	Status *string `json:"status"`
+	// Current request_revision of the Change Card.
+	RequestRevision *string `json:"request_revision"`
+	// The Change Card's most recently accepted verification run; absent when none
+	// was started.
+	LatestVerification *ListChangesResultLatestVerificationItemTransport `json:"latest_verification,omitempty"`
+	// When the Change Card was last saved. It is not part of request_revision.
+	SavedAt *string `json:"saved_at"`
+}
+
+// ValidateListChangesResultChangeListItemTransport checks decoded JSON before it becomes a service value.
+func ValidateListChangesResultChangeListItemTransport(value *ListChangesResultChangeListItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.SavedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("saved_at", "body"))
+	}
+	if value.Status != nil {
+		if !(*value.Status == "needs_confirmation" || *value.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	if value.LatestVerification != nil {
+		if err2 := ValidateListChangesResultLatestVerificationItemTransport(value.LatestVerification); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.SavedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.saved_at", *value.SavedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
+// ListChangesResultLatestVerificationItemTransport stores JSON fields until they have been validated.
+type ListChangesResultLatestVerificationItemTransport struct {
+	// Verification run identifier; get_verification takes it.
+	RunID *string `json:"run_id"`
+	// running while the run builds or evaluates the candidate; passed or failed
+	// when its report's verdict is known; not_completed when it stopped without a
+	// report.
+	State *string `json:"state"`
+}
+
+// ValidateListChangesResultLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
+func ValidateListChangesResultLatestVerificationItemTransport(value *ListChangesResultLatestVerificationItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"running", "passed", "failed", "not_completed"}))
+		}
+	}
+	return err
+}
+
+// ListChangesResultTransport stores JSON fields until they have been validated.
+type ListChangesResultTransport struct {
+	// Saved Change Cards, most recently saved first.
+	Changes []*ListChangesResultChangeListItemTransport `json:"changes"`
+	// Opaque value identifying this exact list; it changes whenever any listed
+	// value changes.
+	Version *string `json:"version"`
+}
+
+// ValidateListChangesResultTransport checks decoded JSON before it becomes a service value.
+func ValidateListChangesResultTransport(value *ListChangesResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Changes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("changes", "body"))
+	}
+	if value.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	for _, e := range value.Changes {
+		if e != nil {
+			if err2 := ValidateListChangesResultChangeListItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ListTracesPayloadIntTransport stores JSON fields until they have been validated.
 type ListTracesPayloadIntTransport int
 
@@ -6735,6 +6847,32 @@ func EncodeInitProjectResult(in *surla.InitProjectResult) ([]byte, error) {
 	return data, nil
 }
 
+// EncodeListChangesResult turns a service value into JSON using the field names in the Goa design.
+func EncodeListChangesResult(in *surla.ChangeList) ([]byte, error) {
+	var body *ListChangesResultTransport
+	{
+		body = &ListChangesResultTransport{
+			Version: &in.Version,
+		}
+		body.Changes = make([]*ListChangesResultChangeListItemTransport, len(in.Changes))
+		for i, val := range in.Changes {
+			if val == nil {
+				body.Changes[i] = nil
+				continue
+			}
+			body.Changes[i] = encodeChangeListItemToListChangesResultChangeListItemTransport(val)
+		}
+	}
+	if err := ValidateListChangesResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ListChangesResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ListChangesResult JSON: %w", err)
+	}
+	return data, nil
+}
+
 // DecodeListTracesPayload checks JSON field names from the Goa design and returns a service value.
 func DecodeListTracesPayload(data []byte) (out *surla.ListTracesPayload, err error) {
 	var body *ListTracesPayloadTransport
@@ -7879,6 +8017,21 @@ func encodeC4EdgeItemToPreviewArchitectureResultC4EdgeItemTransport(v *surla.C4E
 	return res
 }
 
+func encodeChangeListItemToListChangesResultChangeListItemTransport(v *surla.ChangeListItem) *ListChangesResultChangeListItemTransport {
+	res := &ListChangesResultChangeListItemTransport{
+		ChangeID:        &v.ChangeID,
+		Summary:         &v.Summary,
+		Status:          &v.Status,
+		RequestRevision: &v.RequestRevision,
+		SavedAt:         &v.SavedAt,
+	}
+	if v.LatestVerification != nil {
+		res.LatestVerification = encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v.LatestVerification)
+	}
+
+	return res
+}
+
 func encodeExampleItemToApproveMergeResultExampleItemTransport(v *surla.ExampleItem) *ApproveMergeResultExampleItemTransport {
 	res := &ApproveMergeResultExampleItemTransport{
 		ID:               &v.ID,
@@ -7934,6 +8087,15 @@ func encodeExampleItemToReviseChangeResultExampleItemTransport(v *surla.ExampleI
 		InputSummary:     &v.InputSummary,
 		ExpectedOutcome:  &v.ExpectedOutcome,
 		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v *surla.LatestVerificationItem) *ListChangesResultLatestVerificationItemTransport {
+	res := &ListChangesResultLatestVerificationItemTransport{
+		RunID: &v.RunID,
+		State: &v.State,
 	}
 
 	return res

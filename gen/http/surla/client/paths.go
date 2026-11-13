@@ -9,11 +9,6 @@ package client
 
 import "fmt"
 
-// CheckpointUISurlaPath returns the URL path to the surla service checkpoint_ui HTTP endpoint.
-func CheckpointUISurlaPath() string {
-	return "/ui/checkpoint"
-}
-
 // GoldenPathSurlaPath returns the URL path to the surla service golden_path HTTP endpoint.
 func GoldenPathSurlaPath() string {
 	return "/golden-path"
@@ -127,4 +122,14 @@ func RefreshStorySurlaPath() string {
 // GetStoryRefreshSurlaPath returns the URL path to the surla service get_story_refresh HTTP endpoint.
 func GetStoryRefreshSurlaPath() string {
 	return "/workspace/story/refresh"
+}
+
+// ListChangesSurlaPath returns the URL path to the surla service list_changes HTTP endpoint.
+func ListChangesSurlaPath() string {
+	return "/changes"
+}
+
+// WaitForChangesSurlaPath returns the URL path to the surla service wait_for_changes HTTP endpoint.
+func WaitForChangesSurlaPath() string {
+	return "/change-updates"
 }

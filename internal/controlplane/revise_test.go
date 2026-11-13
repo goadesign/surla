@@ -43,10 +43,7 @@ func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 	require.NoError(t, err)
 	var foundReviseTool bool
 	for _, tool := range toolsList.Tools {
-		if tool.Name == "revise_change" {
-			foundReviseTool = true
-			assert.Contains(t, string(tool.Meta), "ui://surla/checkpoint")
-		}
+		foundReviseTool = foundReviseTool || tool.Name == "revise_change"
 	}
 	require.True(t, foundReviseTool, "MCP ToolsList must include revise_change")
 
