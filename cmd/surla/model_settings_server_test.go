@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
@@ -189,6 +190,54 @@ func writePresence(path string, environ []string) error {
 	}
 	b.WriteString("ARGS_HOLD_SENTINEL=no\n")
 	return os.WriteFile(path, []byte(b.String()), 0o600)
+}
+
+// TestLeftoverLiveFoldersAreNamedAndKept starts the status report over a
+// live root an earlier server left: a folder whose log holds what its test
+// program printed, and a link to a folder elsewhere. Both are named; the
+// folder, its log, the link and its target stay exactly as they were.
+func TestLeftoverLiveFoldersAreNamedAndKept(t *testing.T) {
+	cardsDir := t.TempDir()
+	root := controlplane.LiveRoot(cardsDir)
+	left := filepath.Join(root, "live-left")
+	require.NoError(t, os.MkdirAll(left, 0o700))
+	logPath := filepath.Join(left, "executor.log")
+	require.NoError(t, os.WriteFile(logPath, []byte("suite configuration: ANTHROPIC_API_KEY=sentinel-left-in-log\n"), 0o600))
+	target := t.TempDir()
+	targetFile := filepath.Join(target, "kept")
+	require.NoError(t, os.WriteFile(targetFile, []byte("outside"), 0o600))
+	link := filepath.Join(root, "live-link")
+	require.NoError(t, os.Symlink(target, link))
+	before := map[string]os.FileInfo{}
+	for _, path := range []string{left, logPath, targetFile} {
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		before[path] = info
+	}
+
+	var out bytes.Buffer
+	writeLeftoverLiveDirs(&out, root)
+	assert.Equal(t, "surla: CP3: an earlier project server using this cards directory left live target directory "+left+
+		"; its files were kept and may hold what its test program printed: remove it once its processes have stopped\n"+
+		"surla: CP3: an earlier project server using this cards directory left live target directory "+link+
+		"; its files were kept and may hold what its test program printed: remove it once its processes have stopped\n", out.String())
+	assert.NotContains(t, out.String(), "sentinel")
+
+	for path, info := range before {
+		after, err := os.Stat(path)
+		require.NoError(t, err, path)
+		assert.Equal(t, info.ModTime(), after.ModTime(), path)
+		assert.Equal(t, info.Size(), after.Size(), path)
+	}
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "sentinel-left-in-log", "the log is kept as written")
+	pointed, err := os.Readlink(link)
+	require.NoError(t, err)
+	assert.Equal(t, target, pointed, "the link is kept and not followed")
+	kept, err := os.ReadFile(targetFile)
+	require.NoError(t, err)
+	assert.Equal(t, "outside", string(kept))
 }
 
 // presenceScript reports, to $SURLA_TEST_PRESENCE_DIR/$0, whether each

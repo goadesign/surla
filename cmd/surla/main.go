@@ -597,8 +597,11 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 }
 
 // writeLeftoverLiveDirs names the live target directories an earlier serve
-// using the same cards directory left without removing them. It states only
-// what it observed: whether their processes have stopped is not checked.
+// using the same cards directory left without removing them, after a failed
+// stop or the server's death. It states only what it observed: whether their
+// processes have stopped is not checked, so it neither removes a directory
+// nor follows its links. A directory keeps its executor log, which may hold
+// whatever its test program printed, until the user removes it.
 func writeLeftoverLiveDirs(w io.Writer, root string) {
 	dirs, err := verifyrun.LeftoverLiveDirs(root)
 	if err != nil {
@@ -606,6 +609,7 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 		return
 	}
 	for _, dir := range dirs {
-		fmt.Fprintf(w, "surla: CP3: an earlier project server using this cards directory left live target directory %s; its files were kept\n", dir)
+		fmt.Fprintf(w, "surla: CP3: an earlier project server using this cards directory left live target directory %s; its files were kept "+
+			"and may hold what its test program printed: remove it once its processes have stopped\n", dir)
 	}
 }

@@ -561,6 +561,56 @@ func TestSavedFilesHoldNoHandedOverValue(t *testing.T) {
 	assertTreeHoldsNoSentinel(t, cardsDir)
 }
 
+// TestChangedSettingsReachTheNextLaunchOnly hands settings over, starts a
+// live target, then hands changed settings over: the running target is
+// neither restarted nor unbound and keeps the settings it started with,
+// while the next launch receives the changed ones.
+func TestChangedSettingsReachTheNextLaunchOnly(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	reports := t.TempDir()
+	t.Setenv("SURLA_TEST_FIRST_KEY", sentinelKey)
+	t.Setenv("SURLA_TEST_PRESENCE_DIR", reports)
+	// The executor stand-in counts its launches and reports, by booleans
+	// only, whether its anthropic key is the first one handed over.
+	launch := `n=$(ls "$SURLA_TEST_PRESENCE_DIR" | wc -l | tr -d ' ')
+[ "$ANTHROPIC_API_KEY" = "$SURLA_TEST_FIRST_KEY" ] && first=yes || first=no
+printf 'FIRST_KEY=%s\nKEY_SET=%s\n' "$first" "${ANTHROPIC_API_KEY:+yes}" > "$SURLA_TEST_PRESENCE_DIR/launch-$n"
+exec "$0" "$1" "$2" "$3"`
+	cp := newControlPlane(t, Options{
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{Command: []string{"/bin/sh", "-c", launch, self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
+			StartTimeout: time.Minute},
+	})
+	builder := asCaller("alice@example.com", CallerBuilder)
+	commit := strings.Repeat("a", 40)
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelKey}})
+	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	require.NoError(t, err)
+
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelSecondKey}})
+	status, err := cp.GetLiveTarget(builder)
+	require.NoError(t, err)
+	running, ok := status.LiveTarget.AsRunning()
+	require.True(t, ok, "the hand-over leaves the running target running")
+	assert.Equal(t, started.URL, running.URL)
+	drafted, err := draft(builder, cp, fakePromptID, "Answer in French.")
+	require.NoError(t, err)
+	assert.True(t, drafted.AppliedInStore, "the running target still answers")
+	entries, err := os.ReadDir(reports)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the hand-over launched nothing")
+	raw, err := os.ReadFile(filepath.Join(reports, "launch-0"))
+	require.NoError(t, err)
+	assert.Equal(t, "FIRST_KEY=yes\nKEY_SET=yes\n", string(raw), "the running target started with the first settings")
+
+	_, err = cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	require.NoError(t, err)
+	raw, err = os.ReadFile(filepath.Join(reports, "launch-1"))
+	require.NoError(t, err)
+	assert.Equal(t, "FIRST_KEY=no\nKEY_SET=yes\n", string(raw), "the next launch received the changed settings")
+}
+
 // verifyrunLeftovers lists the live target folders under cardsDir.
 func verifyrunLeftovers(cardsDir string) ([]string, error) {
 	return verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
