@@ -50,7 +50,7 @@ func (f *teamServiceFixture) StartAgents(context.Context) (*gensurla.ProjectTeam
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, "start")
-	return &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "opened", Roles: []*gensurla.ProjectTeamRole{}}, nil
+	return &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "opened", Step: "Choose the fixture's builder in its open team dialog.", Roles: []*gensurla.ProjectTeamRole{}}, nil
 }
 
 // RegisterBuildRoles records registration without changing a window or starting any process.

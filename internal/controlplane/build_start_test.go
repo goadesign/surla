@@ -80,7 +80,7 @@ func TestBuildStartLimitUsesTheDeadlineSeam(t *testing.T) {
 // TestBuildTeamOutcomeUsesTypedConditions keeps peer-authored messages out of
 // every warning and returns the original team result when admission succeeds.
 func TestBuildTeamOutcomeUsesTypedConditions(t *testing.T) {
-	team := &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "not_needed", Roles: []*gensurla.ProjectTeamRole{}}
+	team := &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "not_needed", Step: "The fixture team is ready for its assignment.", Roles: []*gensurla.ProjectTeamRole{}}
 	private := "private external reply"
 	cases := []struct {
 		name string
@@ -99,6 +99,7 @@ func TestBuildTeamOutcomeUsesTypedConditions(t *testing.T) {
 			assert.Equal(t, tc.kind, outcome.Kind())
 			if ready, ok := outcome.AsReady(); ok {
 				assert.Same(t, team, ready)
+				assert.Equal(t, team.Step, ready.Step, "the ready wrapper preserves the owner's instruction")
 			}
 			var step gensurla.BuildStartStep
 			if busy, ok := outcome.AsWindowBusy(); ok {
