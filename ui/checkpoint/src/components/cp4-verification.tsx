@@ -1,4 +1,4 @@
-// Package cp4-verification displays the evaluator's declared scenario outcomes,
+// Package cp4-verification displays the test suite's declared scenario outcomes,
 // the saved verification run list for a Change Card, and the exact saved
 // revision each run describes, without exposing private evidence.
 
@@ -63,7 +63,7 @@ const failureStageLabels: Record<VerificationNotCompleted["stage"], string> = {
   checkout: "Loading the saved source",
   build: "Building the programs",
   describe: "Reading the declared checks",
-  suite: "Running the evaluator",
+  suite: "Running the checks",
   report: "Saving the verification report",
   supervise: "Running the verification",
 };
@@ -203,8 +203,8 @@ export function VerificationView({
       >
         <h2 id="surla-cp4-title">No saved verifications</h2>
         <p id="surla-cp4-empty">
-          No verification runs are currently saved for this Change Card. Run verify_change on a
-          confirmed Change Card revision, then load saved verifications here.
+          No verification runs are currently saved for this Change Card. The builder starts
+          checks for a confirmed change, then you can load saved verifications here.
         </p>
         {cardLoadError !== null && !sameCardLoaded ? (
           <Alert id="surla-cp4-card-error" variant="destructive" role="alert">
@@ -244,6 +244,7 @@ export function VerificationView({
   }
 
   const state = run.state;
+  const testSource = run.test_source;
   const title = runStatusHeading(run);
   const unlistedInLastLoadedList =
     listedRuns !== null && !listedRuns.some((r) => r.run_id === run.run_id);
@@ -277,6 +278,11 @@ export function VerificationView({
           ) : null}
         </div>
       </div>
+      {testSource.source === "written_tests" ? (
+        <Alert variant="warning" id="surla-cp4-test-source">
+          {testSource.notice}
+        </Alert>
+      ) : null}
       {displayedCardRevision !== null && displayedCardRevision !== run.request_revision ? (
         <Alert variant="warning" role="status" id="surla-cp4-different-revision">
           This result applies to a different saved Change Card revision
@@ -400,7 +406,8 @@ export function VerificationView({
         <dl className="surla-verification-details">
           <dt>Candidate commit</dt><dd><code>{run.candidate_commit}</code></dd>
           <dt>Change Card revision</dt><dd><code>{run.request_revision}</code></dd>
-          <dt>Evaluator commit</dt><dd><code>{run.suite_commit}</code></dd>
+          <dt>{testSource.source === "written_tests" ? "Accepted tests commit" : "Evaluator commit"}</dt>
+          <dd><code>{run.suite_commit}</code></dd>
           <dt>Verification run</dt><dd><code>{run.run_id}</code></dd>
           <dt>Change Card</dt><dd><code>{run.change_id}</code></dd>
           <dt>Accepted</dt>
@@ -412,7 +419,8 @@ export function VerificationView({
             </>
           ) : state.type === "completed" ? (
             <>
-              <dt>Evaluator suite</dt><dd><code>{state.value.suite_id}</code></dd>
+              <dt>{testSource.source === "written_tests" ? "Written tests suite" : "Evaluator suite"}</dt>
+              <dd><code>{state.value.suite_id}</code></dd>
               <dt>Environment</dt><dd>{state.value.environment}</dd>
               <dt>Report digest</dt><dd><code>{state.value.report.report_digest}</code></dd>
             </>
