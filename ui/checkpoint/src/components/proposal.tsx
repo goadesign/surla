@@ -129,20 +129,26 @@ export function ProposedRevisionView({
 
       <h3>{"Examples (" + proposal.examples.length + ")"}</h3>
       <ul id="surla-proposal-examples">
-        {exampleChanges(card.examples, proposal.examples).map(({ example, status }) => (
+        {exampleChanges(card.examples, proposal.examples).map(({ example, prior, status }) => (
           <li key={status + example.id} data-example-id={example.id} data-status={status}>
             <code>{example.id}</code>{" "}
             <Badge variant={status === "Kept" ? "default" : status === "Removed" ? "destructive" : "accent"}>
               {status}
             </Badge>{" "}
-            <strong>{example.scenario}</strong>
-            {" — Input: " +
-              example.input_summary +
-              " -> Expected: " +
-              example.expected_outcome +
-              " [" +
-              example.verification_kind +
-              "]"}
+            {prior !== undefined ? (
+              <>
+                <div className="surla-proposal-example-agreed">
+                  {"Agreed: "}
+                  <ExampleText example={prior} />
+                </div>
+                <div className="surla-proposal-example-proposed">
+                  {"Proposed: "}
+                  <ExampleText example={example} />
+                </div>
+              </>
+            ) : (
+              <ExampleText example={example} />
+            )}
           </li>
         ))}
       </ul>
@@ -264,6 +270,8 @@ function ProposalQuestion({
 interface ExampleChange {
   // example is the proposal's example, or the agreed one it removes.
   example: ExampleItem;
+  // prior is the agreed example an Edited example would replace.
+  prior?: ExampleItem;
   // status says how the example differs from the agreed revision.
   status: "New" | "Edited" | "Kept" | "Removed";
 }
@@ -284,7 +292,7 @@ function exampleChanges(agreed: ExampleItem[], proposed: ExampleItem[]): Example
       prior.input_summary === example.input_summary &&
       prior.expected_outcome === example.expected_outcome &&
       prior.verification_kind === example.verification_kind;
-    return { example, status: same ? "Kept" : "Edited" };
+    return same ? { example, status: "Kept" } : { example, prior, status: "Edited" };
   });
   for (const example of agreed) {
     if (!kept.has(example.id)) {
@@ -292,4 +300,21 @@ function exampleChanges(agreed: ExampleItem[], proposed: ExampleItem[]): Example
     }
   }
   return changes;
+}
+
+// ExampleText shows an example's scenario, input, expected outcome and kind
+// on one line, as the previous-revision panel shows them.
+function ExampleText({ example }: { example: ExampleItem }) {
+  return (
+    <>
+      <strong>{example.scenario}</strong>
+      {" — Input: " +
+        example.input_summary +
+        " -> Expected: " +
+        example.expected_outcome +
+        " [" +
+        example.verification_kind +
+        "]"}
+    </>
+  );
 }

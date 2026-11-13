@@ -16,12 +16,13 @@ import (
 // TestViewsPageAdoptsAndDeclinesAProposedRevision opens an agreed change with
 // a Story and a typed edit. The guide's revision appears as a proposal
 // without a reload, keeping the edit; the page shows every part that would
-// change (the request, summary, a new question, an edited example, a dropped
-// preserved behavior, an added flow and a changed design file), blocks
-// refining the agreed revision, keeps a chosen answer across a re-read,
-// lists the proposal, and declines it. A second proposal is adopted: it becomes the agreed revision,
-// confirmed by the user, with the earlier revision shown as prior and the
-// edit typed on it preserved.
+// change (the request, summary, a new question, an edited example with what
+// it was and what it would become, a removed and an added example, a kept, a
+// dropped and a new preserved behavior, an added flow and a changed design
+// file), blocks refining the agreed revision, keeps a chosen answer across a
+// re-read, lists the proposal, and declines it. A second proposal is adopted:
+// it becomes the agreed revision, confirmed by the user, with the earlier
+// revision shown as prior and the edit typed on it preserved.
 func TestViewsPageAdoptsAndDeclinesAProposedRevision(t *testing.T) {
 	ps, agreed := proposalPage(t)
 	runPageScript(t, ps, map[string]any{"agreed": agreed}, viewsPageScriptHelpers+`
@@ -42,8 +43,19 @@ expect(question && question.dataset.new === "true" && question.textContent.inclu
 const added = page.$$('#surla-proposal-story [data-difference="added"] strong').map((s) => s.textContent);
 expect(JSON.stringify(added) === JSON.stringify(["Exchange instead of refund"]), "the added flow is not named: " + JSON.stringify(added));
 expect(page.$("#surla-proposal-prompt").dataset.changed === "true" && page.text("#surla-proposal-prompt").includes("Refunds up to $60 are instant.") && page.text("#surla-proposal-prompt").includes("Route refunds to a manager."), "the changed request is not shown beside the agreed one");
-const example = page.$('#surla-proposal-examples [data-example-id="check_01"]');
-expect(example && example.dataset.status === "Edited" && example.textContent.includes("Order total $60.00"), "the edited example is not shown as edited");
+const example = (id) => page.$('#surla-proposal-examples [data-example-id="' + id + '"]');
+const edited = example("check_01");
+expect(edited && edited.dataset.status === "Edited", "the edited example is not shown as edited");
+const was = edited.querySelector(".surla-proposal-example-agreed");
+const becomes = edited.querySelector(".surla-proposal-example-proposed");
+expect(was && was.textContent.includes("Refund at the limit") && was.textContent.includes("Order total $50.00"), "the edited example does not show what it was: " + edited.textContent);
+expect(becomes && becomes.textContent.includes("Refund at the raised limit") && becomes.textContent.includes("Order total $60.00"), "the edited example does not show what it would become: " + edited.textContent);
+const removed = example("check_02");
+expect(removed && removed.dataset.status === "Removed" && removed.textContent.includes("Refund over the limit"), "the removed example is not listed as removed");
+const addedExample = example("check_03");
+expect(addedExample && addedExample.dataset.status === "New" && addedExample.textContent.includes("Exchange within the limit"), "the added example is not marked new");
+const behaviors = page.$$("#surla-proposal-preserved li").map((b) => [b.textContent.replace(/New$/, "").trim(), b.dataset.new]);
+expect(JSON.stringify(behaviors) === JSON.stringify([["Refunds are recorded on the order.", "false"], ["An exchange keeps the original order's tenant.", "true"]]), "the kept and new preserved behaviors are not marked: " + JSON.stringify(behaviors));
 expect(page.text("#surla-proposal-dropped-preserved").includes("Cross-tenant order lookups return 404 Not Found."), "the dropped preserved behavior is not shown");
 expect(page.$("#surla-proposal-design").dataset.changed === "true" && page.text("#surla-proposal-design").includes("design/design.go"), "the changed design file is not named");
 expect(page.$("#surla-confirm-submit").disabled && page.$("#surla-confirm-blocked"), "refining the agreed revision is still offered");
@@ -119,19 +131,30 @@ page.close();
 `)
 }
 
-// proposalPage serves an agreed change with a Story behind the page session,
-// with two server-side actions a script can run: "propose", where the guide
-// revises the change from changed design files with an added flow, a new
-// question, a new prompt, an edited example and no preserved behavior; and
-// "resave", which saves the change unchanged so the page reads it again. It
-// returns the server and the agreed revision.
+// proposalPage serves an agreed change with a Story, two examples (check_01
+// and check_02) and two preserved behaviors behind the page session, with two
+// server-side actions a script can run: "propose", where the guide revises
+// the change from changed design files with an added flow, a new question, a
+// new prompt, check_01 edited, check_02 removed, a new example, one preserved
+// behavior kept, the other dropped and a new one added; and "resave", which
+// saves the change unchanged so the page reads it again. It returns the
+// server and the agreed revision.
 func proposalPage(t *testing.T) (*pageServer, string) {
 	t.Helper()
 	cp, ps := storyPageServer(t)
 	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
 	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
 	op := seedStoryRefreshForTest(t, cp, pageOwner, storyRefreshStateSucceeded, pageStories(), "")
-	proposeWithStory(t, cp, guide, "chg-proposal", op)
+	analysis := refundAnalysis("Route refunds to a manager.")
+	analysis.Examples = append(analysis.Examples, &gensurla.CP1AnalysisExample{
+		Scenario: "Refund over the limit", InputSummary: "Order total $80.00",
+		ExpectedOutcome: "Routed to a manager", VerificationKind: "deterministic",
+	})
+	analysis.PreservedBehaviors = append(analysis.PreservedBehaviors, "Refunds are recorded on the order.")
+	_, err := cp.ProposeChange(guide, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-proposal", Prompt: "Route refunds to a manager.", Analysis: analysis, StoryRefreshOpID: &op,
+	})
+	require.NoError(t, err)
 	proposed, err := cp.GetChange(guide, &gensurla.GetChangePayload{ChangeID: "chg-proposal"})
 	require.NoError(t, err)
 	agreed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
@@ -157,18 +180,24 @@ func proposalPage(t *testing.T) (*pageServer, string) {
 		if change.ProposedRevision != nil {
 			latest = change.ProposedRevision.RequestRevision
 		}
-		kept := "check_01"
+		edited := "check_01"
 		_, err = cp.ReviseChange(guide, &gensurla.ReviseChangePayload{
 			ChangeID: "chg-proposal", RequestRevision: latest, Prompt: "Refunds up to $60 are instant.", StoryRefreshOpID: &storyOp,
 			Analysis: &gensurla.CP1RevisionAnalysis{
 				Summary:     "Refunds up to $60 are instant; exchanges ship a replacement.",
 				Ambiguities: []*gensurla.CP1AnalysisAmbiguity{refundTaxQuestion()},
-				Examples: []*gensurla.CP1RevisionAnalysisExample{{
-					PriorID: &kept, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
-					ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
-				}},
-				RemovedExampleIds:  []string{},
-				PreservedBehaviors: []string{},
+				Examples: []*gensurla.CP1RevisionAnalysisExample{
+					{
+						PriorID: &edited, Scenario: "Refund at the raised limit", InputSummary: "Order total $60.00",
+						ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+					},
+					{
+						Scenario: "Exchange within the limit", InputSummary: "Exchange of a $40.00 order",
+						ExpectedOutcome: "A replacement ships", VerificationKind: "deterministic",
+					},
+				},
+				RemovedExampleIds:  []string{"check_02"},
+				PreservedBehaviors: []string{"Refunds are recorded on the order.", "An exchange keeps the original order's tenant."},
 			},
 		})
 		require.NoError(t, err)
