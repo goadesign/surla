@@ -447,3 +447,15 @@ func TestAcceptedReplacementDoesNotReviveTheOlderEnd(t *testing.T) {
 	_, err = draft(builder, cp, fakePromptID, "After a refused launch.")
 	assert.Equal(t, "no_live_target", goaErrorName(err))
 }
+
+// TestLiveWithoutVerificationKeepsItsUnavailableRefusal covers an embedding
+// that supplies a launch command but no verification profile or card store input.
+func TestLiveWithoutVerificationKeepsItsUnavailableRefusal(t *testing.T) {
+	cp, err := New(Options{CardsDir: t.TempDir(), Live: &LiveConfig{Command: []string{"unused"}}})
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{
+		ChangeID: "unknown", CandidateCommit: strings.Repeat("a", 40),
+	})
+	assert.Equal(t, "live_target_unavailable", goaErrorName(err))
+}

@@ -206,7 +206,7 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if !c.liveConfigured {
+	if _, none := c.verifier.(noVerification); !c.liveConfigured || none {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
 	ctx, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
