@@ -180,6 +180,7 @@ func TestCheckpointUIApprovalStates(t *testing.T) {
 	})
 	ps.act("inputs-unreadable", func() {
 		target.update(func(p *pageTarget) {
+			p.absent = false
 			p.artifacts = spec.Artifacts
 			p.artifactsErr = errors.New("open /var/lib/surla/releases/orders: no such file or directory")
 		})
@@ -221,12 +222,15 @@ await control(origin, "act", { key: "inputs-unreadable" });
 await open("chg-unapproved");
 await open("chg-approved");
 const reason = page.text("#surla-cp5-unverified-approval-reason");
-expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval") && reason.includes("could not report its current inputs") && !reason.includes("/var/lib/surla") && page.$("#surla-cp5-unverified-approval-details") && page.$("#surla-cp5-refresh-approval"), "State 4 (unavailable target) did not render an honest path-free #surla-cp5-unverified-approval: " + reason);
+expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval") && reason.includes("because the release binaries could not be read") && reason.includes("in a folder named after the commit") && reason.includes("Check current approval") && !reason.includes("/") && !reason.includes("/var/lib/surla") && page.$("#surla-cp5-unverified-approval-details") && page.$("#surla-cp5-refresh-approval"), "State 4 (unavailable target) did not render an honest path-free #surla-cp5-unverified-approval: " + reason);
 
-// State 5: no promotion target, then recovery through the check control.
+// State 5: removing promotion settings or restoring the release binaries recovers #surla-cp5-approval through the check control.
 await control(origin, "act", { key: "absent" });
 await refresh();
-expect(page.text("#surla-cp5-unverified-approval-reason").includes("no promotion target is configured") && page.$("#surla-cp5-refresh-approval"), "State 5 (absent target) did not render its reason and the check control");
+expect(page.$("#surla-cp5-approval") && !page.$("#surla-cp5-unverified-approval"), "State 5 (absent target) did not keep #surla-cp5-approval without promotion settings");
+await control(origin, "act", { key: "inputs-unreadable" });
+await refresh();
+expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval"), "returning to unreadable binaries did not show #surla-cp5-unverified-approval");
 await control(origin, "act", { key: "restored" });
 await refresh();
 expect(page.$("#surla-cp5-approval") && !page.$("#surla-cp5-unverified-approval"), "checking after the target recovered did not show #surla-cp5-approval");

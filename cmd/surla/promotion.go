@@ -46,7 +46,7 @@ type (
 
 // publishReleaseBinariesStep tells the user how to recover when a configured
 // promotion target's release directory or binary cannot be read.
-const publishReleaseBinariesStep = "publish the binaries the run built to <release_dir>/%s/, or remove the promotion settings"
+const publishReleaseBinariesStep = "publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings"
 
 // CurrentArtifacts returns the SHA-256 digest of each configured binary in
 // <release_dir>/<candidateCommit>/. It opens that directory once and reads
@@ -71,7 +71,6 @@ func (t *releaseTarget) CurrentArtifacts(_ context.Context, candidateCommit stri
 			"open release directory for commit %s: %w: "+publishReleaseBinariesStep,
 			candidateCommit,
 			err,
-			candidateCommit,
 		)
 	}
 	artifacts := make(map[string]string, len(t.cfg.Binaries))
@@ -84,7 +83,6 @@ func (t *releaseTarget) CurrentArtifacts(_ context.Context, candidateCommit stri
 					name,
 					candidateCommit,
 					err,
-					candidateCommit,
 				),
 				root.Close(),
 			)

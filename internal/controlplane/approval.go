@@ -150,9 +150,8 @@ func (c *ControlPlane) ApproveMerge(
 		if errors.Is(err, verify.ErrStaleReport) {
 			if target != nil && !maps.Equal(expectedArtifacts, report.Binding.Artifacts) {
 				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
-					"%w: publish the binaries the run built to <release_dir>/%s/, or remove the promotion settings",
+					"%w: publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings",
 					err,
-					p.CandidateCommit,
 				))
 			}
 			return nil, gensurla.MakeUnprocessable(err)
@@ -299,8 +298,7 @@ func (c *ControlPlane) currentCard(
 		unverified.UnverifiedApproval = &gensurla.UnverifiedApprovalItem{
 			Approval: &a,
 			Reason: fmt.Sprintf(
-				"Saved approval for candidate commit %s could not be verified because the release binaries could not be read. Publish the binaries the run built to <release_dir>/%s/ and press Check current approval, remove the promotion settings with surla promotion remove and restart Surla, or press Approve this result on a newly verified run.",
-				a.CandidateCommit,
+				"Saved approval for candidate commit %s could not be verified because the release binaries could not be read. Publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, and press Check current approval; or remove the promotion settings with surla promotion remove and restart Surla; or approve a newly verified run.",
 				a.CandidateCommit,
 			),
 		}

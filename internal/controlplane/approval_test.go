@@ -287,9 +287,11 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 		require.NotNil(t, read.UnverifiedApproval)
 		assert.Equal(t, approved.Approval, read.UnverifiedApproval.Approval)
 		assert.Contains(t, read.UnverifiedApproval.Reason, "because the release binaries could not be read")
+		assert.Contains(t, read.UnverifiedApproval.Reason, "in a folder named after the commit")
 		assert.Contains(t, read.UnverifiedApproval.Reason, "Check current approval")
-		assert.Contains(t, read.UnverifiedApproval.Reason, "Approve this result")
+		assert.Contains(t, read.UnverifiedApproval.Reason, "approve a newly verified run")
 		assert.Contains(t, read.UnverifiedApproval.Reason, "surla promotion remove")
+		assert.NotContains(t, read.UnverifiedApproval.Reason, "/")
 		assert.NotContains(t, read.UnverifiedApproval.Reason, "get_change")
 		assert.NotContains(t, read.UnverifiedApproval.Reason, "approve_merge")
 
@@ -454,15 +456,15 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 		{"measured binary differs", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.artifacts = map[string]string{"orders": "rebuilt"}
 			return target.report.Digest
-		}, "publish the binaries the run built to <release_dir>/" + commit + "/, or remove the promotion settings", true, http.StatusUnprocessableEntity},
+		}, "publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings", true, http.StatusUnprocessableEntity},
 		{"report cannot be loaded", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.loadErr = errors.New("no report under that digest")
 			return target.report.Digest
 		}, "no report under that digest", false, http.StatusInternalServerError},
 		{"current artifacts cannot be measured", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
-			target.artifactsErr = errors.New("open release directory for commit " + commit + ": no such file or directory: publish the binaries the run built to <release_dir>/" + commit + "/, or remove the promotion settings")
+			target.artifactsErr = errors.New("open release directory for commit " + commit + ": no such file or directory: publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings")
 			return target.report.Digest
-		}, "publish the binaries the run built to <release_dir>/" + commit + "/, or remove the promotion settings", false, http.StatusUnprocessableEntity},
+		}, "publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings", false, http.StatusUnprocessableEntity},
 		{"chosen suite commit differs from report", aliceCtx, "alice-token", func(cp *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			cp.verifier.(storedVerification).cfg.Plan.SuiteCommit = "suite-2"
 			return target.report.Digest

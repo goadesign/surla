@@ -223,7 +223,8 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 		ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: commit, ReportDigest: report.digest,
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "publish the binaries the run built to <release_dir>/"+commit+"/, or remove the promotion settings")
+	assert.Contains(t, err.Error(), "publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings")
+	assert.NotContains(t, err.Error(), "/")
 	assert.NotContains(t, err.Error(), release)
 }
 
