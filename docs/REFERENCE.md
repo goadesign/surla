@@ -1158,9 +1158,11 @@ stored, it also measures the release binaries in
 release binaries. Then it saves the approval, after checking that the
 revision and its accepted tests did not change meanwhile. The approval names
 two commits: `candidate_commit`, the builder's commit, and `suite_commit`,
-the tests commit, with `test_source`. The user merges the builder's commit
-and, for written tests, the tests commit on the branch `surla/tests`. Surla
-merges and deploys nothing.
+the tests commit, with `test_source`. The builder commits in the project
+folder, so its commit is already on the branch checked out there. For
+written tests the user merges the tests commit, on the branch `surla/tests`,
+into that branch; with stored verification settings there is nothing to
+merge. Surla merges and deploys nothing.
 
 | Refusal | When and the step |
 | --- | --- |

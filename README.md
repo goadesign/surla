@@ -92,8 +92,10 @@ to $50 get instant store credit; larger ones wait for a manager":
    for the agreed revision, then records the approval with the builder's
    commit, the tests commit and the report. The recorded approval on the page
    shows both commits and tells you to merge the tests commit, which is on
-   `surla/tests`. You merge both yourself; Surla merges and deploys nothing.
-   Approval needs no settings. A project that stores
+   `surla/tests`. The builder commits in the project folder, so its commit is
+   already on the branch checked out there; you merge the tests commit into
+   that branch yourself. Surla merges and deploys nothing. Approval needs no
+   settings. A project that stores
    [promotion settings](docs/REFERENCE.md#surla-verification-and-surla-promotion)
    (a release folder and the names of its binaries) gets one more check at
    approval: the files in the release folder must be the binaries the run

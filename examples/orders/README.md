@@ -164,8 +164,10 @@ One change then goes like this:
    `surla`) to approve without that check.
 
    The approval names the builder's commit and the tests commit, here the
-   stored suite commit; you merge the builder's commit yourself. Surla
-   merges and deploys nothing.
+   stored suite commit. There is nothing to merge: the builder committed in
+   `examples/orders`, on the branch checked out in your checkout of this
+   repository, and the tests are the stored suite's. Surla merges and deploys
+   nothing.
 
 ---
 

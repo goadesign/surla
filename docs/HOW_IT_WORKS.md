@@ -78,7 +78,7 @@ flowchart TD
     F --> I["The builder writes the code, commits and asks Surla to verify"]
     I --> J
     J --> K["You approve the result on the page"]
-    K --> L["You merge the builder's commit and the tests commit"]
+    K --> L["You merge the tests commit into your branch, which already holds the builder's commit"]
 ```
 
 Tool descriptions and the server's terminal name these steps by checkpoint:
@@ -91,7 +91,8 @@ Tool descriptions and the server's terminal name these steps by checkpoint:
 | `CP4` | [Verifying the builder's commit](#verifying-the-builders-commit) |
 | `CP5` | [Approving and merging](#approving-and-merging) |
 
-Surla deploys nothing and merges nothing. The journey ends with you merging.
+Surla deploys nothing and merges nothing. The journey ends with you merging
+the tests.
 
 ## Starting: `surla`, the team and the page
 
@@ -450,10 +451,12 @@ merges and deploys nothing.
 The approval names two commits: the builder's commit that the run verified,
 and the tests commit that Surla accepted for the revision. The recorded
 approval lists them under **Verified inputs and digests** as **Builder's
-commit** and **Tests' commit**. For the test writer's tests you merge both,
-and the page follows the server's notice with "merge commit <tests commit>
-(on branch surla/tests)". With stored verification settings the tests commit
-is the evaluator's, and you merge only the builder's commit. Approval is
+commit** and **Tests' commit**. The builder commits in the project folder,
+so its commit is already on the branch checked out there. For the test
+writer's tests you merge the tests commit, which is on `surla/tests`, into
+that branch: the page follows the server's notice with "merge commit <tests
+commit> (on branch surla/tests)". With stored verification settings the tests
+commit is the evaluator's, and there is nothing to merge. Approval is
 refused when the run used other tests than the ones accepted for the
 revision; the builder then verifies again and you approve that run. A
 recorded approval stays shown only while the same tests commit is the

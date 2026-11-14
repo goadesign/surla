@@ -358,8 +358,10 @@ commit, or the commit of the tests accepted for the revision. A run of other
 tests is refused, and the builder verifies again. A saved approval holds only
 while those same tests stay accepted for its revision: a new report or a new
 build hides it until that commit is accepted again. The approval names the
-builder's commit and the tests commit, and the user merges the builder's
-commit and, for written tests, the tests commit on `surla/tests`. Surla
+builder's commit and the tests commit. The builder commits in the project
+folder, so its commit is already on the branch checked out there. For
+written tests the user merges the tests commit, on `surla/tests`, into that
+branch; with stored verification settings there is nothing to merge. Surla
 merges nothing. Approval needs no promotion settings; when a project
 stores them, approval also checks the release binaries, as
 [`approve_merge`](REFERENCE.md#approve_merge) describes.
