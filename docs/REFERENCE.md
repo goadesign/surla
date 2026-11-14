@@ -922,7 +922,7 @@ MCP `progressToken`, it reports each phase.
 `warnings`).
 
 The builder's generation: compiles the edited design of the application, or
-of `eval/` with `{"target":"eval"}`, in the sandbox and replaces that
+of `eval/` with `{"target":"eval"}` outside a build that runs with a test writer (during such a build, without stored verification settings, `eval/`, `eval/design/` included, belongs to the test writer, and Surla regenerates `eval/gen/` at build start and on each report), in the sandbox and replaces that
 module's `gen/` exactly as [`surla gen`](#surla-gen) does. It compiles only;
 call [`check_project`](#check_project) to build and test before committing.
 An error means `gen/` was not replaced; a warning means it was.
