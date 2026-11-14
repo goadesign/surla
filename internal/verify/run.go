@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/gitenv"
 	"github.com/goadesign/surla/verify/candidate"
 	"github.com/goadesign/surla/verify/suite"
 	"goa.design/goa-ai/eval"
@@ -174,24 +175,10 @@ const (
 	summarySandboxExit71 = "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell."
 )
 
-var (
-	// commitID matches a full commit ID in either Git object format: 40 hex
-	// digits for SHA-1 repositories, 64 for SHA-256 ones. The checkout then
-	// requires HEAD to equal it, which only the full ID in the repository's own
-	// format can.
-	commitID = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
-	// checkoutRedirects are the environment variables that would make the
-	// checkout's git commands act on another repository, work tree, index or
-	// object store than the ones they name, or take templates from elsewhere.
-	// Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE to the commands
-	// its hooks run, so a server started from one inherits them.
-	checkoutRedirects = []string{
-		"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE",
-		"GIT_REPLACE_REF_BASE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-		"GIT_PREFIX", "GIT_SHALLOW_FILE", "GIT_QUARANTINE_PATH", "GIT_TEMPLATE_DIR",
-	}
-)
+// commitID matches a full commit ID in either Git object format: 40 hex digits
+// for SHA-1 repositories, 64 for SHA-256 ones. The checkout then requires HEAD
+// to equal it, which only the full ID in the repository's own format can.
+var commitID = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // IsCommitID reports whether commit is a full commit ID in either Git object
 // format: 40 lowercase hex digits for SHA-1 repositories, 64 for SHA-256 ones.
@@ -457,10 +444,13 @@ func ValidateArtifactName(name string) error {
 
 // checkout clones repo into dir and checks out commit, detached. The source
 // repository is only read; clone hooks and templates are disabled. Its git
-// commands run with checkoutGitEnv, so only repo and dir are ever used,
-// whatever repository the process's own environment names.
+// commands run without the variables that point git at another repository
+// (gitenv.WithoutRedirects), so only repo and dir are ever used, whatever
+// repository the process's own environment names. Every other variable
+// stays, protocol, identity and credential settings among them, because a
+// plan's repository may be remote (surla verify -candidate-repo <url>).
 func (r *runner) checkout(ctx context.Context, label, repo, commit, dir string) error {
-	env := checkoutGitEnv()
+	env := gitenv.WithoutRedirects(os.Environ())
 	if err := r.run(ctx, "clone-"+label, "", env, "git", "-c", "core.hooksPath=/dev/null",
 		"clone", "--quiet", "--no-checkout", "--template=", repo, dir); err != nil {
 		return fmt.Errorf("check out %s: %w", label, err)
@@ -480,21 +470,6 @@ func (r *runner) checkout(ctx context.Context, label, repo, commit, dir string) 
 		return fmt.Errorf("check out %s: HEAD is %s, want %s", label, got, commit)
 	}
 	return nil
-}
-
-// checkoutGitEnv returns the process's environment without
-// checkoutRedirects. Every other variable stays, protocol, identity and
-// credential settings among them, because a plan's repository may be remote
-// (surla verify -candidate-repo <url>).
-func checkoutGitEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		name, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(checkoutRedirects, name) {
-			env = append(env, kv)
-		}
-	}
-	return env
 }
 
 // describe runs the suite's --describe with env and converts it into the

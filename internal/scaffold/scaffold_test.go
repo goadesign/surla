@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/gitenv"
 )
 
 // published is a Surla version that exists on the module proxy.
@@ -553,7 +554,11 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_VALUE_5", attrFile)
 	t.Setenv("GIT_CONFIG_KEY_6", "filter.rot.clean")
 	t.Setenv("GIT_CONFIG_VALUE_6", "sh -c 'touch "+hookMarker+"; exit 1'")
-	t.Setenv("GIT_DIR", filepath.Join(poisonRepo, ".git"))
+	// Every variable that would point git at another repository, work tree,
+	// index or object store names the poison repository.
+	for _, name := range gitenv.Redirects() {
+		t.Setenv(name, filepath.Join(poisonRepo, ".git"))
+	}
 	t.Setenv("GIT_WORK_TREE", poisonRepo)
 	t.Setenv("GIT_TEMPLATE_DIR", tmplDir)
 
@@ -596,7 +601,7 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	_, err = os.Stat(filepath.Join(stagePath, ".git", "poison-template-file"))
 	assert.ErrorIs(t, err, os.ErrNotExist, "init.templateDir and GIT_TEMPLATE_DIR must not copy files into .git")
 	_, err = os.Stat(filepath.Join(poisonRepo, ".git"))
-	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip inherited GIT_DIR and GIT_WORK_TREE")
+	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip every inherited redirect")
 	_, err = os.Stat(filepath.Join(stagePath, ".git"))
 	require.NoError(t, err, "staged project has its own .git directory")
 }

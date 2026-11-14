@@ -185,16 +185,9 @@ func TestCheckoutRecordsTheExactCommitInEitherObjectFormat(t *testing.T) {
 // at the plan's absent module, after the checkout) and leave every file of the
 // other repository as it was.
 func TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits(t *testing.T) {
-	commit := func(dir string) string {
-		git(t, dir, "init", "--quiet")
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte(dir), 0o600))
-		git(t, dir, "add", "f")
-		git(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "c")
-		return strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
-	}
 	repo, decoy := t.TempDir(), t.TempDir()
-	head := commit(repo)
-	commit(decoy)
+	head := commitOneFile(t, repo)
+	commitOneFile(t, decoy)
 	files := func() map[string]string {
 		got := map[string]string{}
 		require.NoError(t, filepath.WalkDir(decoy, func(path string, d os.DirEntry, err error) error {
@@ -229,33 +222,34 @@ func TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits(t *t
 	assert.Equal(t, before, files(), "the inherited repository is untouched")
 }
 
-// TestCheckoutGitEnvDropsOnlyRepositoryRedirects checks that the checkout's
-// environment drops each variable that would point git at another
-// repository, and keeps the settings a remote repository's clone may need:
-// its protocol, credentials and configuration.
-func TestCheckoutGitEnvDropsOnlyRepositoryRedirects(t *testing.T) {
-	for _, name := range checkoutRedirects {
-		t.Setenv(name, "/elsewhere")
-	}
-	kept := map[string]string{
-		"GIT_SSH_COMMAND": "ssh -i key", "GIT_ASKPASS": "/usr/bin/askpass",
-		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader", "GIT_CONFIG_VALUE_0": "x",
-		"GIT_ALLOW_PROTOCOL": "https:ssh:file",
-	}
-	for name, value := range kept {
-		t.Setenv(name, value)
-	}
-	got := map[string]string{}
-	for _, kv := range checkoutGitEnv() {
-		name, value, _ := strings.Cut(kv, "=")
-		got[name] = value
-	}
-	for _, name := range checkoutRedirects {
-		assert.NotContains(t, got, name)
-	}
-	for name, value := range kept {
-		assert.Equal(t, value, got[name], "%s reaches the clone", name)
-	}
+// TestRunClonesARemoteRepositoryThroughTheUsersGitSettings runs a
+// verification whose plan names a remote repository URL that only the user's
+// own Git settings in the environment can reach: here they map it onto a
+// local repository through file://, which stands in for the remote. The
+// checkout must keep those settings, so it clones the plan's commit (Run
+// then stops at the plan's absent module, after the checkout).
+func TestRunClonesARemoteRepositoryThroughTheUsersGitSettings(t *testing.T) {
+	repo := t.TempDir()
+	head := commitOneFile(t, repo)
+	remote := "https://example.invalid/shop.git"
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "url.file://"+repo+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", remote)
+
+	_, err := Run(t.Context(), Plan{
+		CandidateRepo:   remote,
+		CandidateCommit: head,
+		CandidateModule: "absent",
+		Binaries:        map[string]string{"orders": "./cmd/orders"},
+		SuiteCommit:     head,
+		SuiteCommand:    "./cmd/suite",
+		WorkDir:         t.TempDir(),
+		Tests:           TestsEvaluator,
+	})
+	var stage *StageError
+	require.ErrorAs(t, err, &stage)
+	assert.Equal(t, "The candidate commit does not contain the configured module.", stage.Summary,
+		"the remote repository was cloned: %v", err)
 }
 
 // TestBuildSummarySurfacesExit71GuidanceWithoutLeakingPrivateDiagnostics
@@ -337,4 +331,17 @@ func git(t *testing.T, dir string, args ...string) string {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 	return string(out)
+}
+
+// commitOneFile makes dir a git repository with one commit of one file and
+// returns the commit's ID. It runs git with the test process's environment,
+// so callers make their repositories before pointing that environment
+// elsewhere.
+func commitOneFile(t *testing.T, dir string) string {
+	t.Helper()
+	git(t, dir, "init", "--quiet")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte(dir), 0o600))
+	git(t, dir, "add", "f")
+	git(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "c")
+	return strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
 }
