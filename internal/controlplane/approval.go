@@ -87,6 +87,12 @@ func (c *ControlPlane) ApproveMerge(
 			record.card.RequestRevision,
 		))
 	}
+	var notAccepted testsNotAccepted
+	if errors.As(choiceErr, &notAccepted) {
+		// approve_merge's caller is the user, so the refusal names the builder
+		// and never instructs an agent.
+		return nil, refuseApprovalTestsNotAccepted(notAccepted.saved)
+	}
 	if choiceErr != nil {
 		return nil, choiceErr
 	}
@@ -150,7 +156,7 @@ func (c *ControlPlane) ApproveMerge(
 		if errors.Is(err, verify.ErrStaleReport) {
 			if target != nil && !maps.Equal(expectedArtifacts, report.Binding.Artifacts) {
 				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
-					"%w: publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings",
+					"%w: publish the binaries the run built, whose folder the run's Proof view shows, into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings",
 					err,
 				))
 			}

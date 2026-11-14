@@ -58,6 +58,27 @@ page.close();
 `)
 }
 
+// TestViewsPageTeamNamesUnreadAssignmentStep shows, above every view, the
+// user's step for a role that needs them because it has waited with an unread
+// assignment, with that role's Show pane as the primary action.
+func TestViewsPageTeamNamesUnreadAssignmentStep(t *testing.T) {
+	snapshot := pageTeamSnapshot("needs_you")
+	snapshot.Roles[1].Attention = "assignment"
+	f := &teamServiceFixture{snapshot: snapshot}
+	cp := pageControlPlane(t, Options{Team: &TeamBinding{Owner: pageOwner, Service: f}})
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-team-attention-builder"), "builder attention is missing outside Team");
+expect(page.text("#surla-team-attention-builder").includes("Builder needs you: idle with an unread assignment. Show its pane and tell it to read its assignments and to keep its Chorus watcher running."), "the user's step is missing: " + page.text("#surla-team-attention-builder"));
+const show = page.$("#surla-team-attention-show-pane-builder");
+expect(show !== null && show.textContent === "Show builder pane", "Show pane is missing");
+expect(show.classList.contains("surla-btn-primary"), "Show pane is not the primary action");
+expect(page.$("#surla-team-attention-test_writer") === null, "a role that does not need the user is listed");
+page.close();
+`)
+}
+
 // TestViewsPageTeamStartsExplicitlyAndRetainsFailedFacts checks an explicit
 // start receipt and a failed read without replacing known facts with emptiness.
 func TestViewsPageTeamStartsExplicitlyAndRetainsFailedFacts(t *testing.T) {
@@ -115,7 +136,7 @@ func TestViewsPageTeamAndBuildUpdatesPreserveTheModelDraft(t *testing.T) {
 	})
 	runPageScript(t, ps, nil, `
 const page = await openPage(origin, { link: input.link });
-await until(() => page.$("#surla-build-section"), "the initial selected build was not read");
+await until(() => page.$("#surla-build-section")?.dataset.state === "not_started" && !page.$("#surla-build-loading"), "the initial selected build was not read");
 page.$("#surla-nav-live").click();
 await until(() => page.$("#surla-model-name"), "the model form did not open");
 const provider = page.$("#surla-model-provider");
@@ -130,7 +151,9 @@ gateway.focus();
 gateway.setSelectionRange(2, 7);
 const buildReads = page.sent("GET", "/changes/chg/build").length;
 await control(origin, "act", { key: "start-build-and-attention" });
-await until(() => page.sent("GET", "/changes/chg/build").length > buildReads && page.$("#surla-team-attention-builder"), "background build and team changes did not reach Live");
+await until(() => page.sent("GET", "/changes/chg/build").slice(buildReads).some((r) => r.status === 200 && JSON.parse(r.answer).build.state === "started") && page.$("#surla-team-attention-builder"), "background build and team changes did not reach Live");
+// Let the completed owner answer render before checking the retained fields.
+await sleep(0);
 expect(page.$("#surla-model-name") === name && name.value === "unsent-model-choice", "a new update reason replaced the model input");
 expect(page.$("#surla-model-provider") === provider && provider.value === "openai", "a new update reason lost the provider");
 expect(page.$("#surla-model-gateway") === gateway && gateway.value === "127.0.0.1:9455" && page.doc.activeElement === gateway && gateway.selectionStart === 2 && gateway.selectionEnd === 7, "a new update reason changed gateway text, focus or selection");

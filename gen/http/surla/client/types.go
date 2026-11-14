@@ -577,6 +577,15 @@ type VerifyChangeResponseBody struct {
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -600,6 +609,15 @@ type GetVerificationResponseBody struct {
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -3735,6 +3753,15 @@ type VerificationStatusResultResponseBody struct {
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -3797,7 +3824,9 @@ type TeamRoleStateResponseBody struct {
 	Handle *string `form:"handle,omitempty" json:"handle,omitempty" xml:"handle,omitempty"`
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention *string `form:"attention,omitempty" json:"attention,omitempty" xml:"attention,omitempty"`
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -7706,12 +7735,14 @@ func NewGetLiveTargetForbidden(body *GetLiveTargetForbiddenResponseBody) *goa.Se
 // "verify_change" endpoint result from a HTTP "OK" response.
 func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *surla.VerificationStatusResult {
 	v := &surla.VerificationStatusResult{
-		RunID:           *body.RunID,
-		ChangeID:        *body.ChangeID,
-		RequestRevision: *body.RequestRevision,
-		CandidateCommit: *body.CandidateCommit,
-		SuiteCommit:     *body.SuiteCommit,
-		AcceptedAt:      *body.AcceptedAt,
+		RunID:                *body.RunID,
+		ChangeID:             *body.ChangeID,
+		RequestRevision:      *body.RequestRevision,
+		CandidateCommit:      *body.CandidateCommit,
+		SuiteCommit:          *body.SuiteCommit,
+		AcceptedAt:           *body.AcceptedAt,
+		InputsCurrent:        *body.InputsCurrent,
+		CandidateBinariesDir: body.CandidateBinariesDir,
 	}
 	switch string(body.TestSource.Kind()) {
 	case "evaluator":
@@ -7875,12 +7906,14 @@ func NewVerifyChangeForbidden(body *VerifyChangeForbiddenResponseBody) *goa.Serv
 // "get_verification" endpoint result from a HTTP "OK" response.
 func NewGetVerificationVerificationStatusResultOK(body *GetVerificationResponseBody) *surla.VerificationStatusResult {
 	v := &surla.VerificationStatusResult{
-		RunID:           *body.RunID,
-		ChangeID:        *body.ChangeID,
-		RequestRevision: *body.RequestRevision,
-		CandidateCommit: *body.CandidateCommit,
-		SuiteCommit:     *body.SuiteCommit,
-		AcceptedAt:      *body.AcceptedAt,
+		RunID:                *body.RunID,
+		ChangeID:             *body.ChangeID,
+		RequestRevision:      *body.RequestRevision,
+		CandidateCommit:      *body.CandidateCommit,
+		SuiteCommit:          *body.SuiteCommit,
+		AcceptedAt:           *body.AcceptedAt,
+		InputsCurrent:        *body.InputsCurrent,
+		CandidateBinariesDir: body.CandidateBinariesDir,
 	}
 	switch string(body.TestSource.Kind()) {
 	case "evaluator":
@@ -10361,6 +10394,9 @@ func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -10369,6 +10405,11 @@ func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -10442,6 +10483,9 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -10450,6 +10494,11 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -15562,6 +15611,9 @@ func ValidateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -15570,6 +15622,11 @@ func ValidateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -15643,6 +15700,9 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", path))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", path))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", path))
 	}
@@ -15651,6 +15711,11 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -15904,8 +15969,8 @@ func ValidateTeamRoleStateResponseBody(body *TeamRoleStateResponseBody) (err err
 		}
 	}
 	if body.Attention != nil {
-		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "assignment" || *body.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if body.Watcher != nil {
@@ -15953,8 +16018,8 @@ func validateTeamRoleStateResponseBody(body *TeamRoleStateResponseBody, path str
 		}
 	}
 	if body.Attention != nil {
-		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "assignment" || *body.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if body.Watcher != nil {

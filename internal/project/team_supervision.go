@@ -38,6 +38,7 @@ type (
 		Labels                     map[string]string
 	}
 	// TeamWatcherView retains only registered agents' watcher facts, never messages.
+	// Held has a key exactly for each registered handle the Chorus view listed.
 	TeamWatcherView struct {
 		Version   string
 		Unchanged bool
@@ -51,13 +52,20 @@ type (
 		ReadTerminal(context.Context, string) (TeamTerminal, error)
 		ReadWatchers(context.Context, string, string, []TeamRole) (TeamWatcherView, error)
 	}
-	// TeamReminder carries only code-selected harmless text and the accepted Herdr condition.
-	TeamReminder struct{ Terminal, Text, Condition string }
-	// TeamSender reports sent, blocked, status_changed, finished or unavailable.
-	// It never forces input or waits for an agent's next turn.
+	// TeamReminder is one fixed Chorus direct message chosen by code. Team is the
+	// saved team (the Chorus swarm), From is Surla's own handle in it, To is the
+	// registered role handle without its leading "@", and Text asks only for a read.
+	TeamReminder struct{ Team, From, To, Text string }
+	// TeamSender hands one reminder to the local Chorus server. It returns nil when
+	// Chorus accepted the message, or a TeamSendFailure naming the post that failed
+	// and how. It never keeps or returns any byte of what Chorus answered.
 	TeamSender interface {
-		Send(context.Context, TeamReminder) (string, error)
+		Send(context.Context, TeamReminder) error
 	}
+	// TeamSendFailure is a sender's only error. Post is "who" or "send"; Kind is
+	// connection, timeout, http_status, rpc_error, tool_error or response. Neither
+	// carries response text, which agents can write.
+	TeamSendFailure struct{ Post, Kind string }
 	// roleObservation is the small published snapshot with ownership identity.
 	roleObservation struct {
 		handle, space string
@@ -74,21 +82,25 @@ type (
 		seen      bool
 		firstSeen time.Time
 		// lastEvent bounds one handle's stream, independently of other active roles.
-		lastEvent        time.Time
-		owed             map[string]bool
-		assignmentKnown  bool
+		lastEvent time.Time
+		// owed maps each unread generation to whether a reminder was attempted for it.
+		owed            map[string]bool
+		assignmentKnown bool
+		// watchKnown reports that the last Chorus view read succeeded.
 		watchKnown, held bool
 		absentSince      time.Time
-		watchSent        bool
-		refusedState     string
-		public           gensurla.TeamRoleState
+		// listedSince is when the view began listing the handle without a break; zero
+		// when the last successful read did not list it. A failed read keeps it.
+		listedSince time.Time
+		// idleUnreadSince is when the role began waiting with an unread assignment.
+		idleUnreadSince time.Time
+		public          gensurla.TeamRoleState
 	}
 	// teamSupervisor is private to one blocking Supervise call and owns all latches.
 	teamSupervisor struct {
 		server    *Server
 		selection TeamSelection
 		roles     map[string]*supervisedRole
-		started   time.Time
 		// restartReaders latches a stale stream until the driver resubscribes.
 		restartReaders bool
 	}
@@ -106,7 +118,16 @@ const (
 	// teamStreamStallBound allows three expected 15-second Herdr heartbeats.
 	// Missing all three invalidates every role until new snapshots establish the stream.
 	teamStreamStallBound = 3 * 15 * time.Second
+	// teamJoinSettle lets a role that has just joined Chorus act on its first
+	// message, which already asks for the read, before Surla reminds it.
+	teamJoinSettle = 60 * time.Second
+	// teamIdleUnreadBound is how long a role may wait with an unread assignment
+	// before the user is asked to prompt it; it reuses the watcher grace.
+	teamIdleUnreadBound = teamWatcherGrace
 )
+
+// Error returns fixed text; Post and Kind carry the bounded facts.
+func (TeamSendFailure) Error() string { return "team reminder post failed" }
 
 // Supervise owns one blocking lifetime, ending on either owner context. Its driver
 // joins every external reader before returning so the control plane can close stores.
@@ -118,7 +139,7 @@ func (s *Server) Supervise(ctx context.Context, assignments controlplane.Assignm
 	if s.team.dependencies.Lifetime.Err() != nil {
 		cancel()
 	}
-	owner := &teamSupervisor{server: s, roles: map[string]*supervisedRole{}, started: s.now()}
+	owner := &teamSupervisor{server: s, roles: map[string]*supervisedRole{}}
 	return owner.run(ctx, assignments)
 }
 
@@ -266,8 +287,9 @@ func (o *teamSupervisor) refresh(ctx context.Context, role *supervisedRole) {
 	role.fresh = true
 }
 
-// watchers counts a continuous known absence; outages forbid watcher action and
-// restart the grace clock, while preserving the once-per-absence reminder latch.
+// watchers counts a continuous known watcher absence and a continuous listing.
+// An outage makes both unknown and restarts the absence clock, but keeps the
+// listing clock: only a successful read that omits the handle restarts it.
 func (o *teamSupervisor) watchers(view TeamWatcherView, err error, now time.Time) {
 	for _, role := range o.roles {
 		role.watchKnown = err == nil
@@ -275,12 +297,17 @@ func (o *teamSupervisor) watchers(view TeamWatcherView, err error, now time.Time
 			role.absentSince = time.Time{}
 			continue
 		}
-		role.held = view.Held[role.role.Handle]
+		held, listed := view.Held[role.role.Handle]
+		role.held = held
 		if role.held {
 			role.absentSince = time.Time{}
-			role.watchSent = false
 		} else if role.absentSince.IsZero() {
 			role.absentSince = now
+		}
+		if !listed {
+			role.listedSince = time.Time{}
+		} else if role.listedSince.IsZero() {
+			role.listedSince = now
 		}
 	}
 }
@@ -296,10 +323,7 @@ func (o *teamSupervisor) publish(ctx context.Context, now time.Time, periodic bo
 	}
 	observed := make(map[string]roleObservation, len(o.roles))
 	for _, role := range o.roles {
-		value := role.value(now, allReady, o.server.team.dependencies.Shell)
-		if value.State != role.public.State {
-			role.refusedState = ""
-		}
+		value := role.idleUnread(role.value(now, allReady, o.server.team.dependencies.Shell), now)
 		if value != role.public {
 			teamStateSpan(ctx, "surla.team.changed", value, "", "observed").End()
 		}
@@ -416,108 +440,83 @@ func (role *supervisedRole) value(now time.Time, allReady bool, shell string) ge
 	return value
 }
 
-// remind acts only on a waiting role with a positively identified foreground
-// from a fresh read. One physical reminder covers the currently owed generation set.
-func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
-	if o.expireStream(now) {
-		o.publish(ctx, now, false)
-		return
+// idleUnread turns a role that has waited with an unread assignment for the
+// bound into needs_you with attention assignment, so the page names the user's
+// step. Working, reading or any unknown fact restarts the clock.
+func (role *supervisedRole) idleUnread(value gensurla.TeamRoleState, now time.Time) gensurla.TeamRoleState {
+	if value.State != "waiting" || value.Assignment != "unread" {
+		role.idleUnreadSince = time.Time{}
+		return value
 	}
-	if now.Sub(o.started) < teamWatcherGrace {
+	if role.idleUnreadSince.IsZero() {
+		role.idleUnreadSince = now
+	}
+	if now.Sub(role.idleUnreadSince) >= teamIdleUnreadBound {
+		value.State, value.Attention = "needs_you", "assignment"
+	}
+	return value
+}
+
+// remind sends one Chorus direct message per unread generation. It requires a
+// complete assignment read with a generation not yet attempted, and a last
+// Chorus view read that succeeded and has listed the handle for the settle
+// time. Herdr state and the watcher fact change nothing: the message waits in
+// Chorus for the role's next read. An unmet condition is an expected negative
+// and records nothing. Both outcomes of an attempt, sent and failed, latch every
+// generation the attempt covered, so no generation is ever tried twice. A post
+// that fails after ctx ended, as when the server stops, records nothing either.
+func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
+	sender := o.server.team.dependencies.Sender
+	if sender == nil {
 		return
 	}
 	for _, role := range o.roles {
-		if role.public.State != "waiting" || role.refusedState == role.public.State {
+		text := assignmentReminder(role.role.Role)
+		if text == "" || !role.assignmentKnown || !role.watchKnown || role.listedSince.IsZero() || now.Sub(role.listedSince) < teamJoinSettle {
 			continue
 		}
-		reason, text := "", ""
-		if role.assignmentKnown {
-			for _, sent := range role.owed {
-				if !sent {
-					reason, text = "assignment", assignmentReminder(role.role.Role)
-					break
-				}
-			}
+		pending := false
+		for _, attempted := range role.owed {
+			pending = pending || !attempted
 		}
-		if reason == "" && role.public.Watcher == "gone" && !role.watchSent {
-			reason, text = "watcher", watcherReminder
-		}
-		if text == "" {
+		if !pending {
 			continue
 		}
-		for address := range role.terminals {
-			readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			terminal, err := o.server.team.dependencies.Observer.ReadTerminal(readCtx, address)
-			cancel()
-			if err != nil {
-				role.fresh = false
-				o.publish(ctx, now, false)
-				return
-			}
-			if !o.selection.owns(terminal, role.role.Handle) {
-				continue
-			}
-			if terminal.Foreground == nil || len(terminal.Foreground.Argv) == 0 || terminal.Foreground.Argv[0] == "" || !roleRunning(terminal, o.server.team.dependencies.Shell) {
-				continue
-			}
-			if !terminal.Reported || terminal.Status == nil || terminal.Status.State != "idle" && terminal.Status.State != "done" {
-				continue
-			}
-			if o.expireStream(o.server.now()) {
-				o.publish(ctx, o.server.now(), false)
-				return
-			}
-			condition := ""
-			if terminal.Status.State == "idle" {
-				condition = "idle"
-			}
-			outcome := "unavailable"
-			if o.server.team.dependencies.Sender != nil {
-				sendCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				outcome, err = o.server.team.dependencies.Sender.Send(sendCtx, TeamReminder{Terminal: address, Text: text, Condition: condition})
-				cancel()
-			}
-			failed := err != nil
-			switch outcome {
-			case "sent", "blocked", "status_changed", "finished", "unavailable":
-			default:
-				failed = true
-			}
-			if failed {
-				outcome = "failed"
-			}
-			span := teamStateSpan(ctx, "surla.team.reminder", role.public, reason, outcome)
-			if failed {
-				span.RecordError(errors.New("team reminder delivery failed"))
-				span.SetStatus(codes.Error, "team reminder delivery failed")
-			}
-			span.End()
-			if outcome != "sent" {
-				role.refusedState = role.public.State
-				continue
-			}
-			if reason == "assignment" {
-				for generation := range role.owed {
-					role.owed[generation] = true
-				}
-			} else {
-				role.watchSent = true
-			}
+		for generation := range role.owed {
+			role.owed[generation] = true
 		}
+		err := sender.Send(ctx, TeamReminder{Team: o.selection.Team, From: o.server.teamSurlaHandle(), To: role.role.Handle, Text: text})
+		if err != nil && ctx.Err() != nil {
+			// The supervisor's context ended, as when the server stops: Surla cut
+			// the post short, so it is no Chorus failure and records no attempt.
+			return
+		}
+		outcome := "sent"
+		if err != nil {
+			outcome = "failed"
+		}
+		span := teamStateSpan(ctx, "surla.team.reminder", role.public, "assignment", outcome)
+		if err != nil {
+			var failure TeamSendFailure
+			if errors.As(err, &failure) {
+				span.SetAttributes(attribute.String("team.post", failure.Post), attribute.String("team.failure", failure.Kind))
+			}
+			span.RecordError(errors.New("team reminder post failed"))
+			span.SetStatus(codes.Error, "team reminder post failed")
+		}
+		span.End()
 	}
 }
 
-// Fixed reminder text starts with a non-command word and contains only letters,
-// digits, spaces, underscores and full stops. It carries no work details.
-const watcherReminder = "SurlaReminder. Please start your Chorus watcher again."
-
-// assignmentReminder names only the operations allowed to the addressed role.
+// assignmentReminder is the fixed Chorus message for a role. It names only the
+// two read operations allowed to that role and nothing about the work. The
+// guide has no assignments, so it has no reminder.
 func assignmentReminder(role string) string {
 	switch role {
 	case "builder":
-		return "SurlaReminder. Please use list_builder_assignments and get_builder_assignment to read your assignments."
+		return "Surla: you have an unread assignment. Use list_builder_assignments and get_builder_assignment to read it. Surla reads no replies."
 	case "test_writer":
-		return "SurlaReminder. Please use list_test_writer_assignments and get_test_writer_assignment to read your assignments."
+		return "Surla: you have an unread assignment. Use list_test_writer_assignments and get_test_writer_assignment to read it. Surla reads no replies."
 	default:
 		return ""
 	}
@@ -530,6 +529,15 @@ func teamStateSpan(ctx context.Context, name string, value gensurla.TeamRoleStat
 	_, span := otel.Tracer("surla/project").Start(ctx, name)
 	span.SetAttributes(attribute.String("team.role", value.Role), attribute.String("team.state", value.State), attribute.String("team.kind", value.Attention), attribute.String("team.watcher", value.Watcher), attribute.String("team.assignment", value.Assignment), attribute.String("team.reason", reason), attribute.String("team.outcome", outcome))
 	return span
+}
+
+// teamSurlaHandle is Surla's own Chorus handle in the team, derived from the
+// project ID as the guide's handle is. No role can take it: role handles start
+// with guide, builder or test_writer.
+func (s *Server) teamSurlaHandle() string {
+	s.state.mu.Lock()
+	defer s.state.mu.Unlock()
+	return teamName("surla", s.state.Record.ID)
 }
 
 // teamReaderFailure records a start/stream failure without retaining external command output.

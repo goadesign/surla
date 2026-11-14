@@ -85,10 +85,25 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 		Timeout:    verCfg.Timeout,
 		Plan:       plan,
 	}
+	// Observe the selected inputs before accepting work. A later edit can
+	// invalidate this observation, but no failed read can hide an accepted run.
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.start_verification",
+		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)))
+	defer span.End()
+	c.mu.RLock()
+	inputsCurrent, err := c.currentVerificationInputs(principal, p.ChangeID, plan)
+	c.mu.RUnlock()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read verification inputs")
+		return nil, fmt.Errorf("start verification for %q: saved verification inputs could not be read", p.ChangeID)
+	}
 	if _, err := verifyrun.Start(verCfg.RunsDir, req, verCfg.Command); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "start verification run")
 		return nil, fmt.Errorf("start verification: %w", err)
 	}
-	return statusResult(req, verifyrun.State{Kind: verifyrun.StateRunning}), nil
+	return statusResult(req, verifyrun.State{Kind: verifyrun.StateRunning}, inputsCurrent, nil), nil
 }
 
 // verifiableCard checks, under the read lock, that principal owns the card
@@ -146,19 +161,48 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 		span.SetStatus(codes.Error, "read verification run")
 		return nil, fmt.Errorf("read verification %q: saved verification record could not be read", p.RunID)
 	}
+	c.mu.RLock()
 	if principal.Kind == CallerTestWriter {
-		c.mu.RLock()
 		holds, err := c.testWriterHolds(principal, req.ChangeID)
-		c.mu.RUnlock()
 		if err != nil {
-			return nil, err
+			c.mu.RUnlock()
+			var refusal *goa.ServiceError
+			if errors.As(err, &refusal) {
+				return nil, err
+			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "read verification assignment")
+			return nil, fmt.Errorf("read verification %q: saved verification inputs could not be read", p.RunID)
 		}
 		if !holds {
+			c.mu.RUnlock()
 			return nil, gensurla.MakeForbidden(fmt.Errorf(
 				"the test writer reads only the runs of a change it has an assignment for, and change %q has none", req.ChangeID))
 		}
 	}
-	return statusResult(req, state), nil
+	inputsCurrent, err := c.currentVerificationInputs(principal, req.ChangeID, req.Plan)
+	c.mu.RUnlock()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read verification inputs")
+		return nil, fmt.Errorf("read verification %q: saved verification inputs could not be read", p.RunID)
+	}
+	showBinaries := false
+	if state.Kind == verifyrun.StateCompleted {
+		showBinaries, err = c.verificationBinariesVisible(ctx, principal)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "resolve promotion target")
+			return nil, fmt.Errorf("read verification %q: promotion settings could not be read", p.RunID)
+		}
+	}
+	binariesDir, err := verificationBinariesDirectory(req, state, showBinaries)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read verification binaries location")
+		return nil, fmt.Errorf("read verification %q: saved binaries location could not be read", p.RunID)
+	}
+	return statusResult(req, state, inputsCurrent, binariesDir), nil
 }
 
 // ListVerifications returns all Checkpoint 4 verification runs started by the
@@ -189,11 +233,24 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 			if holdErr != nil || !holds {
 				c.mu.RUnlock()
 				if holdErr != nil {
-					return nil, holdErr
+					var refusal *goa.ServiceError
+					if errors.As(holdErr, &refusal) {
+						return nil, holdErr
+					}
+					span.RecordError(holdErr)
+					span.SetStatus(codes.Error, "read verification assignment")
+					return nil, fmt.Errorf("list verifications for %q: saved verification inputs could not be read", p.ChangeID)
 				}
 				return nil, gensurla.MakeForbidden(fmt.Errorf(
 					"the test writer reads only the runs of a change it has an assignment for, and change %q has none", p.ChangeID))
 			}
+		}
+		build, buildErr := c.changeBuild(record)
+		if buildErr != nil {
+			c.mu.RUnlock()
+			span.RecordError(buildErr)
+			span.SetStatus(codes.Error, "read verification inputs")
+			return nil, fmt.Errorf("list verifications for %q: saved verification inputs could not be read", p.ChangeID)
 		}
 		runs, listErr := verifyrun.List(runsDir, principal.ID, p.ChangeID)
 		c.mu.RUnlock()
@@ -202,9 +259,28 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 			span.SetStatus(codes.Error, "list verification runs")
 			return nil, fmt.Errorf("list verifications for %q: saved verification records could not be read", p.ChangeID)
 		}
+		showBinaries := false
+		for _, run := range runs {
+			if run.State.Kind == verifyrun.StateCompleted {
+				showBinaries, err = c.verificationBinariesVisible(ctx, principal)
+				break
+			}
+		}
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "resolve promotion target")
+			return nil, fmt.Errorf("list verifications for %q: promotion settings could not be read", p.ChangeID)
+		}
 		out := make([]*gensurla.VerificationStatusResult, 0, len(runs))
 		for _, r := range runs {
-			out = append(out, statusResult(r.Request, r.State))
+			binariesDir, err := verificationBinariesDirectory(r.Request, r.State, showBinaries)
+			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "read verification binaries location")
+				return nil, fmt.Errorf("list verifications for %q: saved binaries location could not be read", p.ChangeID)
+			}
+			out = append(out, statusResult(r.Request, r.State,
+				c.verificationInputsCurrent(record, build, r.Request.Plan), binariesDir))
 		}
 		return &gensurla.VerificationListResult{
 			ChangeID: p.ChangeID,
@@ -222,6 +298,61 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	default:
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
+}
+
+// verificationBinariesVisible resolves publication guidance only for the user.
+// Agents sharing the owner's identity neither receive a private run path nor
+// depend on the user's promotion target. Callers have authorized the run and
+// hold no control-plane lock while the embedding host resolves its target.
+func (c *ControlPlane) verificationBinariesVisible(
+	ctx context.Context,
+	principal Principal,
+) (bool, error) {
+	if principal.Kind != CallerUser {
+		return false, nil
+	}
+	target, err := c.resolvePromotion(ctx)
+	return target != nil, err
+}
+
+// verificationBinariesDirectory projects only a completed run's recorded
+// output location. It never reconstructs the work directory from a run ID or
+// searches reports, and rejects an unusable saved location without exposing it.
+func verificationBinariesDirectory(
+	req verifyrun.Request,
+	state verifyrun.State,
+	visible bool,
+) (*string, error) {
+	if !visible || state.Kind != verifyrun.StateCompleted {
+		return nil, nil
+	}
+	if !filepath.IsAbs(req.Plan.WorkDir) {
+		return nil, errors.New("saved verification work directory is not absolute")
+	}
+	dir := verify.CandidateBinariesDir(req.Plan.WorkDir)
+	return &dir, nil
+}
+
+// currentVerificationInputs observes the current owned card and its canonical
+// build once. Historical runs remain readable without an owned card; malformed
+// current records remain errors. Callers hold c.mu after authorizing access.
+func (c *ControlPlane) currentVerificationInputs(
+	principal Principal,
+	changeID string,
+	plan verify.Plan,
+) (bool, error) {
+	record, exists, err := c.cards.load(changeID)
+	if err != nil {
+		return false, err
+	}
+	if !exists || record.owner != principal.ID {
+		return false, nil
+	}
+	build, err := c.changeBuild(record)
+	if err != nil {
+		return false, err
+	}
+	return c.verificationInputsCurrent(record, build, plan), nil
 }
 
 // runTestSource renders where a run's tests came from, from its stored plan,
@@ -253,17 +384,25 @@ func (c *ControlPlane) testWriterHolds(principal Principal, changeID string) (bo
 }
 
 // statusResult returns the wire form of a run: its request and its state,
-// with a completed run's report reduced to the builder view.
-func statusResult(req verifyrun.Request, state verifyrun.State) *gensurla.VerificationStatusResult {
+// with a completed run's report reduced to the builder view and the caller's
+// separately observed current-input match.
+func statusResult(
+	req verifyrun.Request,
+	state verifyrun.State,
+	inputsCurrent bool,
+	binariesDir *string,
+) *gensurla.VerificationStatusResult {
 	acceptedAt := req.AcceptedAt.UTC().Format(time.RFC3339Nano)
 	res := &gensurla.VerificationStatusResult{
-		RunID:           req.RunID,
-		ChangeID:        req.ChangeID,
-		RequestRevision: req.Plan.RequestRevision,
-		CandidateCommit: req.Plan.CandidateCommit,
-		SuiteCommit:     req.Plan.SuiteCommit,
-		AcceptedAt:      acceptedAt,
-		TestSource:      runTestSource(req.Plan),
+		RunID:                req.RunID,
+		ChangeID:             req.ChangeID,
+		RequestRevision:      req.Plan.RequestRevision,
+		CandidateCommit:      req.Plan.CandidateCommit,
+		SuiteCommit:          req.Plan.SuiteCommit,
+		AcceptedAt:           acceptedAt,
+		InputsCurrent:        inputsCurrent,
+		CandidateBinariesDir: binariesDir,
+		TestSource:           runTestSource(req.Plan),
 	}
 	switch state.Kind {
 	case verifyrun.StateRunning:

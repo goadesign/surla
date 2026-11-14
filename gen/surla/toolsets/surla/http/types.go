@@ -594,6 +594,15 @@ type (
 		SuiteCommit *string `json:"suite_commit"`
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
+		// Whether this run's agreed revision and selected tests match the current
+		// Change Card and usable build or stored evaluator. This observation does not
+		// establish the current candidate working tree, deployment or approval.
+		InputsCurrent *bool `json:"inputs_current"`
+		// Absolute folder containing the binaries built by this completed run.
+		// Returned only to the user when promotion settings are configured, so the
+		// user can publish these exact binaries before approval. Agents never receive
+		// this private path.
+		CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 		// Where the run's tests came from, recorded when the run started: evaluator,
 		// or written_tests with their commit and a notice.
 		TestSource *TestSource `json:"test_source"`
@@ -1088,6 +1097,15 @@ type (
 		SuiteCommit *string `json:"suite_commit"`
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
+		// Whether this run's agreed revision and selected tests match the current
+		// Change Card and usable build or stored evaluator. This observation does not
+		// establish the current candidate working tree, deployment or approval.
+		InputsCurrent *bool `json:"inputs_current"`
+		// Absolute folder containing the binaries built by this completed run.
+		// Returned only to the user when promotion settings are configured, so the
+		// user can publish these exact binaries before approval. Agents never receive
+		// this private path.
+		CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 		// Where the run's tests came from, recorded when the run started: evaluator,
 		// or written_tests with their commit and a notice.
 		TestSource *TestSource `json:"test_source"`
@@ -1939,6 +1957,15 @@ type (
 		SuiteCommit *string `json:"suite_commit"`
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
+		// Whether this run's agreed revision and selected tests match the current
+		// Change Card and usable build or stored evaluator. This observation does not
+		// establish the current candidate working tree, deployment or approval.
+		InputsCurrent *bool `json:"inputs_current"`
+		// Absolute folder containing the binaries built by this completed run.
+		// Returned only to the user when promotion settings are configured, so the
+		// user can publish these exact binaries before approval. Agents never receive
+		// this private path.
+		CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 		// Where the run's tests came from, recorded when the run started: evaluator,
 		// or written_tests with their commit and a notice.
 		TestSource *TestSource `json:"test_source"`

@@ -340,11 +340,14 @@ Approval hashes those binaries again in `<release_dir>/<candidate_commit>/`,
 through one folder handle. A missing, non-regular or escaping file, or one
 that differs from the binary the run verified, prevents approval; the
 refusal names no folder path and ends with the step "publish the binaries
-the run built into the release folder that the promotion settings name, in a
-folder named after the commit, or remove the promotion settings". Without
-promotion settings, an approval records no release binaries. A stored file
-the server cannot accept, such as one with any other field (`suite_id`),
-stops the server while it starts; the shown error ends by naming
+the run built, whose folder the run's Proof view shows, into the release
+folder that the promotion settings name, in a folder named after the commit,
+or remove the promotion settings". The Proof view shows the selected run's
+actual source folder under **Binaries built by this run**, as selectable code;
+the approval error panel repeats it. Without promotion settings, an approval
+records no release binaries. A stored file the server cannot accept, such
+as one with any other field (`suite_id`), stops the server while it starts;
+the shown error ends by naming
 `surla promotion show` to see the settings, `surla promotion set <file>` to
 store them again and `surla promotion remove` to remove them, then `surla`.
 Approval never merges or deploys.
@@ -1108,7 +1111,7 @@ verification settings runs with the server's environment.
 | Refusal (all `409`) | When and the step |
 | --- | --- |
 | `no_build` | The user has not built the agreed revision, the build is of another revision (named), or the build was started without a test writer while verification settings were stored, and they have since been removed. The user builds again. |
-| `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next. |
+| `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next, and ends with the builder's own step, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again`. |
 | `no_test_layout` | A commit lacks the layout, naming what is missing: the builder fixes its commit, or the test writer reports again for the tests commit. Also an accepted tests commit the repository does not hold (the test writer reports again, or the user builds again), and a project folder in no Git repository (make it one and commit). |
 | `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); or the project folder was replaced after the server started (stop and start Surla). |
 
@@ -1120,8 +1123,8 @@ verification settings runs with the server's environment.
 
 Reads one run, whatever happened to the card since. It returns
 `change_id`, `request_revision`, `candidate_commit`, `suite_commit`,
-`accepted_at`, `test_source`, and `state`, whose `type` names the outcome and
-whose `value` holds its fields:
+`accepted_at`, `test_source`, `inputs_current`, and `state`. The state's
+`type` names the outcome and its `value` holds these fields:
 
 | `state.type` | Fields of `state.value` |
 | --- | --- |
@@ -1135,6 +1138,25 @@ written by a separate agent on this machine and are not isolated from the
 builder.` The test writer may read only the runs of a change it has an
 assignment for; any other run is refused as `forbidden` (`403`). `not_found`
 (`404`) means no such run.
+
+For a completed run, get and list responses also include optional
+`candidate_binaries_dir` when the caller is the user and the server has
+promotion settings. It names the actual folder of binaries built by that
+run, read from its recorded plan, rather than a reconstructed run layout.
+Agents never receive this path. The Proof view shows it under **Binaries
+built by this run**, as selectable code, and repeats it in the approval
+error panel for that selected run.
+
+Every `VerificationStatusResult`, including the start and list responses,
+carries required `inputs_current`. It uses the [change list
+comparison](#list_changes) for that individual run: the agreed revision and
+the tests a run of it would use. This observation may change while the saved
+verdict and report stay fixed; it proves neither the current working tree
+nor deployment or approval. Start observes the match before accepting work;
+get and list observe it while reading current owned card and build records.
+An authorized historical get with no current owned card still returns the
+report with `inputs_current: false`. Unreadable current records fail the read
+instead of returning a false match.
 
 #### `list_verifications`
 
@@ -1174,9 +1196,10 @@ merge. Surla merges and deploys nothing.
 | --- | --- |
 | `not_found` (`404`) | No card has this `change_id`. |
 | `conflict` (`409`) | The card is not confirmed, `request_revision` is stale, or the accepted tests changed while approving (approve again). |
-| `no_build`, `tests_not_accepted` (`409`) | As for `verify_change`. |
+| `no_build` (`409`) | As for `verify_change`. |
+| `tests_not_accepted` (`409`) | Surla has not accepted the build's tests. The message, which the user reads, names their state and who acts next, naming the builder rather than instructing it, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; the builder verifies again after its verdict`. |
 | `unprocessable` (`422`) | The report did not pass, does not follow from its own evidence, was made for another candidate commit or another revision than the ones named, or ran tests at another commit than the tests chosen for the revision. For other tests the message names both commits and ends with the step `the builder verifies the candidate again; then approve that run`. |
-| `unprocessable` (`422`) | Promotion settings are stored and a release binary is missing, unreadable or differs from the run's. The message names no folder path and ends with the step `publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings`: that folder is `<release_dir>/<candidate_commit>/`, and removing the settings is `surla promotion remove`, then `surla stop` and `surla`. |
+| `unprocessable` (`422`) | Promotion settings are stored and a release binary is missing, unreadable or differs from the run's. The message names no folder path and ends with the step `publish the binaries the run built, whose folder the run's Proof view shows, into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings`: that folder is `<release_dir>/<candidate_commit>/`, and removing the settings is `surla promotion remove`, then `surla stop` and `surla`. |
 | `not_implemented` (`501`) | The server runs no verification. A server started by `surla` always does. |
 
 ### Diagnostics
@@ -1471,7 +1494,7 @@ creates nothing and marks nothing read. Each role has:
 | Field | Values |
 | --- | --- |
 | `state` | `not_started`, `ended`, `starting`, `needs_you`, `working`, `waiting`, `error` or `unknown` |
-| `attention` | Why a role needs the user: `none`, `permission`, `question`, `auth`, `silent` (a running agent that reported nothing for 60 seconds) or `unknown` |
+| `attention` | Why a role needs the user: `none`, `permission`, `question`, `auth`, `silent` (a running agent that reported nothing for 60 seconds), `assignment` (a role `waiting` with an unread assignment for 90 seconds; see **Reminders** below) or `unknown`. `silent` and `assignment` change only what is shown. |
 | `watcher` | `held` when Chorus reports the agent's watcher, `gone` after 90 seconds of known absence, or `unknown` |
 | `assignment` | `unread`, `nothing_owed` or `unknown`; the guide has none |
 
@@ -1529,11 +1552,40 @@ A team request from `surla` that runs out of time prints `project team
 request did not finish because Herdr did not answer in time; open the Herdr
 app, then click Start agents on the views page`.
 
-**Reminders.** The supervision rules allow only fixed text, sent to an idle
-agent that owes an assignment read or whose watcher is gone, never in the
-first 90 seconds after the server starts. The `surla` command delivers no
-reminder: each eligible one is recorded as unavailable. Supervision never
-reads screen text and never takes focus without the user's action.
+**Reminders.** Each version of an assignment that a role has not read is a
+generation: a new build gives each of its roles one, every verdict gives the
+test writer one, and an acceptance also gives the builder one. The server
+sends the role one fixed Chorus direct message for all its generations not yet
+tried, so at most one per generation, for example `Surla: you have an unread
+assignment. Use list_builder_assignments and get_builder_assignment to read
+it. Surla reads no replies.` It first registers its own handle, `surla-`
+followed by the first 12 characters of the project ID, in the team's swarm
+with the role `Surla server. Sends reminders only. Reads no replies.`
+
+A message is sent only after a complete assignment read, and only when the
+last read of Chorus's agent list succeeded and has listed the role's handle
+without a break for 60 seconds, so a role that has just joined can act on its
+first message. Neither the watcher fact nor the terminal state gates a
+message: Chorus keeps it until the role's next watcher, `read` or `send`. The
+message names nothing about the work and never changes what is owed.
+
+Each post is bounded at 5 seconds, a response longer than 2 MiB fails, and no
+byte of a response is kept. Every attempt records one `surla.team.reminder`
+span with outcome `sent` or `failed`. A failed one has error status,
+`team.post` (`who` or `send`) and `team.failure` (`connection`, `timeout`,
+`http_status`, `rpc_error`, `tool_error` or `response`); no caller sees an
+error. The one exception is an attempt cut short because the server is
+stopping: it is not a Chorus failure and records nothing. A generation is
+never tried twice, whatever the outcome. Nothing about reminders is saved, so
+after a restart a role that still has an unread assignment gets one message
+again 60 seconds after its handle is listed. A `sent` outcome means Chorus
+accepted the message, not that the agent read it.
+
+When the agent stays idle with the assignment unread for 90 seconds, the role
+reads `needs_you` with attention `assignment`, and the views page asks the
+user to show its pane and tell it to read its assignments and to keep its
+Chorus watcher running. Supervision never reads screen text, never types into
+a terminal and never takes focus without the user's action.
 
 ---
 
@@ -1627,9 +1679,9 @@ holds it beside them (**Switch to Incoming Card**).
 | **Team** | Each registered role's state, its Chorus watcher, and whether its assignment is read, with a **Show … pane** action per role, such as **Show guide pane**, and **Start agents**, which says what it returned and when. With no role: `No agents are registered. Start agents prepares the guide; building adds the required roles.` Nothing runs on a refresh. |
 | **Story** | The Story saved with the shown revision, one row of step cards per flow: a finished flow is marked **will be tested end to end**, others **draft: not tested** with the reasons. Below it, the current Story evaluation ([`get_story_refresh`](#get_story_refresh)): none, running, failed, or succeeded, and how it differs from the change's Story; a draft is not part of the change until the guide revises the change with it and the user confirms. |
 | **Live target** | Whether a live target is starting, running or not confirmed stopped, its commit, address and accepted prompt versions (never the text), and **Stop live target**, which asks first. Below it, the model live targets started afterwards use and a form whose **Apply** sends [`configure_model`](#configure_model); a refusal names a missing key's variable. |
-| **Decisions & Approval** | The Change Card: questions to answer, examples, preserved behaviors, and **Confirm Intent & Lock Examples** (on an agreed card, **Refine Confirmed Answers & Examples**). A proposed revision appears above the agreed one with everything adopting it would confirm (changed request and summary, questions and examples marked **New**, **Edited**, **Kept** or **Removed**, Story and design changes), **Adopt this revision** and **Decline**. A stale submission offers **Load Latest Card**. Then the **Build** section and, after approval, the recorded approval with the builder's commit and the tests commit. |
+| **Decisions & Approval** | The Change Card: questions to answer, examples, preserved behaviors, and **Confirm Intent & Lock Examples** (on an agreed card, **Refine Confirmed Answers & Examples**). A proposed revision appears above the agreed one with everything adopting it would confirm (changed request and summary, questions and examples marked **New**, **Edited**, **Kept** or **Removed**, Story and design changes), **Adopt this revision** and **Decline**. A stale submission offers **Load Latest Card**. On a confirmed card the **Build** section comes first, with the saved agreement below it under **Agreed:** and the request. **Agreement details** and **Refine agreed answers and examples** remain available for review and refinement; an active edit stays open. After approval, the recorded approval names the builder's commit and the tests commit. |
 | **Architecture** | [`preview_architecture`](#preview_architecture) for the revision shown. |
-| **Proof** | The change's verification runs and each report's scenario outcomes, hidden scenarios anonymous, with **Approve this result** for a passed run. A run of written tests shows the `notice` of its `test_source`. **Candidate and run details** shows the run's candidate commit and its tests commit, labeled **Accepted tests commit** for written tests and **Evaluator commit** for an evaluator named in stored verification settings. |
+| **Proof** | The change's verification runs and each report's scenario outcomes, hidden scenarios anonymous, with **Approve this result** for a matching passed run. **Check started** shows the request's start time in local time, not a completion time; the exact recorded timestamp stays in details. A single saved run needs no selector. With promotion settings, a completed run shows its actual binary folder under **Binaries built by this run**, as selectable code; the approval error panel repeats the selected run's folder. A run of written tests shows the `notice` of its `test_source`. **Candidate and run details** shows the run's candidate commit and its tests commit, labeled **Accepted tests commit** for written tests and **Evaluator commit** for an evaluator named in stored verification settings. |
 | **Traces** | A drawer listing recorded errors, with **All statuses** and **Without error status**, older pages, and **Retry from newest** after a failed read. |
 
 **The Build section.** It appears once the change is confirmed or has a
@@ -1638,10 +1690,11 @@ revision has no build, it offers one start button: **Build this change**
 before any build, **Build current agreed revision** when the saved build is of
 an earlier revision, and **Build agreed revision** in either case while a
 proposed revision waits. Once the agreed revision is built, it offers **Build
-again…** instead, which asks first. Next to each control that sends a start it
-says: `Building starts a builder and, unless this project has stored
-verification settings, a test writer whose tests Surla runs on this machine
-outside the sandbox to check the builder’s work.` It refuses to start from an
+again…** instead, which asks first. Next to each control that sends a start,
+it explains which agents start: the builder and, unless the project uses
+configured tests, a test writer. It also says that Surla runs the tests on
+this machine with your permissions and asks you to read them before
+approving. It refuses to start from an
 unconfirmed change (`Confirm the change before building it.`) or an older
 revision, and builds the agreed revision even while the editor holds unsaved
 edits. It shows when the build started, the required test count, whether
@@ -1649,6 +1702,15 @@ each assignment is read, the test writer's state, the accepted tests commit,
 the `not_judged` sentence, and, when tests need changes, the findings read
 with [`get_test_findings`](#get_test_findings). A start's team and working-copy
 outcomes are shown with the time of that start, not as current health.
+
+When tests need changes, the test writer is the actor that fixes and reports
+them; **Read findings** opens **What Surla told the test writer**. A matching
+passed check gives the build **Review and approve**, opening that exact run.
+The selected run refreshes its input match when the agreement or build
+changes, including when it is older than the latest run. A stale, pending or
+unreadable match disables approval while keeping the saved report and any
+unsaved edits visible. A written-tests run shows its isolation notice directly
+under the outcome.
 
 **Before the agreed revision changes.** When the agreed revision has a build,
 the page says what a different agreed revision does to it, above **Adopt this
