@@ -52,7 +52,7 @@ an operation, who may call it, what it returns and how it refuses.
 | **A coding agent** that the Chorus dialog can start | An agent app plays each role: the user picks one per role in the Chorus dialog. | — |
 | **Git**, with a name and address | Without stored verification settings, builds, live targets and verification need the project in a Git repository with a first commit, and Surla records accepted tests as commits under your Git identity. | `git config --global user.name …` and `user.email …` |
 | **Docker** (Docker Desktop, or another local engine on a `unix://` socket) | `check_project` and `update_dependencies` run Go in Linux containers. The first check pulls `golang:1.27.3`. | [docker.com](https://www.docker.com/) |
-| **Temporal CLI** | Only for the full-suite tests that run the Orders evaluator: the `examples/orders` acceptance suite and the `e2e` tests of `./internal/verify` and `./cmd/surla`. | `brew install temporal` |
+| **Temporal CLI** | Only to run the Orders evaluator, which starts a local Temporal server for its scenarios: when Surla verifies the Orders project or starts a live target of it, when `surla verify` runs that evaluator, and in the full-suite tests that run it (the `examples/orders` acceptance suite and the `e2e` tests of `./internal/verify` and `./cmd/surla`). | `brew install temporal` |
 
 Before it creates any state, `surla` checks for `herdr-core`, `herdr-app` and
 `chorus` on the path and names the install command of the one that is
