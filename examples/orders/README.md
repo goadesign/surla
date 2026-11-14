@@ -153,7 +153,12 @@ One change then goes like this:
    and accepts them only when their SHA-256 digests equal those of the
    binaries the run built. The run built them in the sandbox with its own
    build settings, so a build of your own need not match: publish the run's
-   binaries. Then press **Approve this result**.
+   binaries. Each run keeps them in its run directory, the folder Surla
+   keeps for one verification run, at
+   `<runs folder>/<run>/work/candidate-bin/`. The server's Herdr terminal
+   names the runs folder when it starts (`runs in <folder>`), and the
+   result's **Candidate and run details** on the views page show the run as
+   **Verification run**. Then press **Approve this result**.
    When approval refuses, the page shows **Approval was not recorded.** with
    the error, and nothing is saved. A missing folder or file, or a file that
    differs from the run's binary, is refused with the step "publish the
