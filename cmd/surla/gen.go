@@ -17,8 +17,8 @@ import (
 	"github.com/goadesign/surla/internal/genpublish"
 )
 
-// quickstartGuide is the one generated file outside gen/: goa-ai's guide for
-// coding agents, written at the module root.
+// quickstartGuide is the one file generation writes outside gen/: goa-ai's
+// guide for coding agents, written at the module root.
 const quickstartGuide = "AGENTS_QUICKSTART.md"
 
 // gen regenerates the gen/ directory of the design module in -dir from its

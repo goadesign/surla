@@ -31,7 +31,7 @@ func TestRunAcceptsOnlyFullCommitIDs(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := Run(t.Context(), Plan{CandidateCommit: c.candidate, SuiteCommit: c.suite, WorkDir: t.TempDir()})
+			_, err := Run(t.Context(), Plan{CandidateCommit: c.candidate, SuiteCommit: c.suite, WorkDir: t.TempDir()}, os.Environ())
 			assert.ErrorContains(t, err, "is not a full commit ID")
 		})
 	}
@@ -72,7 +72,7 @@ func TestRunRejectsInvalidPlansBeforeWriting(t *testing.T) {
 			p := valid()
 			p.WorkDir = t.TempDir()
 			c.edit(&p)
-			_, err := Run(t.Context(), p)
+			_, err := Run(t.Context(), p, os.Environ())
 			var stage *StageError
 			require.ErrorAs(t, err, &stage)
 			assert.Equal(t, StageCheckout, stage.Stage)
@@ -84,13 +84,13 @@ func TestRunRejectsInvalidPlansBeforeWriting(t *testing.T) {
 		})
 	}
 
-	_, err := Run(t.Context(), valid())
+	_, err := Run(t.Context(), valid(), os.Environ())
 	assert.EqualError(t, errors.Unwrap(err), "work directory is required", "an empty WorkDir must not mean the current directory")
 
 	used := valid()
 	used.WorkDir = t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(used.WorkDir, "build-home-suite"), 0o700))
-	_, err = Run(t.Context(), used)
+	_, err = Run(t.Context(), used, os.Environ())
 	assert.EqualError(t, errors.Unwrap(err), "work directory "+used.WorkDir+" must be missing or empty",
 		"files left in WorkDir could be read by a build through a committed link")
 }
@@ -152,7 +152,7 @@ func TestRunRefusesACommittedModuleLinkOutsideTheCheckout(t *testing.T) {
 		SuiteCommand:    "./cmd/suite",
 		WorkDir:         t.TempDir(),
 		Tests:           TestsEvaluator,
-	})
+	}, os.Environ())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `candidate module "module": resolves to`)
 	assert.Contains(t, err.Error(), "outside")

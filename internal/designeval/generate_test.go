@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -186,11 +187,20 @@ var _ = Service("helpdesk", func() {
 	}
 }
 
-func TestGenerateWithStoriesStarterEvaluatorLifecycle(t *testing.T) {
+// TestGenerateWithAStoryTableStarterEvaluatorLifecycle generates the
+// starter's test module with Story tables through three rounds of a Story:
+// each finished flow adds its scenario and hook, a draft adds none, and a
+// removed or renamed flow's hook leaves while its hand-written method still
+// compiles. The same module without its table declares none of them.
+func TestGenerateWithAStoryTableStarterEvaluatorLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
 	evalInput, fullTree := starterEvalModule(t)
+	plain, err := testEvaluator.Generate(t.Context(), evalInput)
+	require.NoError(t, err)
+	assert.NotContains(t, string(plain["gen/evals/shop_acceptance/suite.go"]), "RefundOverLimit",
+		"without the table the module requires no Story test")
 
 	// Round 1: two finished flows and one incomplete draft.
 	round1Stories := []StorySummary{
@@ -224,7 +234,7 @@ func TestGenerateWithStoriesStarterEvaluatorLifecycle(t *testing.T) {
 		},
 	}
 
-	gen1, err := testEvaluator.GenerateWithStories(t.Context(), evalInput, round1Stories)
+	gen1, err := generateWithTable(t, evalInput, round1Stories)
 	require.NoError(t, err)
 	assert.Equal(t, []StoryScenario{
 		{
@@ -313,7 +323,7 @@ func (h *Hooks) StoreCreditWithinLimit(ctx context.Context) (eval.Result, error)
 			},
 		},
 	}
-	gen3, err := testEvaluator.GenerateWithStories(t.Context(), evalInput, baseline3Stories)
+	gen3, err := generateWithTable(t, evalInput, baseline3Stories)
 	require.NoError(t, err)
 	hooksWith3 := hooksWithRound1 + `
 func (h *Hooks) VipExchange(ctx context.Context) (eval.Result, error) {
@@ -368,7 +378,7 @@ func (h *Hooks) VipExchange(ctx context.Context) (eval.Result, error) {
 			},
 		},
 	}
-	gen2, err := testEvaluator.GenerateWithStories(t.Context(), evalInput, round2Stories)
+	gen2, err := generateWithTable(t, evalInput, round2Stories)
 	require.NoError(t, err)
 	assert.Equal(t, []StoryScenario{
 		{
@@ -420,13 +430,20 @@ func (h *Hooks) InstantStoreCredit(ctx context.Context) (eval.Result, error) {
 	}, scenarioIDs(decl2))
 }
 
-func TestGenerateWithStoriesNoFinishedFlowMatchesGenerate(t *testing.T) {
+// TestGenerateWithAnEmptyStoryTableAddsNoScenario generates the starter's
+// test module with a Story table that has no row, for no Story and for a Story
+// with only drafts: gen/ is what the module generates without a table, and
+// only the test program's section in AGENTS_QUICKSTART.md says what the table
+// declares.
+func TestGenerateWithAnEmptyStoryTableAddsNoScenario(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	files := testmodule.Snapshot(t, "", minimalDesign)
-	wantFiles, err := testEvaluator.Generate(t.Context(), files)
+	files, _ := starterEvalModule(t)
+	plain, err := testEvaluator.Generate(t.Context(), files)
 	require.NoError(t, err)
+	const sentence = "`design/story_tests.go` declares one scenario per finished flow"
+	assert.NotContains(t, string(plain[quickstartPath]), sentence, "a module without a table is not told about one")
 
 	cases := []struct {
 		name         string
@@ -438,7 +455,7 @@ func TestGenerateWithStoriesNoFinishedFlowMatchesGenerate(t *testing.T) {
 			stories: nil,
 		},
 		{
-			name: "only incomplete drafts on a design with zero suites",
+			name: "only incomplete drafts",
 			stories: []StorySummary{
 				{
 					Name: "Refunds",
@@ -456,16 +473,26 @@ func TestGenerateWithStoriesNoFinishedFlowMatchesGenerate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := testEvaluator.GenerateWithStories(t.Context(), files, tc.stories)
+			got, err := generateWithTable(t, files, tc.stories)
 			require.NoError(t, err)
-			assert.Equal(t, wantFiles, got.Files)
 			assert.Empty(t, got.Included)
 			assert.Equal(t, tc.wantExcluded, got.Excluded)
+			assert.Contains(t, string(got.Files[quickstartPath]), sentence)
+			withoutGuide := func(files map[string][]byte) map[string][]byte {
+				out := maps.Clone(files)
+				delete(out, quickstartPath)
+				return out
+			}
+			assert.Equal(t, withoutGuide(plain), withoutGuide(got.Files))
 		})
 	}
 }
 
-func TestGenerateWithStoriesRejectsFlowCollisionsAndSuiteCountErrors(t *testing.T) {
+// TestGenerateWithAStoryTableRejectsFlowCollisionsAndSuiteCountErrors names
+// both flows of a collision before generating, a flow that collides with a
+// scenario written by hand, and a design with no suite or two, whether or not
+// the table has a row.
+func TestGenerateWithAStoryTableRejectsFlowCollisionsAndSuiteCountErrors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
@@ -499,7 +526,10 @@ var _ = Suite("second_suite", func() {
 })
 `
 	singleSuiteFiles := testmodule.Snapshot(t, "", singleSuiteDesign)
-	zeroSuitesFiles := testmodule.Snapshot(t, "", minimalDesign)
+	// The design keeps importing the evaluation DSL, as a test module's does,
+	// so its module requires Goa-AI, which the table imports.
+	zeroSuitesFiles := testmodule.Snapshot(t, "",
+		singleSuiteDesign[:strings.Index(singleSuiteDesign, "var _ = Suite(")]+"var _ = Suite\n")
 	twoSuitesFiles := testmodule.Snapshot(t, "", twoSuitesDesign)
 
 	cases := []struct {
@@ -569,9 +599,15 @@ var _ = Suite("second_suite", func() {
 				},
 			},
 			wantErr: []string{
-				"Story scenario generation needs exactly one evaluation suite, but the design declares 0",
+				"Story table (design/story_tests.go): the test module must declare exactly one evaluation suite, but its design declares 0",
 				"keep exactly one Suite(...) in design/",
 			},
+		},
+		{
+			name:    "zero suites declared with no finished flow",
+			files:   zeroSuitesFiles,
+			stories: nil,
+			wantErr: []string{"the test module must declare exactly one evaluation suite, but its design declares 0"},
 		},
 		{
 			name:  "two suites declared when a finished flow is present",
@@ -583,7 +619,7 @@ var _ = Suite("second_suite", func() {
 				},
 			},
 			wantErr: []string{
-				"Story scenario generation needs exactly one evaluation suite, but the design declares 2",
+				"Story table (design/story_tests.go): the test module must declare exactly one evaluation suite, but its design declares 2",
 				"keep exactly one Suite(...) in design/",
 			},
 		},
@@ -591,7 +627,7 @@ var _ = Suite("second_suite", func() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := testEvaluator.GenerateWithStories(t.Context(), tc.files, tc.stories)
+			_, err := generateWithTable(t, tc.files, tc.stories)
 			require.Error(t, err)
 			for _, w := range tc.wantErr {
 				assert.ErrorContains(t, err, w)
@@ -600,7 +636,10 @@ var _ = Suite("second_suite", func() {
 	}
 }
 
-func TestGenerateWithStoriesQuotesSpecialTitlesAndBlankTitles(t *testing.T) {
+// TestGenerateWithAStoryTableQuotesSpecialTitlesAndBlankTitles generates
+// scenarios whose descriptions hold quotes, a backtick, backslashes and a line
+// break, or the flow's key for a blank title, and builds the program.
+func TestGenerateWithAStoryTableQuotesSpecialTitlesAndBlankTitles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
@@ -624,7 +663,7 @@ func TestGenerateWithStoriesQuotesSpecialTitlesAndBlankTitles(t *testing.T) {
 		},
 	}
 
-	gen, err := testEvaluator.GenerateWithStories(t.Context(), evalInput, stories)
+	gen, err := generateWithTable(t, evalInput, stories)
 	require.NoError(t, err)
 	suiteGo := string(gen.Files["gen/evals/shop_acceptance/suite.go"])
 	assert.Contains(t, suiteGo, `Description: "Line 1: \"quoted\" `+"`"+`backtick`+"`"+` \\backslash\\\nLine 2"`)
@@ -691,16 +730,41 @@ func TestEvaluateAndGeneratePreserveGoaOnlyTargetWithGoModOnlyGoaAIChecksum(t *t
 	require.NoError(t, err)
 	assert.Contains(t, genFiles, "gen/orders/service.go")
 
-	storyGen, err := testEvaluator.GenerateWithStories(t.Context(), files, nil)
-	require.NoError(t, err)
-	assert.Equal(t, genFiles, storyGen.Files)
 }
 
-func TestGenerateWithStoriesFailsAfterClose(t *testing.T) {
-	ev := NewEvaluatorInDir(t.TempDir())
-	require.NoError(t, ev.Close())
-	_, err := ev.GenerateWithStories(t.Context(), map[string]string{}, nil)
-	assert.ErrorIs(t, err, errEvaluatorClosed)
+// tableGeneration is what generateWithTable returns: the generated files and
+// the Story's finished and unfinished flows.
+type tableGeneration struct {
+	// Files is Generate's output for the module with its Story table.
+	Files map[string][]byte
+	// Included lists the scenarios the table requires.
+	Included []StoryScenario
+	// Excluded lists the unfinished flows the table leaves out.
+	Excluded []StoryDraft
+}
+
+// generateWithTable renders the Story table of the module whose snapshot is
+// files from stories, as a build writes it, and generates the module with it
+// with testEvaluator.
+func generateWithTable(t *testing.T, files map[string]string, stories []StorySummary) (tableGeneration, error) {
+	t.Helper()
+	module := fstest.MapFS{}
+	for p, content := range files {
+		module[p] = &fstest.MapFile{Data: []byte(content)}
+	}
+	table, included, err := StoryTests(module, stories)
+	if err != nil {
+		return tableGeneration{}, err
+	}
+	_, excluded, err := StoryScenarios(stories)
+	require.NoError(t, err)
+	withTable := maps.Clone(files)
+	withTable[StoryTestsPath] = string(table)
+	generated, err := testEvaluator.Generate(t.Context(), withTable)
+	if err != nil {
+		return tableGeneration{}, err
+	}
+	return tableGeneration{Files: generated, Included: included, Excluded: excluded}, nil
 }
 
 // starterEvalModule renders the starter evaluator templates from

@@ -207,8 +207,10 @@ func newWholeJourney(t *testing.T) *wholeJourney {
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Surla Test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	// The in-process serve removes every model provider variable from this
+	// process; isolating them first restores the caller's own afterwards.
+	isolateProviderFamilies(t)
 	for _, name := range []string{
-		"ANTHROPIC_API_KEY", "OPENAI_API_KEY",
 		verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv,
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
 		// The in-process server would otherwise record the caller's own Herdr

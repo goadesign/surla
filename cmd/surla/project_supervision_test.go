@@ -60,7 +60,7 @@ func TestTeamFilteredSubscription(t *testing.T) {
 	var mu sync.Mutex
 	var calls [][]string
 	started := make(chan struct{}, 2)
-	o := teamObservations{commands: teamCommands{core: "recorded-herdr"}, stream: func(ctx context.Context, program string, args []string, read func(io.Reader) error) error {
+	o := teamObservations{commands: teamCommands{core: "recorded-herdr"}, stream: func(ctx context.Context, _ []string, program string, args []string, read func(io.Reader) error) error {
 		assert.Equal(t, "recorded-herdr", program)
 		mu.Lock()
 		calls = append(calls, args)
@@ -97,7 +97,7 @@ func TestTeamFilteredSubscription(t *testing.T) {
 // before any get, and the resulting narrow values contain no message or title.
 func TestTeamDiscoveryBeforeRead(t *testing.T) {
 	var calls [][]string
-	c := teamCommands{core: "recorded", run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+	c := teamCommands{core: "recorded", run: func(_ context.Context, _ []string, _ string, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		if args[0] == "ls" {
 			return []byte(`{"terminals":[{"address":"owned"}]}`), nil
@@ -153,37 +153,4 @@ func TestTeamWatcherHTTP(t *testing.T) {
 	assert.Error(t, err)
 	_, err = o.ReadWatchers(t.Context(), "team", view.Version, roles)
 	assert.Error(t, err)
-}
-
-// TestTeamSenderRecordedProtocol verifies conditions, exit refusals and the
-// explicit unbound production sender without any actual typing or settings.
-func TestTeamSenderRecordedProtocol(t *testing.T) {
-	for _, condition := range []string{"idle", ""} {
-		for _, code := range []int{0, 9, 10, 11, 1} {
-			var args []string
-			c := teamCommands{core: "recorded", run: func(_ context.Context, _ string, argv ...string) ([]byte, error) {
-				args = argv
-				if code != 0 {
-					return nil, teamCommandExit{code: code}
-				}
-				return []byte(`{}`), nil
-			}}
-			outcome, err := c.Send(t.Context(), project.TeamReminder{Terminal: "terminal", Text: "Surla reminder.", Condition: condition})
-			assert.Equal(t, map[int]string{0: "sent", 9: "blocked", 10: "status_changed", 11: "finished", 1: "unavailable"}[code], outcome)
-			assert.Equal(t, code == 1, err != nil)
-			want := []string{"send", "terminal", "Surla reminder.", "--json"}
-			if condition != "" {
-				want = append(want, "--if", "idle")
-			}
-			assert.Equal(t, want, args)
-			assert.NotContains(t, args, "--force")
-			assert.NotContains(t, args, "--wait")
-		}
-	}
-	deps, err := projectTeamDependencies(t.Context())
-	require.NoError(t, err)
-	require.IsType(t, unboundTeamSender{}, deps.Sender)
-	outcome, err := deps.Sender.Send(t.Context(), project.TeamReminder{})
-	assert.NoError(t, err)
-	assert.Equal(t, "unavailable", outcome)
 }

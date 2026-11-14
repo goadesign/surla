@@ -43,7 +43,7 @@ an operation, who may call it, what it returns and how it refuses.
 
 | Need | Why | How to get it |
 | --- | --- | --- |
-| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Two kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)), and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
+| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
 | **Go 1.27.3 or later** | `surla` is a Go program, and the project's checks use Go. Surla runs Goa inside its sandbox with each module's own versions, so no `goa` binary is needed. | [go.dev/dl](https://go.dev/dl/) |
 | **Surla** | The command itself. | `go install github.com/goadesign/surla/cmd/surla@latest` |
 | **Herdr core** (`herdr-core` and `hc`) | The server and every agent run in Herdr terminals. | `curl -fsSL https://releases.herdr.dev/core/install.sh \| sh` ([herdr.dev/core](https://herdr.dev/core/)) |
@@ -121,6 +121,34 @@ what failed and the step that repairs it (see
 [`ensure_team`](#ensure_team-management)); **Start agents** on the views
 page tries again.
 
+<a id="model-provider-settings"></a>
+
+**Model provider settings.** Once the server answers for the project, and
+before the team step, `surla` hands it the request settings of each model
+provider whose key is set in the shell where `surla` runs
+([`hand_over_model_settings`](#hand_over_model_settings)), and, before the
+team lines, prints one line naming them, never a value, for example:
+
+```text
+Model settings held by the project server: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL (from this shell); not sent: ANTHROPIC_ADMIN_KEY. Live targets use anthropic/claude-sonnet-4-6; change it on the views page. surla stop makes the project server forget them.
+```
+
+A shell without a key sends nothing and keeps what an earlier `surla` handed
+over, marked `(from an earlier surla)`. A family variable without its key is
+named as not sent, such as `ANTHROPIC_BASE_URL (ANTHROPIC_API_KEY is not
+set)`. With nothing held and nothing left unsent, no line prints. A refused
+hand-over stops `surla` before the team step; a value longer than 4,096
+characters is refused with that limit named.
+
+`surla` leaves its own environment unchanged and gives it unchanged to
+Herdr's programs (`hc`, `herdr-app`). When `surla` is what starts the Herdr
+core, the core keeps that shell's environment, provider variables included,
+for as long as it runs, and every terminal it opens inherits it, the agents'
+included, exactly as if you had started Herdr in that shell; `surla stop` does
+not change that. Chorus and the browser opener receive the environment
+without any `ANTHROPIC_` or `OPENAI_` variable. Programs you started from that
+shell keep what they inherited.
+
 **The team.** Once the server answers, `surla` starts the Chorus service
 (`chorus up`) and then the Herdr app when either is not running. The server
 owns the team: its stable Chorus name, each role's handle and credential, the
@@ -169,8 +197,11 @@ identity, address, token or storage path.
 `surla` finds that folder from the shell where it runs and starts the server
 with it. The server never looks the folder up itself, because Herdr starts it
 with the environment of the Herdr core, not the environment of your shell.
-For the same reason, a variable the server reads, such as a model provider's
-key or a Docker setting, must be in the Herdr core's environment. The server
+For the same reason, a variable the server reads, such as a Docker setting,
+must be in the Herdr core's environment. A model provider's settings are the
+exception: `surla` hands them over from your shell (see
+[Model provider settings](#model-provider-settings)), and the server removes
+every `ANTHROPIC_` and `OPENAI_` variable it inherits from the Herdr core. The server
 refuses a state folder that is not private to your account, holds no project,
 belongs to another project folder, lies inside the project folder, or is not
 named by its physical path.
@@ -241,7 +272,8 @@ credential in memory and publishes it in its private running record after
 binding its port; `surla` and `surla stop` read it there for each request,
 use the literal local address without a proxy, refuse redirects, and never
 print it. Management can check the project's identity, prepare the team,
-stop the server and mint a browser link; it cannot confirm, build or approve.
+stop the server, mint a browser link and hand over the shell's model provider
+settings; it cannot confirm, build or approve.
 Agent credentials survive restarts and are removed with their agent; agent
 connection settings and rosters name only their own credential files.
 
@@ -285,13 +317,17 @@ it registers the prompt `<name>.helper.system`.
 `prices-cookie`. The service's `go.mod` requires the Story language's module,
 `github.com/goadesign/surla/story`, at the version Surla itself requires.
 
-`eval/` is the test module. It declares three scenarios, all tagged `repair`
-(`prices_tea`, `unknown_item` and `prompt_override_reaches_model`), runs them
-against a scripted model, and implements the
+`eval/` is the test module. Its suite declares three scenarios, all tagged
+`repair` (`prices_tea`, `unknown_item` and `prompt_override_reaches_model`),
+and its Story table, `eval/design/story_tests.go`, adds `prices_cookie`, the
+test the Story's finished flow requires; `surla init` writes the table from
+`design/story.go`. The module runs these scenarios against a scripted model
+and implements the
 [live target prompt contract](#live-target-prompt-contract). Its hand-written
 parts are `eval/design` (its own copy of the service's public contract and
-the scenarios), `eval/acceptance` (the scenarios' implementation and the
-program's entry points) and `eval/scripted` (the scripted model); its
+the scenarios, apart from the Story table), `eval/acceptance` (the
+scenarios' implementation and the program's entry points) and
+`eval/scripted` (the scripted model); its
 program, `eval/gen/cmd/<name>-evals`, is generated with the rest of
 `eval/gen/`. `eval/acceptance` also holds the test the Story's finished flow
 requires, the method `PricesCookie`, so the first build of a change needs
@@ -403,9 +439,10 @@ version in use. The named-section rewrite of `AGENTS_QUICKSTART.md` needs
 `goa.design/goa-ai` `v0.90.1-0.20261110011046-f32bd628f2bf` or later. A design
 with gRPC transports is refused, because protoc cannot run in the sandbox;
 generate it with the module's own `go run goa.design/goa/v3/cmd/goa gen`.
-`generate_code` writes the same files. The test writer never regenerates its
-test module: Surla does that with the required tests at each build start and
-report.
+`generate_code` writes the same files. A Surla test module's Story table,
+`design/story_tests.go`, is a source file of its design, so regenerating the
+module keeps the tests the table requires (see
+[builds and assignments](#builds-and-assignments)).
 
 ### `surla verify`
 
@@ -567,6 +604,7 @@ all act for that owner.
 | [`draft_override`](#draft_override) | | | ✓ | | | MCP tool and HTTP |
 | [`configure_model`](#configure_model) | ✓ | | | | | MCP tool and HTTP |
 | [`get_model_connection`](#get_model_connection) | ✓ | | | | | HTTP |
+| [`hand_over_model_settings`](#hand_over_model_settings) | | | | | ✓ | HTTP |
 | [`verify_change`](#verify_change) | | | ✓ | | | MCP tool and HTTP |
 | [`get_verification`](#get_verification) | ✓ | ✓ | ✓ | ✓ | | MCP tool and HTTP |
 | [`list_verifications`](#list_verifications) | ✓ | ✓ | ✓ | ✓ | | MCP tool and HTTP |
@@ -1056,25 +1094,70 @@ answers `applied_in_store: false` and `requires_rebuild: true`, with a
 
 The user's **Apply** in the Live target view. It chooses, without a restart,
 the model that live targets started afterwards receive: a direct provider,
-whose key the target reads from the server's environment (`ANTHROPIC_API_KEY`
-or `OPENAI_API_KEY`), or a plaintext gRPC `goa-ai` model gateway. A running
-target keeps its model. Keys never travel in a request. The choice lasts
-until the server stops; verification does not use it.
+whose request settings `surla` handed to the server from the shell where it
+ran ([`hand_over_model_settings`](#hand_over_model_settings)), or a plaintext
+gRPC `goa-ai` model gateway. A running target keeps its model. Keys never
+travel in this request or through MCP. The choice and the held settings last
+until the server stops; after a restart no model is chosen, so the next
+`surla` that hands settings over selects that provider's default model again.
+Verification does not use the choice.
 
 | Refusal | When |
 | --- | --- |
 | `400` | An unknown provider or another schema violation. |
-| `unprocessable` (`422`) | An invalid combination, or the provider's key is missing from the server's environment (the message names the variable). |
+| `unprocessable` (`422`) | An invalid combination, or the server holds no request settings for the chosen provider: `provider anthropic needs ANTHROPIC_API_KEY: export it, with any ANTHROPIC_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway.` |
 
 #### `get_model_connection`
 
 `GET /cp1/model`. **Output:** `ModelConnection`, one of `none`, `direct`
 (`provider`, `model_name`) or `gateway` (`gateway_addr`).
 
-The choice live targets started afterwards receive. At start the server
-picks `anthropic` with `claude-sonnet-4-6` when `ANTHROPIC_API_KEY` is set,
-otherwise `openai` with `gpt-5.4-mini` when `OPENAI_API_KEY` is set, otherwise
-none. It never returns a key or any other environment value.
+The choice live targets started afterwards receive. It starts as `none`.
+While no model is chosen, a hand-over that holds a provider's settings selects
+that provider's default model; every accepted `configure_model` replaces the
+choice. It never returns a key or any other setting value.
+
+#### `hand_over_model_settings`
+
+`POST /cp1/model/settings`, the management credential only, never an MCP
+tool. **Input:** `anthropic`, `openai`, each optional, each a map from
+variable name to value. **Output:** `ModelSettingsResult` (`held`: each
+provider's held variable names, sorted; `connection`: the choice, as
+`get_model_connection` reports it). It never returns a value.
+
+`surla` calls it after the server answers for the project, with the request
+settings of each provider whose key is set in its own environment. A
+provider's request settings are the variables of its family (every name
+starting with its prefix) that cross; any other family variable, such as
+`ANTHROPIC_ADMIN_KEY`, is never sent:
+
+| Provider | Key | Request settings that cross | Default model |
+| --- | --- | --- | --- |
+| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` | `claude-sonnet-4-6` |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `OPENAI_CUSTOM_HEADERS` | `gpt-5.4-mini` |
+
+An absent provider keeps what the server holds for it. A present one replaces
+everything held for it and must include its key, so an empty map is refused.
+While no model is chosen, live targets then use the default model of the
+first provider held, `anthropic` before `openai`; any other choice stays.
+
+The server holds the settings in memory only and forgets them when it stops.
+They are its one source of provider settings: it removes every `ANTHROPIC_`
+and `OPENAI_` variable from its own environment when it starts, so none that
+the Herdr core holds reaches a live target, a verification or a check; only
+Herdr's own programs, which the server runs with the environment it started
+with, still receive them. A live target's test program, including a candidate
+commit's test module that agents wrote, receives the chosen provider's held
+settings. A verification with an operator's stored evaluator receives every
+held provider's settings, as held when it is accepted. Tests a separate agent
+wrote for a verification, and the check helper, receive none. A live target
+or verification already running keeps the settings it started with.
+
+| Refusal | When |
+| --- | --- |
+| `400` | An unknown provider or field, a variable that does not cross, or a value longer than 4,096 characters. |
+| `unprocessable` (`422`) | Settings without their key, or a value containing a NUL character. The message names the provider and the variable, never a value; nothing held changed. |
+| `forbidden` (`403`) | Any caller but the management credential. |
 
 ### Verification and approval
 
@@ -1101,12 +1184,13 @@ Tests a separate agent wrote run outside Surla's sandbox, which isolates only
 the application's builds and processes. Their program therefore starts with
 only `PATH` and `TMPDIR` (a folder inside the run directory): no model key
 and no other variable of the server. An evaluator named in stored
-verification settings runs with the server's environment.
+verification settings runs with the server's environment, plus every held
+provider's settings.
 
 | Refusal (all `409`) | When and the step |
 | --- | --- |
 | `no_build` | The user has not built the agreed revision, the build is of another revision (named), or the build was started without a test writer while verification settings were stored, and they have since been removed. The user builds again. |
-| `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next. |
+| `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next, and ends with the builder's own step, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again`. |
 | `no_test_layout` | A commit lacks the layout, naming what is missing: the builder fixes its commit, or the test writer reports again for the tests commit. Also an accepted tests commit the repository does not hold (the test writer reports again, or the user builds again), and a project folder in no Git repository (make it one and commit). |
 | `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); or the project folder was replaced after the server started (stop and start Surla). |
 
@@ -1191,7 +1275,8 @@ merge. Surla merges and deploys nothing.
 | --- | --- |
 | `not_found` (`404`) | No card has this `change_id`. |
 | `conflict` (`409`) | The card is not confirmed, `request_revision` is stale, or the accepted tests changed while approving (approve again). |
-| `no_build`, `tests_not_accepted` (`409`) | As for `verify_change`. |
+| `no_build` (`409`) | As for `verify_change`. |
+| `tests_not_accepted` (`409`) | Surla has not accepted the build's tests. The message, which the user reads, names their state and who acts next, naming the builder rather than instructing it, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; the builder verifies again after its verdict`. |
 | `unprocessable` (`422`) | The report did not pass, does not follow from its own evidence, was made for another candidate commit or another revision than the ones named, or ran tests at another commit than the tests chosen for the revision. For other tests the message names both commits and ends with the step `the builder verifies the candidate again; then approve that run`. |
 | `unprocessable` (`422`) | Promotion settings are stored and a release binary is missing, unreadable or differs from the run's. The message names no folder path and ends with the step `publish the binaries the run built, whose folder the run's Proof view shows, into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings`: that folder is `<release_dir>/<candidate_commit>/`, and removing the settings is `surla promotion remove`, then `surla stop` and `surla`. |
 | `not_implemented` (`501`) | The server runs no verification. A server started by `surla` always does. |
@@ -1246,15 +1331,21 @@ does not contain; the user merges `surla/tests`, then builds again. Accepted
 tests are commits on `surla/tests`, so deleting `.surla-tests` loses only
 uncommitted work: the next build recreates the folder on the same branch.
 
-**Required tests.** The build writes one required test per finished flow of
-the saved Story into the test module's generated code. Flow
+**Required tests.** The build writes the test module's Story table,
+`eval/design/story_tests.go`, which declares one scenario per finished flow
+of the saved Story, and generates the module from its design. Flow
 `refund-over-limit` requires scenario `refund_over_limit` and the hook method
 `RefundOverLimit`. Unfinished flows require none; with no finished flow, the
-test program must still build. Surla writes the test module's generated code
-at the build start and again at each report, so the test writer never
-regenerates it. When the start cannot write it, a cause the test writer can
-fix, such as a test module design that does not compile, sets the tests to
-`needs_changes` with that finding, at report 0. Any other cause sets
+test program must still build. Surla writes the table and the test module's
+generated code at the build start and again at each report, generating with
+the table it renders in place of whatever the test writer left at that path;
+the test writer leaves that file as it is. Because the required tests are
+part of the module's design, regenerating the module keeps them. A
+generation that fails writes neither the table nor the generated code, so the
+copy stays as it was; only a symbolic link at the table's path is replaced by
+the table first. When the start cannot write them, a cause the test
+writer can fix, such as a test module design that does not compile, sets the
+tests to `needs_changes` with that finding, at report 0. Any other cause sets
 `could_not_run`, with a reason that says what failed (the start's time
 limit or a server stop, a download of the module's dependencies that fails
 outside the test writer's changes, the generator and its phase, or writing
@@ -1441,9 +1532,14 @@ again on the views page`.
 The test writer aligns the service interface in its copy with the agreed
 design, writes the tests in `eval/` of `working_folder`, checks them with
 `go build ./...` in `eval/`, which names any required method still missing,
-and then reports. It never calls `generate_code` or `surla gen`, which would
-drop the required tests; after changing the test module's design it reports,
-and Surla generates the module again. Reading an assignment marks it read.
+and then reports. It leaves the Story table, `eval/design/story_tests.go`,
+as it is: Surla writes it from the agreed Story at the build start and again
+at each report. Because the required tests are part of the module's design,
+regenerating the module with `surla gen -dir eval` keeps them. After changing
+the test module's design, the test writer reports, and Surla generates the
+module again; from a shell that is not sandboxed it can also run
+`surla gen -dir eval` in `working_folder` first. Reading an assignment marks
+it read.
 
 ### `report_tests_finished`
 
@@ -1477,7 +1573,7 @@ creates nothing and marks nothing read. Each role has:
 | Field | Values |
 | --- | --- |
 | `state` | `not_started`, `ended`, `starting`, `needs_you`, `working`, `waiting`, `error` or `unknown` |
-| `attention` | Why a role needs the user: `none`, `permission`, `question`, `auth`, `silent` (a running agent that reported nothing for 60 seconds) or `unknown` |
+| `attention` | Why a role needs the user: `none`, `permission`, `question`, `auth`, `silent` (a running agent that reported nothing for 60 seconds), `assignment` (a role `waiting` with an unread assignment for 90 seconds; see **Reminders** below) or `unknown`. `silent` and `assignment` change only what is shown. |
 | `watcher` | `held` when Chorus reports the agent's watcher, `gone` after 90 seconds of known absence, or `unknown` |
 | `assignment` | `unread`, `nothing_owed` or `unknown`; the guide has none |
 
@@ -1535,11 +1631,40 @@ A team request from `surla` that runs out of time prints `project team
 request did not finish because Herdr did not answer in time; open the Herdr
 app, then click Start agents on the views page`.
 
-**Reminders.** The supervision rules allow only fixed text, sent to an idle
-agent that owes an assignment read or whose watcher is gone, never in the
-first 90 seconds after the server starts. The `surla` command delivers no
-reminder: each eligible one is recorded as unavailable. Supervision never
-reads screen text and never takes focus without the user's action.
+**Reminders.** Each version of an assignment that a role has not read is a
+generation: a new build gives each of its roles one, every verdict gives the
+test writer one, and an acceptance also gives the builder one. The server
+sends the role one fixed Chorus direct message for all its generations not yet
+tried, so at most one per generation, for example `Surla: you have an unread
+assignment. Use list_builder_assignments and get_builder_assignment to read
+it. Surla reads no replies.` It first registers its own handle, `surla-`
+followed by the first 12 characters of the project ID, in the team's swarm
+with the role `Surla server. Sends reminders only. Reads no replies.`
+
+A message is sent only after a complete assignment read, and only when the
+last read of Chorus's agent list succeeded and has listed the role's handle
+without a break for 60 seconds, so a role that has just joined can act on its
+first message. Neither the watcher fact nor the terminal state gates a
+message: Chorus keeps it until the role's next watcher, `read` or `send`. The
+message names nothing about the work and never changes what is owed.
+
+Each post is bounded at 5 seconds, a response longer than 2 MiB fails, and no
+byte of a response is kept. Every attempt records one `surla.team.reminder`
+span with outcome `sent` or `failed`. A failed one has error status,
+`team.post` (`who` or `send`) and `team.failure` (`connection`, `timeout`,
+`http_status`, `rpc_error`, `tool_error` or `response`); no caller sees an
+error. The one exception is an attempt cut short because the server is
+stopping: it is not a Chorus failure and records nothing. A generation is
+never tried twice, whatever the outcome. Nothing about reminders is saved, so
+after a restart a role that still has an unread assignment gets one message
+again 60 seconds after its handle is listed. A `sent` outcome means Chorus
+accepted the message, not that the agent read it.
+
+When the agent stays idle with the assignment unread for 90 seconds, the role
+reads `needs_you` with attention `assignment`, and the views page asks the
+user to show its pane and tell it to read its assignments and to keep its
+Chorus watcher running. Supervision never reads screen text, never types into
+a terminal and never takes focus without the user's action.
 
 ---
 
@@ -1563,13 +1688,39 @@ the target declares the same method in its own Goa design and implements it:
   `SURLA_LIVE_TARGET_KEY`, and the program's `Live` function passes it to the
   application through `candidate.Spec.Env`.
 - The model choice reaches the program as `SURLA_LIVE_MODEL_PROVIDER` and
-  `SURLA_LIVE_MODEL_NAME` for a direct provider, with that provider's key in
-  its usual variable, or as `SURLA_LIVE_MODEL_GATEWAY`. Nothing is set when
-  the choice is none.
+  `SURLA_LIVE_MODEL_NAME` for a direct provider, with that provider's
+  handed-over request settings in their own variables, such as
+  `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`, or as
+  `SURLA_LIVE_MODEL_GATEWAY`. Nothing is set when the choice is none.
 - A test module from the commit, which agents wrote, receives only `PATH`,
   `TMPDIR`, `SURLA_LIVE_TARGET_KEY`, the model variables and the chosen
-  provider's key. An evaluator named in stored verification settings
-  receives the server's environment with these variables set.
+  provider's request settings, no other provider's. An evaluator named in
+  stored verification settings receives the server's environment, which holds
+  no inherited `ANTHROPIC_` or `OPENAI_` variable, with these variables and
+  settings set. The target's build and preparation run without any provider
+  setting.
+- The target's `executor.log`, in its folder under `<cards>/live/`, is the
+  program's own output: whatever it prints, a setting included, stays there
+  until the folder is removed. Stopping the target removes the folder once its
+  processes are gone; a folder left after a failed stop or a server crash is
+  named at the next start and kept until you remove it. When a start fails,
+  the server exports the last 8 KiB of that log only to its diagnostics span.
+  It reads up to 16 KiB before that excerpt as well, finds every exact
+  occurrence of a key, token, custom-headers or base URL value the target was
+  given, overlapping ones and ones the excerpt's start cuts included, and the
+  end of the log when it stops partway through such a value. It exports each
+  run of those bytes that reaches the excerpt once, as `[redacted]`, or, when
+  the run is exactly one occurrence of the base URL, as the URL's scheme and
+  host (`[redacted]` when none can be read), and every other byte as printed,
+  apart from what keeps the excerpt valid UTF-8, as the span exporter
+  requires: a character the excerpt's start cuts, or one left unfinished at
+  the end of the log, is left out, and any other invalid UTF-8 is exported as
+  U+FFFD. So, apart from a base URL's scheme and host, no byte of an exact
+  occurrence of a setting the target was given, or of one whose writing
+  stopped at the end of the log, is exported. The same value printed in
+  another form, such as quoted, escaped, or rewritten by a URL parser or an
+  SDK, is not recognized and is exported as printed; a custom-headers value
+  is recognized only as a whole, not header by header.
 - The starter's test module implements this contract: `override_prompt`
   replaces `<name>.helper.system`, and its `Live` function serves a direct
   provider through its own loopback model gateway so the key stays out of the

@@ -10,8 +10,8 @@ var TeamRoleState = Type("TeamRoleState", func() {
 	Attribute("state", String, "Current terminal state; unknown means Herdr cannot establish it.", func() {
 		Enum("not_started", "ended", "starting", "needs_you", "working", "waiting", "error", "unknown")
 	})
-	Attribute("attention", String, "Reported block kind or the reason a silent running agent needs the user.", func() {
-		Enum("none", "permission", "question", "auth", "silent", "unknown")
+	Attribute("attention", String, "Reported block kind, or why a running agent needs the user: silent when it reports nothing for 60 seconds, assignment when it has waited with an unread assignment for 90 seconds.", func() {
+		Enum("none", "permission", "question", "auth", "silent", "assignment", "unknown")
 	})
 	Attribute("watcher", String, "held when Chorus reports a watcher, gone after its absence grace, unknown otherwise.", func() { Enum("held", "gone", "unknown") })
 	Attribute("assignment", String, "unread when this role owes an assignment read, nothing_owed when the owner established none, unknown when the owner could not read assignments. The guide has no assignments.", func() { Enum("unread", "nothing_owed", "unknown") })

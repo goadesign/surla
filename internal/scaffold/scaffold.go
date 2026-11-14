@@ -161,8 +161,8 @@ type (
 const SuiteDir = designeval.TestModuleDir
 
 const (
-	// quickstartGuide is the one generated file outside gen/: goa-ai's guide
-	// for coding agents, written at the module root.
+	// quickstartGuide is the one file generation writes outside gen/:
+	// goa-ai's guide for coding agents, written at the module root.
 	quickstartGuide = "AGENTS_QUICKSTART.md"
 	// surlaModule is Surla's module path.
 	surlaModule = "github.com/goadesign/surla"
@@ -189,6 +189,16 @@ var (
 	// commitHexPattern matches a full 40- or 64-character lowercase hex Git
 	// commit ID.
 	commitHexPattern = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
+
+	// starterStory summarizes the Story the starter ships in design/story.go
+	// (templates/candidate/design/story.go.tmpl) as an evaluation reports it:
+	// its one finished flow. Init renders the test module's Story table from
+	// it, as a build renders it from the evaluated Story, so the starter's
+	// generated test program equals what the first build prepares.
+	starterStory = []designeval.StorySummary{{
+		Name:  "Prices",
+		Flows: []designeval.StoryFlow{{Key: "prices-cookie", Title: "Price a cookie", Complete: true}},
+	}}
 )
 
 // Init creates the project described by o, running every command with run
@@ -470,7 +480,8 @@ func newData(o Options) (data, error) {
 }
 
 // build creates both modules under root. For each module it writes go.mod and
-// design/, resolves the design's dependencies, writes the test module's
+// design/ (for the test module with its Story table, writeStoryTests),
+// resolves the design's dependencies, writes the test module's
 // acceptance package, generates code with gen, writes the remaining files,
 // tidies again, vets, and runs `go test ./...`
 // (which compiles and checks every package in the candidate module and runs
@@ -493,6 +504,12 @@ func build(ctx context.Context, root, logs string, d data, run Runner, gen Gener
 		designFiles, err := render(dir, m.templates, d, isDesignFile)
 		if err != nil {
 			return err
+		}
+		if m.requireSurla {
+			if err := writeStoryTests(dir); err != nil {
+				return err
+			}
+			designFiles = append(designFiles, designeval.StoryTestsPath)
 		}
 		steps := [][]string{{"go", "mod", "tidy"}}
 		if m.requireSurla {
@@ -636,6 +653,21 @@ func runAll(ctx context.Context, dir, moduleDir, logs string, steps [][]string, 
 			step.Tail = tail
 			return errors.Join(step, tailErr)
 		}
+	}
+	return nil
+}
+
+// writeStoryTests writes the Story table of the test module in dir, rendered
+// from starterStory with the package its rendered design files declare, before
+// the module is tidied and generated, so both see it. dir is a new,
+// unpublished module, so there is nothing to replace.
+func writeStoryTests(dir string) error {
+	table, _, err := designeval.StoryTests(os.DirFS(dir), starterStory)
+	if err != nil {
+		return fmt.Errorf("render the test module's Story table: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(designeval.StoryTestsPath)), table, 0o644); err != nil {
+		return fmt.Errorf("write the test module's Story table: %w", err)
 	}
 	return nil
 }

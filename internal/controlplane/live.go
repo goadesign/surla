@@ -51,14 +51,12 @@ type (
 		// Command is the argument list that runs this surla executable;
 		// targets start `<Command> verify-run live <dir>`.
 		Command []string
-		// Env is the environment live targets start with. It should carry
-		// the model provider settings the evaluator suite needs.
+		// Env is the environment live targets start from: the server's own
+		// environment. A launch removes from it every provider family and
+		// SURLA_LIVE_MODEL_* variable, then adds the model choice in force
+		// and its provider's handed-over settings, so the hand-over is the
+		// one source of provider settings.
 		Env []string
-		// Model is the model choice Env was derived from; get_model_connection
-		// reports it until configure_model replaces both. It is required:
-		// New refuses a LiveConfig whose Model names no choice, because the
-		// server could otherwise not say which model live targets get.
-		Model gensurla.Connection
 		// StartTimeout bounds how long building and starting a target may
 		// take.
 		StartTimeout time.Duration
@@ -131,6 +129,9 @@ type (
 		liveTimeout time.Duration
 		// liveRoot is <CardsDir>/live.
 		liveRoot string
+		// liveBaseEnv is LiveConfig.Env, the environment every launch builds
+		// from; it never changes.
+		liveBaseEnv []string
 		// serverCtx lives as long as the control plane. Close cancels it with
 		// cancelServer; a canceled serverCtx is the fact that no target may
 		// start any more, and it also ends a start in progress.
@@ -228,7 +229,8 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		cmd = verCfg.Command
 	}
 	launchedAt := time.Now()
-	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, cmd, c.liveEnv())
+	env, settings := c.liveLaunch()
+	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, cmd, env, settings)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "live target did not launch")
@@ -549,6 +551,7 @@ func newLiveState(cfg *LiveConfig, cardsDir string) liveState {
 		liveCommand:    cfg.Command,
 		liveTimeout:    cfg.StartTimeout,
 		liveRoot:       LiveRoot(cardsDir),
+		liveBaseEnv:    cfg.Env,
 		serverCtx:      ctx,
 		cancelServer:   cancel,
 	}

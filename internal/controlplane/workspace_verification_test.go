@@ -83,7 +83,6 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 				Command:      []string{self},
 				Env:          append(os.Environ(), liveTargetModeEnv+"=serve"),
 				StartTimeout: time.Minute,
-				Model:        noModel(),
 			},
 		}
 	}
@@ -210,7 +209,7 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 		{
 			name: "tests not accepted", build: assigned, candidate: repo.candidate,
 			refusal: "tests_not_accepted", reason: "the tests of this build are not accepted; their state is assigned",
-			step: "the test writer writes the required tests and reports them finished; the builder verifies again once Surla accepts them",
+			step: "the test writer writes the required tests and reports them finished; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 		{
 			name: "unknown candidate commit", build: accepted, tests: repo.tests, candidate: unknown,
@@ -254,7 +253,7 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 				RunsDir:         runsDir,
 				SurlaVersion:    testSurlaVersion,
 				WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
-				Live:            &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
+				Live:            &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
 			}
 			var cp *ControlPlane
 			var card *gensurla.ChangeCardResult
@@ -361,18 +360,18 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 	}{
 		{
 			name: "reported", tw: testWriterAssignment{State: testsReported, Findings: []string{}},
-			want: "reported: Surla is checking the test writer's report; the builder verifies again after its verdict",
+			want: "reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 		{
 			name: "needs changes", tw: testWriterAssignment{State: testsNeedChanges, Findings: []string{"refund_over_limit is missing"}, CheckedAt: time.Now()},
-			want: "needs changes: the test writer fixes Surla's findings and reports again; the builder verifies again once Surla accepts them",
+			want: "needs changes: the test writer fixes Surla's findings and reports again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 		{
 			name: "could not run", tw: testWriterAssignment{
 				State: testsCouldNotRun, Findings: []string{}, Reason: "git could not write the tests branch",
 				Step: "Free disk space, then report again.", CheckedAt: time.Now(),
 			},
-			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again.",
+			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 	}
 	for _, tc := range cases {
@@ -395,6 +394,46 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 			assertRefusalSays(t, err, "tests_not_accepted", "the tests of this build are not accepted; their state is "+tc.want)
 			_, err = os.Stat(runsDir)
 			assert.ErrorIs(t, err, os.ErrNotExist, "no run is accepted")
+		})
+	}
+}
+
+// TestTestsNotAcceptedIsWordedForEachReader verifies that verify_change and
+// approve_merge, refused for the same build in the same state, each give the
+// text written for its reader: the builder's ends with the builder's own step,
+// and the user's names the builder and instructs no agent.
+func TestTestsNotAcceptedIsWordedForEachReader(t *testing.T) {
+	repo := newLayoutRepo(t, filepath.Join(realTempDir(t), "repo"))
+	cp := newBuildControlPlane(t, Options{
+		WorkspaceDir:    repo.workspace,
+		RunsDir:         filepath.Join(realTempDir(t), "runs"),
+		SurlaVersion:    testSurlaVersion,
+		WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
+	})
+	card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit waits"))
+	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+	require.NoError(t, err)
+	saveTestWriter(t, cp, "chg", testWriterAssignment{State: testsReported, Findings: []string{}})
+
+	_, verifyErr := cp.VerifyChange(asCaller("alice@example.com", CallerBuilder), &gensurla.VerifyChangePayload{
+		ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: repo.candidate,
+	})
+	_, approveErr := cp.ApproveMerge(asCaller("alice@example.com", CallerUser), &gensurla.ApproveMergePayload{
+		ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: repo.candidate, ReportDigest: strings.Repeat("a", 64),
+	})
+	for _, tc := range []struct {
+		reader string
+		err    error
+		want   string
+	}{
+		{"builder", verifyErr, "the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"},
+		{"user", approveErr, "the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; the builder verifies again after its verdict"},
+	} {
+		t.Run(tc.reader, func(t *testing.T) {
+			var refusal *goa.ServiceError
+			require.ErrorAs(t, tc.err, &refusal)
+			assert.Equal(t, "tests_not_accepted", refusal.Name)
+			assert.Equal(t, tc.want, refusal.Message)
 		})
 	}
 }
@@ -606,7 +645,7 @@ func startRunFor(t *testing.T, cp *ControlPlane, verifiable bool, card *gensurla
 	plan.WorkDir = filepath.Join(runsDir, runID, "work")
 	_, err := verifyrun.Start(runsDir, verifyrun.Request{
 		RunID: runID, Owner: "alice@example.com", ChangeID: card.ChangeID, AcceptedAt: time.Now().UTC(), Timeout: time.Hour, Plan: plan,
-	}, []string{"/bin/sh", "-c", "exit 0", "sh"})
+	}, []string{"/bin/sh", "-c", "exit 0", "sh"}, nil)
 	require.NoError(t, err)
 	return runID
 }

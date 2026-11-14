@@ -514,6 +514,7 @@ func TestProjectStartLeavesLiveTerminalUnread(t *testing.T) {
 // TestProjectStartThatAnswersReadsNothing proves a normal start never reads its terminal.
 func TestProjectStartThatAnswersReadsNothing(t *testing.T) {
 	t.Chdir(t.TempDir())
+	isolateProviderFamilies(t)
 	runtime := projectDispatchRuntime(t)
 	runtime.readTerminal = func(context.Context, string) (string, error) {
 		t.Error("an answering server's terminal must not be read")
@@ -585,6 +586,7 @@ func TestInternalServerTakesOnlyItsStateFolder(t *testing.T) {
 // the server publishes its management record in exactly the folder named by -state.
 func TestServeReadsOnlyItsStateFolder(t *testing.T) {
 	isolateServeWorkspace(t)
+	isolateProviderFamilies(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	t.Chdir(t.TempDir())
@@ -592,7 +594,7 @@ func TestServeReadsOnlyItsStateFolder(t *testing.T) {
 	// The shared team fixture keeps its rosters under the configuration folder, so this
 	// test binds its own rosters folder and leaves the configuration folder unreachable.
 	rosters := t.TempDir()
-	runtime.teamDependencies = func(ctx context.Context) (project.TeamDependencies, error) {
+	runtime.teamDependencies = func(ctx context.Context, _ []string) (project.TeamDependencies, error) {
 		return project.TeamDependencies{Lifetime: ctx, Host: &fixtureTeamHost{}, RosterDirectory: rosters, Shell: "/bin/zsh"}, nil
 	}
 	runtime.configRoot = func() (string, error) {

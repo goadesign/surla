@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/goadesign/surla/internal/abspath"
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
@@ -82,6 +83,9 @@ type (
 		// readerDone is closed once the reader of the executor's output has
 		// closed the pipe.
 		readerDone chan struct{}
+		// settings are the provider request settings the target was given;
+		// startError protects the log excerpt it returns against them.
+		settings []modelsettings.Settings
 		// stopOnce makes Stop idempotent; stopErr is its result.
 		stopOnce sync.Once
 		stopErr  error
@@ -112,7 +116,7 @@ const (
 	// summaryLiveSuite describes a suite that did not report a ready target
 	// and what the operator can check.
 	summaryLiveSuite = "The evaluator suite did not start a live target. Check that its suite.Command sets Live " +
-		"and that the project server's environment has the model provider settings the suite reads."
+		"and that a model is configured in Surla."
 	// maxLiveDetail bounds the executor log excerpt kept in a
 	// LiveStartError after its directory is removed.
 	maxLiveDetail = 8 << 10
@@ -131,7 +135,10 @@ var ErrLiveEnded = errors.New("live target ended")
 type LiveStartError struct {
 	// Summary describes the failure in one sentence.
 	Summary string
-	// Detail is at most maxLiveDetail bytes from the end of executor.log.
+	// Detail is the last maxLiveDetail bytes of executor.log with the
+	// settings the target was given replaced (modelsettings.ProtectExcerpt),
+	// so a replacement can make it longer, as valid UTF-8 for the span
+	// exporter: a character the tail cuts is left out.
 	Detail string
 	// Err is the underlying cause, or nil.
 	Err error
@@ -164,12 +171,22 @@ func LeftoverLiveDirs(root string) ([]string, error) {
 // and must eventually call Stop. key is the target's credential: it
 // reaches the executor and the suite only through the environment
 // (suite.LiveKeyEnv), and the suite passes it to the candidate. env is the
-// executor's environment without TMPDIR or the key, which LaunchLive sets.
-// command is the argument list that runs this program. When LaunchLive fails,
-// no process was started and the directory it created is removed.
-// The allocated directory and child TMPDIR are absolute and symlink-free, so
-// preparation and suite processes can change directories without changing them.
-func LaunchLive(root string, plan verify.Plan, key string, command, env []string) (*LiveProcess, error) {
+// executor's environment; LaunchLive replaces its TMPDIR and key and drops
+// every provider family from it, then adds settings, the provider request
+// settings the target may use, which are thus their one source. Settings
+// reach the executor only through its environment, never an argument or
+// live.json. command is the argument list that runs this program. When
+// LaunchLive fails, no process was started and the directory it created is
+// removed. The allocated directory and child TMPDIR are absolute and
+// symlink-free, so preparation and suite processes can change directories
+// without changing them.
+func LaunchLive(
+	root string,
+	plan verify.Plan,
+	key string,
+	command, env []string,
+	settings []modelsettings.Settings,
+) (*LiveProcess, error) {
 	if key == "" {
 		return nil, errors.New("live target key is required")
 	}
@@ -213,6 +230,9 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.ExtraFiles = []*os.File{control}
 	cmd.Env = append(liveEnv(env), "TMPDIR="+tmp, suite.LiveKeyEnv+"="+key)
+	for _, s := range settings {
+		cmd.Env = append(cmd.Env, s.Environ()...)
+	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
@@ -224,6 +244,7 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	p := &LiveProcess{
 		dir: dir, pgid: cmd.Process.Pid, control: keep, exited: make(chan struct{}),
 		ended: make(chan struct{}), lines: make(chan liveLine, 1), readerDone: make(chan struct{}),
+		settings: settings,
 	}
 	go p.readOutput(stdout)
 	go func() {
@@ -236,16 +257,23 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 // Live runs as `surla verify-run live <dir>`, the leader of the target's
 // process group. Its first action watches the control pipe on descriptor 3,
 // so the whole group dies with the process that started it at any stage. It
-// then prepares the plan saved in live.json with prepare, starts the suite in
-// --live mode in the same group, relays the suite's ready line to out and
-// waits for the suite to exit. A failure prints a builder-safe summary as the
-// line and the full error to errLog. Live returns an error whenever the
-// target is not running, so its exit status is never 0 after a start.
+// then takes every provider family out of its own process
+// (takeProviderFamilies), so preparation never sees one, prepares the plan
+// saved in live.json with prepare, starts the suite in --live mode in the
+// same group with what it took added back to the suite's environment only,
+// relays the suite's ready line to out and waits for the suite to exit. A
+// failure prints a builder-safe summary as the line and the full error to
+// errLog. Live returns an error whenever the target is not running, so its
+// exit status is never 0 after a start.
 func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepared, error), out, errLog io.Writer) error {
 	syscall.CloseOnExec(passedFD)
 	control := os.NewFile(passedFD, "control")
 	go watchSupervisor(control)
 
+	providers, err := takeProviderFamilies()
+	if err != nil {
+		return reportLive(out, errLog, summaryLiveSuite, err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
 	var req LiveRequest
@@ -266,7 +294,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		return reportLive(out, errLog, summaryLiveSuite, err)
 	}
 	cmd := exec.CommandContext(ctx, prep.SuiteBin, append([]string{"--live"}, prep.ArtifactFlags...)...)
-	cmd.Env = verify.LiveProgramEnv(req.Plan, os.Environ())
+	cmd.Env = verify.LiveProgramEnv(req.Plan, append(os.Environ(), providers...))
 	cmd.Stdout = suiteOutW
 	cmd.Stderr = errLog
 	// The suite and everything it starts stay in this process group, which
@@ -325,9 +353,15 @@ func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 	}
 }
 
-// startError returns a *LiveStartError with the executor log's current tail.
+// startError returns a *LiveStartError with the executor log's current tail,
+// read with the context before it that modelsettings.ProtectExcerpt needs,
+// which replaces every byte of a setting the target was given, whoever
+// wrote the line, including one the tail's start cuts or the log's end
+// leaves unfinished. The log itself is the suite's own output and stays as
+// written.
 func (p *LiveProcess) startError(summary string, cause error) *LiveStartError {
-	return &LiveStartError{Summary: summary, Detail: logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail), Err: cause}
+	text, start := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail, modelsettings.ExcerptContext)
+	return &LiveStartError{Summary: summary, Detail: modelsettings.ProtectExcerpt(text, start, p.settings...), Err: cause}
 }
 
 // Dir returns the live directory, which Stop removes.
@@ -438,24 +472,27 @@ func decodeLiveLine(text string) (liveLine, error) {
 	return line, nil
 }
 
-// logTail returns at most n bytes from the end of the file at path, or a
-// note saying why it could not be read.
-func logTail(path string, n int64) string {
+// logTail reads the tail of the file at path, its last n bytes, together
+// with up to context bytes before it, bounded by the file's start. It
+// returns what it read and where the tail starts in it, or a note saying
+// why the file could not be read, which is all tail.
+func logTail(path string, n, context int64) (string, int) {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Sprintf("(executor log unreadable: %v)", err)
+		return fmt.Sprintf("(executor log unreadable: %v)", err), 0
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return fmt.Sprintf("(executor log unreadable: %v)", err)
+		return fmt.Sprintf("(executor log unreadable: %v)", err), 0
 	}
-	start := max(info.Size()-n, 0)
-	b := make([]byte, info.Size()-start)
-	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	tail := max(info.Size()-n, 0)
+	from := max(tail-context, 0)
+	b := make([]byte, info.Size()-from)
+	if _, err := f.ReadAt(b, from); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Sprintf("(executor log unreadable: %v)", err), 0
 	}
-	return string(b)
+	return string(b), int(tail - from)
 }
 
 // decodeLiveRequest reads live.json, rejecting unknown fields, trailing data
@@ -480,10 +517,12 @@ func decodeLiveRequest(dir string, req *LiveRequest) error {
 	return nil
 }
 
-// liveEnv returns env without TMPDIR or the live key, which LaunchLive sets.
+// liveEnv returns env without TMPDIR, the live key or any provider family,
+// which LaunchLive sets from its own arguments.
 func liveEnv(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, kv := range env {
+	_, rest := modelsettings.Split(env)
+	out := make([]string, 0, len(rest))
+	for _, kv := range rest {
 		name, _, _ := strings.Cut(kv, "=")
 		if name == "TMPDIR" || name == suite.LiveKeyEnv {
 			continue

@@ -177,18 +177,41 @@ type Service interface {
 	// blanket compatibility verdict.
 	Diff(context.Context, *DiffPayload) (res *DiffResult, err error)
 	// Choose, on a running control plane without restarting, the model that CP3
-	// live targets started afterwards receive: a direct provider and model name
-	// (using that provider's API key from the project server's environment) or a
-	// running gRPC model gateway. start_live_target passes the choice to the
-	// target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and
-	// SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.
+	// live targets started afterwards receive: a direct provider and model name,
+	// whose request settings the surla command handed to the project server with
+	// hand_over_model_settings, or a running gRPC model gateway. start_live_target
+	// passes the choice to the target's evaluator suite as
+	// SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as
+	// SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request
+	// settings.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Report the model choice live targets started afterwards receive: none, a
-	// direct provider and model name, or a model gateway address. It starts from
-	// the choice made when the server started and follows every accepted
-	// configure_model call. It never returns an API key or any other environment
-	// value, and it changes nothing. Verification runs do not use this choice.
+	// direct provider and model name, or a model gateway address. It starts as
+	// none. While no model is chosen, a hand_over_model_settings call that holds a
+	// provider's settings selects that provider's default model; every accepted
+	// configure_model call replaces the choice. It never returns an API key or any
+	// other setting value, and it changes nothing. Verification runs do not use
+	// this choice.
 	GetModelConnection(context.Context) (res *ModelConnection, err error)
+	// The surla command, after it confirms the project server's identity, hands
+	// over the request settings of each model provider whose key is set in the
+	// shell it runs in: the key and the listed settings that route and
+	// authenticate the provider's requests. The project server holds them in
+	// memory only and forgets them when it stops. A live target's test program,
+	// including a candidate commit's test module that agents wrote, receives the
+	// chosen provider's held settings; a verification with the operator's stored
+	// evaluator receives every held provider's settings; tests a separate agent
+	// wrote for a verification, and the check helper, receive none. An absent
+	// provider attribute keeps what is held for that provider. A present one
+	// replaces everything held for it and must include the provider's key
+	// variable; an empty one is refused, because it is neither a way to keep nor a
+	// way to forget. A request with neither attribute changes nothing and reports
+	// what is held. When no model is chosen and a provider is now held, live
+	// targets use that provider's default model, anthropic before openai; any
+	// other choice stays. The result names the held variables and the model
+	// choice, never a value. Only the surla command's management credential may
+	// call this operation; it is never an MCP tool.
+	HandOverModelSettings(context.Context, *HandOverModelSettingsPayload) (res *ModelSettingsResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
 	// eval/ verification harness, creating the initial Git commit, and switching
@@ -367,7 +390,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [39]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "decline_revision", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "get_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "get_model_connection", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "get_team", "show_team_pane", "start_team_agents", "list_changes", "wait_for_changes", "start_build", "get_build", "get_test_findings", "list_builder_assignments", "get_builder_assignment", "list_test_writer_assignments", "get_test_writer_assignment", "report_tests_finished"}
+var MethodNames = [40]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "decline_revision", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "get_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "get_model_connection", "hand_over_model_settings", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "get_team", "show_team_pane", "start_team_agents", "list_changes", "wait_for_changes", "start_build", "get_build", "get_test_findings", "list_builder_assignments", "get_builder_assignment", "list_test_writer_assignments", "get_test_writer_assignment", "report_tests_finished"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -1069,6 +1092,19 @@ type GetVerificationPayload struct {
 	RunID string
 }
 
+// HandOverModelSettingsPayload is the payload type of the surla service
+// hand_over_model_settings method.
+type HandOverModelSettingsPayload struct {
+	// Request settings for anthropic, keyed by variable name, replacing everything
+	// held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute
+	// to keep what is held.
+	Anthropic map[string]string
+	// Request settings for openai, keyed by variable name, replacing everything
+	// held for openai. They must include OPENAI_API_KEY. Omit the attribute to
+	// keep what is held.
+	Openai map[string]string
+}
+
 // InitProjectPayload is the payload type of the surla service init_project
 // method.
 type InitProjectPayload struct {
@@ -1208,8 +1244,8 @@ type ModelConnection struct {
 	Connection Connection
 }
 
-// A direct model provider and model name. The provider's API key stays in the
-// project server's environment and is never returned.
+// A direct model provider and model name. The provider's request settings stay
+// in the project server's memory and are never returned.
 type ModelDirect struct {
 	// Direct model provider.
 	Provider string
@@ -1225,6 +1261,17 @@ type ModelGateway struct {
 
 // No model is chosen: live targets start without a model setting.
 type ModelNone struct {
+}
+
+// ModelSettingsResult is the result type of the surla service
+// hand_over_model_settings method.
+type ModelSettingsResult struct {
+	// Names of the request settings held for each provider, sorted; a provider
+	// holds nothing until its settings are handed over.
+	Held map[string][]string
+	// none when no model is chosen; direct with a provider and model name; gateway
+	// with a model gateway address.
+	Connection Connection
 }
 
 // The run used the operator's evaluator: the one stored with surla
@@ -1552,7 +1599,9 @@ type TeamRoleState struct {
 	Handle string
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State string
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention string
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -4060,6 +4109,48 @@ func validatejsonGetVerificationPayloadTransport(value *jsonGetVerificationPaylo
 	return err
 }
 
+// jsonHandOverModelSettingsPayloadTransport stores JSON fields until they have been validated.
+type jsonHandOverModelSettingsPayloadTransport struct {
+	// Request settings for anthropic, keyed by variable name, replacing everything
+	// held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute
+	// to keep what is held.
+	Anthropic map[string]string `json:"anthropic,omitempty"`
+	// Request settings for openai, keyed by variable name, replacing everything
+	// held for openai. They must include OPENAI_API_KEY. Omit the attribute to
+	// keep what is held.
+	Openai map[string]string `json:"openai,omitempty"`
+}
+
+// validatejsonHandOverModelSettingsPayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonHandOverModelSettingsPayloadTransport(value *jsonHandOverModelSettingsPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	for k, v := range value.Anthropic {
+		if !(k == "ANTHROPIC_API_KEY" || k == "ANTHROPIC_AUTH_TOKEN" || k == "ANTHROPIC_BASE_URL" || k == "ANTHROPIC_CUSTOM_HEADERS") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.anthropic.key", k, []any{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS"}))
+		}
+		if utf8.RuneCountInString(v) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.anthropic[key]", v, utf8.RuneCountInString(v), 1, true))
+		}
+		if utf8.RuneCountInString(v) > 4096 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.anthropic[key]", v, utf8.RuneCountInString(v), 4096, false))
+		}
+	}
+	for k, v := range value.Openai {
+		if !(k == "OPENAI_API_KEY" || k == "OPENAI_BASE_URL" || k == "OPENAI_ORG_ID" || k == "OPENAI_PROJECT_ID" || k == "OPENAI_CUSTOM_HEADERS") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.openai.key", k, []any{"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "OPENAI_CUSTOM_HEADERS"}))
+		}
+		if utf8.RuneCountInString(v) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.openai[key]", v, utf8.RuneCountInString(v), 1, true))
+		}
+		if utf8.RuneCountInString(v) > 4096 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.openai[key]", v, utf8.RuneCountInString(v), 4096, false))
+		}
+	}
+	return err
+}
+
 // jsonInitProjectPayloadTransport stores JSON fields until they have been validated.
 type jsonInitProjectPayloadTransport struct {
 	// Go module path of the new service (for example example.com/shop).
@@ -4526,6 +4617,59 @@ func validatejsonModelNoneTransport(value *jsonModelNoneTransport) (err error) {
 		return goa.MissingFieldError("body", "JSON value")
 	}
 
+	return err
+}
+
+// jsonModelSettingsResultTransport stores JSON fields until they have been validated.
+type jsonModelSettingsResultTransport struct {
+	// Names of the request settings held for each provider, sorted; a provider
+	// holds nothing until its settings are handed over.
+	Held map[string][]string `json:"held"`
+	// none when no model is chosen; direct with a provider and model name; gateway
+	// with a model gateway address.
+	Connection *jsonConnectionTransport `json:"connection"`
+}
+
+// validatejsonModelSettingsResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonModelSettingsResultTransport(value *jsonModelSettingsResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Held == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("held", "body"))
+	}
+	if value.Connection == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection", "body"))
+	}
+	for k, _ := range value.Held {
+		if !(k == "anthropic" || k == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.held.key", k, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.Connection != nil {
+
+		if err2 := value.Connection.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.Connection.Kind()) {
+			case "direct":
+				actual, _ := value.Connection.AsDirect()
+				if actual != nil {
+					if err2 := validatejsonModelDirectTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "gateway":
+				actual, _ := value.Connection.AsGateway()
+				if actual != nil {
+					if err2 := validatejsonModelGatewayTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
 	return err
 }
 
@@ -5387,7 +5531,9 @@ type jsonTeamRoleStateTransport struct {
 	Handle *string `json:"handle"`
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State *string `json:"state"`
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention *string `json:"attention"`
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -5432,8 +5578,8 @@ func validatejsonTeamRoleStateTransport(value *jsonTeamRoleStateTransport) (err 
 		}
 	}
 	if value.Attention != nil {
-		if !(*value.Attention == "none" || *value.Attention == "permission" || *value.Attention == "question" || *value.Attention == "auth" || *value.Attention == "silent" || *value.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *value.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*value.Attention == "none" || *value.Attention == "permission" || *value.Attention == "question" || *value.Attention == "auth" || *value.Attention == "silent" || *value.Attention == "assignment" || *value.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *value.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if value.Watcher != nil {
@@ -7504,6 +7650,33 @@ func validateGenerateCodeResultOriginal(value *GenerateCodeResult) (err error) {
 	return err
 }
 
+// validateHandOverModelSettingsPayloadOriginal checks the original typed value before JSON conversion.
+func validateHandOverModelSettingsPayloadOriginal(value *HandOverModelSettingsPayload) (err error) {
+	for k, v := range value.Anthropic {
+		if !(k == "ANTHROPIC_API_KEY" || k == "ANTHROPIC_AUTH_TOKEN" || k == "ANTHROPIC_BASE_URL" || k == "ANTHROPIC_CUSTOM_HEADERS") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.anthropic.key", k, []any{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS"}))
+		}
+		if utf8.RuneCountInString(v) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.anthropic[key]", v, utf8.RuneCountInString(v), 1, true))
+		}
+		if utf8.RuneCountInString(v) > 4096 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.anthropic[key]", v, utf8.RuneCountInString(v), 4096, false))
+		}
+	}
+	for k, v := range value.Openai {
+		if !(k == "OPENAI_API_KEY" || k == "OPENAI_BASE_URL" || k == "OPENAI_ORG_ID" || k == "OPENAI_PROJECT_ID" || k == "OPENAI_CUSTOM_HEADERS") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.openai.key", k, []any{"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "OPENAI_CUSTOM_HEADERS"}))
+		}
+		if utf8.RuneCountInString(v) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.openai[key]", v, utf8.RuneCountInString(v), 1, true))
+		}
+		if utf8.RuneCountInString(v) > 4096 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.openai[key]", v, utf8.RuneCountInString(v), 4096, false))
+		}
+	}
+	return err
+}
+
 // validateInitProjectPayloadOriginal checks the original typed value before JSON conversion.
 func validateInitProjectPayloadOriginal(value *InitProjectPayload) (err error) {
 	if utf8.RuneCountInString(value.ModulePath) < 3 {
@@ -7664,6 +7837,44 @@ func validateModelGatewayOriginal(value *ModelGateway) (err error) {
 	if utf8.RuneCountInString(value.GatewayAddr) < 1 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("value.gateway_addr", value.GatewayAddr, utf8.RuneCountInString(value.GatewayAddr), 1, true))
 	}
+	return err
+}
+
+// validateModelSettingsResultOriginal checks the original typed value before JSON conversion.
+func validateModelSettingsResultOriginal(value *ModelSettingsResult) (err error) {
+	if value.Held == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("held", "value"))
+	}
+	if value.Connection.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection", "value"))
+	}
+	for k, _ := range value.Held {
+		if !(k == "anthropic" || k == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.held.key", k, []any{"anthropic", "openai"}))
+		}
+	}
+
+	if err2 := value.Connection.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	} else {
+		switch string(value.Connection.Kind()) {
+		case "direct":
+			actual, _ := value.Connection.AsDirect()
+			if actual != nil {
+				if err2 := validateModelDirectOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "gateway":
+			actual, _ := value.Connection.AsGateway()
+			if actual != nil {
+				if err2 := validateModelGatewayOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
+	}
+
 	return err
 }
 
@@ -7841,8 +8052,8 @@ func validateTeamRoleStateOriginal(value *TeamRoleState) (err error) {
 	if !(value.State == "not_started" || value.State == "ended" || value.State == "starting" || value.State == "needs_you" || value.State == "working" || value.State == "waiting" || value.State == "error" || value.State == "unknown") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.state", value.State, []any{"not_started", "ended", "starting", "needs_you", "working", "waiting", "error", "unknown"}))
 	}
-	if !(value.Attention == "none" || value.Attention == "permission" || value.Attention == "question" || value.Attention == "auth" || value.Attention == "silent" || value.Attention == "unknown") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.attention", value.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+	if !(value.Attention == "none" || value.Attention == "permission" || value.Attention == "question" || value.Attention == "auth" || value.Attention == "silent" || value.Attention == "assignment" || value.Attention == "unknown") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.attention", value.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 	}
 	if !(value.Watcher == "held" || value.Watcher == "gone" || value.Watcher == "unknown") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.watcher", value.Watcher, []any{"held", "gone", "unknown"}))
@@ -15120,6 +15331,131 @@ func DecodeGetVerificationPayload(data []byte) (out *GetVerificationPayload, err
 	return out, nil
 }
 
+// EncodeHandOverModelSettingsPayload turns a service value into JSON using the field names in the Goa design.
+func EncodeHandOverModelSettingsPayload(in *HandOverModelSettingsPayload) ([]byte, error) {
+	if err := checkHandOverModelSettingsPayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode HandOverModelSettingsPayload JSON: %w", err)
+	}
+	if err := validateHandOverModelSettingsPayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate HandOverModelSettingsPayload value: %w", err)
+	}
+	var body *jsonHandOverModelSettingsPayloadTransport
+	{
+		body = &jsonHandOverModelSettingsPayloadTransport{}
+		if in.Anthropic != nil {
+			body.Anthropic = make(map[string]string, len(in.Anthropic))
+			for key, val := range in.Anthropic {
+				tk := key
+				tv := val
+				body.Anthropic[tk] = tv
+			}
+		}
+		if in.Openai != nil {
+			body.Openai = make(map[string]string, len(in.Openai))
+			for key, val := range in.Openai {
+				tk := key
+				tv := val
+				body.Openai[tk] = tv
+			}
+		}
+	}
+	if err := validatejsonHandOverModelSettingsPayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate HandOverModelSettingsPayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode HandOverModelSettingsPayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateHandOverModelSettingsPayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateHandOverModelSettingsPayloadValue(in *HandOverModelSettingsPayload) error {
+	if err := checkHandOverModelSettingsPayloadValue(in); err != nil {
+		return fmt.Errorf("validate HandOverModelSettingsPayload value: %w", err)
+	}
+	if err := validateHandOverModelSettingsPayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate HandOverModelSettingsPayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "HandOverModelSettingsPayload")
+	}
+
+	var body *jsonHandOverModelSettingsPayloadTransport
+	{
+		body = &jsonHandOverModelSettingsPayloadTransport{}
+		if in.Anthropic != nil {
+			body.Anthropic = make(map[string]string, len(in.Anthropic))
+			for key, val := range in.Anthropic {
+				tk := key
+				tv := val
+				body.Anthropic[tk] = tv
+			}
+		}
+		if in.Openai != nil {
+			body.Openai = make(map[string]string, len(in.Openai))
+			for key, val := range in.Openai {
+				tk := key
+				tv := val
+				body.Openai[tk] = tv
+			}
+		}
+	}
+	if err := validatejsonHandOverModelSettingsPayloadTransport(body); err != nil {
+		return fmt.Errorf("validate HandOverModelSettingsPayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeHandOverModelSettingsPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeHandOverModelSettingsPayload(data []byte) (out *HandOverModelSettingsPayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode HandOverModelSettingsPayload JSON: %w", err)
+	}
+	if err := validateHandOverModelSettingsPayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode HandOverModelSettingsPayload JSON: %w", err)
+	}
+	var body *jsonHandOverModelSettingsPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode HandOverModelSettingsPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode HandOverModelSettingsPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode HandOverModelSettingsPayload JSON after first value: %w", err)
+	}
+	if err := validatejsonHandOverModelSettingsPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate HandOverModelSettingsPayload JSON: %w", err)
+	}
+	{
+		out = &HandOverModelSettingsPayload{}
+		if body.Anthropic != nil {
+			out.Anthropic = make(map[string]string, len(body.Anthropic))
+			for key, val := range body.Anthropic {
+				tk := key
+				tv := val
+				out.Anthropic[tk] = tv
+			}
+		}
+		if body.Openai != nil {
+			out.Openai = make(map[string]string, len(body.Openai))
+			for key, val := range body.Openai {
+				tk := key
+				tv := val
+				out.Openai[tk] = tv
+			}
+		}
+	}
+	return out, nil
+}
+
 // EncodeInitProjectPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeInitProjectPayload(in *InitProjectPayload) ([]byte, error) {
 	if err := checkInitProjectPayloadValue(in); err != nil {
@@ -16668,6 +17004,213 @@ func DecodeModelNone(data []byte) (out *ModelNone, err error) {
 	}
 	{
 		out = &ModelNone{}
+	}
+	return out, nil
+}
+
+// EncodeModelSettingsResult turns a service value into JSON using the field names in the Goa design.
+func EncodeModelSettingsResult(in *ModelSettingsResult) ([]byte, error) {
+	if err := checkModelSettingsResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode ModelSettingsResult JSON: %w", err)
+	}
+	if err := validateModelSettingsResultOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ModelSettingsResult value: %w", err)
+	}
+	var body *jsonModelSettingsResultTransport
+	{
+		body = &jsonModelSettingsResultTransport{}
+		body.Held = make(map[string][]string, len(in.Held))
+		for key, val := range in.Held {
+			tk := key
+			if val == nil {
+				body.Held[tk] = nil
+				continue
+			}
+			tv := make([]string, len(val))
+			for i, val := range val {
+				tv[i] = val
+			}
+			body.Held[tk] = tv
+		}
+		var connectionValue jsonConnectionTransport
+		switch string(in.Connection.Kind()) {
+		case "none":
+			actual, _ := in.Connection.AsNone()
+			var obj *jsonModelNoneTransport
+			if actual != nil {
+				obj = encodeModelNoneToModelNoneTransport(actual)
+			}
+			u := connectionValue
+			u.SetNone((*jsonModelNoneTransport)(obj))
+			connectionValue = u
+		case "direct":
+			actual, _ := in.Connection.AsDirect()
+			var obj *jsonModelDirectTransport
+			if actual != nil {
+				obj = encodeModelDirectToModelDirectTransport(actual)
+			}
+			u := connectionValue
+			u.SetDirect((*jsonModelDirectTransport)(obj))
+			connectionValue = u
+		case "gateway":
+			actual, _ := in.Connection.AsGateway()
+			var obj *jsonModelGatewayTransport
+			if actual != nil {
+				obj = encodeModelGatewayToModelGatewayTransport(actual)
+			}
+			u := connectionValue
+			u.SetGateway((*jsonModelGatewayTransport)(obj))
+			connectionValue = u
+		}
+		body.Connection = &connectionValue
+	}
+	if err := validatejsonModelSettingsResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ModelSettingsResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ModelSettingsResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateModelSettingsResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateModelSettingsResultValue(in *ModelSettingsResult) error {
+	if err := checkModelSettingsResultValue(in); err != nil {
+		return fmt.Errorf("validate ModelSettingsResult value: %w", err)
+	}
+	if err := validateModelSettingsResultOriginal(in); err != nil {
+		return fmt.Errorf("validate ModelSettingsResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ModelSettingsResult")
+	}
+
+	var body *jsonModelSettingsResultTransport
+	{
+		body = &jsonModelSettingsResultTransport{}
+		body.Held = make(map[string][]string, len(in.Held))
+		for key, val := range in.Held {
+			tk := key
+			if val == nil {
+				body.Held[tk] = nil
+				continue
+			}
+			tv := make([]string, len(val))
+			for i, val := range val {
+				tv[i] = val
+			}
+			body.Held[tk] = tv
+		}
+		var connectionValue jsonConnectionTransport
+		switch string(in.Connection.Kind()) {
+		case "none":
+			actual, _ := in.Connection.AsNone()
+			var obj *jsonModelNoneTransport
+			if actual != nil {
+				obj = encodeModelNoneToModelNoneTransport(actual)
+			}
+			u := connectionValue
+			u.SetNone((*jsonModelNoneTransport)(obj))
+			connectionValue = u
+		case "direct":
+			actual, _ := in.Connection.AsDirect()
+			var obj *jsonModelDirectTransport
+			if actual != nil {
+				obj = encodeModelDirectToModelDirectTransport(actual)
+			}
+			u := connectionValue
+			u.SetDirect((*jsonModelDirectTransport)(obj))
+			connectionValue = u
+		case "gateway":
+			actual, _ := in.Connection.AsGateway()
+			var obj *jsonModelGatewayTransport
+			if actual != nil {
+				obj = encodeModelGatewayToModelGatewayTransport(actual)
+			}
+			u := connectionValue
+			u.SetGateway((*jsonModelGatewayTransport)(obj))
+			connectionValue = u
+		}
+		body.Connection = &connectionValue
+	}
+	if err := validatejsonModelSettingsResultTransport(body); err != nil {
+		return fmt.Errorf("validate ModelSettingsResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeModelSettingsResult checks JSON field names from the Goa design and returns a service value.
+func DecodeModelSettingsResult(data []byte) (out *ModelSettingsResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ModelSettingsResult JSON: %w", err)
+	}
+	if err := validateModelSettingsResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ModelSettingsResult JSON: %w", err)
+	}
+	var body *jsonModelSettingsResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ModelSettingsResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ModelSettingsResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ModelSettingsResult JSON after first value: %w", err)
+	}
+	if err := validatejsonModelSettingsResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate ModelSettingsResult JSON: %w", err)
+	}
+	{
+		out = &ModelSettingsResult{}
+		out.Held = make(map[string][]string, len(body.Held))
+		for key, val := range body.Held {
+			tk := key
+			if val == nil {
+				out.Held[tk] = nil
+				continue
+			}
+			tv := make([]string, len(val))
+			for i, val := range val {
+				tv[i] = val
+			}
+			out.Held[tk] = tv
+		}
+		switch string(body.Connection.Kind()) {
+		case "none":
+			actual, _ := body.Connection.AsNone()
+			var obj *ModelNone
+			if actual != nil {
+				obj = decodeModelNoneTransportToModelNone(actual)
+			}
+			u := out.Connection
+			u.SetNone((*ModelNone)(obj))
+			out.Connection = u
+		case "direct":
+			actual, _ := body.Connection.AsDirect()
+			var obj *ModelDirect
+			if actual != nil {
+				obj = decodeModelDirectTransportToModelDirect(actual)
+			}
+			u := out.Connection
+			u.SetDirect((*ModelDirect)(obj))
+			out.Connection = u
+		case "gateway":
+			actual, _ := body.Connection.AsGateway()
+			var obj *ModelGateway
+			if actual != nil {
+				obj = decodeModelGatewayTransportToModelGateway(actual)
+			}
+			u := out.Connection
+			u.SetGateway((*ModelGateway)(obj))
+			out.Connection = u
+		}
 	}
 	return out, nil
 }
@@ -29745,6 +30288,108 @@ func validateGetVerificationPayloadJSONValue(path string, value any, description
 	return nil
 }
 
+// validateHandOverModelSettingsPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateHandOverModelSettingsPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "anthropic":
+			if err := validateHandOverModelSettingsPayloadJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Request settings for anthropic, keyed by variable name, replacing everything held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute to keep what is held.",
+			); err != nil {
+				return err
+			}
+		case "openai":
+			if err := validateHandOverModelSettingsPayloadJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Request settings for openai, keyed by variable name, replacing everything held for openai. They must include OPENAI_API_KEY. Omit the attribute to keep what is held.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"anthropic",
+				"openai",
+			})
+		}
+	}
+	return nil
+}
+
+// validateHandOverModelSettingsPayloadJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateHandOverModelSettingsPayloadJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, key, true),
+			typed[key], description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateHandOverModelSettingsPayloadJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateHandOverModelSettingsPayloadJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, key, true),
+			typed[key], description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateInitProjectPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateInitProjectPayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -30546,6 +31191,106 @@ func validateModelConnectionJSONValue5(path string, value any, description strin
 	return nil
 }
 
+// validateModelSettingsResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateModelSettingsResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "connection":
+			if err := validateModelConnectionJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "none when no model is chosen; direct with a provider and model name; gateway with a model gateway address.",
+			); err != nil {
+				return err
+			}
+		case "held":
+			if err := validateModelSettingsResultJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Names of the request settings held for each provider, sorted; a provider holds nothing until its settings are handed over.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"connection",
+				"held",
+			})
+		}
+	}
+	return nil
+}
+
+// validateModelSettingsResultJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateModelSettingsResultJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if typed[key] == nil {
+			continue
+		}
+		if err := validateModelSettingsResultJSONValue3(
+			generatedJSONChildPath(path, key, true),
+			typed[key], description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateModelSettingsResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateModelSettingsResultJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validatePreviewArchitecturePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validatePreviewArchitecturePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -31308,7 +32053,7 @@ func validateTeamRoleStateJSONValue(path string, value any, description string) 
 		case "attention":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Reported block kind or the reason a silent running agent needs the user.",
+				typed[key], "Reported block kind, or why a running agent needs the user: silent when it reports nothing for 60 seconds, assignment when it has waited with an unread assignment for 90 seconds.",
 			); err != nil {
 				return err
 			}
@@ -35390,6 +36135,51 @@ func checkGetVerificationPayloadGetVerificationPayloadValue(in *GetVerificationP
 	return nil
 }
 
+// checkHandOverModelSettingsPayloadValue checks text and cycles before conversion.
+func checkHandOverModelSettingsPayloadValue(in *HandOverModelSettingsPayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkHandOverModelSettingsPayloadHandOverModelSettingsPayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkHandOverModelSettingsPayloadHandOverModelSettingsPayloadValue checks one generated value on the active path.
+func checkHandOverModelSettingsPayloadHandOverModelSettingsPayloadValue(in *HandOverModelSettingsPayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for key1, item1 := range in.Anthropic {
+			_ = item1
+			if !utf8.ValidString(string(key1)) {
+				return fmt.Errorf("%s: invalid UTF-8 map key", generatedJSONChildPath(field, "anthropic", false))
+			}
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "anthropic", false), string(key1), true))
+			}
+		}
+		for key1, item1 := range in.Openai {
+			_ = item1
+			if !utf8.ValidString(string(key1)) {
+				return fmt.Errorf("%s: invalid UTF-8 map key", generatedJSONChildPath(field, "openai", false))
+			}
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "openai", false), string(key1), true))
+			}
+		}
+	}
+	return nil
+}
+
 // checkInitProjectPayloadValue checks text and cycles before conversion.
 func checkInitProjectPayloadValue(in *InitProjectPayload) error {
 	if in == nil {
@@ -35975,6 +36765,70 @@ func checkModelNoneValue(in *ModelNone) error {
 	active := make(map[any]bool)
 	if err := checkModelConnectionModelNoneValue(in, "$", active); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkModelSettingsResultValue checks text and cycles before conversion.
+func checkModelSettingsResultValue(in *ModelSettingsResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkModelSettingsResultModelSettingsResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkModelSettingsResultModelSettingsResultValue checks one generated value on the active path.
+func checkModelSettingsResultModelSettingsResultValue(in *ModelSettingsResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for key1, item1 := range in.Held {
+			_ = item1
+			if !utf8.ValidString(string(key1)) {
+				return fmt.Errorf("%s: invalid UTF-8 map key", generatedJSONChildPath(field, "held", false))
+			}
+			for index2, item2 := range item1 {
+				_ = index2
+				_ = item2
+				if !utf8.ValidString(string(item2)) {
+					return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(generatedJSONChildPath(field, "held", false), string(key1), true), strconv.Itoa(index2), true))
+				}
+			}
+		}
+		if branch1, ok := in.Connection.AsNone(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkModelConnectionModelNoneValue(branch1, generatedJSONChildPath(field, "connection", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Connection.AsDirect(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkModelConnectionModelDirectValue(branch1, generatedJSONChildPath(field, "connection", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Connection.AsGateway(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkModelConnectionModelGatewayValue(branch1, generatedJSONChildPath(field, "connection", false), active); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

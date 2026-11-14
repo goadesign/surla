@@ -30,7 +30,7 @@ func testProjectRuntimeAt(directory string) projectRuntime {
 		startTeamPrograms: func(context.Context) error {
 			return errors.New("default tests cannot start real team services or windows")
 		},
-		teamDependencies: func(context.Context) (project.TeamDependencies, error) {
+		teamDependencies: func(context.Context, []string) (project.TeamDependencies, error) {
 			return project.TeamDependencies{}, errors.New("default tests cannot resolve or change real project teams")
 		},
 		configRoot: func() (string, error) {
@@ -136,7 +136,7 @@ func configureServeWorkspace(directory ...string) (workspaceServeConfig, error) 
 }
 
 // serveOptions exercises server option composition for an initialized test project.
-func serveOptions(getenv func(string) string, environ []string, directory ...string) (controlplane.Options, error) {
+func serveOptions(environ []string, directory ...string) (controlplane.Options, error) {
 	dir := ""
 	if len(directory) != 0 {
 		dir = directory[0]
@@ -145,7 +145,7 @@ func serveOptions(getenv func(string) string, environ []string, directory ...str
 	if err != nil {
 		return controlplane.Options{}, err
 	}
-	return projectServeOptions(state, getenv, environ)
+	return projectServeOptions(state, environ)
 }
 
 // TestMain lets the test executable serve a project and run the real supervised helpers without a second binary.
