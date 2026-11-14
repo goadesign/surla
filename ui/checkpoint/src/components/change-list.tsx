@@ -27,12 +27,12 @@ export interface ChangeListViewProps {
   onRetry: () => void;
 }
 
-// verificationLabels names each latest verification state for people.
+// verificationLabels describes saved history without claiming current proof.
 const verificationLabels: Record<LatestVerificationItem["state"], string> = {
-  running: "Verification in progress",
-  passed: "Verification passed",
-  failed: "Verification did not pass",
-  not_completed: "Verification did not finish",
+  running: "Latest saved run: in progress",
+  passed: "Latest saved run: passed",
+  failed: "Latest saved run: did not pass",
+  not_completed: "Latest saved run: did not finish",
 };
 
 // ChangeListView renders every listed change as one keyboard-operable
@@ -56,6 +56,12 @@ export function ChangeListView({
       aria-busy={loading ? "true" : undefined}
     >
       <h2 id="surla-change-list-title">Changes</h2>
+      {list?.changes.some((item) => item.latest_verification !== undefined) ? (
+        <p id="surla-change-run-history" className="surla-muted">
+          Run results describe their recorded candidate. The server compares each latest run
+          with the agreed revision and selected tests. Open a change, then Proof, to inspect it.
+        </p>
+      ) : null}
       {error !== null ? (
         <Alert id="surla-change-list-error" variant="destructive" role="alert">
           <strong>Could not read this project's changes. </strong>
@@ -108,6 +114,9 @@ function ChangeListRow({
   busy: boolean;
   onOpen: (changeId: string) => void;
 }) {
+  // IDs are application data and may contain whitespace; React owns this
+  // accessibility reference so it remains one valid, unique ID token.
+  const inputsDescriptionId = React.useId();
   return (
     <li data-change-id={item.change_id}>
       <Button
@@ -130,19 +139,26 @@ function ChangeListRow({
         </>
       ) : null}
       {item.latest_verification ? (
-        <Badge
-          variant={
-            item.latest_verification.state === "passed"
-              ? "success"
-              : item.latest_verification.state === "running"
-              ? "accent"
-              : "destructive"
-          }
-        >
-          {verificationLabels[item.latest_verification.state]}
-        </Badge>
+        <>
+          <Badge
+            aria-describedby={"surla-change-run-history " + inputsDescriptionId}
+            variant={item.latest_verification.inputs_current && item.latest_verification.state === "passed"
+              ? "success" : "default"}
+          >
+            {verificationLabels[item.latest_verification.state]}
+          </Badge>
+          <p
+            id={inputsDescriptionId}
+            className="surla-muted"
+            data-inputs-current={String(item.latest_verification.inputs_current)}
+          >
+            {item.latest_verification.inputs_current
+              ? "Matches the agreed revision and selected tests."
+              : "Earlier inputs or no current test selection. Ask the builder for a check of the agreed revision and selected tests."}
+          </p>
+        </>
       ) : (
-        <Badge>Not verified yet</Badge>
+        <Badge>No saved runs</Badge>
       )}{" "}
       <span className="surla-muted">
         Saved <time dateTime={item.saved_at}>{new Date(item.saved_at).toLocaleString()}</time>

@@ -110,6 +110,10 @@ type (
 		// GoaVersion, GoaAIVersion and ModelVersion are the versions
 		// Surla's own go.mod requires.
 		GoaVersion, GoaAIVersion, ModelVersion string
+		// StoryVersion is the github.com/goadesign/surla/story version
+		// Surla's own go.mod requires: the Story language this Surla
+		// evaluates, which the starter's design/story.go imports.
+		StoryVersion string
 	}
 
 	// moduleStep is one module of the project and the files it is built
@@ -161,6 +165,9 @@ const (
 	quickstartGuide = "AGENTS_QUICKSTART.md"
 	// surlaModule is Surla's module path.
 	surlaModule = "github.com/goadesign/surla"
+	// storyModule is the path of the Story language's module, which the
+	// starter's design/story.go imports.
+	storyModule = "github.com/goadesign/surla/story"
 	// stopGrace is how long a canceled command's process group gets to exit
 	// after SIGTERM.
 	stopGrace = 5 * time.Second
@@ -426,7 +433,7 @@ func prepare(ctx context.Context, o Options, run Runner, gen Generator, commitRe
 }
 
 // newData validates o and returns the template data, with the Go, Goa,
-// Goa-AI and Model versions read from Surla's own go.mod.
+// Goa-AI, Model and Story versions read from Surla's own go.mod.
 func newData(o Options) (data, error) {
 	layout, err := LayoutForModule(o.Module)
 	if err != nil {
@@ -447,6 +454,7 @@ func newData(o Options) (data, error) {
 		{"goa.design/goa/v3", &d.GoaVersion},
 		{"goa.design/goa-ai", &d.GoaAIVersion},
 		{"goa.design/model", &d.ModelVersion},
+		{storyModule, &d.StoryVersion},
 	} {
 		for _, r := range mod.Require {
 			if r.Mod.Path == req.path {

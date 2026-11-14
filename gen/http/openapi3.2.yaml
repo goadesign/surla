@@ -174,7 +174,7 @@ paths:
             tags:
                 - surla
             summary: get_test_writer_assignment surla
-            description: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.
+            description: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the user's confirmed answers, confirmation examples and preserved behaviors of that revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change what the build saved. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.
             operationId: surla#get_test_writer_assignment
             parameters:
                 - name: change_id
@@ -195,12 +195,44 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/TestWriterAssignment'
                             example:
+                                answers:
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
                                 change_id: Odio qui dolore.
                                 design_source: Repellendus excepturi dignissimos vitae.
+                                examples:
+                                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                                      scenario: Facilis sed tempore.
+                                      verification_kind: model_judged
+                                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                                      scenario: Facilis sed tempore.
+                                      verification_kind: model_judged
+                                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                                      scenario: Facilis sed tempore.
+                                      verification_kind: model_judged
                                 findings:
                                     - Et voluptatibus accusamus.
                                     - Sed ipsum assumenda assumenda vero porro.
                                 in_force: false
+                                preserved_behaviors:
+                                    - Occaecati ut molestiae earum nobis cumque.
+                                    - Provident voluptatem sed sint asperiores.
                                 progress:
                                     read: true
                                     report: 7108203204833819401
@@ -1473,7 +1505,7 @@ paths:
             tags:
                 - surla
             summary: list_changes surla
-            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run and whether its revision and selected tests are current, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
             operationId: surla#list_changes
             responses:
                 "200":
@@ -1487,6 +1519,7 @@ paths:
                                 changes:
                                     - change_id: Consequatur nemo.
                                       latest_verification:
+                                        inputs_current: true
                                         run_id: Voluptas veritatis excepturi fuga enim et.
                                         state: not_completed
                                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -1496,6 +1529,7 @@ paths:
                                       summary: Ut saepe incidunt odit.
                                     - change_id: Consequatur nemo.
                                       latest_verification:
+                                        inputs_current: true
                                         run_id: Voluptas veritatis excepturi fuga enim et.
                                         state: not_completed
                                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -1522,7 +1556,7 @@ paths:
             tags:
                 - surla
             summary: get_change surla
-            description: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.
+            description: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while its suite_commit is still the tests' commit chosen for this revision and either no promotion target is configured or its binary digests still match the promotion target's current binaries, or in unverified_approval when a promotion target is configured and cannot measure the candidate's binaries.
             operationId: surla#get_change
             parameters:
                 - name: change_id
@@ -1585,6 +1619,10 @@ paths:
                                     scenario_count: 675343994147794327
                                     suite_commit: Voluptatem et placeat ullam quisquam.
                                     suite_id: Accusantium quae ducimus.
+                                    test_source:
+                                        commit: Iste aspernatur ab.
+                                        notice: Assumenda quisquam et sed qui eos.
+                                        source: written_tests
                                 change_id: Architecto minima et tempora.
                                 confirmed_by: Necessitatibus laborum culpa accusantium quidem ut.
                                 examples:
@@ -3040,6 +3078,10 @@ paths:
                                         scenario_count: 675343994147794327
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
+                                        test_source:
+                                            commit: Iste aspernatur ab.
+                                            notice: Assumenda quisquam et sed qui eos.
+                                            source: written_tests
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -3139,7 +3181,7 @@ paths:
             tags:
                 - surla
             summary: start_build surla
-            description: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.
+            description: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design and the agreed revision's confirmed answers, examples and preserved behaviors. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.
             operationId: surla#start_build
             parameters:
                 - name: change_id
@@ -3726,7 +3768,7 @@ paths:
             tags:
                 - surla
             summary: approve_merge surla
-            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.
+            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane chooses the tests' commit the same way verify_change does (the suite commit in the project's stored verification settings, or the tests Surla accepted for the change's build at request_revision), loads the verification report by digest, re-derives the report from its evidence with verify.Approve, and records the approval on the card when the report passed for candidate_commit, request_revision, and that tests' commit. When promotion settings are configured with surla promotion set (or a PromotionTarget is bound), approve_merge also checks that the staged binaries in <release_dir>/<candidate_commit>/ match the report's binary digests and records those digests in artifacts; without promotion settings, no release folder or staged binaries are required and artifacts is empty. The report's suite_id and environment are what the tests at suite_commit declared and are recorded on the approval without a separate comparison. Nothing is merged or deployed.
             operationId: surla#approve_merge
             requestBody:
                 description: Request body for approve_merge.
@@ -3775,6 +3817,10 @@ paths:
                                     scenario_count: 675343994147794327
                                     suite_commit: Voluptatem et placeat ullam quisquam.
                                     suite_id: Accusantium quae ducimus.
+                                    test_source:
+                                        commit: Iste aspernatur ab.
+                                        notice: Assumenda quisquam et sed qui eos.
+                                        source: written_tests
                                 change_id: Incidunt natus harum minus similique.
                                 confirmed_by: Ratione veritatis voluptas et praesentium sint.
                                 examples:
@@ -5502,6 +5548,10 @@ paths:
                                         scenario_count: 675343994147794327
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
+                                        test_source:
+                                            commit: Iste aspernatur ab.
+                                            notice: Assumenda quisquam et sed qui eos.
+                                            source: written_tests
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -5530,7 +5580,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.'
+                    description: 'tests_not_accepted: Without stored verification settings: Surla has not accepted the tests of the change''s build. The message names the test writer''s state and who acts, and ends with the step.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -5539,11 +5589,11 @@ paths:
                                 fault: false
                                 id: 123abc
                                 message: parameter 'p' must be an integer
-                                name: conflict
+                                name: tests_not_accepted
                                 temporary: false
                                 timeout: false
                 "422":
-                    description: 'unprocessable: The verification report did not pass or does not match the Change Card and promotion target inputs.'
+                    description: 'unprocessable: The verification report did not pass or does not match the Change Card, the chosen tests'' commit, or (when promotion settings are configured) the promotion target''s staged binary digests.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -5556,7 +5606,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "501":
-                    description: 'not_implemented: This control plane has no promotion target bound to it.'
+                    description: 'not_implemented: This control plane has no verification configuration bound to it.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -5573,7 +5623,7 @@ paths:
             tags:
                 - surla
             summary: confirm_intent surla
-            description: 'Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Only the user''s browser session calls it, from the views page; the guide revises with revise_change and never confirms. Naming the proposed revision''s request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card''s request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target''s current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.'
+            description: 'Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Only the user''s browser session calls it, from the views page; the guide revises with revise_change and never confirms. Naming the proposed revision''s request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card''s request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while its suite_commit is still the tests'' commit chosen for this revision and either no promotion target is configured or its binary digests still match the promotion target''s current binaries, or in unverified_approval when a promotion target is configured and cannot measure the candidate''s binaries. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.'
             operationId: surla#confirm_intent
             requestBody:
                 description: Request body for confirm_intent.
@@ -5635,6 +5685,10 @@ paths:
                                     scenario_count: 675343994147794327
                                     suite_commit: Voluptatem et placeat ullam quisquam.
                                     suite_id: Accusantium quae ducimus.
+                                    test_source:
+                                        commit: Iste aspernatur ab.
+                                        notice: Assumenda quisquam et sed qui eos.
+                                        source: written_tests
                                 change_id: Id consequatur sunt odio.
                                 confirmed_by: Aliquid explicabo deserunt rerum.
                                 examples:
@@ -7357,6 +7411,10 @@ paths:
                                         scenario_count: 675343994147794327
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
+                                        test_source:
+                                            commit: Iste aspernatur ab.
+                                            notice: Assumenda quisquam et sed qui eos.
+                                            source: written_tests
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -7478,6 +7536,10 @@ paths:
                                     scenario_count: 675343994147794327
                                     suite_commit: Voluptatem et placeat ullam quisquam.
                                     suite_id: Accusantium quae ducimus.
+                                    test_source:
+                                        commit: Iste aspernatur ab.
+                                        notice: Assumenda quisquam et sed qui eos.
+                                        source: written_tests
                                 change_id: Pariatur accusamus optio.
                                 confirmed_by: Rerum provident consequatur ad.
                                 examples:
@@ -9476,6 +9538,10 @@ paths:
                                         scenario_count: 675343994147794327
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
+                                        test_source:
+                                            commit: Iste aspernatur ab.
+                                            notice: Assumenda quisquam et sed qui eos.
+                                            source: written_tests
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -9794,6 +9860,10 @@ paths:
                                     scenario_count: 675343994147794327
                                     suite_commit: Voluptatem et placeat ullam quisquam.
                                     suite_id: Accusantium quae ducimus.
+                                    test_source:
+                                        commit: Iste aspernatur ab.
+                                        notice: Assumenda quisquam et sed qui eos.
+                                        source: written_tests
                                 change_id: Molestiae autem quas reprehenderit fugit.
                                 confirmed_by: Accusamus harum velit earum libero ad.
                                 examples:
@@ -11240,6 +11310,10 @@ paths:
                                         scenario_count: 675343994147794327
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
+                                        test_source:
+                                            commit: Iste aspernatur ab.
+                                            notice: Assumenda quisquam et sed qui eos.
+                                            source: written_tests
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -11386,6 +11460,10 @@ paths:
                                     scenario_count: 675343994147794327
                                     suite_commit: Voluptatem et placeat ullam quisquam.
                                     suite_id: Accusantium quae ducimus.
+                                    test_source:
+                                        commit: Iste aspernatur ab.
+                                        notice: Assumenda quisquam et sed qui eos.
+                                        source: written_tests
                                 change_id: Expedita neque qui.
                                 confirmed_by: Sunt nobis.
                                 examples:
@@ -12836,6 +12914,10 @@ paths:
                                         scenario_count: 675343994147794327
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
+                                        test_source:
+                                            commit: Iste aspernatur ab.
+                                            notice: Assumenda quisquam et sed qui eos.
+                                            source: written_tests
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -13343,6 +13425,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ExchangeBrowserLinkResponseBody'
                             example:
+                                project_name: t5
                                 session: Consectetur est quis cum vel quasi.
                 "403":
                     description: 'forbidden: The trusted credential cannot perform this operation.'
@@ -13385,6 +13468,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ProjectIdentity'
                             example:
+                                build: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
                                 directory: Nihil accusamus qui.
                                 owner: Officiis laborum cum quo suscipit ducimus.
                                 project_id: Sunt iure praesentium temporibus aspernatur minus.
@@ -13519,18 +13603,14 @@ paths:
                                 temporary: false
                                 timeout: false
                 "503":
-                    description: 'team_unavailable: A bounded Herdr operation or roster write failed; run surla again.'
+                    description: 'team_unavailable: A bounded Herdr operation, roster write or project state access failed; its cause selects the recovery step.'
                     content:
-                        application/vnd.goa.error:
+                        application/json:
                             schema:
-                                $ref: '#/components/schemas/Error'
+                                $ref: '#/components/schemas/TeamUnavailable'
                             example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: team_unavailable
-                                temporary: false
-                                timeout: false
+                                cause: herdr
+                                name: Aut velit ea sunt placeat possimus.
     /sandbox/draft:
         post:
             tags:
@@ -16294,7 +16374,7 @@ components:
                     example: Quia fuga rem fugiat quasi.
                 artifacts:
                     type: object
-                    description: SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.
+                    description: SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.
                     example:
                         Aspernatur fugit quam.: Minus nesciunt.
                     additionalProperties:
@@ -16306,7 +16386,7 @@ components:
                     example: Explicabo necessitatibus esse cumque.
                 environment:
                     type: string
-                    description: Dependency profile the promotion target requires, such as sim.
+                    description: Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).
                     example: Illum sequi ducimus mollitia esse.
                 report_digest:
                     type: string
@@ -16314,18 +16394,56 @@ components:
                     example: Harum rem sequi harum quis.
                 scenario_count:
                     type: integer
-                    description: Number of declared evaluator scenarios, every one of which passed.
+                    description: Number of declared scenarios in the report, every one of which passed.
                     example: 675343994147794327
                     format: int64
                 suite_commit:
                     type: string
-                    description: Evaluator suite commit the promotion target requires.
+                    description: 'Commit of the tests the report ran: the operator''s stored evaluator, or the tests Surla accepted for the change''s build.'
                     example: Voluptatem et placeat ullam quisquam.
                 suite_id:
                     type: string
-                    description: Evaluator suite the promotion target requires.
+                    description: Suite identifier the tests at suite_commit declared in the report (shown, not compared).
                     example: Accusantium quae ducimus.
-            description: 'Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane''s cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when the user refines the confirmed revision or adopts a proposed one with confirm_intent. A revise_change on a confirmed card leaves it on the confirmed revision, which stays in force until the user adopts the proposal. get_change and confirm_intent return it in approval only while the promotion target''s current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.'
+                test_source:
+                    type: object
+                    description: 'Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.'
+                    example:
+                        commit: Iste aspernatur ab.
+                        notice: Assumenda quisquam et sed qui eos.
+                        source: written_tests
+                    anyOf:
+                        - type: object
+                          properties:
+                            source:
+                                type: string
+                                enum:
+                                    - evaluator
+                          example: {}
+                          required:
+                            - source
+                        - type: object
+                          properties:
+                            commit:
+                                type: string
+                                description: Commit Surla recorded the accepted tests at; the same as suite_commit.
+                                example: Non consectetur.
+                            notice:
+                                type: string
+                                description: 'Always: These tests were written by a separate agent on this machine and are not isolated from the builder.'
+                                example: Qui praesentium quas.
+                            source:
+                                type: string
+                                enum:
+                                    - written_tests
+                          example:
+                            commit: Non consectetur.
+                            notice: Qui praesentium quas.
+                          required:
+                            - commit
+                            - notice
+                            - source
+            description: 'Checkpoint 5 approval recorded by approve_merge after the verification report passed and matched the change being promoted: the exact candidate commit, the tests'' commit chosen for the revision, and (when promotion settings are configured) the binary digests the promotion target measured. suite_id and environment record what the tests at suite_commit declared in the report and are shown, not compared against separate promotion settings. test_source is derived on each read from how the server chooses tests. The approval is saved with the card in the control plane''s cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when the user refines the confirmed revision or adopts a proposed one with confirm_intent. A revise_change on a confirmed card leaves it on the confirmed revision, which stays in force until the user adopts the proposal. get_change and confirm_intent return it in approval while the tests'' commit chosen for the revision still equals suite_commit and (when a promotion target is configured) the promotion target''s current binary digests still equal artifacts, or in unverified_approval when the tests'' commit still matches but a configured promotion target cannot verify the candidate''s binaries on that read.'
             example:
                 approved_by: Quia fuga rem fugiat quasi.
                 artifacts:
@@ -16336,6 +16454,10 @@ components:
                 scenario_count: 675343994147794327
                 suite_commit: Voluptatem et placeat ullam quisquam.
                 suite_id: Accusantium quae ducimus.
+                test_source:
+                    commit: Iste aspernatur ab.
+                    notice: Assumenda quisquam et sed qui eos.
+                    source: written_tests
             required:
                 - approved_by
                 - report_digest
@@ -16345,6 +16467,7 @@ components:
                 - environment
                 - artifacts
                 - scenario_count
+                - test_source
         ApproveMergePayload:
             type: object
             properties:
@@ -18120,6 +18243,10 @@ components:
                     scenario_count: 675343994147794327
                     suite_commit: Voluptatem et placeat ullam quisquam.
                     suite_id: Accusantium quae ducimus.
+                    test_source:
+                        commit: Iste aspernatur ab.
+                        notice: Assumenda quisquam et sed qui eos.
+                        source: written_tests
                 change_id: Molestiae autem quas reprehenderit fugit.
                 confirmed_by: Accusamus harum velit earum libero ad.
                 examples:
@@ -19566,6 +19693,10 @@ components:
                         scenario_count: 675343994147794327
                         suite_commit: Voluptatem et placeat ullam quisquam.
                         suite_id: Accusantium quae ducimus.
+                        test_source:
+                            commit: Iste aspernatur ab.
+                            notice: Assumenda quisquam et sed qui eos.
+                            source: written_tests
                     reason: Sequi et ut doloribus tenetur corporis ad.
             required:
                 - change_id
@@ -19580,7 +19711,7 @@ components:
             properties:
                 approval_available:
                     type: boolean
-                    description: Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.
+                    description: Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.
                     example: true
                 changes:
                     type: array
@@ -19590,6 +19721,7 @@ components:
                     example:
                         - change_id: Consequatur nemo.
                           latest_verification:
+                            inputs_current: true
                             run_id: Voluptas veritatis excepturi fuga enim et.
                             state: not_completed
                           proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19599,6 +19731,7 @@ components:
                           summary: Ut saepe incidunt odit.
                         - change_id: Consequatur nemo.
                           latest_verification:
+                            inputs_current: true
                             run_id: Voluptas veritatis excepturi fuga enim et.
                             state: not_completed
                           proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19616,6 +19749,7 @@ components:
                 changes:
                     - change_id: Consequatur nemo.
                       latest_verification:
+                        inputs_current: true
                         run_id: Voluptas veritatis excepturi fuga enim et.
                         state: not_completed
                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19625,6 +19759,7 @@ components:
                       summary: Ut saepe incidunt odit.
                     - change_id: Consequatur nemo.
                       latest_verification:
+                        inputs_current: true
                         run_id: Voluptas veritatis excepturi fuga enim et.
                         state: not_completed
                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19674,6 +19809,7 @@ components:
             example:
                 change_id: Consequatur nemo.
                 latest_verification:
+                    inputs_current: true
                     run_id: Voluptas veritatis excepturi fuga enim et.
                     state: not_completed
                 proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19838,6 +19974,30 @@ components:
                 - request_revision
                 - answers
                 - examples
+        ConfirmedAnswer:
+            type: object
+            properties:
+                answer:
+                    type: string
+                    description: The option the user confirmed, exactly as confirmed.
+                    example: Ipsum repellendus adipisci.
+                id:
+                    type: string
+                    description: Question identifier on the Change Card.
+                    example: Autem facilis doloribus quo vero accusantium eos.
+                question:
+                    type: string
+                    description: The question as the user answered it.
+                    example: Sit eius quasi.
+            description: One question of the change as agreed at the built revision, with the option the user confirmed for it.
+            example:
+                answer: Ipsum repellendus adipisci.
+                id: Autem facilis doloribus quo vero accusantium eos.
+                question: Sit eius quasi.
+            required:
+                - id
+                - question
+                - answer
         DeclineRevisionPayload:
             type: object
             properties:
@@ -20130,14 +20290,21 @@ components:
         ExchangeBrowserLinkResponseBody:
             type: object
             properties:
+                project_name:
+                    type: string
+                    description: Base name of the physical project folder, without its path, for this page session.
+                    example: t5
+                    minLength: 1
                 session:
                     type: string
                     description: User session kept only in the page's memory.
                     example: Consectetur est quis cum vel quasi.
             example:
+                project_name: t5
                 session: Consectetur est quis cum vel quasi.
             required:
                 - session
+                - project_name
         GenerateCodePayload:
             type: object
             properties:
@@ -20285,6 +20452,10 @@ components:
         LatestVerificationItem:
             type: object
             properties:
+                inputs_current:
+                    type: boolean
+                    description: 'Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.'
+                    example: true
                 run_id:
                     type: string
                     description: Verification run identifier; get_verification takes it.
@@ -20300,11 +20471,13 @@ components:
                         - not_completed
             description: The most recently accepted Checkpoint 4 verification run of a Change Card.
             example:
+                inputs_current: true
                 run_id: Voluptas veritatis excepturi fuga enim et.
                 state: not_completed
             required:
                 - run_id
                 - state
+                - inputs_current
         LivePromptItem:
             type: object
             properties:
@@ -20690,6 +20863,11 @@ components:
         ProjectIdentity:
             type: object
             properties:
+                build:
+                    type: string
+                    description: SHA-256 of the surla executable the server started from, read when it started; it tells any two builds apart, including two local builds of one commit. The CLI attaches only to its own build. Servers built before this field omit it, and surla stop must still reach them, so it is not required.
+                    example: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
+                    pattern: ^[0-9a-f]{64}$
                 directory:
                     type: string
                     description: Physical project folder.
@@ -20703,6 +20881,7 @@ components:
                     description: Stable private project identifier.
                     example: Sunt iure praesentium temporibus aspernatur minus.
             example:
+                build: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
                 directory: Nihil accusamus qui.
                 owner: Officiis laborum cum quo suscipit ducimus.
                 project_id: Sunt iure praesentium temporibus aspernatur minus.
@@ -25356,6 +25535,29 @@ components:
             required:
                 - name
                 - count
+        TeamUnavailable:
+            type: object
+            properties:
+                cause:
+                    type: string
+                    description: 'What could not be used: stopping (the server is shutting down), herdr (a Herdr command failed), roster_folder (Herdr''s launcher roster folder could not be written), project_state (the project''s private record or an agent credential could not be read or written), or role_folder (a role''s working folder could not be read).'
+                    example: herdr
+                    enum:
+                        - stopping
+                        - herdr
+                        - roster_folder
+                        - project_state
+                        - role_folder
+                name:
+                    type: string
+                    description: Error name.
+                    example: Aut velit ea sunt placeat possimus.
+            example:
+                cause: herdr
+                name: Aut velit ea sunt placeat possimus.
+            required:
+                - name
+                - cause
         TestFindings:
             type: object
             properties:
@@ -25411,6 +25613,24 @@ components:
         TestWriterAssignment:
             type: object
             properties:
+                answers:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ConfirmedAnswer'
+                    description: Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.
+                    example:
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
                 change_id:
                     type: string
                     description: Change Card the tests are for.
@@ -25419,6 +25639,27 @@ components:
                     type: string
                     description: The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.
                     example: Repellendus excepturi dignissimos vitae.
+                examples:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ExampleItem'
+                    description: The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.
+                    example:
+                        - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                          id: Consequatur voluptatibus soluta sequi reiciendis.
+                          input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                          scenario: Facilis sed tempore.
+                          verification_kind: model_judged
+                        - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                          id: Consequatur voluptatibus soluta sequi reiciendis.
+                          input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                          scenario: Facilis sed tempore.
+                          verification_kind: model_judged
+                        - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                          id: Consequatur voluptatibus soluta sequi reiciendis.
+                          input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                          scenario: Facilis sed tempore.
+                          verification_kind: model_judged
                 findings:
                     type: array
                     items:
@@ -25432,6 +25673,15 @@ components:
                     type: boolean
                     description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.'
                     example: false
+                preserved_behaviors:
+                    type: array
+                    items:
+                        type: string
+                        example: Occaecati ut molestiae earum nobis cumque.
+                    description: The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.
+                    example:
+                        - Occaecati ut molestiae earum nobis cumque.
+                        - Provident voluptatem sed sint asperiores.
                 progress:
                     $ref: '#/components/schemas/TestWriterProgress'
                 request_revision:
@@ -26558,14 +26808,46 @@ components:
                     type: string
                     description: 'Folder to write the tests in: your own working copy of the project.'
                     example: Ut voluptatum vel totam.
-            description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
+            description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user''s confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
             example:
+                answers:
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
                 change_id: Odio qui dolore.
                 design_source: Repellendus excepturi dignissimos vitae.
+                examples:
+                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                      scenario: Facilis sed tempore.
+                      verification_kind: model_judged
+                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                      scenario: Facilis sed tempore.
+                      verification_kind: model_judged
+                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                      scenario: Facilis sed tempore.
+                      verification_kind: model_judged
                 findings:
                     - Et voluptatibus accusamus.
                     - Sed ipsum assumenda assumenda vero porro.
                 in_force: false
+                preserved_behaviors:
+                    - Occaecati ut molestiae earum nobis cumque.
+                    - Provident voluptatem sed sint asperiores.
                 progress:
                     read: true
                     report: 7108203204833819401
@@ -27691,6 +27973,9 @@ components:
                 - design_source
                 - stories
                 - required_tests
+                - answers
+                - examples
+                - preserved_behaviors
         TestWriterAssignmentItem:
             type: object
             properties:
@@ -28292,9 +28577,9 @@ components:
                     $ref: '#/components/schemas/ApprovalItem'
                 reason:
                     type: string
-                    description: Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.
+                    description: Explanation of why the recorded approval could not be verified against current release binaries and how to recover.
                     example: Sequi et ut doloribus tenetur corporis ad.
-            description: Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.
+            description: Saved Checkpoint 5 promotion approval recorded on the Change Card whose current release binaries could not be verified on this read.
             example:
                 approval:
                     approved_by: Quia fuga rem fugiat quasi.
@@ -28306,6 +28591,10 @@ components:
                     scenario_count: 675343994147794327
                     suite_commit: Voluptatem et placeat ullam quisquam.
                     suite_id: Accusantium quae ducimus.
+                    test_source:
+                        commit: Iste aspernatur ab.
+                        notice: Assumenda quisquam et sed qui eos.
+                        source: written_tests
                 reason: Sequi et ut doloribus tenetur corporis ad.
             required:
                 - approval

@@ -470,6 +470,9 @@ export function bootstrapViewsPage() {
   // in this closure: never in browser storage or a cookie, so a reload or a
   // closed tab ends it.
   let session: string | null = null;
+  // projectName is the physical folder's base name from the authenticated
+  // exchange, fixed for this page session and never derived from a team ID.
+  let projectName: string | null = null;
   let sessionState: SessionState = "starting";
   let signedOutReason: SignedOutReason = "no-link";
   let signedOutMessage = "";
@@ -757,6 +760,7 @@ export function bootstrapViewsPage() {
       return;
     }
     session = outcome.result.session;
+    projectName = outcome.result.project_name;
     sessionState = "active";
     rootEl.dataset.session = "active";
     activeResult = { kind: "changes" };
@@ -1368,6 +1372,9 @@ export function bootstrapViewsPage() {
               buildStartReceipt = null;
               buildStartError = null;
             }
+            if (before !== null && JSON.stringify(before) !== JSON.stringify(result.build)) {
+              refreshOpenCard(changeId);
+            }
             followBuildFindings();
           }
         }
@@ -1499,6 +1506,7 @@ export function bootstrapViewsPage() {
         followBuildFindings();
         statusEl.textContent = "The build started for the agreed revision.";
         readBuild(changeId);
+        refreshOpenCard(changeId);
         readTeam();
       },
       (message, failure) => {
@@ -1935,9 +1943,52 @@ export function bootstrapViewsPage() {
     });
   }
 
-  // syncNoticeRegion keeps the session notice and role attention visible on
+  // projectTitle owns the tab's next-step contract using only page facts.
+  // Recovery outranks retained observations; saved run history does not prove
+  // that the current change can be built or approved.
+  function projectTitle(): string {
+    if (projectName === null) return "Surla";
+    let step: string;
+    if (sessionState !== "active") {
+      step = "Reopen project";
+    } else if (waitTroubleShown) {
+      step = "Reconnecting";
+    } else if (listError !== null) {
+      step = "Retry reading changes";
+    } else if (teamReadError !== null) {
+      step = "Refresh Team";
+    } else if (lastOpenAttempt !== null && cardLoadErrors.has(lastOpenAttempt)) {
+      step = "Retry opening change";
+    } else {
+      const attention = ["guide", "builder", "test_writer"].map((role) =>
+        teamSnapshot?.roles.find((item) => item.role === role && item.state === "needs_you")
+      ).find((role) => role !== undefined);
+      if (attention !== undefined) {
+        step = teamAttentionText(attention);
+      } else if (activeEditor !== null) {
+        const ed = activeEditor;
+        if (ed.incomingCard !== null || ed.card.proposed_revision !== undefined) {
+          step = "Review proposed change";
+        } else if (ed.card.status === "needs_confirmation") {
+          step = "Confirm change";
+        } else if (isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)) {
+          step = "Refine change";
+        } else {
+          step = "Review change";
+        }
+      } else if (changeList === null) {
+        step = "Opening project";
+      } else {
+        step = changeList.changes.length === 0 ? "Ask guide to propose a change" : "Open a change";
+      }
+    }
+    return step + ": " + projectName;
+  }
+
+  // syncNoticeRegion keeps the tab title, session notice and role attention visible on
   // every view. Announcements are emitted only by the event/read handlers.
   function syncNoticeRegion() {
+    document.title = projectTitle();
     flushSync(() => {
       noticeRoot.render(
         <>
@@ -1963,6 +2014,29 @@ export function bootstrapViewsPage() {
     });
   }
 
+  // revisionBuildNotice shares the build consequence beside both revision
+  // actions. An unread or failed read cannot establish that no build exists.
+  function revisionBuildNotice(card: ChangeCardResult): string | null {
+    if (card.status !== "confirmed") return null;
+    const known = buildChangeId === card.change_id && buildSnapshot !== null &&
+      buildReadError === null && !waitTroubleShown;
+    if (!known || buildSnapshot === null) {
+      return "Changing the agreed revision leaves any existing build on the earlier revision. " +
+        "Starting a new build replaces its assignments; when it uses a test writer, its report " +
+        "and verdict reset and its tests need acceptance again before verification.";
+    }
+    if (buildSnapshot.state !== "started" || !buildSnapshot.in_force ||
+        buildSnapshot.request_revision !== card.request_revision) return null;
+    if (buildSnapshot.test_writer.tests.state === "not_used") {
+      return "Changing the agreed revision leaves this build on the earlier revision. " +
+        "Start a new build to update the builder’s assignment. " +
+        "Verification keeps using the stored verification settings.";
+    }
+    return "Changing the agreed revision leaves this build on the earlier revision. " +
+      "A new build replaces both assignments and clears the test writer’s report and verdict. " +
+      "Its tests must be reported, checked and accepted again before verification.";
+  }
+
   // syncEditorRegion renders saved values and drafts together when editorOpen
   // is true, with editing disabled while a Change Card request is outstanding.
   function syncEditorRegion() {
@@ -1978,6 +2052,7 @@ export function bootstrapViewsPage() {
     editorRegionEl.dataset.changeId = ed.card.change_id;
     editorRegionEl.dataset.requestRevision = ed.card.request_revision;
     const proposal = ed.card.proposed_revision;
+    const buildRevisionNotice = revisionBuildNotice(ed.card);
     flushSync(() => {
       editorRoot.render(
         <>
@@ -1988,6 +2063,7 @@ export function bootstrapViewsPage() {
             answers={ed.proposalAnswers}
             busy={editorBusy}
             error={ed.proposalError}
+            buildRevisionNotice={buildRevisionNotice}
             onAnswer={(questionId, option) => {
               if (!activeEditor || editorBusy) {
                 return;
@@ -2004,6 +2080,7 @@ export function bootstrapViewsPage() {
         ) : null}
         <CP1EditorView
           card={ed.card}
+          buildRevisionNotice={buildRevisionNotice}
           buildSection={
             <BuildSectionView
               key={activeResult?.kind ?? "decisions"}

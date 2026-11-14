@@ -32,6 +32,7 @@ export interface ApprovalItem {
   scenario_count: number;
   suite_commit: string;
   suite_id: string;
+  test_source: ({ "source": "evaluator" } | { "commit": string; "notice": string; "source": "written_tests" });
 }
 
 export interface ApproveMergePayload {
@@ -152,10 +153,12 @@ export interface ExchangeBrowserLinkRequestBody {
 }
 
 export interface ExchangeBrowserLinkResponseBody {
+  project_name: string;
   session: string;
 }
 
 export interface LatestVerificationItem {
+  inputs_current: boolean;
   run_id: string;
   state: "running" | "passed" | "failed" | "not_completed";
 }
@@ -756,7 +759,8 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "suite_commit",
       "environment",
       "artifacts",
-      "scenario_count"
+      "scenario_count",
+      "test_source"
     ],
     "properties": {
       "approved_by": {
@@ -785,6 +789,49 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       },
       "suite_id": {
         "type": "string"
+      },
+      "test_source": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "evaluator"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "notice",
+              "source"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "notice": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "written_tests"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "additionalProperties": false
@@ -1304,9 +1351,13 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
   "ExchangeBrowserLinkResponseBody": {
     "type": "object",
     "required": [
-      "session"
+      "session",
+      "project_name"
     ],
     "properties": {
+      "project_name": {
+        "type": "string"
+      },
       "session": {
         "type": "string"
       }
@@ -1317,9 +1368,13 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     "type": "object",
     "required": [
       "run_id",
-      "state"
+      "state",
+      "inputs_current"
     ],
     "properties": {
+      "inputs_current": {
+        "type": "boolean"
+      },
       "run_id": {
         "type": "string"
       },

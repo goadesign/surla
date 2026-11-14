@@ -19,7 +19,9 @@ can run against it.
   field to tools with `Inject(...)` (which requires the payload field to be in
   `Required(...)`), check for a missing header in HTTP middleware before the
   generated decoder runs when you want missing headers to answer `401`.
-  `design/model.go` declares the C4 architecture model.
+  `design/model.go` declares the C4 architecture model. `design/story.go`
+  declares the Story: who uses the service and the flows their requests take
+  (see "Change checkpoints" below).
 - `gen/` is generated from `design/`. After changing `design/`, call the
   `generate_code` MCP tool when connected to the Surla project server (or run `surla gen`
   in this directory): it runs Goa's generator for this module inside Surla's
@@ -142,6 +144,13 @@ domain Story and passes its succeeded `op_id` as `story_refresh_op_id` to adopt
 the Story and matching source.
 An adopted Story remains paired with its source when a later revision omits
 `story_refresh_op_id`.
+
+The Story is `design/story.go`. It ships with one finished flow,
+`prices-cookie`, and with the test that flow requires: the method
+`PricesCookie` of package `eval/acceptance`. To describe new behavior, the
+guide adds a flow to that file and calls `refresh_story`. When you start a
+build of the change, each finished flow of its Story is a test the build
+requires, and the test writer adds the missing methods beside `PricesCookie`.
 
 To try prompt wording on a running `[[.Name]]` before it is verified, the
 builder calls `start_live_target` with the full candidate commit ID, then

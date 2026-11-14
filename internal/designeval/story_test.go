@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,7 +27,7 @@ func TestEvaluateProgramSpecializesStoryLoading(t *testing.T) {
 	assert.Contains(t, withoutStory, "main.go")
 	assert.NotContains(t, withoutStory, "story.go")
 	assert.NotContains(t, withoutStory["main.go"], harnessStoryModule)
-	assert.NotContains(t, withoutStory["main.go"], "recordStoryRoot")
+	assert.NotContains(t, withoutStory["main.go"], "storySummaries")
 	assert.NotContains(t, withoutStory["main.go"], "storySummary")
 	assert.NotContains(t, withoutStory["main.go"], "hadGoaAPI")
 
@@ -37,9 +38,11 @@ func TestEvaluateProgramSpecializesStoryLoading(t *testing.T) {
 	require.Len(t, withStory, 2)
 	assert.Contains(t, withStory["main.go"], "Stories       []storySummary")
 	assert.Contains(t, withStory["main.go"], "hadGoaAPI := goaexpr.Root.API != nil || len(goaexpr.Root.Services) > 0")
-	assert.Contains(t, withStory["main.go"], "recordStoryRoot(&out)")
+	assert.Contains(t, withStory["main.go"], "out.Stories = storySummaries()")
 	assert.Contains(t, withStory["main.go"], "if (hadGoaAPI || len(out.Stories) == 0) && api != nil")
 	assert.Contains(t, withStory["story.go"], `storyexpr "github.com/goadesign/surla/story/expr"`)
+	assert.True(t, strings.HasPrefix(withStory["story.go"], "package main\n"), "story_reader.go becomes the program's story.go")
+	assert.Contains(t, withStory["story.go"], "func storySummaries() []storySummary {")
 }
 
 func TestEvaluateObservesStoryOnlyAndCombinedDesigns(t *testing.T) {

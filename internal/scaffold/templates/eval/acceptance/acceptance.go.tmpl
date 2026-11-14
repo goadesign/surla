@@ -60,6 +60,15 @@ func (h *Hooks) PricesTea(ctx context.Context) (eval.Result, error) {
 	return h.ask(ctx, "How much is tea?", "[scripted] Tea costs $3.50.", true)
 }
 
+// PricesCookie is the test the Story's finished flow prices-cookie requires
+// (design/story.go in the project): "How much is cookie?" is answered from the
+// lookup_price result for cookie, 125 cents, shown as $1.25. A build of a
+// change requires one such method per finished flow of its Story; this one
+// ships with the starter as the example to follow.
+func (h *Hooks) PricesCookie(ctx context.Context) (eval.Result, error) {
+	return h.ask(ctx, "How much is cookie?", "[scripted] Cookie costs $1.25.", true)
+}
+
 // UnknownItem checks that a question about coffee, which the catalog does not
 // price, is answered from lookup_price's known=false result.
 func (h *Hooks) UnknownItem(ctx context.Context) (eval.Result, error) {

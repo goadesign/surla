@@ -1,6 +1,8 @@
-// This file decides what a verification run builds and runs: one function
-// chooses the plan for a change at a revision, and one reader turns a
-// commit's test layout into a plan that live copies use too.
+// This file decides which tests judge a change at a revision and what a
+// verification run builds and runs: testsChoice chooses the tests' commit and
+// source, verificationPlan builds the run's configuration from that choice,
+// and starterPlanAt turns a commit's test layout into a plan that live copies
+// use too.
 package controlplane
 
 import (
@@ -141,8 +143,8 @@ func (r *layoutRefusal) Error() string {
 // verificationPlan returns the configuration of a verification run of
 // candidateCommit for the change changeID at revision, which its caller has
 // already authorized: it owns the change, the change is confirmed and
-// revision is its revision in force. It is the only function that chooses
-// which tests judge a change.
+// revision is its revision in force. It chooses the tests through
+// testsChoice:
 //
 //   - With the stored evaluator, the operator's plan, as stored; it needs no
 //     build.
@@ -151,43 +153,30 @@ func (r *layoutRefusal) Error() string {
 //     the tests from the accepted commit's, and the test command is that
 //     commit's generated entry point (scaffold.Layout.GeneratedSuiteCommand).
 //
-// The build is read through ownedBuild, as get_build reads it, so a build
-// that read does not count (usableBuild) is no build. The returned Plan carries the
-// candidate commit, the revision and its test source; the caller adds the
-// run's work folder. It refuses with not_implemented when this control plane
-// runs no verification; no_build, tests_not_accepted and no_test_layout as
-// the error constructors below describe; and conflict when the repository
-// does not hold candidateCommit or the project folder was replaced.
+// The returned Plan carries the candidate commit, the revision and its test
+// source; the caller adds the run's work folder. It refuses with
+// not_implemented when this control plane runs no verification; no_build,
+// tests_not_accepted and no_test_layout as the error constructors below
+// describe; and conflict when the repository does not hold candidateCommit or
+// the project folder was replaced.
 func (c *ControlPlane) verificationPlan(
 	ctx context.Context,
 	principal Principal,
 	changeID, revision, candidateCommit string,
 ) (VerificationConfig, error) {
+	c.mu.RLock()
+	testsCommit, _, err := c.testsChoice(principal, changeID, revision)
+	c.mu.RUnlock()
+	if err != nil {
+		return VerificationConfig{}, err
+	}
 	switch v := c.verifier.(type) {
 	case storedVerification:
 		cfg := *v.cfg
 		cfg.Plan.CandidateCommit, cfg.Plan.RequestRevision = candidateCommit, revision
 		return cfg, nil
 	case writtenTestVerification:
-		c.mu.RLock()
-		held, err := c.ownedBuild(principal, changeID)
-		c.mu.RUnlock()
-		var missing *goa.ServiceError
-		switch {
-		case errors.As(err, &missing) && missing.Name == "not_found":
-			// The caller checked the change, so what is missing is its build.
-			return VerificationConfig{}, refuseNoBuild(changeID, revision, buildFile{}, false)
-		case err != nil:
-			return VerificationConfig{}, err
-		}
-		build := held.file
-		if build.RequestRevision != revision {
-			return VerificationConfig{}, refuseNoBuild(changeID, revision, build, true)
-		}
-		if build.TestWriter.State != testsAccepted {
-			return VerificationConfig{}, refuseTestsNotAccepted(build.TestWriter)
-		}
-		plan, err := c.starterPlanAt(ctx, candidateCommit, build.TestWriter.Commit, testWriterActs)
+		plan, err := c.starterPlanAt(ctx, candidateCommit, testsCommit, testWriterActs)
 		var refusal *layoutRefusal
 		switch {
 		case errors.As(err, &refusal) && (refusal.reason == refusedUnknownCommit || refusal.reason == refusedReplacedFolder):
@@ -203,6 +192,50 @@ func (c *ControlPlane) verificationPlan(
 		return cfg, nil
 	default:
 		return VerificationConfig{}, gensurla.MakeNotImplemented(errVerificationUnavailable)
+	}
+}
+
+// testsChoice returns the commit and source of the tests that judge changeID
+// at revision for principal, which its caller has already authorized as the
+// change's owner. It is the only function that chooses which tests a
+// verification run uses, which tests approve_merge requires a report to have
+// run, and which tests a saved approval must still match on read. Callers hold
+// c.mu (for reading or writing); it takes no lock.
+//
+//   - With the stored evaluator, it returns the stored plan's SuiteCommit and
+//     verify.TestsEvaluator, and needs no build.
+//   - With written-test runs, the change's build (read through ownedBuild, so
+//     an unusable build is no build) must be at revision and its tests must be
+//     accepted; it returns that accepted commit and verify.TestsWritten, or
+//     refuses with no_build or tests_not_accepted.
+//   - Without verification configured, it refuses with not_implemented.
+func (c *ControlPlane) testsChoice(
+	principal Principal,
+	changeID, revision string,
+) (commit string, source verify.TestsSource, err error) {
+	switch v := c.verifier.(type) {
+	case storedVerification:
+		return v.cfg.Plan.SuiteCommit, verify.TestsEvaluator, nil
+	case writtenTestVerification:
+		held, err := c.ownedBuild(principal, changeID)
+		var missing *goa.ServiceError
+		switch {
+		case errors.As(err, &missing) && missing.Name == "not_found":
+			// The caller checked the change, so what is missing is its build.
+			return "", "", refuseNoBuild(changeID, revision, buildFile{}, false)
+		case err != nil:
+			return "", "", err
+		}
+		build := held.file
+		if build.RequestRevision != revision {
+			return "", "", refuseNoBuild(changeID, revision, build, true)
+		}
+		if build.TestWriter.State != testsAccepted {
+			return "", "", refuseTestsNotAccepted(build.TestWriter)
+		}
+		return build.TestWriter.Commit, verify.TestsWritten, nil
+	default:
+		return "", "", gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
 }
 
@@ -374,7 +407,7 @@ func verifierRuns(v verifier) *VerificationConfig {
 	}
 }
 
-// refuseNoBuild is verify_change's no_build refusal of changeID at revision:
+// refuseNoBuild is testsChoice's no_build refusal of changeID at revision:
 // ownedBuild found no build with a test writer (none was started, or the one
 // started while the project verified with stored settings has none), or the
 // build found is of another revision, which it names. It ends with the
@@ -390,18 +423,18 @@ func refuseNoBuild(changeID, revision string, build buildFile, found bool) error
 		changeID, build.RequestRevision, revision, revision))
 }
 
-// refuseTestsNotAccepted is verify_change's tests_not_accepted refusal of a
+// refuseTestsNotAccepted is testsChoice's tests_not_accepted refusal of a
 // build whose tests are not accepted: it names the test writer's state in the
 // state's own words, then who acts, and ends with the step.
 func refuseTestsNotAccepted(saved testWriterAssignment) error {
 	var state, step string
 	switch saved.State {
 	case testsAssigned:
-		state, step = "assigned", "the test writer writes the required tests and reports them finished; verify again once Surla accepts them"
+		state, step = "assigned", "the test writer writes the required tests and reports them finished; the builder verifies again once Surla accepts them"
 	case testsReported:
-		state, step = "reported", "Surla is checking the test writer's report; verify again after its verdict"
+		state, step = "reported", "Surla is checking the test writer's report; the builder verifies again after its verdict"
 	case testsNeedChanges:
-		state, step = "needs changes", "the test writer fixes Surla's findings and reports again; verify again once Surla accepts them"
+		state, step = "needs changes", "the test writer fixes Surla's findings and reports again; the builder verifies again once Surla accepts them"
 	case testsCouldNotRun:
 		state, step = "could not run", "Surla's check could not run ("+saved.Reason+"); the user's step: "+saved.Step
 	}

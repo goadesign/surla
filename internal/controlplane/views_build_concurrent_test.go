@@ -16,15 +16,17 @@ import (
 // HTTP harness delays its delivery. All other service methods remain real.
 type pagePendingBuildRead struct {
 	*ControlPlane
-	// armed selects just the first read after the Team mutation.
+	// armed selects the first owner answer after its delivery gate is installed.
 	armed atomic.Bool
-	// captured proves the owner's answer existed before replacement began.
+	// captured proves the old answer existed while replacement was pending,
+	// before the owner handles its held POST.
 	captured chan *gensurla.ChangeBuild
 }
 
 // TestViewsPageBuildIgnoresAReadCapturedDuringPendingReplacement preserves a
-// successful replacement's saved start and working-copy receipt when a Team
-// update read the previous build while the replacement POST was still held.
+// successful replacement's saved start and working-copy receipt when a delayed
+// list update reads the previous build while the replacement POST is held. A
+// later Team update must coalesce with that read without blocking its own facts.
 // This proves page/HTTP behavior, not candidate execution or real window effects.
 func TestViewsPageBuildIgnoresAReadCapturedDuringPendingReplacement(t *testing.T) {
 	team := &teamServiceFixture{snapshot: pageTeamSnapshot("working")}
@@ -34,8 +36,13 @@ func TestViewsPageBuildIgnoresAReadCapturedDuringPendingReplacement(t *testing.T
 	confirmedChange(t, cp, "chg")
 	service := &pagePendingBuildRead{ControlPlane: cp, captured: make(chan *gensurla.ChangeBuild, 1)}
 	ps := startPageServer(t, service)
-	ps.act("new-attention", func() {
+	ps.act("hold-old-build-answer", func() {
+		// Test controls hold ps.mu, so interception cannot see the gate until
+		// the observer is also armed. The owner's next answer will be held.
+		ps.gates["GET /changes/chg/build"] = &pageGate{open: make(chan struct{}), answered: true}
 		service.armed.Store(true)
+	})
+	ps.act("new-attention", func() {
 		team.mu.Lock()
 		team.snapshot = pageTeamSnapshot("needs_you")
 		team.mu.Unlock()
@@ -46,7 +53,7 @@ func TestViewsPageBuildIgnoresAReadCapturedDuringPendingReplacement(t *testing.T
 			_, started := captured.Build.AsStarted()
 			assert.True(t, started, "the delayed owner answer must contain the previous saved build")
 		case <-time.After(10 * time.Second):
-			t.Error("the Team update did not capture a build answer before replacement")
+			t.Error("the delayed list update did not capture a build answer before replacement")
 		}
 	})
 
@@ -54,6 +61,10 @@ func TestViewsPageBuildIgnoresAReadCapturedDuringPendingReplacement(t *testing.T
 const path = "/changes/chg/build";
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").disabled, "first Build did not become available");
+// Keep the first build's version update behind its direct successful answer.
+// Releasing it during replacement forces the background-read interleaving.
+await control(origin, "answer-later", { key: "GET /changes" });
+await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").disabled, "first Build did not remain ready after delaying its list update");
 page.$("#surla-build-start").click();
 await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled && page.$("#surla-build-start-copy-receipt") && page.sent("GET", path).every((r) => r.status === 200), "the first saved build and its read did not finish");
 const oldStarted = JSON.parse(page.sent("POST", path)[0].answer).build.started_at;
@@ -61,21 +72,29 @@ expect(page.text("#surla-build-details").includes(oldStarted), "the first saved 
 
 // Hold before the owner handles replacement; its old build remains readable.
 await control(origin, "hold", { key: "POST " + path });
+await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "the first build's background read did not settle before replacement");
 page.$("#surla-build-again").click();
-await until(() => page.$("#surla-build-confirm"), "the replacement confirmation did not open");
+await until(() => page.$("#surla-build-confirm") && !page.$("#surla-build-confirm").disabled, "the replacement confirmation did not become ready");
 page.$("#surla-build-confirm").click();
 await until(() => page.sent("POST", path).length === 2 && page.$("#surla-build-starting"), "the replacement POST was not held pending");
 const replacement = page.sent("POST", path)[1];
 expect(replacement.status === undefined, "replacement completed before the race was armed");
 
-// Run the handler now and delay only its old answer, using the normal Team
-// mutation -> wait/list update -> get_build path to initiate that read.
-await control(origin, "answer-later", { key: "GET " + path });
-const reads = page.sent("GET", path).length;
-await control(origin, "act", { key: "new-attention" });
-await until(() => page.sent("GET", path).length > reads && page.$("#surla-team-attention-builder"), "the real Team update did not send a build read");
+// Run the delayed list's normal get_build handler during replacement, holding
+// only its answer. Capture is armed before that list can dispatch the read.
+await control(origin, "act", { key: "hold-old-build-answer" });
+const readsBeforeList = page.sent("GET", path).length;
+await until(() => page.sent("GET", "/changes").some((r) => r.status === undefined), "the first build's list update was not held");
+await control(origin, "release", { key: "GET /changes" });
+await until(() => page.sent("GET", path).length > readsBeforeList && page.sent("GET", path).at(-1).status === undefined, "the first build's delayed list update did not start a held read during replacement");
+const reads = page.sent("GET", path).length - 1;
 const oldRead = page.sent("GET", path)[reads];
+expect(page.requests.indexOf(oldRead) > page.requests.indexOf(replacement), "the held build read began before replacement was pending");
 await control(origin, "act", { key: "await-old-build-answer" });
+// This real Team mutation follows wait/list updates. Its build refresh may
+// coalesce with oldRead; another GET is neither required nor safe to await.
+await control(origin, "act", { key: "new-attention" });
+await until(() => page.$("#surla-team-attention-builder"), "the real Team update did not reach the page while its build read was held");
 expect(oldRead.status === undefined && replacement.status === undefined, "the captured old read or replacement escaped its gate");
 
 await control(origin, "release", { key: "POST " + path });

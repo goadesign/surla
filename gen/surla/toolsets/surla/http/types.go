@@ -62,17 +62,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -184,17 +186,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -250,17 +254,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -442,17 +448,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -546,6 +554,19 @@ type (
 		// One test per finished flow of stories, in declaration order; unfinished
 		// flows require none.
 		RequiredTests []*RequiredTestTransport `json:"required_tests"`
+		// Each question of the change as agreed at request_revision with the answer
+		// the user confirmed, in question order, copied when this build started; empty
+		// when the agreed revision asked none. The tests must hold the service to
+		// every answer.
+		Answers []*ConfirmedAnswerTransport `json:"answers"`
+		// The confirmation examples as agreed at request_revision, exactly as the user
+		// confirmed them, copied when this build started. The tests must hold the
+		// service to each expected outcome.
+		Examples []*ExampleItemTransport `json:"examples"`
+		// The existing behaviors the change as agreed at request_revision keeps,
+		// copied when this build started; empty when it names none. The tests must
+		// hold the service to each.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
 	}
 	// GetVerificationPayloadTransport is the internal JSON transport type for GetVerificationPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -638,11 +659,10 @@ type (
 		// Opaque value for change detection. Compare it only for equality; the
 		// returned fields contain the facts this operation makes readable.
 		Version *string `json:"version"`
-		// Whether approve_merge can record approvals on this server. It is false when
-		// no promotion target is configured, or when the server could not resolve its
-		// promotion target; approve_merge then refuses every approval. To configure
-		// one, store the project's promotion settings with surla promotion set, then
-		// restart Surla.
+		// Whether approve_merge can record approvals on this server. It is true
+		// whenever Checkpoint 4 verification is configured and any stored promotion
+		// settings could be resolved; it is false when verification is not configured
+		// or when resolving the promotion target returns an error.
 		ApprovalAvailable *bool `json:"approval_available"`
 	}
 	// ListTestWriterAssignmentsPayloadTransport is the internal JSON transport type for ListTestWriterAssignmentsPayload.
@@ -796,17 +816,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -958,17 +980,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -1126,17 +1150,23 @@ type (
 		ReportDigest *string `json:"report_digest"`
 		// Candidate commit the report was checked against.
 		CandidateCommit *string `json:"candidate_commit"`
-		// Evaluator suite the promotion target requires.
+		// Suite identifier the tests at suite_commit declared in the report (shown,
+		// not compared).
 		SuiteID *string `json:"suite_id"`
-		// Evaluator suite commit the promotion target requires.
+		// Commit of the tests the report ran: the operator's stored evaluator, or the
+		// tests Surla accepted for the change's build.
 		SuiteCommit *string `json:"suite_commit"`
-		// Dependency profile the promotion target requires, such as sim.
+		// Dependency profile the tests at suite_commit declared in the report, such as
+		// sim or scripted-model (shown, not compared).
 		Environment *string `json:"environment"`
 		// SHA-256 digest of each candidate binary the promotion target measured, keyed
-		// by binary name.
+		// by binary name; empty when no promotion settings are configured.
 		Artifacts map[string]string `json:"artifacts"`
-		// Number of declared evaluator scenarios, every one of which passed.
+		// Number of declared scenarios in the report, every one of which passed.
 		ScenarioCount *int `json:"scenario_count"`
+		// Where the tests at suite_commit came from, derived on each read: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource *ApprovalTestSource `json:"test_source"`
 	}
 	// BuildNotStartedTransport is the internal JSON transport type for BuildNotStartedTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1352,6 +1382,18 @@ type (
 		// When the Change Card was last saved. It is not part of request_revision.
 		SavedAt *string `json:"saved_at"`
 	}
+	// ConfirmedAnswerTransport is the internal JSON transport type for ConfirmedAnswerTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ConfirmedAnswerTransport struct {
+		// Question identifier on the Change Card.
+		ID *string `json:"id"`
+		// The question as the user answered it.
+		Question *string `json:"question"`
+		// The option the user confirmed, exactly as confirmed.
+		Answer *string `json:"answer"`
+	}
 	// DesignSnapshotTransport is the internal JSON transport type for DesignSnapshotTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1390,6 +1432,11 @@ type (
 		// when its report's verdict is known; not_completed when it stopped without a
 		// report.
 		State *string `json:"state"`
+		// Whether this run names the agreed request_revision and the tests selected
+		// now: the accepted test commit of the usable build in force, or the
+		// configured stored evaluator suite. It does not say whether the candidate
+		// working tree, deployment or approval is current.
+		InputsCurrent *bool `json:"inputs_current"`
 	}
 	// LivePromptItemTransport is the internal JSON transport type for LivePromptItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1796,7 +1843,7 @@ type (
 		// Recorded promotion approval from the Change Card.
 		Approval *ApprovalItemTransport `json:"approval"`
 		// Explanation of why the recorded approval could not be verified against
-		// current promotion inputs and how to recover.
+		// current release binaries and how to recover.
 		Reason *string `json:"reason"`
 	}
 	// VerificationCheckTransport is the internal JSON transport type for VerificationCheckTransport.

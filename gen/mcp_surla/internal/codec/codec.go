@@ -59,6 +59,29 @@ func ValidateApproveMergePayloadTransport(value *ApproveMergePayloadTransport) (
 	return err
 }
 
+// ApproveMergeResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type ApproveMergeResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateApproveMergeResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultAgentWrittenTestsTransport(value *ApproveMergeResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // ApproveMergeResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
 type ApproveMergeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
@@ -94,17 +117,23 @@ type ApproveMergeResultApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *ApproveMergeResultApprovalTestSourceTransport `json:"test_source"`
 }
 
 // ValidateApproveMergeResultApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -135,6 +164,26 @@ func ValidateApproveMergeResultApprovalItemTransport(value *ApproveMergeResultAp
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateApproveMergeResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -180,6 +229,19 @@ func ValidateApproveMergeResultExampleItemTransport(value *ApproveMergeResultExa
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
+	return err
+}
+
+// ApproveMergeResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type ApproveMergeResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateApproveMergeResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultOperatorEvaluatorTestsTransport(value *ApproveMergeResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -501,17 +563,19 @@ type ApproveMergeResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ApproveMergeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApproveMergeResultApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *ApproveMergeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -624,7 +688,7 @@ type ApproveMergeResultUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *ApproveMergeResultApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -834,6 +898,29 @@ func ValidateConfirmIntentPayloadTransport(value *ConfirmIntentPayloadTransport)
 	return err
 }
 
+// ConfirmIntentResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateConfirmIntentResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultAgentWrittenTestsTransport(value *ConfirmIntentResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // ConfirmIntentResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
@@ -869,17 +956,23 @@ type ConfirmIntentResultApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *ConfirmIntentResultApprovalTestSourceTransport `json:"test_source"`
 }
 
 // ValidateConfirmIntentResultApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -910,6 +1003,26 @@ func ValidateConfirmIntentResultApprovalItemTransport(value *ConfirmIntentResult
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateConfirmIntentResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -955,6 +1068,19 @@ func ValidateConfirmIntentResultExampleItemTransport(value *ConfirmIntentResultE
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
+	return err
+}
+
+// ConfirmIntentResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateConfirmIntentResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultOperatorEvaluatorTestsTransport(value *ConfirmIntentResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -1276,17 +1402,19 @@ type ConfirmIntentResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ConfirmIntentResultUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ConfirmIntentResultApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *ConfirmIntentResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -1399,7 +1527,7 @@ type ConfirmIntentResultUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *ConfirmIntentResultApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -1453,6 +1581,29 @@ func ValidateDeclineRevisionPayloadTransport(value *DeclineRevisionPayloadTransp
 	return err
 }
 
+// DeclineRevisionResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateDeclineRevisionResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultAgentWrittenTestsTransport(value *DeclineRevisionResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // DeclineRevisionResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
 type DeclineRevisionResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
@@ -1488,17 +1639,23 @@ type DeclineRevisionResultApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *DeclineRevisionResultApprovalTestSourceTransport `json:"test_source"`
 }
 
 // ValidateDeclineRevisionResultApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -1529,6 +1686,26 @@ func ValidateDeclineRevisionResultApprovalItemTransport(value *DeclineRevisionRe
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateDeclineRevisionResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -1574,6 +1751,19 @@ func ValidateDeclineRevisionResultExampleItemTransport(value *DeclineRevisionRes
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
+	return err
+}
+
+// DeclineRevisionResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type DeclineRevisionResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateDeclineRevisionResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateDeclineRevisionResultOperatorEvaluatorTestsTransport(value *DeclineRevisionResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -1895,17 +2085,19 @@ type DeclineRevisionResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *DeclineRevisionResultUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *DeclineRevisionResultApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *DeclineRevisionResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -2018,7 +2210,7 @@ type DeclineRevisionResultUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *DeclineRevisionResultApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -2793,6 +2985,29 @@ func ValidateGetChangePayloadTransport(value *GetChangePayloadTransport) (err er
 	return err
 }
 
+// GetChangeResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type GetChangeResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateGetChangeResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultAgentWrittenTestsTransport(value *GetChangeResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // GetChangeResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
 type GetChangeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
@@ -2828,17 +3043,23 @@ type GetChangeResultApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *GetChangeResultApprovalTestSourceTransport `json:"test_source"`
 }
 
 // ValidateGetChangeResultApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -2869,6 +3090,26 @@ func ValidateGetChangeResultApprovalItemTransport(value *GetChangeResultApproval
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateGetChangeResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -2914,6 +3155,19 @@ func ValidateGetChangeResultExampleItemTransport(value *GetChangeResultExampleIt
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
+	return err
+}
+
+// GetChangeResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type GetChangeResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateGetChangeResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultOperatorEvaluatorTestsTransport(value *GetChangeResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -3235,17 +3489,19 @@ type GetChangeResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *GetChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *GetChangeResultApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *GetChangeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -3358,7 +3614,7 @@ type GetChangeResultUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *GetChangeResultApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -3836,6 +4092,77 @@ func ValidateGetTestWriterAssignmentPayloadTransport(value *GetTestWriterAssignm
 	if value.ChangeID != nil {
 		if utf8.RuneCountInString(*value.ChangeID) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *value.ChangeID, utf8.RuneCountInString(*value.ChangeID), 1, true))
+		}
+	}
+	return err
+}
+
+// GetTestWriterAssignmentResultConfirmedAnswerTransport stores JSON fields until they have been validated.
+type GetTestWriterAssignmentResultConfirmedAnswerTransport struct {
+	// Question identifier on the Change Card.
+	ID *string `json:"id"`
+	// The question as the user answered it.
+	Question *string `json:"question"`
+	// The option the user confirmed, exactly as confirmed.
+	Answer *string `json:"answer"`
+}
+
+// ValidateGetTestWriterAssignmentResultConfirmedAnswerTransport checks decoded JSON before it becomes a service value.
+func ValidateGetTestWriterAssignmentResultConfirmedAnswerTransport(value *GetTestWriterAssignmentResultConfirmedAnswerTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
+	}
+	return err
+}
+
+// GetTestWriterAssignmentResultExampleItemTransport stores JSON fields until they have been validated.
+type GetTestWriterAssignmentResultExampleItemTransport struct {
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
+	ID *string `json:"id"`
+	// Plain-English scenario description.
+	Scenario *string `json:"scenario"`
+	// Representative user request and domain fixture state.
+	InputSummary *string `json:"input_summary"`
+	// Expected side effect and response behavior.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// Evaluator check classification (deterministic or model_judged).
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// ValidateGetTestWriterAssignmentResultExampleItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetTestWriterAssignmentResultExampleItemTransport(value *GetTestWriterAssignmentResultExampleItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
 	return err
@@ -4326,6 +4653,19 @@ type GetTestWriterAssignmentResultTransport struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*GetTestWriterAssignmentResultRequiredTestTransport `json:"required_tests"`
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*GetTestWriterAssignmentResultConfirmedAnswerTransport `json:"answers"`
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*GetTestWriterAssignmentResultExampleItemTransport `json:"examples"`
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
 }
 
 // ValidateGetTestWriterAssignmentResultTransport checks decoded JSON before it becomes a service value.
@@ -4360,6 +4700,15 @@ func ValidateGetTestWriterAssignmentResultTransport(value *GetTestWriterAssignme
 	if value.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if value.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if value.Progress != nil {
 		if err2 := ValidateGetTestWriterAssignmentResultTestWriterProgressTransport(value.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -4375,6 +4724,20 @@ func ValidateGetTestWriterAssignmentResultTransport(value *GetTestWriterAssignme
 	for _, e := range value.RequiredTests {
 		if e != nil {
 			if err2 := ValidateGetTestWriterAssignmentResultRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Answers {
+		if e != nil {
+			if err2 := ValidateGetTestWriterAssignmentResultConfirmedAnswerTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := ValidateGetTestWriterAssignmentResultExampleItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -5059,6 +5422,11 @@ type ListChangesResultLatestVerificationItemTransport struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State *string `json:"state"`
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent *bool `json:"inputs_current"`
 }
 
 // ValidateListChangesResultLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
@@ -5071,6 +5439,9 @@ func ValidateListChangesResultLatestVerificationItemTransport(value *ListChanges
 	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.State != nil {
 		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
@@ -5087,11 +5458,10 @@ type ListChangesResultTransport struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version *string `json:"version"`
-	// Whether approve_merge can record approvals on this server. It is false when
-	// no promotion target is configured, or when the server could not resolve its
-	// promotion target; approve_merge then refuses every approval. To configure
-	// one, store the project's promotion settings with surla promotion set, then
-	// restart Surla.
+	// Whether approve_merge can record approvals on this server. It is true
+	// whenever Checkpoint 4 verification is configured and any stored promotion
+	// settings could be resolved; it is false when verification is not configured
+	// or when resolving the promotion target returns an error.
 	ApprovalAvailable *bool `json:"approval_available"`
 }
 
@@ -6538,6 +6908,29 @@ func ValidateProposeChangePayloadTransport(value *ProposeChangePayloadTransport)
 	return err
 }
 
+// ProposeChangeResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type ProposeChangeResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateProposeChangeResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultAgentWrittenTestsTransport(value *ProposeChangeResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // ProposeChangeResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
 type ProposeChangeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
@@ -6573,17 +6966,23 @@ type ProposeChangeResultApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *ProposeChangeResultApprovalTestSourceTransport `json:"test_source"`
 }
 
 // ValidateProposeChangeResultApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -6614,6 +7013,26 @@ func ValidateProposeChangeResultApprovalItemTransport(value *ProposeChangeResult
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateProposeChangeResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -6659,6 +7078,19 @@ func ValidateProposeChangeResultExampleItemTransport(value *ProposeChangeResultE
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
+	return err
+}
+
+// ProposeChangeResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type ProposeChangeResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateProposeChangeResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultOperatorEvaluatorTestsTransport(value *ProposeChangeResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -6980,17 +7412,19 @@ type ProposeChangeResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ProposeChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ProposeChangeResultApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *ProposeChangeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -7103,7 +7537,7 @@ type ProposeChangeResultUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *ProposeChangeResultApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -7963,6 +8397,29 @@ func ValidateReviseChangePayloadTransport(value *ReviseChangePayloadTransport) (
 	return err
 }
 
+// ReviseChangeResultAgentWrittenTestsTransport stores JSON fields until they have been validated.
+type ReviseChangeResultAgentWrittenTestsTransport struct {
+	// Commit Surla recorded the accepted tests at; the same as suite_commit.
+	Commit *string `json:"commit"`
+	// Always: These tests were written by a separate agent on this machine and are
+	// not isolated from the builder.
+	Notice *string `json:"notice"`
+}
+
+// ValidateReviseChangeResultAgentWrittenTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultAgentWrittenTestsTransport(value *ReviseChangeResultAgentWrittenTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Notice == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("notice", "body"))
+	}
+	return err
+}
+
 // ReviseChangeResultAmbiguityQuestionTransport stores JSON fields until they have been validated.
 type ReviseChangeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
@@ -7998,17 +8455,23 @@ type ReviseChangeResultApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *int `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *ReviseChangeResultApprovalTestSourceTransport `json:"test_source"`
 }
 
 // ValidateReviseChangeResultApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -8039,6 +8502,26 @@ func ValidateReviseChangeResultApprovalItemTransport(value *ReviseChangeResultAp
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateReviseChangeResultAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -8084,6 +8567,19 @@ func ValidateReviseChangeResultExampleItemTransport(value *ReviseChangeResultExa
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
 		}
 	}
+	return err
+}
+
+// ReviseChangeResultOperatorEvaluatorTestsTransport stores JSON fields until they have been validated.
+type ReviseChangeResultOperatorEvaluatorTestsTransport struct {
+}
+
+// ValidateReviseChangeResultOperatorEvaluatorTestsTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultOperatorEvaluatorTestsTransport(value *ReviseChangeResultOperatorEvaluatorTestsTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -8405,17 +8901,19 @@ type ReviseChangeResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ReviseChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ReviseChangeResultApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *ReviseChangeResultUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -8528,7 +9026,7 @@ type ReviseChangeResultUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *ReviseChangeResultApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -9063,6 +9561,348 @@ func ValidateVerifyChangeResultVerificationScenarioTransport(value *VerifyChange
 	return err
 }
 
+// ApproveMergeResultApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type ApproveMergeResultApprovalTestSourceTransport struct {
+	kind         ApproveMergeResultApprovalTestSourceTransportKind
+	Evaluator    *ApproveMergeResultOperatorEvaluatorTestsTransport
+	WrittenTests *ApproveMergeResultAgentWrittenTestsTransport
+}
+
+// ApproveMergeResultApprovalTestSourceTransportKind identifies the selected branch of ApproveMergeResultApprovalTestSourceTransport.
+type ApproveMergeResultApprovalTestSourceTransportKind string
+
+const (
+	ApproveMergeResultApprovalTestSourceTransportKindEvaluator    ApproveMergeResultApprovalTestSourceTransportKind = "evaluator"
+	ApproveMergeResultApprovalTestSourceTransportKindWrittenTests ApproveMergeResultApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ApproveMergeResultApprovalTestSourceTransport) Kind() ApproveMergeResultApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// NewApproveMergeResultApprovalTestSourceTransportEvaluator creates ApproveMergeResultApprovalTestSourceTransport with its evaluator branch selected.
+func NewApproveMergeResultApprovalTestSourceTransportEvaluator(value *ApproveMergeResultOperatorEvaluatorTestsTransport) ApproveMergeResultApprovalTestSourceTransport {
+	return ApproveMergeResultApprovalTestSourceTransport{kind: ApproveMergeResultApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u ApproveMergeResultApprovalTestSourceTransport) AsEvaluator() (_ *ApproveMergeResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != ApproveMergeResultApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *ApproveMergeResultApprovalTestSourceTransport) SetEvaluator(value *ApproveMergeResultOperatorEvaluatorTestsTransport) {
+	u.kind = ApproveMergeResultApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewApproveMergeResultApprovalTestSourceTransportWrittenTests creates ApproveMergeResultApprovalTestSourceTransport with its written_tests branch selected.
+func NewApproveMergeResultApprovalTestSourceTransportWrittenTests(value *ApproveMergeResultAgentWrittenTestsTransport) ApproveMergeResultApprovalTestSourceTransport {
+	return ApproveMergeResultApprovalTestSourceTransport{kind: ApproveMergeResultApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u ApproveMergeResultApprovalTestSourceTransport) AsWrittenTests() (_ *ApproveMergeResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != ApproveMergeResultApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *ApproveMergeResultApprovalTestSourceTransport) SetWrittenTests(value *ApproveMergeResultAgentWrittenTestsTransport) {
+	u.kind = ApproveMergeResultApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u ApproveMergeResultApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case ApproveMergeResultApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "ApproveMergeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case ApproveMergeResultApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "ApproveMergeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "ApproveMergeResultApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(ApproveMergeResultApprovalTestSourceTransportKindEvaluator), string(ApproveMergeResultApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u ApproveMergeResultApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case ApproveMergeResultApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case ApproveMergeResultApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected ApproveMergeResultApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ApproveMergeResultApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// ConfirmIntentResultApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type ConfirmIntentResultApprovalTestSourceTransport struct {
+	kind         ConfirmIntentResultApprovalTestSourceTransportKind
+	Evaluator    *ConfirmIntentResultOperatorEvaluatorTestsTransport
+	WrittenTests *ConfirmIntentResultAgentWrittenTestsTransport
+}
+
+// ConfirmIntentResultApprovalTestSourceTransportKind identifies the selected branch of ConfirmIntentResultApprovalTestSourceTransport.
+type ConfirmIntentResultApprovalTestSourceTransportKind string
+
+const (
+	ConfirmIntentResultApprovalTestSourceTransportKindEvaluator    ConfirmIntentResultApprovalTestSourceTransportKind = "evaluator"
+	ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests ConfirmIntentResultApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ConfirmIntentResultApprovalTestSourceTransport) Kind() ConfirmIntentResultApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// NewConfirmIntentResultApprovalTestSourceTransportEvaluator creates ConfirmIntentResultApprovalTestSourceTransport with its evaluator branch selected.
+func NewConfirmIntentResultApprovalTestSourceTransportEvaluator(value *ConfirmIntentResultOperatorEvaluatorTestsTransport) ConfirmIntentResultApprovalTestSourceTransport {
+	return ConfirmIntentResultApprovalTestSourceTransport{kind: ConfirmIntentResultApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u ConfirmIntentResultApprovalTestSourceTransport) AsEvaluator() (_ *ConfirmIntentResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != ConfirmIntentResultApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *ConfirmIntentResultApprovalTestSourceTransport) SetEvaluator(value *ConfirmIntentResultOperatorEvaluatorTestsTransport) {
+	u.kind = ConfirmIntentResultApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewConfirmIntentResultApprovalTestSourceTransportWrittenTests creates ConfirmIntentResultApprovalTestSourceTransport with its written_tests branch selected.
+func NewConfirmIntentResultApprovalTestSourceTransportWrittenTests(value *ConfirmIntentResultAgentWrittenTestsTransport) ConfirmIntentResultApprovalTestSourceTransport {
+	return ConfirmIntentResultApprovalTestSourceTransport{kind: ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u ConfirmIntentResultApprovalTestSourceTransport) AsWrittenTests() (_ *ConfirmIntentResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *ConfirmIntentResultApprovalTestSourceTransport) SetWrittenTests(value *ConfirmIntentResultAgentWrittenTestsTransport) {
+	u.kind = ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u ConfirmIntentResultApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case ConfirmIntentResultApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "ConfirmIntentResultApprovalTestSourceTransport")
+		}
+		return nil
+	case ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "ConfirmIntentResultApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "ConfirmIntentResultApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(ConfirmIntentResultApprovalTestSourceTransportKindEvaluator), string(ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u ConfirmIntentResultApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case ConfirmIntentResultApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case ConfirmIntentResultApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected ConfirmIntentResultApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ConfirmIntentResultApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// DeclineRevisionResultApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type DeclineRevisionResultApprovalTestSourceTransport struct {
+	kind         DeclineRevisionResultApprovalTestSourceTransportKind
+	Evaluator    *DeclineRevisionResultOperatorEvaluatorTestsTransport
+	WrittenTests *DeclineRevisionResultAgentWrittenTestsTransport
+}
+
+// DeclineRevisionResultApprovalTestSourceTransportKind identifies the selected branch of DeclineRevisionResultApprovalTestSourceTransport.
+type DeclineRevisionResultApprovalTestSourceTransportKind string
+
+const (
+	DeclineRevisionResultApprovalTestSourceTransportKindEvaluator    DeclineRevisionResultApprovalTestSourceTransportKind = "evaluator"
+	DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests DeclineRevisionResultApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u DeclineRevisionResultApprovalTestSourceTransport) Kind() DeclineRevisionResultApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// NewDeclineRevisionResultApprovalTestSourceTransportEvaluator creates DeclineRevisionResultApprovalTestSourceTransport with its evaluator branch selected.
+func NewDeclineRevisionResultApprovalTestSourceTransportEvaluator(value *DeclineRevisionResultOperatorEvaluatorTestsTransport) DeclineRevisionResultApprovalTestSourceTransport {
+	return DeclineRevisionResultApprovalTestSourceTransport{kind: DeclineRevisionResultApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u DeclineRevisionResultApprovalTestSourceTransport) AsEvaluator() (_ *DeclineRevisionResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != DeclineRevisionResultApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *DeclineRevisionResultApprovalTestSourceTransport) SetEvaluator(value *DeclineRevisionResultOperatorEvaluatorTestsTransport) {
+	u.kind = DeclineRevisionResultApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewDeclineRevisionResultApprovalTestSourceTransportWrittenTests creates DeclineRevisionResultApprovalTestSourceTransport with its written_tests branch selected.
+func NewDeclineRevisionResultApprovalTestSourceTransportWrittenTests(value *DeclineRevisionResultAgentWrittenTestsTransport) DeclineRevisionResultApprovalTestSourceTransport {
+	return DeclineRevisionResultApprovalTestSourceTransport{kind: DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u DeclineRevisionResultApprovalTestSourceTransport) AsWrittenTests() (_ *DeclineRevisionResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *DeclineRevisionResultApprovalTestSourceTransport) SetWrittenTests(value *DeclineRevisionResultAgentWrittenTestsTransport) {
+	u.kind = DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u DeclineRevisionResultApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case DeclineRevisionResultApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "DeclineRevisionResultApprovalTestSourceTransport")
+		}
+		return nil
+	case DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "DeclineRevisionResultApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "DeclineRevisionResultApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(DeclineRevisionResultApprovalTestSourceTransportKindEvaluator), string(DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u DeclineRevisionResultApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case DeclineRevisionResultApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case DeclineRevisionResultApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected DeclineRevisionResultApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("DeclineRevisionResultApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
 // GetBuildResultbuildTransport stores exactly one selected Goa OneOf branch.
 type GetBuildResultbuildTransport struct {
 	kind       GetBuildResultbuildTransportKind
@@ -9542,6 +10382,120 @@ func (u GetBuilderAssignmentResultwrittenTestsTransport) MarshalJSON() ([]byte, 
 		return nil, err
 	}
 	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// GetChangeResultApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type GetChangeResultApprovalTestSourceTransport struct {
+	kind         GetChangeResultApprovalTestSourceTransportKind
+	Evaluator    *GetChangeResultOperatorEvaluatorTestsTransport
+	WrittenTests *GetChangeResultAgentWrittenTestsTransport
+}
+
+// GetChangeResultApprovalTestSourceTransportKind identifies the selected branch of GetChangeResultApprovalTestSourceTransport.
+type GetChangeResultApprovalTestSourceTransportKind string
+
+const (
+	GetChangeResultApprovalTestSourceTransportKindEvaluator    GetChangeResultApprovalTestSourceTransportKind = "evaluator"
+	GetChangeResultApprovalTestSourceTransportKindWrittenTests GetChangeResultApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u GetChangeResultApprovalTestSourceTransport) Kind() GetChangeResultApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// NewGetChangeResultApprovalTestSourceTransportEvaluator creates GetChangeResultApprovalTestSourceTransport with its evaluator branch selected.
+func NewGetChangeResultApprovalTestSourceTransportEvaluator(value *GetChangeResultOperatorEvaluatorTestsTransport) GetChangeResultApprovalTestSourceTransport {
+	return GetChangeResultApprovalTestSourceTransport{kind: GetChangeResultApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u GetChangeResultApprovalTestSourceTransport) AsEvaluator() (_ *GetChangeResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != GetChangeResultApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *GetChangeResultApprovalTestSourceTransport) SetEvaluator(value *GetChangeResultOperatorEvaluatorTestsTransport) {
+	u.kind = GetChangeResultApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewGetChangeResultApprovalTestSourceTransportWrittenTests creates GetChangeResultApprovalTestSourceTransport with its written_tests branch selected.
+func NewGetChangeResultApprovalTestSourceTransportWrittenTests(value *GetChangeResultAgentWrittenTestsTransport) GetChangeResultApprovalTestSourceTransport {
+	return GetChangeResultApprovalTestSourceTransport{kind: GetChangeResultApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u GetChangeResultApprovalTestSourceTransport) AsWrittenTests() (_ *GetChangeResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != GetChangeResultApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *GetChangeResultApprovalTestSourceTransport) SetWrittenTests(value *GetChangeResultAgentWrittenTestsTransport) {
+	u.kind = GetChangeResultApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u GetChangeResultApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case GetChangeResultApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "GetChangeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case GetChangeResultApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "GetChangeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "GetChangeResultApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(GetChangeResultApprovalTestSourceTransportKindEvaluator), string(GetChangeResultApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u GetChangeResultApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case GetChangeResultApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case GetChangeResultApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected GetChangeResultApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("GetChangeResultApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
 	return json.Marshal(fields)
 }
 
@@ -10789,6 +11743,120 @@ func (u ListVerificationsResulttestSourceTransport) MarshalJSON() ([]byte, error
 	return json.Marshal(fields)
 }
 
+// ProposeChangeResultApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type ProposeChangeResultApprovalTestSourceTransport struct {
+	kind         ProposeChangeResultApprovalTestSourceTransportKind
+	Evaluator    *ProposeChangeResultOperatorEvaluatorTestsTransport
+	WrittenTests *ProposeChangeResultAgentWrittenTestsTransport
+}
+
+// ProposeChangeResultApprovalTestSourceTransportKind identifies the selected branch of ProposeChangeResultApprovalTestSourceTransport.
+type ProposeChangeResultApprovalTestSourceTransportKind string
+
+const (
+	ProposeChangeResultApprovalTestSourceTransportKindEvaluator    ProposeChangeResultApprovalTestSourceTransportKind = "evaluator"
+	ProposeChangeResultApprovalTestSourceTransportKindWrittenTests ProposeChangeResultApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ProposeChangeResultApprovalTestSourceTransport) Kind() ProposeChangeResultApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// NewProposeChangeResultApprovalTestSourceTransportEvaluator creates ProposeChangeResultApprovalTestSourceTransport with its evaluator branch selected.
+func NewProposeChangeResultApprovalTestSourceTransportEvaluator(value *ProposeChangeResultOperatorEvaluatorTestsTransport) ProposeChangeResultApprovalTestSourceTransport {
+	return ProposeChangeResultApprovalTestSourceTransport{kind: ProposeChangeResultApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u ProposeChangeResultApprovalTestSourceTransport) AsEvaluator() (_ *ProposeChangeResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != ProposeChangeResultApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *ProposeChangeResultApprovalTestSourceTransport) SetEvaluator(value *ProposeChangeResultOperatorEvaluatorTestsTransport) {
+	u.kind = ProposeChangeResultApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewProposeChangeResultApprovalTestSourceTransportWrittenTests creates ProposeChangeResultApprovalTestSourceTransport with its written_tests branch selected.
+func NewProposeChangeResultApprovalTestSourceTransportWrittenTests(value *ProposeChangeResultAgentWrittenTestsTransport) ProposeChangeResultApprovalTestSourceTransport {
+	return ProposeChangeResultApprovalTestSourceTransport{kind: ProposeChangeResultApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u ProposeChangeResultApprovalTestSourceTransport) AsWrittenTests() (_ *ProposeChangeResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != ProposeChangeResultApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *ProposeChangeResultApprovalTestSourceTransport) SetWrittenTests(value *ProposeChangeResultAgentWrittenTestsTransport) {
+	u.kind = ProposeChangeResultApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u ProposeChangeResultApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case ProposeChangeResultApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "ProposeChangeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case ProposeChangeResultApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "ProposeChangeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "ProposeChangeResultApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(ProposeChangeResultApprovalTestSourceTransportKindEvaluator), string(ProposeChangeResultApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u ProposeChangeResultApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case ProposeChangeResultApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case ProposeChangeResultApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected ProposeChangeResultApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ProposeChangeResultApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
 // ReportTestsFinishedResulttestsTransport stores exactly one selected Goa OneOf branch.
 type ReportTestsFinishedResulttestsTransport struct {
 	kind         ReportTestsFinishedResulttestsTransportKind
@@ -11012,6 +12080,120 @@ func (u ReportTestsFinishedResulttestsTransport) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// ReviseChangeResultApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type ReviseChangeResultApprovalTestSourceTransport struct {
+	kind         ReviseChangeResultApprovalTestSourceTransportKind
+	Evaluator    *ReviseChangeResultOperatorEvaluatorTestsTransport
+	WrittenTests *ReviseChangeResultAgentWrittenTestsTransport
+}
+
+// ReviseChangeResultApprovalTestSourceTransportKind identifies the selected branch of ReviseChangeResultApprovalTestSourceTransport.
+type ReviseChangeResultApprovalTestSourceTransportKind string
+
+const (
+	ReviseChangeResultApprovalTestSourceTransportKindEvaluator    ReviseChangeResultApprovalTestSourceTransportKind = "evaluator"
+	ReviseChangeResultApprovalTestSourceTransportKindWrittenTests ReviseChangeResultApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u ReviseChangeResultApprovalTestSourceTransport) Kind() ReviseChangeResultApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// NewReviseChangeResultApprovalTestSourceTransportEvaluator creates ReviseChangeResultApprovalTestSourceTransport with its evaluator branch selected.
+func NewReviseChangeResultApprovalTestSourceTransportEvaluator(value *ReviseChangeResultOperatorEvaluatorTestsTransport) ReviseChangeResultApprovalTestSourceTransport {
+	return ReviseChangeResultApprovalTestSourceTransport{kind: ReviseChangeResultApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u ReviseChangeResultApprovalTestSourceTransport) AsEvaluator() (_ *ReviseChangeResultOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != ReviseChangeResultApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *ReviseChangeResultApprovalTestSourceTransport) SetEvaluator(value *ReviseChangeResultOperatorEvaluatorTestsTransport) {
+	u.kind = ReviseChangeResultApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// NewReviseChangeResultApprovalTestSourceTransportWrittenTests creates ReviseChangeResultApprovalTestSourceTransport with its written_tests branch selected.
+func NewReviseChangeResultApprovalTestSourceTransportWrittenTests(value *ReviseChangeResultAgentWrittenTestsTransport) ReviseChangeResultApprovalTestSourceTransport {
+	return ReviseChangeResultApprovalTestSourceTransport{kind: ReviseChangeResultApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u ReviseChangeResultApprovalTestSourceTransport) AsWrittenTests() (_ *ReviseChangeResultAgentWrittenTestsTransport, ok bool) {
+	if u.kind != ReviseChangeResultApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *ReviseChangeResultApprovalTestSourceTransport) SetWrittenTests(value *ReviseChangeResultAgentWrittenTestsTransport) {
+	u.kind = ReviseChangeResultApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u ReviseChangeResultApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case ReviseChangeResultApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "ReviseChangeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case ReviseChangeResultApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "ReviseChangeResultApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "ReviseChangeResultApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(ReviseChangeResultApprovalTestSourceTransportKindEvaluator), string(ReviseChangeResultApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u ReviseChangeResultApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case ReviseChangeResultApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case ReviseChangeResultApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected ReviseChangeResultApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("ReviseChangeResultApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
 	return json.Marshal(fields)
 }
 
@@ -12185,6 +13367,26 @@ func EncodeGetTestWriterAssignmentResult(in *surla.TestWriterAssignment) ([]byte
 			}
 			body.RequiredTests[i] = encodeRequiredTestToGetTestWriterAssignmentResultRequiredTestTransport(val)
 		}
+		body.Answers = make([]*GetTestWriterAssignmentResultConfirmedAnswerTransport, len(in.Answers))
+		for i, val := range in.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = encodeConfirmedAnswerToGetTestWriterAssignmentResultConfirmedAnswerTransport(val)
+		}
+		body.Examples = make([]*GetTestWriterAssignmentResultExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToGetTestWriterAssignmentResultExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
 	}
 	if err := ValidateGetTestWriterAssignmentResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate GetTestWriterAssignmentResult JSON: %w", err)
@@ -13295,6 +14497,78 @@ func encodeAgentPolicyItemToPreviewArchitectureResultAgentPolicyItemTransport(v 
 	return res
 }
 
+func encodeAgentWrittenTestsToApproveMergeResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *ApproveMergeResultAgentWrittenTestsTransport {
+	res := &ApproveMergeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToApproveMergeResultAgentWrittenTestsTransport2(v *surla.AgentWrittenTests) *ApproveMergeResultAgentWrittenTestsTransport {
+	res := &ApproveMergeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToConfirmIntentResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *ConfirmIntentResultAgentWrittenTestsTransport {
+	res := &ConfirmIntentResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToConfirmIntentResultAgentWrittenTestsTransport2(v *surla.AgentWrittenTests) *ConfirmIntentResultAgentWrittenTestsTransport {
+	res := &ConfirmIntentResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToDeclineRevisionResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *DeclineRevisionResultAgentWrittenTestsTransport {
+	res := &DeclineRevisionResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToDeclineRevisionResultAgentWrittenTestsTransport2(v *surla.AgentWrittenTests) *DeclineRevisionResultAgentWrittenTestsTransport {
+	res := &DeclineRevisionResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToGetChangeResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *GetChangeResultAgentWrittenTestsTransport {
+	res := &GetChangeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToGetChangeResultAgentWrittenTestsTransport2(v *surla.AgentWrittenTests) *GetChangeResultAgentWrittenTestsTransport {
+	res := &GetChangeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
 func encodeAgentWrittenTestsToGetVerificationResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *GetVerificationResultAgentWrittenTestsTransport {
 	res := &GetVerificationResultAgentWrittenTestsTransport{
 		Commit: &v.Commit,
@@ -13306,6 +14580,42 @@ func encodeAgentWrittenTestsToGetVerificationResultAgentWrittenTestsTransport(v 
 
 func encodeAgentWrittenTestsToListVerificationsResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *ListVerificationsResultAgentWrittenTestsTransport {
 	res := &ListVerificationsResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToProposeChangeResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *ProposeChangeResultAgentWrittenTestsTransport {
+	res := &ProposeChangeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToProposeChangeResultAgentWrittenTestsTransport2(v *surla.AgentWrittenTests) *ProposeChangeResultAgentWrittenTestsTransport {
+	res := &ProposeChangeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToReviseChangeResultAgentWrittenTestsTransport(v *surla.AgentWrittenTests) *ReviseChangeResultAgentWrittenTestsTransport {
+	res := &ReviseChangeResultAgentWrittenTestsTransport{
+		Commit: &v.Commit,
+		Notice: &v.Notice,
+	}
+
+	return res
+}
+
+func encodeAgentWrittenTestsToReviseChangeResultAgentWrittenTestsTransport2(v *surla.AgentWrittenTests) *ReviseChangeResultAgentWrittenTestsTransport {
+	res := &ReviseChangeResultAgentWrittenTestsTransport{
 		Commit: &v.Commit,
 		Notice: &v.Notice,
 	}
@@ -13494,6 +14804,28 @@ func encodeApprovalItemToApproveMergeResultApprovalItemTransport(v *surla.Approv
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ApproveMergeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ApproveMergeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToApproveMergeResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ApproveMergeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ApproveMergeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToApproveMergeResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ApproveMergeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13514,6 +14846,28 @@ func encodeApprovalItemToApproveMergeResultApprovalItemTransport2(v *surla.Appro
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ApproveMergeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ApproveMergeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToApproveMergeResultOperatorEvaluatorTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ApproveMergeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ApproveMergeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToApproveMergeResultAgentWrittenTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ApproveMergeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13534,6 +14888,28 @@ func encodeApprovalItemToConfirmIntentResultApprovalItemTransport(v *surla.Appro
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ConfirmIntentResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ConfirmIntentResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToConfirmIntentResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ConfirmIntentResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ConfirmIntentResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToConfirmIntentResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ConfirmIntentResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13554,6 +14930,28 @@ func encodeApprovalItemToConfirmIntentResultApprovalItemTransport2(v *surla.Appr
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ConfirmIntentResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ConfirmIntentResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToConfirmIntentResultOperatorEvaluatorTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ConfirmIntentResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ConfirmIntentResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToConfirmIntentResultAgentWrittenTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ConfirmIntentResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13574,6 +14972,28 @@ func encodeApprovalItemToDeclineRevisionResultApprovalItemTransport(v *surla.App
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue DeclineRevisionResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *DeclineRevisionResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToDeclineRevisionResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*DeclineRevisionResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *DeclineRevisionResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToDeclineRevisionResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*DeclineRevisionResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13594,6 +15014,28 @@ func encodeApprovalItemToDeclineRevisionResultApprovalItemTransport2(v *surla.Ap
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue DeclineRevisionResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *DeclineRevisionResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToDeclineRevisionResultOperatorEvaluatorTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*DeclineRevisionResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *DeclineRevisionResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToDeclineRevisionResultAgentWrittenTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*DeclineRevisionResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13614,6 +15056,28 @@ func encodeApprovalItemToGetChangeResultApprovalItemTransport(v *surla.ApprovalI
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue GetChangeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *GetChangeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToGetChangeResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*GetChangeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *GetChangeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToGetChangeResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*GetChangeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13634,6 +15098,28 @@ func encodeApprovalItemToGetChangeResultApprovalItemTransport2(v *surla.Approval
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue GetChangeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *GetChangeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToGetChangeResultOperatorEvaluatorTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*GetChangeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *GetChangeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToGetChangeResultAgentWrittenTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*GetChangeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13654,6 +15140,28 @@ func encodeApprovalItemToProposeChangeResultApprovalItemTransport(v *surla.Appro
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ProposeChangeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ProposeChangeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToProposeChangeResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ProposeChangeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ProposeChangeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToProposeChangeResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ProposeChangeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13674,6 +15182,28 @@ func encodeApprovalItemToProposeChangeResultApprovalItemTransport2(v *surla.Appr
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ProposeChangeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ProposeChangeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToProposeChangeResultOperatorEvaluatorTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ProposeChangeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ProposeChangeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToProposeChangeResultAgentWrittenTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ProposeChangeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13694,6 +15224,28 @@ func encodeApprovalItemToReviseChangeResultApprovalItemTransport(v *surla.Approv
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ReviseChangeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ReviseChangeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToReviseChangeResultOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ReviseChangeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ReviseChangeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToReviseChangeResultAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ReviseChangeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13714,6 +15266,28 @@ func encodeApprovalItemToReviseChangeResultApprovalItemTransport2(v *surla.Appro
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue ReviseChangeResultApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *ReviseChangeResultOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToReviseChangeResultOperatorEvaluatorTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*ReviseChangeResultOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *ReviseChangeResultAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToReviseChangeResultAgentWrittenTestsTransport2(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*ReviseChangeResultAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -13868,6 +15442,16 @@ func encodeChangeListItemToListChangesResultChangeListItemTransport(v *surla.Cha
 	return res
 }
 
+func encodeConfirmedAnswerToGetTestWriterAssignmentResultConfirmedAnswerTransport(v *surla.ConfirmedAnswer) *GetTestWriterAssignmentResultConfirmedAnswerTransport {
+	res := &GetTestWriterAssignmentResultConfirmedAnswerTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+		Answer:   &v.Answer,
+	}
+
+	return res
+}
+
 func encodeExampleItemToApproveMergeResultExampleItemTransport(v *surla.ExampleItem) *ApproveMergeResultExampleItemTransport {
 	res := &ApproveMergeResultExampleItemTransport{
 		ID:               &v.ID,
@@ -13964,6 +15548,18 @@ func encodeExampleItemToGetChangeResultExampleItemTransport2(v *surla.ExampleIte
 	return res
 }
 
+func encodeExampleItemToGetTestWriterAssignmentResultExampleItemTransport(v *surla.ExampleItem) *GetTestWriterAssignmentResultExampleItemTransport {
+	res := &GetTestWriterAssignmentResultExampleItemTransport{
+		ID:               &v.ID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
 func encodeExampleItemToProposeChangeResultExampleItemTransport(v *surla.ExampleItem) *ProposeChangeResultExampleItemTransport {
 	res := &ProposeChangeResultExampleItemTransport{
 		ID:               &v.ID,
@@ -14014,8 +15610,9 @@ func encodeExampleItemToReviseChangeResultExampleItemTransport2(v *surla.Example
 
 func encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v *surla.LatestVerificationItem) *ListChangesResultLatestVerificationItemTransport {
 	res := &ListChangesResultLatestVerificationItemTransport{
-		RunID: &v.RunID,
-		State: &v.State,
+		RunID:         &v.RunID,
+		State:         &v.State,
+		InputsCurrent: &v.InputsCurrent,
 	}
 
 	return res
@@ -14055,6 +15652,54 @@ func encodeLiveTargetStartingToGetLiveTargetResultLiveTargetStartingTransport(v 
 	return res
 }
 
+func encodeOperatorEvaluatorTestsToApproveMergeResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *ApproveMergeResultOperatorEvaluatorTestsTransport {
+	res := &ApproveMergeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToApproveMergeResultOperatorEvaluatorTestsTransport2(v *surla.OperatorEvaluatorTests) *ApproveMergeResultOperatorEvaluatorTestsTransport {
+	res := &ApproveMergeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToConfirmIntentResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *ConfirmIntentResultOperatorEvaluatorTestsTransport {
+	res := &ConfirmIntentResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToConfirmIntentResultOperatorEvaluatorTestsTransport2(v *surla.OperatorEvaluatorTests) *ConfirmIntentResultOperatorEvaluatorTestsTransport {
+	res := &ConfirmIntentResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToDeclineRevisionResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *DeclineRevisionResultOperatorEvaluatorTestsTransport {
+	res := &DeclineRevisionResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToDeclineRevisionResultOperatorEvaluatorTestsTransport2(v *surla.OperatorEvaluatorTests) *DeclineRevisionResultOperatorEvaluatorTestsTransport {
+	res := &DeclineRevisionResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToGetChangeResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *GetChangeResultOperatorEvaluatorTestsTransport {
+	res := &GetChangeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToGetChangeResultOperatorEvaluatorTestsTransport2(v *surla.OperatorEvaluatorTests) *GetChangeResultOperatorEvaluatorTestsTransport {
+	res := &GetChangeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
 func encodeOperatorEvaluatorTestsToGetVerificationResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *GetVerificationResultOperatorEvaluatorTestsTransport {
 	res := &GetVerificationResultOperatorEvaluatorTestsTransport{}
 
@@ -14063,6 +15708,30 @@ func encodeOperatorEvaluatorTestsToGetVerificationResultOperatorEvaluatorTestsTr
 
 func encodeOperatorEvaluatorTestsToListVerificationsResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *ListVerificationsResultOperatorEvaluatorTestsTransport {
 	res := &ListVerificationsResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToProposeChangeResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *ProposeChangeResultOperatorEvaluatorTestsTransport {
+	res := &ProposeChangeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToProposeChangeResultOperatorEvaluatorTestsTransport2(v *surla.OperatorEvaluatorTests) *ProposeChangeResultOperatorEvaluatorTestsTransport {
+	res := &ProposeChangeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToReviseChangeResultOperatorEvaluatorTestsTransport(v *surla.OperatorEvaluatorTests) *ReviseChangeResultOperatorEvaluatorTestsTransport {
+	res := &ReviseChangeResultOperatorEvaluatorTestsTransport{}
+
+	return res
+}
+
+func encodeOperatorEvaluatorTestsToReviseChangeResultOperatorEvaluatorTestsTransport2(v *surla.OperatorEvaluatorTests) *ReviseChangeResultOperatorEvaluatorTestsTransport {
+	res := &ReviseChangeResultOperatorEvaluatorTestsTransport{}
 
 	return res
 }

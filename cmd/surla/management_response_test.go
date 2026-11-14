@@ -60,10 +60,11 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 			case "query string":
 				url = state.Origin() + "/views?other=1#link=" + token
 			}
+			build := testBuild(t)
 			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/project/identity" {
-					_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner)
+					_, err := fmt.Fprintf(w, `{"project_id":%q,"directory":%q,"owner":%q,"build":%q}`, state.Record.ID, state.Record.Directory, state.Record.Owner, build)
 					assert.NoError(t, err)
 					return
 				}
@@ -353,12 +354,13 @@ func TestStartPrintsProjectTeamStep(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 			step := "Owner's next step for " + dialog + `: choose "fixture-agent".`
+			build := testBuild(t)
 			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/project/identity":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
-						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner, "build": build,
 					}))
 				case "/project/team":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{

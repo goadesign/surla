@@ -730,6 +730,15 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	if body.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if body.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if body.Progress != nil {
 		if err2 := ValidateTestWriterProgressTransport(body.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -745,6 +754,20 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	for _, e := range body.RequiredTests {
 		if e != nil {
 			if err2 := ValidateRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Answers {
+		if e != nil {
+			if err2 := ValidateConfirmedAnswerTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := ValidateExampleItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -1565,6 +1588,26 @@ func ValidateApprovalItemTransport(body *ApprovalItemTransport) (err error) {
 	if body.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
 	}
+	if body.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if body.TestSource != nil {
+
+		if err2 := body.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := body.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := ValidateAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
 	return
 }
 
@@ -1921,6 +1964,20 @@ func ValidateChangeListItemTransport(body *ChangeListItemTransport) (err error) 
 	return
 }
 
+// ValidateConfirmedAnswerTransport runs the validations defined on ConfirmedAnswerTransport.
+func ValidateConfirmedAnswerTransport(body *ConfirmedAnswerTransport) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if body.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
+	}
+	return
+}
+
 // ValidateDesignSnapshotTransport runs the validations defined on DesignSnapshotTransport.
 func ValidateDesignSnapshotTransport(body *DesignSnapshotTransport) (err error) {
 	if body.Files == nil {
@@ -1961,6 +2018,9 @@ func ValidateLatestVerificationItemTransport(body *LatestVerificationItemTranspo
 	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if body.State != nil {
 		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {

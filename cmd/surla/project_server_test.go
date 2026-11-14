@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -122,6 +123,62 @@ func TestProjectStartRefusesTakenPortAndHeldUnansweringStore(t *testing.T) {
 	}
 }
 
+// TestTakenPortNamesHolderAndStep names what holds a stopped project's saved port and
+// the step that frees it: another Surla project's running server, by its folder, or
+// another program. Projects saved before new ones avoided each other's ports can share one.
+func TestTakenPortNamesHolderAndStep(t *testing.T) {
+	for _, holder := range []string{"another program", "another project", "another stopped project"} {
+		t.Run(holder, func(t *testing.T) {
+			root := t.TempDir()
+			state := initializedProject(t, root, t.TempDir())
+			ln, err := net.Listen("tcp", state.Address())
+			require.NoError(t, err)
+			defer func() { assert.NoError(t, ln.Close()) }()
+			otherFolder := ""
+			if holder != "another program" {
+				other := initializedProject(t, root, t.TempDir())
+				otherFolder = other.Record.Directory
+				other.Record.Port = state.Record.Port
+				raw, err := json.Marshal(other.Record)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(other.Dir, "project.json"), raw, 0o600))
+				if holder == "another project" {
+					cp, err := controlplane.New(controlplane.Options{CardsDir: other.CardsDir()})
+					require.NoError(t, err)
+					defer func() { assert.NoError(t, cp.Close()) }()
+				}
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			_, _, err = attachOrStartProject(ctx, state, func(context.Context, *project.State) (string, error) {
+				t.Error("no server starts on a taken port")
+				return "", nil
+			})
+			require.Error(t, err)
+			if holder == "another project" {
+				assert.Contains(t, err.Error(), "the Surla server of the project in "+otherFolder)
+				assert.Contains(t, err.Error(), "run surla stop in that folder")
+				return
+			}
+			assert.Contains(t, err.Error(), fmt.Sprintf("another program is listening on 127.0.0.1:%d", state.Record.Port))
+			assert.Contains(t, err.Error(), "stop that program, then run surla")
+		})
+	}
+}
+
+// initializedProject creates the project for directory under root as surla does.
+func initializedProject(t *testing.T, root, directory string) *project.State {
+	t.Helper()
+	state, err := project.Discover(root, directory)
+	require.NoError(t, err)
+	lock, err := state.StartLock(t.Context())
+	require.NoError(t, err)
+	_, err = state.Initialize("owner")
+	require.NoError(t, err)
+	require.NoError(t, lock.Close())
+	return state
+}
+
 // TestProjectSettingsPersistAndRejectStorageFields proves stopped-server management and startup snapshot behavior.
 func TestProjectSettingsPersistAndRejectStorageFields(t *testing.T) {
 	dir := isolateServeWorkspace(t)
@@ -168,36 +225,77 @@ func TestPromotionSettingsSurviveRestart(t *testing.T) {
 	commit := strings.Repeat("c", 40)
 	publish(t, release, commit, map[string]string{"app": "verified binary"})
 	file := filepath.Join(t.TempDir(), "promotion.json")
-	raw := fmt.Sprintf(`{"release_dir":%q,"suite_id":"suite","suite_commit":%q,"environment":"sim","binaries":["app"]}`, release, strings.Repeat("b", 40))
+	raw := fmt.Sprintf(`{"release_dir":%q,"binaries":["app"]}`, release)
 	require.NoError(t, os.WriteFile(file, []byte(raw), 0o600))
 	var output bytes.Buffer
 	require.NoError(t, runProjectSettings("promotion", []string{"set", file}, &output))
 	assert.Contains(t, output.String(), "next time")
-	load := func() controlplane.PromotionInputs {
+	load := func() map[string]string {
 		config, err := configureServeWorkspace()
 		require.NoError(t, err)
 		require.NotNil(t, config.promotionTarget)
 		cp, err := controlplane.New(controlplane.Options{CardsDir: config.cardsDir, PromotionTarget: config.promotionTarget})
 		require.NoError(t, err)
-		inputs, err := config.promotionTarget.CurrentInputs(t.Context(), commit)
+		artifacts, err := config.promotionTarget.CurrentArtifacts(t.Context(), commit)
 		require.NoError(t, err)
 		require.NoError(t, cp.Close())
-		return inputs
+		return artifacts
 	}
 	before := load()
-	assert.Equal(t, digestOf("verified binary"), before.Artifacts["app"])
+	assert.Equal(t, digestOf("verified binary"), before["app"])
 	// Both fields removed from settings are rejected; no alternate report store can be introduced.
 	require.NoError(t, os.WriteFile(file, []byte(strings.TrimSuffix(raw, "}")+`,"report_dir":"/unowned"}`), 0o600))
 	assert.Error(t, runProjectSettings("promotion", []string{"set", file}, &output))
 	assert.Equal(t, before, load())
 	output.Reset()
 	require.NoError(t, runProjectSettings("promotion", []string{"show"}, &output))
-	assert.Contains(t, output.String(), `"suite_id":"suite"`)
+	assert.Contains(t, output.String(), `"binaries":["app"]`)
 	assert.NotContains(t, output.String(), "report_dir")
 	require.NoError(t, runProjectSettings("promotion", []string{"remove"}, &output))
 	current, err := configureServeWorkspace()
 	require.NoError(t, err)
 	assert.Nil(t, current.promotionTarget)
+}
+
+// TestServeRefusesInvalidStoredSettingsWithRecoveryStep verifies Proof clause 2:
+// when a stored promotion.json (such as an older file containing suite_id) or
+// verification.json is invalid at server start, runWithRuntime(["serve", "-state", ...])
+// fails with the underlying cause first and ends with the recovery step.
+func TestServeRefusesInvalidStoredSettingsWithRecoveryStep(t *testing.T) {
+	cases := []struct {
+		name     string
+		kind     string
+		content  string
+		wantPart string
+		wantStep string
+	}{
+		{
+			name:     "old stored promotion settings with suite fields",
+			kind:     "promotion",
+			content:  `{"release_dir":"/rel","suite_id":"orders","suite_commit":"` + strings.Repeat("b", 40) + `","environment":"sim","binaries":["orders"]}`,
+			wantPart: `unknown field "suite_id"`,
+			wantStep: storedPromotionSettingsStep,
+		},
+		{
+			name:     "invalid stored verification settings",
+			kind:     "verification",
+			content:  `{"candidate_repo":"/candidate.git","suite_commit":"not-a-commit"}`,
+			wantPart: "verification settings are missing",
+			wantStep: storedVerificationSettingsStep,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			require.NoError(t, state.SaveSettings(tc.kind, []byte(tc.content)))
+			err = runWithRuntime([]string{"serve", "-state", state.Dir}, io.Discard, testProjectRuntime())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantPart)
+			assert.True(t, strings.HasSuffix(err.Error(), tc.wantStep), "error %q must end with %q", err.Error(), tc.wantStep)
+		})
+	}
 }
 
 // TestProjectSettingsRejectsWorkspaceAndRepositoryPaths proves management cannot
@@ -236,7 +334,7 @@ func TestProjectSettingsRejectsWorkspaceAndRepositoryPaths(t *testing.T) {
 				}
 				content := `{"candidate_repo":"/c.git","candidate_module":".","binaries":{"app":"./cmd/app"},"suite_repo":"/s.git","suite_commit":"` + strings.Repeat("b", 40) + `","suite_module":".","suite_command":"./cmd/evals","timeout":"30m"}`
 				if kind == "promotion" {
-					content = `{"release_dir":"` + release + `","suite_id":"suite","suite_commit":"` + strings.Repeat("b", 40) + `","environment":"sim","binaries":["app"]}`
+					content = `{"release_dir":"` + release + `","binaries":["app"]}`
 				}
 				require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 				err := runProjectSettings(kind, []string{"set", path}, io.Discard)
@@ -569,7 +667,8 @@ func TestReadinessStopsOnAnyReceivedHTTPResponse(t *testing.T) {
 			client := projectClient(state)
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			require.Error(t, confirmProject(ctx, state, client))
+			_, err = confirmProject(ctx, state, client)
+			require.Error(t, err)
 			assert.EqualValues(t, 1, probes.Load(), "no redirect or retry may resend the credential")
 			assert.NoError(t, ctx.Err(), "a reply ends polling before the deadline")
 		})
@@ -591,7 +690,8 @@ func TestReadinessDoesNotResendAfterConnectionFailure(t *testing.T) {
 	}}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	require.Error(t, confirmProject(ctx, state, client))
+	_, err = confirmProject(ctx, state, client)
+	require.Error(t, err)
 	assert.Equal(t, 1, probes)
 }
 

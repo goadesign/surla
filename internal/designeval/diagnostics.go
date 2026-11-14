@@ -44,6 +44,17 @@ type (
 		// err is the unchanged validation failure and its original Go causes.
 		err error
 	}
+	// storyRequirementError is a failure to load the design's dependencies
+	// whose cause the snapshot shows: a design file imports the Story
+	// language and the module's go.mod does not require the Story module.
+	// withStoryRequirementStep is its only constructor.
+	storyRequirementError struct {
+		// err is the unchanged module loading failure.
+		err error
+		// version is the Story module version the evaluator's go.mod
+		// requires, which GenerationDiagnostic tells the caller to require.
+		version string
+	}
 	// sandboxOutputError retains output from an offline sandbox once. Module
 	// commands outside that sandbox never construct it because their output
 	// can include operator proxy credentials and private configuration.
@@ -76,7 +87,9 @@ var modulePhases = []string{phaseCheckFiles, phaseLoadModules, phaseCompile, pha
 // unchanged. A compiler error exit does not distinguish invalid source from
 // cache, disk, or setup failures, so this function never makes that verdict.
 // Module-loading stderr is always withheld because those commands use operator
-// HOME and proxy settings outside the sandbox.
+// HOME and proxy settings outside the sandbox; when the snapshot shows that a
+// design file imports the Story language its go.mod does not require, the
+// message names the go get step that adds the requirement instead.
 //
 // Known-path substitution is diagnostic hygiene, not confidentiality for
 // arbitrary output from an executed design. The OS sandbox governs access to
@@ -91,6 +104,12 @@ func GenerationDiagnostic(err error) string {
 	var validation *snapshotValidationError
 	if errors.As(err, &validation) {
 		message += "\n" + validation.Error()
+	}
+	var story *storyRequirementError
+	if errors.As(err, &story) {
+		message += "\nThe design imports the Story language, but its module's go.mod does not require it. " +
+			"In the folder that holds that go.mod, run: go get " + harnessStoryModule + "@" + story.version +
+			", commit go.mod and go.sum, then try again."
 	}
 	var sandbox *sandboxOutputError
 	if errors.As(err, &sandbox) && sandbox.output != "" {
@@ -126,6 +145,19 @@ func FailedOnModule(err error) bool {
 	return errors.As(err, &operation) && slices.Contains(modulePhases, operation.phase)
 }
 
+// FailedLoadingDependencies reports whether err, from Evaluate, Generate or
+// GenerateWithStories, is a failure FailedOnModule reports that ended while
+// loading the target module's dependencies: the go commands that resolve the
+// packages its design imports and the versions its go.mod and go.sum select.
+// Those commands run outside the sandbox and may download modules, so such a
+// failure can come from the module's files or from where the evaluator runs
+// (no network, a proxy that cannot be reached, a Go older than the module
+// requires). Their output is withheld, and this function does not say which.
+func FailedLoadingDependencies(err error) bool {
+	operation := (*phaseError)(nil)
+	return FailedOnModule(err) && errors.As(err, &operation) && operation.phase == phaseLoadModules
+}
+
 // Error preserves the original CLI and trace error text without adding a phase.
 func (e *phaseError) Error() string { return e.err.Error() }
 
@@ -137,6 +169,13 @@ func (e *snapshotValidationError) Error() string { return e.err.Error() }
 
 // Unwrap preserves the validator's original error causes for Go callers.
 func (e *snapshotValidationError) Unwrap() error { return e.err }
+
+// Error preserves the module loading failure's CLI and trace text, which
+// ends with the go command's own output.
+func (e *storyRequirementError) Error() string { return e.err.Error() }
+
+// Unwrap preserves the module loading failure's original causes.
+func (e *storyRequirementError) Unwrap() error { return e.err }
 
 // Error reproduces the existing parenthesized sandbox-output error text.
 func (e *sandboxOutputError) Error() string { return fmt.Sprintf("%s (%s)", e.err, e.output) }

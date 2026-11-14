@@ -28,10 +28,13 @@ type genStage struct {
 	dir *os.Root
 }
 
+// stagePrefix starts the name of every staging directory.
+const stagePrefix = ".surla-gen-"
+
 // newStage creates a new staging directory in root under a random name and
 // acquires it with acquireStage.
 func newStage(root *os.Root) (*genStage, error) {
-	name := ".surla-gen-" + strings.ToLower(rand.Text())
+	name := stagePrefix + strings.ToLower(rand.Text())
 	if err := root.Mkdir(name, 0o755); err != nil {
 		return nil, fmt.Errorf("create staging directory: %w", err)
 	}
@@ -181,12 +184,74 @@ func leftoverStages(root *os.Root) []string {
 	}
 	var out []string
 	for _, n := range names {
-		if strings.HasPrefix(n, ".surla-gen-") {
+		if strings.HasPrefix(n, stagePrefix) {
 			out = append(out, n)
 		}
 	}
 	slices.Sort(out)
 	return out
+}
+
+// openLeftover opens the entry name of the module root as a staging directory
+// an earlier publication left, when it is one. inspected is what Lstat gave
+// for name just before. The name proves nothing, since anyone who writes the
+// module can create it, so the entry counts as a staging directory only when
+// it has the shape Publish gives one:
+//
+//   - it is a real directory, not a symbolic link or a file;
+//   - the directory opened is the one inspected, so a link swapped in between
+//     the two leads nowhere;
+//   - it holds nothing, or only a real directory gen.
+//
+// Anything else is the module author's and yields no stage and no error; it
+// is neither opened further nor changed. An entry that changed while it was
+// opened, or that cannot be read, is an error and is left alone too. The
+// returned stage holds the directory open, so cleanup acts on that directory
+// whatever its name is made to point at afterwards.
+func openLeftover(root *os.Root, name string, inspected fs.FileInfo) (*genStage, error) {
+	if !inspected.IsDir() {
+		return nil, nil
+	}
+	dir, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("left %s: %w", name, err)
+	}
+	leave := func(reason error) (*genStage, error) {
+		if reason != nil {
+			reason = fmt.Errorf("left %s: %w", name, reason)
+		}
+		return nil, errors.Join(reason, dir.Close())
+	}
+	held, err := dir.Stat(".")
+	if err != nil {
+		return leave(err)
+	}
+	if !os.SameFile(inspected, held) {
+		return leave(errors.New("it changed while it was opened"))
+	}
+	listing, err := dir.Open(".")
+	if err != nil {
+		return leave(err)
+	}
+	entries, err := listing.Readdirnames(2)
+	if err := errors.Join(listingErr(err), listing.Close()); err != nil {
+		return leave(err)
+	}
+	for _, entry := range entries {
+		if entry != "gen" {
+			return leave(nil)
+		}
+	}
+	if len(entries) > 0 {
+		staged, err := dir.Lstat("gen")
+		if err != nil {
+			return leave(err)
+		}
+		if !staged.IsDir() {
+			return leave(nil)
+		}
+	}
+	return &genStage{name: name, dir: dir}, nil
 }
 
 // write builds gen/ in the staging directory: every generated file, and a

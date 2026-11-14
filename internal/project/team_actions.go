@@ -87,12 +87,12 @@ func (s *Server) RegisterBuildRoles(ctx context.Context, folders controlplane.Bu
 	defer s.team.Unlock()
 	for _, agent := range roles {
 		if _, err := s.registerAgent(teamName(agent.Role, s.state.Record.ID), agent); err != nil {
-			return teamUnavailable(ctx, "register_role")
+			return teamUnavailable(ctx, "register_role", "project_state")
 		}
 	}
 	if len(roles) == 1 {
 		if err := s.removeTestWriter(); err != nil {
-			return teamUnavailable(ctx, "remove_test_writer")
+			return teamUnavailable(ctx, "remove_test_writer", "project_state")
 		}
 	}
 	return nil
@@ -106,7 +106,7 @@ func (s *Server) ShowPane(ctx context.Context, role string) error {
 	host := s.team.dependencies.Host
 	overlays, err := host.Overlays(ctx)
 	if err != nil {
-		return userTeamError(teamUnavailable(ctx, "overlays"))
+		return userTeamError(teamUnavailable(ctx, "overlays", "herdr"))
 	}
 	if len(overlays) > 0 {
 		return gensurla.MakeWindowBusy(errors.New("close the open Herdr dialog before showing a pane"))
@@ -127,7 +127,7 @@ func (s *Server) ShowPane(ctx context.Context, role string) error {
 	// Discover through all three labels before reading any terminal facts.
 	terminals, err := s.team.dependencies.Observer.FindTerminals(ctx, TeamSelection{Root: selection.Root, Space: selection.Space, Team: selection.Team, Roles: []TeamRole{{Role: role, Handle: handle}}})
 	if err != nil {
-		return userTeamError(teamUnavailable(ctx, "terminals"))
+		return userTeamError(teamUnavailable(ctx, "terminals", "herdr"))
 	}
 	var address string
 	for _, terminal := range terminals {
@@ -144,7 +144,7 @@ func (s *Server) ShowPane(ctx context.Context, role string) error {
 	}
 	spaces, err := host.Spaces(ctx)
 	if err != nil {
-		return userTeamError(teamUnavailable(ctx, "spaces"))
+		return userTeamError(teamUnavailable(ctx, "spaces", "herdr"))
 	}
 	for _, space := range spaces {
 		if space.ID != selection.Space {
@@ -159,7 +159,7 @@ func (s *Server) ShowPane(ctx context.Context, role string) error {
 					}
 					space.Tabs = []TeamTab{{ID: tab.ID, Terminals: []TeamPane{{Terminal: address}}}}
 					if err := host.Focus(ctx, space); err != nil {
-						return userTeamError(teamUnavailable(ctx, "focus"))
+						return userTeamError(teamUnavailable(ctx, "focus", "herdr"))
 					}
 					return nil
 				}
@@ -199,7 +199,31 @@ func userTeamError(err error) error {
 	if errors.As(err, &domain) && domain.Name == "window_busy" {
 		return gensurla.MakeWindowBusy(errors.New("close the open Herdr dialog before starting agents"))
 	}
-	return gensurla.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and try again"))
+	var unavailable *genproject.TeamUnavailable
+	if !errors.As(err, &unavailable) {
+		return gensurla.MakeTeamUnavailable(errors.New("project team could not be prepared; run surla in the project folder to see the step"))
+	}
+	return gensurla.MakeTeamUnavailable(errors.New(userTeamStep(unavailable.Cause)))
+}
+
+// userTeamStep gives the page's fixed sentence for one team failure cause. It names
+// no private path: the CLI, run in the project folder, names the folder to repair.
+func userTeamStep(cause string) string {
+	switch cause {
+	case "stopping":
+		return "the project server is stopping; run surla in the project folder to start it again"
+	case "herdr":
+		// Starting agents and showing a pane both fail with this cause, so the step
+		// retries whichever action the user took.
+		return "Herdr did not complete a team command; open the Herdr app, then try again"
+	case "roster_folder":
+		return "Herdr's launcher roster folder could not be written; make data/chorus-launcher/rosters in Herdr's app folder (~/.config/herdr-app unless HERDR_APP_HOME is set) writable by this account, then start the agents again"
+	case "project_state":
+		return "this project's private state could not be read or written; run surla in the project folder to see which folder to repair"
+	case "role_folder":
+		return "a team role's working folder could not be read; make sure this account can open the project folder and its build working folders, then start the agents again"
+	}
+	return "project team could not be prepared; run surla in the project folder to see the step"
 }
 
 // removeTestWriter revokes an unused test writer before withdrawing its saved role.

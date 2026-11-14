@@ -4,28 +4,11 @@
 
 When coding agents build a platform from scratch without architectural guardrails, they default to fragile shortcuts: every service exposes ad-hoc HTTP JSON routes, every package calls LLM provider SDKs directly with no central rate limiting or cost tracking, `tenant_id` is passed inside LLM prompt arguments, and multi-step workflows run in fragile in-memory goroutines that lose state on deploy.
 
-Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/goldenpath/GOLDEN_PATH.md`](../internal/goldenpath/GOLDEN_PATH.md)) and serves it as an MCP resource (`surla://golden-path`) that a coding agent reads before it writes the Checkpoint 1 analysis it sends with `propose_change` or `revise_change`. The same resource ends with the decision component catalog for that analysis's optional `ui_composition`.
+Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/goldenpath/GOLDEN_PATH.md`](../internal/goldenpath/GOLDEN_PATH.md)) and serves it as an MCP resource (`surla://golden-path`) to every agent on the project's team. The guide, the coding agent the user talks to, reads it before it writes the analysis it sends with `propose_change` or `revise_change`. The same resource ends with the decision component catalog for that analysis's optional `ui_composition`.
+
+This page has two readers. A platform author follows [the seven rules](#the-7-golden-path-rules) and [the tools behind them](#how-the-goa-design-suite-fits-together). A contributor to Surla finds [who owns what in Surla](#who-owns-what-in-surla).
 
 ---
-
-Surla's project server owns one private state tree and stable operating-system
-account identity per physical folder. The CLI finds that tree and passes it to
-the server it launches; the server never derives it. A start lock serializes
-launches; the existing card-store lock controls server liveness and is released
-after ordered cleanup. Before every listener close, its wrapper irreversibly
-revokes the server's in-memory management credential and withdraws the private
-running record, even on an accept-loop failure. Each server publishes a fresh credential
-after binding; the CLI reads it per request, then opens a fresh proxy-free local
-connection without reusing any earlier connection.
-The record never establishes liveness. Trusted credentials add a caller and role
-without changing resource ownership. One endpoint policy governs HTTP, MCP and
-tool discovery. Browser sessions live only in server and page memory; the CLI's
-management credential cannot confirm or approve. Verification and promotion
-settings are validated and copied into project state by the CLI and read at
-startup. Without verification settings, the control plane chooses each run's
-tests when it is requested, from the change's build and the commits that call
-names, and starts tests agents wrote with only the environment they need. See
-the [project server contract](REFERENCE.md#surla-serve).
 
 ## The 7 Golden Path Rules
 
@@ -65,124 +48,113 @@ When a platform needs custom generated files or wants to tailor artifacts produc
 
 ## How the Goa Design Suite Fits Together
 
-The project server (`internal/project.Server`) is the single in-memory owner of
-team observations and reminder latches as well as the saved team registry. The
-composition root constructs it before the control plane and supplies one
-`controlplane.Options.Team` binding containing the project owner and the narrow
-team service. The control plane owns authorization, build preparation, the one supervision worker,
-and a private read-only callback for that owner's unread assignment generations.
-The callback never calls an assignment getter or marks work read. The existing
-change-list version incorporates the public team snapshot for its bound owner only. Shutdown cancels and
-drains supervision and accepted build starts before closing the evaluator,
-diagnostics or Change Card storage.
-
-The same change-list version includes each owned build's canonical `get_build`
-rendering, loaded under the card-store read lock with its card. Listing never
-marks an assignment read. It releases the lock before team, Story, target and
-verification reads. The views page follows this one version chain for its
-selected build and shared Team snapshot; it does not add a second polling loop.
-The page sends build and window effects only from explicit user actions. Pane
-success has no response body, which the generated page client recognizes only
-for the operation's declared 204 result.
-
-The control plane owns the test writer's working copy and its required-test
-generation. A start first authorizes the bound project owner, then takes the
-project's working-copy turn without waiting; a busy turn refuses the start.
-It never holds the card lock during Git, generation or a team call. After
-opening the copy and rechecking the agreed revision, it saves the build's
-Story, design and selected roles. It immediately calls the project's
-`RegisterBuildRoles` before generation, so a later failure cannot leave a saved
-build whose agents are missing from the registry. A generation verdict is saved
-only if the build's start time, report number and assigned state still match.
-
-The turn is released before calling the existing `StartAgents`. Work under the
-turn has one five-minute limit and survives client disconnection; the team then
-has its own 45-second limit. A team refusal becomes an actionable result beside
-the saved build. The project owner saves each agent's role and working folder,
-preserves existing handles and credentials, and derives first messages and the
-team's next-step text in one place. The CLI displays that text unchanged.
-Neither a working-folder callback nor another build-team interface is needed.
-
-Build reads, assignments and supervision share the control plane's usable-build
-decision. A build started with only a builder remains usable while stored
-verification settings supply its evaluator. If those settings are removed,
-the user must build again to prepare a test writer; reads expose no usable build
-or assignments for the earlier start. A build with a test writer retains its
-saved Story and design when the guide later proposes or the user adopts a revision.
-
-The control plane saves one build per change in
-`<cards_dir>/<sha256(change_id)>.build.json`, using a staged file, rename and
-directory sync under the card-store lock. Its strict reader rejects unknown
-fields, trailing data, invalid role selections, negative report counts and
-verdict fields inconsistent with their state. The saved role selection is
-`builder_only` or `builder_and_test_writer`; only the latter contains a writer
-folder. The project owner's separate record maps stable handles to role and
-folder, with credentials in private files. Neither store owns the other's data.
-
-The control plane also owns the report checker, the one worker per project
-that judges the test writer's reports through `internal/testwriter`. The
-control plane starts it on the server's context when a team is bound and
-drains it on Close before the stores close. It opens the working copy as a
-build start does, and holds
-the project's working-copy turn for each judgment, so a build start, which
-takes the turn without waiting, is refused while one runs. Its last step
-(confirm that the build still answers to the report checked, commit accepted
-tests, save the verdict) holds a lock that `report_tests_finished` also takes.
-Locks are taken in the order turn, report lock, card lock. Git and the sandbox
-never run under the card lock. A verdict changes the generations the
-supervision callback returns: the test writer's carries the report number and
-verdict time, the builder's the accepted commit.
-
-Herdr streams and reads are filtered by registered handle, project root and saved
-space. Typed adapters retain only terminal state, block kind, foreground arguments
-and watcher facts; screen text, status messages, titles and Chorus messages have no
-representation in supervision state. Every external effect is injected at the
-executable boundary. A stalled role invalidates all roles after three missing
-15-second heartbeats; the owner cancels and drains readers, waits, then requests
-fresh snapshots. Assignment reads scan owner cards/builds on initial selection,
-snapshots, heartbeats and status changes, never on the display tick.
-
-The Chorus adapter parses only the generated response's ordered `swarm`, `agents`
-prefix, bounded to 256 KiB, then closes before channels or inboxes. A one-byte
-reader prevents JSON decoder read-ahead into conversation data. An oversized,
-incomplete or reordered prefix yields an unknown watcher; a large conversation
-after a valid prefix remains usable. Conditional reads use the response's ETag
-header. The executable binds readers and leaves the sender explicitly
-unavailable pending receiver verification. Project observation spans bypass the
-control plane's principal-scoped history, keeping periodic team observations out of
-bounded user diagnostics. See [Team supervision](REFERENCE.md#team-supervision) for
-the user contract and current delivery limitation.
-
-Surla's control plane records its own operation diagnostics through
-OpenTelemetry. `controlplane.New` opens existing safe trace history while
-holding the Change Card directory lock; `controlplane.Options.TracerProvider`
-binds the project server's SDK provider to that instance's operations at construction.
-Without a provider, `list_traces` returns `not_implemented` with setup instructions.
-Each recorded operation saves its
-bounded safe view through `internal/traceview` when its own span ends.
-Reads by the user's page that succeed or are refused are not saved, so the
-views page's repeated reads do not fill the history: `NewHTTPHandler` marks the
-context of each request sent with `GET`, and every `GET` route the user's
-session may call only reads (the builder's and the test writer's assignment
-reads, which record that they were read, are refused to it by the operation
-table). A span of the user's browser session under that mark is saved only
-when it ends with an error status or while a panic is in flight, which the span
-wrapper's `End` sees. A refusal such as `not_found` is an expected answer
-without error status. Identity
-stays with that local write; it is not attached to the exported span or chosen
-by a provider-wide processor.
-`ControlPlane.ListTraces` reads the project owner's pages from that file, and
-`ControlPlane.Close` waits for owned checks and evaluator cleanup and closes the
-file before releasing the card lock; spans ending after closure are not saved. Instances sharing a provider keep
-separate histories. The project server's composition root
-(`projectRuntime.serve` in `cmd/surla/project_server.go`) owns the tracer
-provider and optional full OTLP exporter. Export retains original span fields,
-events and status without added identity metadata. See [Operation diagnostics](REFERENCE.md#operation-diagnostics)
-for the caller experience and recording limits.
+A Golden Path platform is built with these tools:
 
 - **[Goa](https://github.com/goadesign/goa)** — Compiles `design/*.go` into HTTP, gRPC, OpenAPI, CLI, and validation packages (`goa gen`)—plus in-memory `generator.Sources` for sandboxed design evaluation—at **0 LLM tokens**.
 - **[Goa-AI](https://github.com/goadesign/goa-ai)** — Adds `Agent`, `Toolset`, `MCP`, durable Temporal workflows, `eval` suites, gRPC model gateways, and runtime token controls (`Inject`, `BindField`, `BoundedResult`, `ServerData`, `Cache`, `Compress`).
 - **[Pulse](https://github.com/goadesign/pulse)** — Streams live agent events (`pulse/streaming`) and coordinates distributed rate limits and replicated state maps (`pulse/rmap`) over Redis.
 - **[Clue](https://github.com/goadesign/clue)** — Emits OpenTelemetry `gen_ai.*` spans, structured logs, and health checks across services and model gateways.
 - **[Model](https://github.com/goadesign/model)** — Declares C4 architecture models (`SoftwareSystem`, `Container`, `Views`) alongside `design/*.go` and renders Structurizr JSON (`gen/structurizr/model.json`).
-- **[Chorus](https://github.com/goadesign/chorus)** — Lets coding agents and people talk in real time through channels and direct messages, with `0`-token background waiting (`chorus watch`).
+
+The team of coding agents that builds it runs on two more:
+
+- **[Chorus](https://github.com/goadesign/chorus)** — Lets coding agents and people talk in real time through channels and direct messages, with `0`-token background waiting (`chorus watch`). Its dialog in Herdr is where the user picks the agent app for each role.
+- **[Herdr](https://herdr.dev/)** — A terminal program that runs each agent in its own pane. Surla starts its server in a Herdr terminal and gives the project its own Herdr space.
+
+---
+
+## Who owns what in Surla
+
+The `surla` command, run in a project folder, starts the project's Surla server (from here on, the server). The server serves the views page in the user's browser and one HTTP and MCP endpoint to the project's team of coding agents:
+
+- **The guide** is the agent the user talks to. It writes the Story, the Go source in `design/` that describes the business's flows, and proposes changes. A flow is one path of who does what, from the event that starts it to its outcomes.
+- **The builder** writes the application code and asks Surla to verify a commit.
+- **The test writer** writes the tests a build requires, in its own working copy of the project.
+
+Each change is saved as a Change Card: the record of the request, its open questions and the user's answers, the examples that become checks, the Story and the design source. Its `request_revision` identifies one exact saved revision. Only the user confirms a change, starts a build and approves a result, on the views page. One table, `operationRoles` in [`operation_policy.go`](../internal/controlplane/operation_policy.go), says which caller may call each operation; HTTP, MCP and the tool list each caller sees all follow it.
+
+| Owner | Source | What it owns |
+| --- | --- | --- |
+| The `surla` command | `cmd/surla` | Finding the project's private state folder, starting the server in Herdr, starting Chorus and Herdr, the stored settings |
+| The server | `internal/project` | The project's identity and port, credentials and browser sessions, the team record, the Chorus roster (the list of roles the Chorus dialog shows) and the team's observed state |
+| The control plane | `internal/controlplane` | Change Cards, builds and assignments, the report checker, the verification plan, the live target and operation diagnostics |
+| The test writer's working copy | `internal/testwriter` | The `.surla-tests` folder, the `surla/tests` branch, the required tests, the check of a report and the commit of accepted tests |
+| Verification runs | `internal/verifyrun`, `internal/verify` | One folder per verification run (its run directory) and the processes that build, run and report it |
+| Herdr | outside Surla | Terminals, panes and spaces |
+| Chorus | outside Surla | Agent messaging and the dialog that starts each role's agent |
+
+### The server and its state
+
+A project is one physical folder. `surla` looks for the nearest folder that has a project record and otherwise creates a new, empty project, so moving or renaming the folder starts a new project. Each project has one private state folder under the user's configuration folder, outside the project. It holds the project record (its ID, folder, owning operating-system account, port, team name and Herdr space, and each registered agent's role and working folder), one credential file per agent, the Change Card folder, verification runs and reports, and the stored verification and promotion settings. A new project saves a free loopback port that no other project of the account saved, and keeps it, because its agents' connections and the Chorus roster name that address. When `surla` cannot use a project's record or state folder, it names the project folder, the path and the repair.
+
+When the user runs `surla`:
+
+1. A start lock lets one `surla` start the server at a time. The folder lock, an operating-system file lock on the Change Card folder that a running server holds for its whole life, is the only proof that a server is running.
+2. When no server is running, `surla` starts one in its own parentless Herdr terminal, labelled `surla_project=<project ID>`, and passes the state folder with `-state`. The server never derives that folder itself, because a Herdr terminal runs with the environment of Herdr's core, not the user's shell.
+3. After binding its port, the server publishes a fresh management credential in a private record. `surla` reads that credential for each request, confirms that the answering server names the same project, folder and owner, and that the same build of `surla` started it (the server reports the SHA-256 of its executable, read when it started), and only then continues. `surla stop` accepts a server of any build. Before the listener closes, the server revokes the credential and withdraws the record, even when accepting connections failed.
+4. If the server's terminal ends before it answers, `surla` reads the server's last lines (at most 20 lines and 4 KiB), removes the terminal, and prints those lines with the error.
+
+The management credential lets `surla` prepare the team, stop the server and ask for a browser link; it cannot confirm or approve anything. The browser gets a single-use link that expires after two minutes. The page exchanges it for a session that lives only in the server's memory and the open page, and the server answers that session only for requests from its own page. Each agent authenticates with its own credential file. The caller's role comes from the credential, never from a name.
+
+`surla verification set` and `surla promotion set` validate a settings file and copy it into the state folder. The server reads both at start, so a change applies when Surla is started again.
+
+### The team: Herdr and Chorus
+
+Herdr is the terminal program the agents run in, one pane per agent. Chorus is the messaging service the agents use, and its dialog in Herdr is where the user picks which installed agent app plays each role.
+
+Before creating any state, `surla` checks that Herdr core (`herdr-core` and `hc`), the Herdr app (`herdr-app`), Chorus v0.11.0 or newer (`chorus`) and the browser opener are installed. For a missing Herdr or Chorus program it names the install command, or the folder to add to the path when the program is in `~/.local/bin`; for a missing browser opener it names the program. Once the server answers, `surla` starts Chorus and the Herdr app when they are not running, then asks the server to prepare the team. When either step fails, `surla` still opens the views page, where confirming and approving need no agent, and then reports the failure. A failure of the server's team preparation names only its cause (`stopping`, `herdr`, `roster_folder`, `project_state` or `role_folder`), never its own text, and `surla` and the views page each turn that cause into a fixed step. The server:
+
+1. adopts the project's saved Herdr space, or the single space with the team's name and the project's folder, or creates one; several matching spaces are refused, and the user closes the duplicates;
+2. registers the guide, working in the project folder;
+3. writes the Chorus roster: one row per registered role whose folder exists, with that folder, its first message, and a connection to the server's MCP endpoint that names the role's credential file, never the credential itself;
+4. opens the Chorus dialog when a listed role is not running.
+
+`surla` prints `Team <name>.` and the user's next step, opens the views page and prints `Surla is running for <folder> at <address>`. The roster places the builder's pane to the right of the guide's and the test writer's below the builder's.
+
+A build adds roles. The control plane asks the server to register the builder, working in the project folder, and, when tests are written for this build, the test writer, working in its own working copy. A build that uses no test writer removes a former test writer and its credential. The server derives every first message and the team's next step in one place and never keeps them in its saved state.
+
+While the team runs, the server watches each registered role's terminal through Herdr and whether Chorus reports a watcher for each agent: the wait through which the agent receives its messages. It keeps the terminal's state and reported status, the foreground program's arguments and the watcher facts, never screen text, titles or messages. Herdr sends a heartbeat every 15 seconds; when three are missed, every role is unknown until fresh snapshots arrive. Chorus answers are read only up to their agent list, at most 256 KiB, before any conversation data. The control plane gives the server a read-only callback that lists the unread assignments; calling it never marks work read. Surla types nothing into a pane: the reminder sender is not bound. [Team supervision](REFERENCE.md#team-supervision) gives the user's view of this.
+
+### Change Cards and builds
+
+The control plane keeps Change Cards in the Change Card folder, under the folder lock the running server holds. Only the guide proposes or revises a change. Once the user confirms a change, its agreed revision stays in force while a revision the guide proposes waits beside it, until the user adopts or declines that proposed revision.
+
+A build is the user's decision to build the agreed revision. The control plane saves one build per change, in `<sha256(change_id)>.build.json` beside the cards, by writing a staging file, renaming it and syncing the folder, under the card lock. The card lock (`ControlPlane.mu`) is an in-process lock that guards every read and write of a card or a build inside the server; it is not the folder lock. The build file's reader refuses unknown fields, trailing data, an unknown role selection, a negative report number and a test writer state that contradicts its other fields. A build holds:
+
+| Field | Meaning |
+| --- | --- |
+| `change_id`, `request_revision`, `started_at` | The change, the agreed revision the build started from, and when the user pressed **Build this change** |
+| `stories`, `design_source` | The Story and design as agreed, copied when the build started; later revisions do not change them |
+| `answers`, `examples`, `preserved_behaviors` | Each question with the answer the user confirmed, the confirmation examples and the preserved behaviors, as agreed, copied at the same time; the test writer, which may not read the change, receives them in its assignment |
+| `roles` | `builder_and_test_writer`, or `builder_only` when stored verification settings supply the tests |
+| `builder`, `test_writer` | Each assignment; the test writer's carries its state, findings, accepted tests commit and working folder |
+| `report_number` | The test writer's latest report, 0 before the first |
+
+The server's agent record maps each role to its folder and credential file. The build file holds the test writer's working folder but no credential, and neither store writes the other's data.
+
+When the user presses **Build this change** on the views page, `start_build`:
+
+1. checks that the caller is the project's owner, then takes the project's working-copy turn without waiting; while another start or a report check holds the turn, the start is refused and nothing is saved;
+2. checks the agreed revision, opens and refreshes the test writer's working copy when tests are written for this build, and checks the revision again;
+3. saves the build, with the Story, design, answers, examples and preserved behaviors of the revision that second check read, then registers its roles with the server, so a saved build never lacks its agents;
+4. writes the required tests into the working copy, releases the turn and asks the server to start the agents.
+
+The work under the turn has one five-minute limit; starting the agents has its own 45-second limit. Accepted work belongs to the server and survives the page closing. A build started with only the builder stays usable while stored verification settings supply its tests; when those settings are removed, the user builds again.
+
+The views page keeps one waiting read (`wait_for_changes`) open. Its answer is a version of the change list that changes whenever a card, a change's latest verification run, a build as `get_build` shows it, the team, the Story evaluation or the live target changes, and the page then reads again. The page sends a build or a window action only when the user acts.
+
+### The test writer's working copy and the report checker
+
+`internal/testwriter` owns the test writer's working copy: a linked Git working copy of the project at `.surla-tests` on the branch `surla/tests`. It prepares the required tests, checks a report and records accepted tests as a commit on that branch. The control plane runs one report checker per project: it starts when the server binds the team and drains before the stores close. A check holds the working-copy turn, so a build start cannot change the copy under it. Three in-process locks are always taken in this order: the working-copy turn, the report lock, the card lock. A report check holds the working-copy turn from start to verdict, and a build start holds it until the required tests are written; either can take minutes. The report lock (`ControlPlane.reportMu`) makes a newly arriving report wait while the checker confirms the build is the one it checked, records the accepted tests and saves the verdict. Git and the operating-system sandbox (macOS `sandbox-exec`) never run under the card lock. [Story flows and the tests a build requires](STORY_TEST_DESIGN.md) describes [the copy](STORY_TEST_DESIGN.md#the-test-writers-working-copy) and [the check and its findings](STORY_TEST_DESIGN.md#how-surla-judges-a-report).
+
+### Verification runs and the live target
+
+One function, `testsChoice` in [`verification_plan.go`](../internal/controlplane/verification_plan.go), chooses which tests judge a change: the suite named in the stored verification settings, or the tests accepted for the change's build at its revision. Verification runs those tests, `approve_merge` requires the approved report to have run them, and a saved approval is shown only while they stay the same; `verificationPlan` builds a run's configuration from that choice. The builder names only the change, the revision and its commit.
+
+`internal/verifyrun` runs each verification in its run directory, one folder per run under the state folder's runs folder that holds the run's request, lock, result and logs. A supervisor process, started for the run, holds the run's lock for its whole life, so a run outlives the server that accepted it and its state is read back from the lock and the result file alone. `internal/verify` builds the candidate (the builder's commit under verification) and the test program in the sandbox, then runs the test program outside it; the test program starts the candidate's programs in the sandbox.
+
+The control plane runs at most one live target: the commit the builder names in `start_live_target`, built as verification builds it and started by its test program's `--live` mode, under the Change Card folder. Surla sends prompt drafts to it with a key it minted for that target. Closing the control plane stops it.
+
+### Operation diagnostics
+
+The control plane records each of its operations as an OpenTelemetry span and saves a bounded, safe view of each one in one history file, `traces.jsonl` in the Change Card folder. The history belongs to the project's owner: every caller (the user's page, the management credential and each agent) acts for that owner, and each record names its caller and the caller's kind, such as `user`, `management` or the agent's role. The server's composition root, `projectRuntime.serve` in [`project_server.go`](../cmd/surla/project_server.go), owns the tracer provider, and exports full spans over OTLP when an OTLP endpoint is set in the server's environment. The exported spans carry no added identity. The user's page reads that succeed or are refused, and its waiting read, are not saved, so the page's repeated reads do not fill the history. Spans that end after the control plane closes are not saved. [Operation diagnostics](REFERENCE.md#operation-diagnostics) gives the caller's view.

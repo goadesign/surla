@@ -1,0 +1,26 @@
+package design
+
+import . "github.com/goadesign/surla/story/dsl"
+
+// The [[.Name]]'s Story says, in Surla's Story language, who uses the [[.Name]]
+// and which paths their requests take. Surla evaluates it when the guide calls
+// refresh_story, and keeps it with a change when the guide proposes or revises
+// that change with the refresh's op_id (story_refresh_op_id). Every finished
+// flow (one with a start, an outcome and no open question) is a test each
+// build of a change requires: flow prices-cookie becomes the scenario
+// prices_cookie of the evaluation suite in eval/, which the method PricesCookie
+// of package eval/acceptance runs.
+//
+// To describe new behavior, the guide adds a flow here, calls refresh_story,
+// and passes its op_id when it proposes or revises the change. A flow's key
+// must not repeat a scenario the suite in eval/ already declares by hand:
+// prices-tea would collide with prices_tea. The command
+// go doc github.com/goadesign/surla/story/dsl lists the language.
+var _ = Story("Prices", func() {
+	Description("Customers ask the [[.Name]] what an item costs.")
+	Actor("customer", "Customer")
+	Flow("prices-cookie", "Price a cookie", func() {
+		StartsWith("ask-cookie-price", "customer", "The customer asks how much a cookie is")
+		Outcome("cookie-priced", "customer", "The helper answers that a cookie costs $1.25")
+	})
+})

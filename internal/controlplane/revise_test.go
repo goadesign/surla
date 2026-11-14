@@ -166,7 +166,7 @@ func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 // exactly, because request_revision is a digest of that content alone.
 func TestReviseChangeSavesARevisionThatOnlyItsContentDetermines(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	cp := newControlPlane(t, Options{})
+	cp := newControlPlane(t, Options{Verification: verificationConfig(t)})
 
 	// Revising a confirmed card with a recorded approval proposes a revision
 	// without one, and the approval stays on the confirmed revision.
@@ -192,7 +192,7 @@ func TestReviseChangeSavesARevisionThatOnlyItsContentDetermines(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, StatusConfirmed, revised.Status, "the confirmed revision stays in force")
 	assert.Equal(t, approved.RequestRevision, revised.RequestRevision)
-	require.NotNil(t, revised.UnverifiedApproval, "the confirmed revision keeps its approval")
+	require.NotNil(t, revised.Approval, "the confirmed revision keeps its approval")
 	stored, ok, err := cp.cards.load("chg")
 	require.NoError(t, err)
 	require.True(t, ok)

@@ -162,24 +162,23 @@ func TestHandOverModelSettingsChoosesTheDefaultOnArrival(t *testing.T) {
 // a provider's default model only while no model is chosen, which is what
 // TestHandOverModelSettingsChoosesTheDefaultOnArrival proves ("gateway +
 // settings" keeps the gateway), and none says it does so unconditionally.
+// The documents are hard-wrapped, so each is read with its whitespace
+// collapsed (documentText).
 func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
-	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
-	require.NoError(t, err)
-	reference, err := os.ReadFile("../../docs/REFERENCE.md")
-	require.NoError(t, err)
-	readme, err := os.ReadFile("../../README.md")
-	require.NoError(t, err)
-	assert.Contains(t, string(openAPI), "While no model is chosen, a hand_over_model_settings call that holds a provider's settings selects that provider's default model")
-	assert.Contains(t, string(reference), "While no model is chosen, a hand-over that holds a provider's settings selects that provider's default model")
-	assert.Contains(t, string(readme), "while no model is chosen, live targets then use")
+	openAPI := documentText(t, "../../gen/http/openapi3.json")
+	reference := documentText(t, "../../docs/REFERENCE.md")
+	readme := documentText(t, "../../README.md")
+	assert.Contains(t, openAPI, "While no model is chosen, a hand_over_model_settings call that holds a provider's settings selects that provider's default model")
+	assert.Contains(t, reference, "While no model is chosen, a hand-over that holds a provider's settings selects that provider's default model")
+	assert.Contains(t, readme, "while no model is chosen, live targets then use")
 	for _, stale := range []string{
 		"the first hand_over_model_settings that holds a provider's settings selects",
 		"until `surla` hands over a provider's settings, which selects",
 		"the next `surla` hands the settings over again, which selects",
 		"until `surla stop` and starts live targets with",
 	} {
-		for name, text := range map[string][]byte{"OpenAPI": openAPI, "REFERENCE.md": reference, "README.md": readme} {
-			assert.NotContains(t, string(text), stale, "%s says a hand-over always selects the default", name)
+		for name, text := range map[string]string{"OpenAPI": openAPI, "REFERENCE.md": reference, "README.md": readme} {
+			assert.NotContains(t, text, stale, "%s says a hand-over always selects the default", name)
 		}
 	}
 }
@@ -194,13 +193,11 @@ func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
 // proves it: no byte of an exact occurrence, or of an unfinished value at
 // the log's end, and other forms of a value exported as printed.
 func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
-	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
-	require.NoError(t, err)
-	reference, err := os.ReadFile("../../docs/REFERENCE.md")
-	require.NoError(t, err)
+	openAPI := documentText(t, "../../gen/http/openapi3.json")
+	reference := documentText(t, "../../docs/REFERENCE.md")
 	// Sentences are compared without case: one starts a sentence where the
 	// other does not.
-	for name, text := range map[string]string{"OpenAPI": string(openAPI), "REFERENCE.md": string(reference)} {
+	for name, text := range map[string]string{"OpenAPI": openAPI, "REFERENCE.md": reference} {
 		lower := strings.ToLower(text)
 		assert.True(t, strings.Contains(lower, "including a candidate commit's test module that agents wrote, receives the chosen provider's held settings"), name)
 		assert.True(t, strings.Contains(lower, "tests a separate agent wrote for a verification, and the check helper, receive none"), name)
@@ -210,14 +207,14 @@ func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 		"no byte of an exact occurrence of a setting the target was given, or of one whose writing stopped at the end of the log, is exported",
 		"is not recognized and is exported as printed",
 	} {
-		assert.True(t, strings.Contains(string(reference), promise), promise)
+		assert.True(t, strings.Contains(reference, promise), promise)
 	}
 	for _, stale := range []string{
 		"with every key, token and header value the target was given replaced by",
 		"a piece of such a value at either edge of the excerpt",
 		"as is text that overlaps an exact occurrence",
 	} {
-		assert.False(t, strings.Contains(string(reference), stale), stale)
+		assert.False(t, strings.Contains(reference, stale), stale)
 	}
 }
 
@@ -885,4 +882,14 @@ func assertHoldsNoEncodedSentinel(t *testing.T, text string) {
 			assert.NotContains(t, text, form)
 		}
 	}
+}
+
+// documentText reads the document at path with every run of whitespace,
+// line breaks included, collapsed to one space, so a sentence a document
+// wraps across lines is found as written.
+func documentText(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return strings.Join(strings.Fields(string(raw)), " ")
 }

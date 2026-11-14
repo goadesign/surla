@@ -145,12 +145,14 @@ page.close();
 // reads the approved one again as the promotion target's inputs change,
 // fail, disappear and return, checking each of the five approval states.
 func TestCheckpointUIApprovalStates(t *testing.T) {
-	inputs := PromotionInputs{
+	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("3", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("b", 64)},
 	}
-	target := &pageTarget{inputs: inputs}
-	cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
+	cfg := verificationConfig(t)
+	cfg.Plan.SuiteCommit = spec.SuiteCommit
+	target := &pageTarget{artifacts: spec.Artifacts}
+	cp := pageControlPlane(t, Options{Verification: cfg, ResolvePromotionTarget: target.resolve})
 	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
 	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
 	confirm := func(changeID string) *gensurla.ChangeCardResult {
@@ -164,7 +166,7 @@ func TestCheckpointUIApprovalStates(t *testing.T) {
 	confirm("chg-unapproved")
 	approved := confirm("chg-approved")
 	const commit = "2222222222222222222222222222222222222222"
-	report := passingReport(t, approved.RequestRevision, commit, inputs)
+	report := passingReport(t, approved.RequestRevision, commit, spec)
 	target.update(func(p *pageTarget) { p.report = report })
 	_, err := cp.ApproveMerge(user, &gensurla.ApproveMergePayload{
 		ChangeID: approved.ChangeID, RequestRevision: approved.RequestRevision, CandidateCommit: commit, ReportDigest: report.Digest,
@@ -173,17 +175,18 @@ func TestCheckpointUIApprovalStates(t *testing.T) {
 	ps := startPageServer(t, cp)
 	ps.act("inputs-changed", func() {
 		target.update(func(p *pageTarget) {
-			p.inputs = PromotionInputs{SuiteID: inputs.SuiteID, SuiteCommit: inputs.SuiteCommit, Environment: inputs.Environment, Artifacts: map[string]string{"orders": strings.Repeat("c", 64)}}
+			p.artifacts = map[string]string{"orders": strings.Repeat("c", 64)}
 		})
 	})
 	ps.act("inputs-unreadable", func() {
 		target.update(func(p *pageTarget) {
-			p.inputs = inputs
-			p.inputsErr = errors.New("open /var/lib/surla/releases/orders: no such file or directory")
+			p.absent = false
+			p.artifacts = spec.Artifacts
+			p.artifactsErr = errors.New("open /var/lib/surla/releases/orders: no such file or directory")
 		})
 	})
 	ps.act("absent", func() { target.update(func(p *pageTarget) { p.absent = true }) })
-	ps.act("restored", func() { target.update(func(p *pageTarget) { p.absent, p.inputsErr = false, nil }) })
+	ps.act("restored", func() { target.update(func(p *pageTarget) { p.absent, p.artifactsErr = false, nil }) })
 	runPageScript(t, ps, nil, `
 const page = await openPage(origin, { link: input.link });
 const editor = () => page.$("#surla-cp1-editor");
@@ -219,12 +222,15 @@ await control(origin, "act", { key: "inputs-unreadable" });
 await open("chg-unapproved");
 await open("chg-approved");
 const reason = page.text("#surla-cp5-unverified-approval-reason");
-expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval") && reason.includes("could not report its current inputs") && !reason.includes("/var/lib/surla") && page.$("#surla-cp5-unverified-approval-details") && page.$("#surla-cp5-refresh-approval"), "State 4 (unavailable target) did not render an honest path-free #surla-cp5-unverified-approval: " + reason);
+expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval") && reason.includes("because the release binaries could not be read") && reason.includes("in a folder named after the commit") && reason.includes("Check current approval") && !reason.includes("/") && !reason.includes("/var/lib/surla") && page.$("#surla-cp5-unverified-approval-details") && page.$("#surla-cp5-refresh-approval"), "State 4 (unavailable target) did not render an honest path-free #surla-cp5-unverified-approval: " + reason);
 
-// State 5: no promotion target, then recovery through the check control.
+// State 5: removing promotion settings or restoring the release binaries recovers #surla-cp5-approval through the check control.
 await control(origin, "act", { key: "absent" });
 await refresh();
-expect(page.text("#surla-cp5-unverified-approval-reason").includes("no promotion target is configured") && page.$("#surla-cp5-refresh-approval"), "State 5 (absent target) did not render its reason and the check control");
+expect(page.$("#surla-cp5-approval") && !page.$("#surla-cp5-unverified-approval"), "State 5 (absent target) did not keep #surla-cp5-approval without promotion settings");
+await control(origin, "act", { key: "inputs-unreadable" });
+await refresh();
+expect(!page.$("#surla-cp5-approval") && page.$("#surla-cp5-unverified-approval"), "returning to unreadable binaries did not show #surla-cp5-unverified-approval");
 await control(origin, "act", { key: "restored" });
 await refresh();
 expect(page.$("#surla-cp5-approval") && !page.$("#surla-cp5-unverified-approval"), "checking after the target recovered did not show #surla-cp5-approval");

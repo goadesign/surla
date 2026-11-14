@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	goa "goa.design/goa/v3/pkg"
 )
 
 type (
@@ -69,9 +68,9 @@ func TestTeamStartDeadlineBoundary(t *testing.T) {
 						assert.Len(t, state.Record.Agents, 1)
 						assert.ErrorIs(t, accepted.Err(), context.Canceled, "completed operations release their deadline")
 					} else {
-						var unavailable *goa.ServiceError
+						var unavailable interface{ GoaErrorName() string }
 						require.ErrorAs(t, err, &unavailable)
-						assert.Equal(t, "team_unavailable", unavailable.Name)
+						assert.Equal(t, "team_unavailable", unavailable.GoaErrorName())
 						assert.ErrorIs(t, host.readError, context.DeadlineExceeded)
 						assert.ErrorIs(t, accepted.Err(), context.DeadlineExceeded)
 						assert.Empty(t, state.Record.Agents)

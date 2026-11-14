@@ -136,9 +136,9 @@ func (c *Client) BuildEnsureTeamRequest(ctx context.Context, v any) (*http.Reque
 // DecodeEnsureTeamResponse may return the following errors:
 //   - "window_busy" (type *goa.ServiceError): http.StatusConflict
 //   - "ambiguous_space" (type *project.TeamSpaceConflict): http.StatusConflict
-//   - "team_unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "team_unavailable" (type *project.TeamUnavailable): http.StatusServiceUnavailable
 //   - error: internal error
 func DecodeEnsureTeamResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -214,20 +214,6 @@ func DecodeEnsureTeamResponse(decoder func(*http.Response) goahttp.Decoder, rest
 				}
 				return nil, goahttp.ErrInvalidResponse("project", "ensure_team", resp.StatusCode, string(body))
 			}
-		case http.StatusServiceUnavailable:
-			var (
-				body EnsureTeamTeamUnavailableResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
-			}
-			err = ValidateEnsureTeamTeamUnavailableResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
-			}
-			return nil, NewEnsureTeamTeamUnavailable(&body)
 		case http.StatusForbidden:
 			var (
 				body EnsureTeamForbiddenResponseBody
@@ -256,6 +242,20 @@ func DecodeEnsureTeamResponse(decoder func(*http.Response) goahttp.Decoder, rest
 				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
 			}
 			return nil, NewEnsureTeamUnprocessable(&body)
+		case http.StatusServiceUnavailable:
+			var (
+				body EnsureTeamTeamUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
+			}
+			err = ValidateEnsureTeamTeamUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("project", "ensure_team", err)
+			}
+			return nil, NewEnsureTeamTeamUnavailable(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {

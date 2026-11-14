@@ -29,6 +29,7 @@ func TestBuilderOnlyBuildRequiresStoredSettings(t *testing.T) {
 		saved := buildFile{
 			ChangeID: roles, RequestRevision: card.RequestRevision, StartedAt: time.Now().UTC(),
 			Roles: roles, TestWriter: testWriterAssignment{State: testsAssigned},
+			Answers: confirmedAnswers(card), Examples: card.Examples, PreservedBehaviors: card.PreservedBehaviors,
 		}
 		if roles == buildRolesBuilderAndTestWriter {
 			saved.TestWriter.WorkingFolder = &folder

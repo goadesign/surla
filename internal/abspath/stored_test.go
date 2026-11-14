@@ -68,9 +68,11 @@ func TestFDPathRejectsUnlinkedFileAndPreservesDeletedSuffixInRealName(t *testing
 
 // TestFDPathTwoHardLinks opens a file with two hard links through one name,
 // removes that name, and creates new files at both the original name and the
-// " (deleted)" name the Linux kernel reports, verifying that FDPath returns
-// ErrUnlinked whenever the kernel's reported path no longer names the open
-// descriptor's file.
+// " (deleted)" name the Linux kernel reports. FDPath may then report the
+// surviving link b, because Darwin's F_GETPATH answers for a file with several
+// links with an error or any remaining link, and the answer can differ from
+// one call to the next. Whatever it answers, FDPath must never return a path
+// that names another file: it returns ErrUnlinked or the surviving link.
 func TestFDPathTwoHardLinks(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -88,25 +90,35 @@ func TestFDPathTwoHardLinks(t *testing.T) {
 	assert.EqualValues(t, 1, held.Nlink)
 
 	// 1. With no replacement file: on Linux /proc/self/fd/<fd> reports
-	// ".../a (deleted)" which does not exist -> ErrUnlinked; on Darwin
-	// F_GETPATH returns ENOENT when the opened hard link is unlinked -> ErrUnlinked.
-	rawPath, rawErr := fdPath(fd)
-	got, err := FDPath(fd)
-	t.Logf("after removing a (no replacement): raw fdPath=%q (%v), FDPath=%q (%v)", rawPath, rawErr, got, err)
-	require.ErrorIs(t, err, ErrUnlinked)
-	assert.Empty(t, got)
+	// ".../a (deleted)", which does not exist; on Darwin F_GETPATH reports
+	// ENOENT or the surviving link b.
+	assertNamesHeldFileOrUnlinked(t, fd, held, b, "after removing a")
 
 	// 2. Creating another file named "a (deleted)" and another file named "a"
 	// must never cause FDPath to return a path belonging to a different inode.
 	otherDeleted := filepath.Join(base, "a (deleted)")
 	require.NoError(t, os.WriteFile(otherDeleted, []byte("someone else's\n"), 0o600))
 	require.NoError(t, os.WriteFile(a, []byte("replacement at a\n"), 0o600))
+	assertNamesHeldFileOrUnlinked(t, fd, held, b, "after creating replacement files")
+}
 
-	rawPath, rawErr = fdPath(fd)
-	got, err = FDPath(fd)
-	t.Logf("after creating replacement files: raw fdPath=%q (%v), FDPath=%q (%v)", rawPath, rawErr, got, err)
-	require.ErrorIs(t, err, ErrUnlinked)
-	assert.Empty(t, got)
+// assertNamesHeldFileOrUnlinked asserts that FDPath(fd) returns either
+// ErrUnlinked with an empty path or exactly the surviving link, and that a
+// returned path currently names the held file's device and inode.
+func assertNamesHeldFileOrUnlinked(t *testing.T, fd int, held unix.Stat_t, surviving, step string) {
+	t.Helper()
+	got, err := FDPath(fd)
+	if err != nil {
+		require.ErrorIs(t, err, ErrUnlinked, step)
+		assert.Empty(t, got, step)
+		return
+	}
+	t.Logf("%s: FDPath reported the surviving link %s", step, got)
+	require.Equal(t, surviving, got, step)
+	var named unix.Stat_t
+	require.NoError(t, unix.Lstat(got, &named), step)
+	assert.Equal(t, held.Dev, named.Dev, step)
+	assert.Equal(t, held.Ino, named.Ino, step)
 }
 
 // TestFDPathRemovedAndRecreatedDirectory opens a directory, removes it, and

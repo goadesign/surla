@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
@@ -104,15 +105,26 @@ func (c *ControlPlane) WaitForChanges(
 }
 
 // changeList reads owner's cards and canonical get_build renderings under one
-// read lock, keeping only build digests for the version. It reads each change's
-// newest verification run in one pass after releasing the lock, since separate
-// processes write those records. The version also covers approval availability,
-// the owner's team and Story evaluation, and the live target.
+// read lock, deriving each newest run's input match from the same build rendering
+// and keeping only build digests for the version. It reads the newest verification
+// runs in one pass before taking the lock, since separate processes write them.
+// The version also covers approval availability, the owner's team and Story
+// evaluation, and the live target.
 // An unreadable record fails the list: span keeps the cause and the returned
 // error names only the kind of record. A promotion target that cannot be
 // resolved keeps the list working with approvals unavailable, as approve_merge
 // refuses them; span records the cause.
 func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner string) (*gensurla.ChangeList, error) {
+	var latest map[string]verifyrun.Run
+	if runsDir := c.runsDir; runsDir != "" {
+		var err error
+		latest, err = verifyrun.LatestByChange(runsDir, owner)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "read verification runs")
+			return nil, errors.New("list changes: saved verification records could not be read")
+		}
+	}
 	c.mu.RLock()
 	records, err := c.cards.all()
 	if err != nil {
@@ -129,6 +141,7 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		return strings.Compare(a.card.ChangeID, b.card.ChangeID)
 	})
 	buildVersions := make([]string, 0, len(records))
+	items := make([]*gensurla.ChangeListItem, 0, len(records))
 	for _, record := range records {
 		build, err := c.changeBuild(record)
 		if err != nil {
@@ -146,19 +159,6 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		}
 		sum := sha256.Sum256(raw)
 		buildVersions = append(buildVersions, hex.EncodeToString(sum[:]))
-	}
-	c.mu.RUnlock()
-	var latest map[string]verifyrun.Run
-	if runsDir := c.runsDir; runsDir != "" {
-		latest, err = verifyrun.LatestByChange(runsDir, owner)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "read verification runs")
-			return nil, errors.New("list changes: saved verification records could not be read")
-		}
-	}
-	items := make([]*gensurla.ChangeListItem, 0, len(records))
-	for _, record := range records {
 		item := &gensurla.ChangeListItem{
 			ChangeID:        record.card.ChangeID,
 			Summary:         record.card.Summary,
@@ -167,19 +167,23 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 			SavedAt:         record.savedAt.UTC().Format(time.RFC3339Nano),
 		}
 		if run, ok := latest[record.card.ChangeID]; ok {
-			item.LatestVerification = latestVerification(run)
+			item.LatestVerification = latestVerification(
+				run, c.verificationInputsCurrent(record, build, run.Request.Plan),
+			)
 		}
 		if record.proposed != nil {
 			item.ProposedRevision = &record.proposed.card.RequestRevision
 		}
 		items = append(items, item)
 	}
+	c.mu.RUnlock()
 	target, err := c.resolvePromotion(ctx)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve promotion target")
 	}
-	approvalAvailable := err == nil && target != nil
+	_, noVerif := c.verifier.(noVerification)
+	approvalAvailable := err == nil && (!noVerif || target != nil)
 	var team *gensurla.TeamSnapshot
 	if c.team != nil && c.team.Owner == owner {
 		team, err = c.team.Service.ReadTeam(ctx)
@@ -213,7 +217,7 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 // completed run reports its report's verdict. It relies on verifyrun
 // reporting only the three kinds below: no encoder between here and the
 // caller checks the state against the design's values.
-func latestVerification(run verifyrun.Run) *gensurla.LatestVerificationItem {
+func latestVerification(run verifyrun.Run, inputsCurrent bool) *gensurla.LatestVerificationItem {
 	var state string
 	switch run.State.Kind {
 	case verifyrun.StateRunning:
@@ -226,5 +230,37 @@ func latestVerification(run verifyrun.Run) *gensurla.LatestVerificationItem {
 	case verifyrun.StateNotCompleted:
 		state = "not_completed"
 	}
-	return &gensurla.LatestVerificationItem{RunID: run.Request.RunID, State: state}
+	return &gensurla.LatestVerificationItem{
+		RunID: run.Request.RunID, State: state, InputsCurrent: inputsCurrent,
+	}
+}
+
+// verificationInputsCurrent compares only the agreed revision and selected
+// tests, using the usable build rendering already read for the list version.
+// A matching run remains historical evidence of its recorded candidate; it
+// does not establish the state of a working tree, deployment or approval.
+func (c *ControlPlane) verificationInputsCurrent(
+	record storedChangeCard,
+	build *gensurla.ChangeBuild,
+	plan verify.Plan,
+) bool {
+	if agreed := record.agreedRevision(); agreed == "" || plan.RequestRevision != agreed {
+		return false
+	}
+	switch v := c.verifier.(type) {
+	case storedVerification:
+		selected := v.cfg.Plan
+		return plan.Tests == verify.TestsEvaluator &&
+			plan.SuiteRepo == selected.SuiteRepo && plan.SuiteCommit == selected.SuiteCommit &&
+			plan.SuiteModule == selected.SuiteModule && plan.SuiteCommand == selected.SuiteCommand
+	case writtenTestVerification:
+		started, ok := build.Build.AsStarted()
+		if !ok || !started.InForce || plan.Tests != verify.TestsWritten {
+			return false
+		}
+		accepted, ok := started.TestWriter.Tests.AsAccepted()
+		return ok && plan.SuiteCommit == accepted.Commit
+	default:
+		return false
+	}
 }

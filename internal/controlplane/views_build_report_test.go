@@ -113,7 +113,7 @@ async function report(number) {
   await control(origin, "act", { key: "release-check" });
 }
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === input.change, "the confirmed Story did not open");
-await until(() => page.$("#surla-build-start"), "the agreed change offered no Build control");
+await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").disabled, "the agreed change offered no enabled Build control");
 checkControl(page, page.$("#surla-build-start"), "Build control");
 page.$("#surla-build-start").click();
 await until(() => page.sent("POST", buildPath).some((r) => r.status === 200), "the real Build did not finish preparing the Story tests", 45000);

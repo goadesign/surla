@@ -192,8 +192,9 @@ const answer = page.$('#surla-proposal [data-option="total_with_tax"]');
 expect(answer, "the proposal's question is missing");
 answer.click();
 expect(primary(page.$("#surla-proposal-adopt")) && !primary(page.$("#surla-build-view-team")) && !primary(page.$("#surla-build-again")), "the waiting proposal lost action priority to Build");
+await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "the proposal's background build read did not settle before rebuilding");
 page.$("#surla-build-again").click();
-await until(() => page.$("#surla-build-confirm"), "rebuilding the current agreement did not ask for confirmation");
+await until(() => page.$("#surla-build-confirm") && !page.$("#surla-build-confirm").disabled, "rebuilding the current agreement did not offer an enabled confirmation");
 expect(page.sent("POST", path).length === 1, "opening the current rebuild question sent a start");
 page.$("#surla-build-confirm").click();
 await until(() => page.sent("POST", path).length === 2 && page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "the confirmed current rebuild did not finish");
@@ -203,6 +204,7 @@ expect(page.$('#surla-proposal [data-option="total_with_tax"]').getAttribute("ar
 expect(page.$("#surla-proposal") && !page.$("#surla-proposal-adopt").disabled && page.$("#surla-confirm-submit").disabled, "the rebuild changed the waiting proposal's available actions");
 const after = await readCard("chg");
 expect(after.request_revision === input.revision && after.proposed_revision && after.examples[0].scenario !== field.value, "the rebuild saved draft text or adopted the proposal");
+await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "the background read did not settle after inspecting the saved card");
 page.$("#surla-build-again").click();
 await until(() => page.$("#surla-build-confirm"), "the next rebuild question did not open");
 page.$("#surla-build-view-team").click();

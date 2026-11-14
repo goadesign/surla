@@ -133,3 +133,179 @@ func writeStateCopy(t *testing.T, dir string, record []byte) {
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "project.json"), record, 0o600))
 }
+
+// TestNewProjectAvoidsPortsOtherProjectsSaved keeps a new project off every port another
+// project of this account saved, whether or not that project's server is running, so two
+// projects never share an address. A free port the kernel offers is only a snapshot.
+func TestNewProjectAvoidsPortsOtherProjectsSaved(t *testing.T) {
+	root := physicalTempDir(t)
+	first := initializedState(t, root, t.TempDir())
+	other := first.Record.Port + 1
+	if other > 65535 {
+		other = first.Record.Port - 1
+	}
+	second, err := Discover(root, t.TempDir())
+	require.NoError(t, err)
+	lock, err := second.StartLock(context.Background())
+	require.NoError(t, err)
+	offered := []int{first.Record.Port, other}
+	calls := 0
+	created, err := second.initialize("uid:test", func() (int, error) {
+		port := offered[min(calls, len(offered)-1)]
+		calls++
+		return port, nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, lock.Close())
+	assert.True(t, created)
+	assert.Equal(t, other, second.Record.Port, "the port the first project saved is not taken again")
+	assert.Equal(t, 2, calls)
+}
+
+// TestBrokenStateNamesPathAndStep reports a state folder or record that discovery or the
+// start lock cannot use with its path and a step the user can take. Discovery walks up
+// through parent folders, so the path also says which project's state is broken. A
+// folder this account cannot search hides the record inside it, so the folder, not the
+// record, is named with its repair.
+func TestBrokenStateNamesPathAndStep(t *testing.T) {
+	record := func(state *State) string { return filepath.Join(state.Dir, "project.json") }
+	for _, tc := range []struct {
+		name   string
+		damage func(*testing.T, *State)
+		want   func(*State) []string
+		absent []string
+	}{
+		{
+			name:   "record others can read",
+			damage: func(t *testing.T, state *State) { require.NoError(t, os.Chmod(record(state), 0o644)) },
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, "chmod 600 " + record(state)}
+			},
+		},
+		{
+			name: "record that is not JSON",
+			damage: func(t *testing.T, state *State) {
+				require.NoError(t, os.WriteFile(record(state), []byte("{"), 0o600))
+			},
+			want: func(state *State) []string {
+				return []string{
+					"Surla project in " + state.Record.Directory, record(state),
+					"restore it from a backup and run surla again",
+					"move the folder " + state.Dir, "run surla in " + state.Record.Directory,
+				}
+			},
+		},
+		{
+			name: "record with trailing data",
+			damage: func(t *testing.T, state *State) {
+				raw, err := os.ReadFile(record(state))
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(record(state), append(raw, []byte("{}")...), 0o600))
+			},
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup"}
+			},
+		},
+		{
+			name: "invalid record",
+			damage: func(t *testing.T, state *State) {
+				require.NoError(t, os.WriteFile(record(state), []byte(`{"id":"short","directory":"/","owner":"","port":0,"agents":{}}`), 0o600))
+			},
+			want: func(state *State) []string {
+				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup"}
+			},
+		},
+		{
+			name:   "folder others can open",
+			damage: func(t *testing.T, state *State) { require.NoError(t, os.Chmod(state.Dir, 0o755)) },
+			want:   func(state *State) []string { return []string{"chmod 700 " + state.Dir} },
+		},
+		{
+			name:   "folder this account cannot open",
+			damage: func(t *testing.T, state *State) { closeFolder(t, state.Dir, 0o000) },
+			want:   func(state *State) []string { return []string{state.Dir, "chmod 700 " + state.Dir} },
+			absent: []string{"chmod 600", "record of the Surla project"},
+		},
+		{
+			name:   "folder this account cannot search",
+			damage: func(t *testing.T, state *State) { closeFolder(t, state.Dir, 0o600) },
+			want:   func(state *State) []string { return []string{state.Dir, "chmod 700 " + state.Dir} },
+			absent: []string{"chmod 600", "record of the Surla project"},
+		},
+		{
+			name:   "operator folder this account cannot open",
+			damage: func(t *testing.T, state *State) { closeFolder(t, filepath.Dir(state.Dir), 0o000) },
+			want: func(state *State) []string {
+				return []string{"chmod 700 " + filepath.Dir(state.Dir)}
+			},
+			absent: []string{"chmod 600", "Surla project in"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := physicalTempDir(t)
+			project := physicalTempDir(t)
+			state := initializedState(t, root, project)
+			tc.damage(t, state)
+			// Discovery from a folder inside the project reads the same record.
+			inside := filepath.Join(project, "inside")
+			require.NoError(t, os.Mkdir(inside, 0o755))
+			found, err := Discover(root, inside)
+			if err == nil {
+				_, err = found.StartLock(context.Background())
+			}
+			require.Error(t, err)
+			for _, want := range tc.want(state) {
+				assert.Contains(t, err.Error(), want)
+			}
+			for _, absent := range tc.absent {
+				assert.NotContains(t, err.Error(), absent)
+			}
+		})
+	}
+}
+
+// TestInitializeNamesClosedStateFolder reports a folder that this account cannot use
+// when a new project is created, with that folder's repair: the state folder holds no
+// record yet, so a step about the record would name a file that does not exist, and the
+// operator folder must be listed to keep the new project off ports other projects saved.
+func TestInitializeNamesClosedStateFolder(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		folder func(*State) string
+		mode   os.FileMode
+	}{
+		{name: "folder this account cannot open", folder: stateFolder, mode: 0o000},
+		{name: "folder this account cannot search", folder: stateFolder, mode: 0o600},
+		{name: "operator folder this account cannot list", folder: operatorFolder, mode: 0o300},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state, err := Discover(physicalTempDir(t), physicalTempDir(t))
+			require.NoError(t, err)
+			require.NoError(t, os.Mkdir(state.Dir, 0o700))
+			closeFolder(t, tc.folder(state), tc.mode)
+			_, err = state.Initialize("uid:test")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "chmod 700 "+tc.folder(state))
+			assert.NotContains(t, err.Error(), "chmod 600")
+			assert.NotContains(t, err.Error(), "record of the Surla project")
+		})
+	}
+}
+
+// stateFolder is the private state folder of state's project.
+func stateFolder(state *State) string { return state.Dir }
+
+// operatorFolder is the folder that holds the state folders of every project.
+func operatorFolder(state *State) string { return filepath.Dir(state.Dir) }
+
+// closeFolder gives dir mode for the rest of the test and restores 0700 when the test
+// ends, so the test's temporary folders can still be removed. The superuser can open
+// any folder, so the test is skipped when it runs as that account.
+func closeFolder(t *testing.T, dir string, mode os.FileMode) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("the superuser can open folders of any mode")
+	}
+	require.NoError(t, os.Chmod(dir, mode))
+	t.Cleanup(func() { assert.NoError(t, os.Chmod(dir, 0o700)) })
+}

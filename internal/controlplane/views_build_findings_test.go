@@ -54,7 +54,7 @@ const observer = new page.win.MutationObserver(() => {
 });
 observer.observe(page.$("#surla-build-section"), { subtree: true, childList: true, characterData: true });
 page.$("#surla-build-again").click();
-await until(() => page.$("#surla-build-confirm"), "rebuild did not ask first");
+await until(() => page.$("#surla-build-confirm") && !page.$("#surla-build-confirm").disabled, "rebuild did not offer an enabled confirmation");
 page.$("#surla-build-confirm").click();
 await until(() => page.sent("POST", buildPath).length === 2 && page.sent("POST", buildPath)[1].status === 200 && page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "second Build did not finish");
 await control(origin, "release", { key: "GET " + findingsPath });

@@ -74,22 +74,24 @@ type Service interface {
 	// confirmed revision is refused: adopt or decline the proposal first.
 	// Otherwise the request names the card's request_revision: changed answers or
 	// examples produce a new request_revision; unchanged ones return the card as
-	// it is, with a saved approval returned in approval only while that approval
-	// still matches the promotion target's current inputs, or in
-	// unverified_approval when no promotion target is configured or the target
-	// cannot report its current inputs. A decision that no option expresses goes
-	// to the guide, which records it with revise_change; the user then confirms
-	// the resulting revision.
+	// it is, with a saved approval returned in approval only while its
+	// suite_commit is still the tests' commit chosen for this revision and either
+	// no promotion target is configured or its binary digests still match the
+	// promotion target's current binaries, or in unverified_approval when a
+	// promotion target is configured and cannot measure the candidate's binaries.
+	// A decision that no option expresses goes to the guide, which records it with
+	// revise_change; the user then confirms the resulting revision.
 	ConfirmIntent(context.Context, *ConfirmIntentPayload) (res *ChangeCardResult, err error)
 	// Return the current Change Card, including its request_revision, to its
 	// owner, for example after confirm_intent or revise_change refused an edit
 	// made against an older revision. The card's fields describe the revision in
 	// force; a revision the guide proposed beside a confirmed card is returned in
 	// proposed_revision while it waits. Reading never confirms or changes the
-	// card. A recorded approval is returned in approval only while it still
-	// matches the promotion target's current suite, environment and binary
-	// digests, or in unverified_approval when no promotion target is configured or
-	// the target cannot report its current inputs.
+	// card. A recorded approval is returned in approval only while its
+	// suite_commit is still the tests' commit chosen for this revision and either
+	// no promotion target is configured or its binary digests still match the
+	// promotion target's current binaries, or in unverified_approval when a
+	// promotion target is configured and cannot measure the candidate's binaries.
 	GetChange(context.Context, *GetChangePayload) (res *ChangeCardResult, err error)
 	// Decline the revision the guide proposed beside a confirmed Checkpoint 1
 	// Change Card. The proposal is removed and the confirmed revision in force
@@ -156,13 +158,20 @@ type Service interface {
 	// runs of a change it has an assignment for.
 	ListVerifications(context.Context, *ListVerificationsPayload) (res *VerificationListResult, err error)
 	// Record Checkpoint 5 approval for the owner's confirmed Change Card revision.
-	// The control plane loads the verification report by digest and the expected
-	// suite, environment and candidate binary digests from its promotion target,
-	// re-derives the report from its evidence with verify.Approve, and records the
-	// approval on the card. A report that did not pass or describes different
-	// inputs is rejected. Nothing is merged or deployed. The promotion target
-	// comes from surla promotion set or from the program that embeds the control
-	// plane; a control plane without one rejects every call.
+	// The control plane chooses the tests' commit the same way verify_change does
+	// (the suite commit in the project's stored verification settings, or the
+	// tests Surla accepted for the change's build at request_revision), loads the
+	// verification report by digest, re-derives the report from its evidence with
+	// verify.Approve, and records the approval on the card when the report passed
+	// for candidate_commit, request_revision, and that tests' commit. When
+	// promotion settings are configured with surla promotion set (or a
+	// PromotionTarget is bound), approve_merge also checks that the staged
+	// binaries in <release_dir>/<candidate_commit>/ match the report's binary
+	// digests and records those digests in artifacts; without promotion settings,
+	// no release folder or staged binaries are required and artifacts is empty.
+	// The report's suite_id and environment are what the tests at suite_commit
+	// declared and are recorded on the approval without a separate comparison.
+	// Nothing is merged or deployed.
 	ApproveMerge(context.Context, *ApproveMergePayload) (res *ChangeCardResult, err error)
 	// Compare evaluated Goa designs and go.mod directives without emitting a
 	// blanket compatibility verdict.
@@ -287,9 +296,10 @@ type Service interface {
 	// first, with each card's summary, status, the request_revision in force, the
 	// request_revision of a revision the guide proposed beside a confirmed card
 	// while it waits for the user, the state of its most recently accepted
-	// verification run, and when it was last saved, and say whether this server
-	// can record approvals. The views page opens on this list; agents use it to
-	// find a change_id. Reading changes nothing.
+	// verification run and whether its revision and selected tests are current,
+	// and when it was last saved, and say whether this server can record
+	// approvals. The views page opens on this list; agents use it to find a
+	// change_id. Reading changes nothing.
 	ListChanges(context.Context) (res *ChangeList, err error)
 	// Return the current change list's version as soon as it differs from since,
 	// the version of the list the caller last read, or after a bounded wait of a
@@ -306,7 +316,8 @@ type Service interface {
 	// beside it is built only after the user adopts it. Surla checks the change
 	// and prerequisites without effects, opens and refreshes the test-writer copy
 	// when used, checks the revision again, and saves the build with the agreed
-	// Story and design. Surla immediately registers the build's exact roles and
+	// Story and design and the agreed revision's confirmed answers, examples and
+	// preserved behaviors. Surla immediately registers the build's exact roles and
 	// folders before generating required tests. Stored verification settings use
 	// only the builder and remove a former test writer. Building again replaces
 	// the build and both unread assignments. A refused start saves no build and
@@ -345,11 +356,13 @@ type Service interface {
 	// was read. Reading the list records nothing.
 	ListTestWriterAssignments(context.Context) (res *TestWriterAssignmentList, err error)
 	// Return the test writer's assignment for a change in full (the working
-	// folder, the design and Story as agreed at the built revision, the tests it
-	// requires, and the state with the text of any findings) and record that the
-	// test writer read it at its revision. Later revisions do not change the saved
-	// design or Story. A new build of the change replaces the assignment, which
-	// then counts as unread, and so does each verdict of Surla's check.
+	// folder, the design and Story as agreed at the built revision, the user's
+	// confirmed answers, confirmation examples and preserved behaviors of that
+	// revision, the tests it requires, and the state with the text of any
+	// findings) and record that the test writer read it at its revision. Later
+	// revisions do not change what the build saved. A new build of the change
+	// replaces the assignment, which then counts as unread, and so does each
+	// verdict of Surla's check.
 	GetTestWriterAssignment(context.Context, *GetTestWriterAssignmentPayload) (res *TestWriterAssignment, err error)
 	// The test writer reports that its tests for a change at the build's revision
 	// are finished. Every report raises the build's report number by one and makes
@@ -419,18 +432,24 @@ type AmbiguityQuestion struct {
 	Options []string
 }
 
-// Checkpoint 5 approval recorded by approve_merge after the evaluator-written
-// verification report passed and matched the change being promoted: the exact
-// candidate commit, suite, environment and binary digests it checked. It is
-// saved with the card in the control plane's cards directory, merges and
-// deploys nothing, is replaced by the next successful approve_merge for the
-// same revision, and is dropped when the user refines the confirmed revision
-// or adopts a proposed one with confirm_intent. A revise_change on a confirmed
-// card leaves it on the confirmed revision, which stays in force until the
-// user adopts the proposal. get_change and confirm_intent return it in
-// approval only while the promotion target's current suite, environment and
-// binary digests still equal the ones it records, or in unverified_approval
-// when current promotion inputs cannot be verified on that read.
+// Checkpoint 5 approval recorded by approve_merge after the verification
+// report passed and matched the change being promoted: the exact candidate
+// commit, the tests' commit chosen for the revision, and (when promotion
+// settings are configured) the binary digests the promotion target measured.
+// suite_id and environment record what the tests at suite_commit declared in
+// the report and are shown, not compared against separate promotion settings.
+// test_source is derived on each read from how the server chooses tests. The
+// approval is saved with the card in the control plane's cards directory,
+// merges and deploys nothing, is replaced by the next successful approve_merge
+// for the same revision, and is dropped when the user refines the confirmed
+// revision or adopts a proposed one with confirm_intent. A revise_change on a
+// confirmed card leaves it on the confirmed revision, which stays in force
+// until the user adopts the proposal. get_change and confirm_intent return it
+// in approval while the tests' commit chosen for the revision still equals
+// suite_commit and (when a promotion target is configured) the promotion
+// target's current binary digests still equal artifacts, or in
+// unverified_approval when the tests' commit still matches but a configured
+// promotion target cannot verify the candidate's binaries on that read.
 type ApprovalItem struct {
 	// User who approved the result.
 	ApprovedBy string
@@ -438,17 +457,23 @@ type ApprovalItem struct {
 	ReportDigest string
 	// Candidate commit the report was checked against.
 	CandidateCommit string
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID string
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit string
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment string
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount int
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource ApprovalTestSource
 }
 
 // ApproveMergePayload is the payload type of the surla service approve_merge
@@ -785,17 +810,19 @@ type ChangeCardResult struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItem
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItem
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *UnverifiedApprovalItem
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -810,11 +837,10 @@ type ChangeList struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version string
-	// Whether approve_merge can record approvals on this server. It is false when
-	// no promotion target is configured, or when the server could not resolve its
-	// promotion target; approve_merge then refuses every approval. To configure
-	// one, store the project's promotion settings with surla promotion set, then
-	// restart Surla.
+	// Whether approve_merge can record approvals on this server. It is true
+	// whenever Checkpoint 4 verification is configured and any stored promotion
+	// settings could be resolved; it is false when verification is not configured
+	// or when resolving the promotion target returns an error.
 	ApprovalAvailable bool
 }
 
@@ -905,6 +931,17 @@ type ConfirmIntentPayload struct {
 	// added. Keep an existing example's id when you edit it, and give an example
 	// you add a new, unique, non-blank id; ids are saved as sent.
 	Examples []*ExampleItem
+}
+
+// One question of the change as agreed at the built revision, with the option
+// the user confirmed for it.
+type ConfirmedAnswer struct {
+	// Question identifier on the Change Card.
+	ID string
+	// The question as the user answered it.
+	Question string
+	// The option the user confirmed, exactly as confirmed.
+	Answer string
 }
 
 // DeclineRevisionPayload is the payload type of the surla service
@@ -1102,6 +1139,11 @@ type LatestVerificationItem struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State string
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent bool
 }
 
 // ListTracesPayload is the payload type of the surla service list_traces
@@ -1626,6 +1668,19 @@ type TestWriterAssignment struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*RequiredTest
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*ConfirmedAnswer
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*ExampleItem
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string
 }
 
 // TestWriterAssignmentItem is the result type of the surla service
@@ -1827,12 +1882,12 @@ type UICompositionItem struct {
 }
 
 // Saved Checkpoint 5 promotion approval recorded on the Change Card whose
-// current promotion inputs could not be verified on this read.
+// current release binaries could not be verified on this read.
 type UnverifiedApprovalItem struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *ApprovalItem
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason string
 }
 
@@ -2343,17 +2398,23 @@ type jsonApprovalItemTransport struct {
 	ReportDigest *string `json:"report_digest"`
 	// Candidate commit the report was checked against.
 	CandidateCommit *string `json:"candidate_commit"`
-	// Evaluator suite the promotion target requires.
+	// Suite identifier the tests at suite_commit declared in the report (shown,
+	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Evaluator suite commit the promotion target requires.
+	// Commit of the tests the report ran: the operator's stored evaluator, or the
+	// tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
-	// Dependency profile the promotion target requires, such as sim.
+	// Dependency profile the tests at suite_commit declared in the report, such as
+	// sim or scripted-model (shown, not compared).
 	Environment *string `json:"environment"`
 	// SHA-256 digest of each candidate binary the promotion target measured, keyed
-	// by binary name.
+	// by binary name; empty when no promotion settings are configured.
 	Artifacts map[string]string `json:"artifacts"`
-	// Number of declared evaluator scenarios, every one of which passed.
+	// Number of declared scenarios in the report, every one of which passed.
 	ScenarioCount *approvalItemIntTransport `json:"scenario_count"`
+	// Where the tests at suite_commit came from, derived on each read: evaluator,
+	// or written_tests with their commit and a notice.
+	TestSource *jsonApprovalTestSourceTransport `json:"test_source"`
 }
 
 // validatejsonApprovalItemTransport checks decoded JSON before it becomes a service value.
@@ -2384,6 +2445,26 @@ func validatejsonApprovalItemTransport(value *jsonApprovalItemTransport) (err er
 	}
 	if value.ScenarioCount == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("scenario_count", "body"))
+	}
+	if value.TestSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
+	}
+	if value.TestSource != nil {
+
+		if err2 := value.TestSource.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.TestSource.Kind()) {
+			case "written_tests":
+				actual, _ := value.TestSource.AsWrittenTests()
+				if actual != nil {
+					if err2 := validatejsonAgentWrittenTestsTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -3327,17 +3408,19 @@ type jsonChangeCardResultTransport struct {
 	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *jsonUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it is verified
-	// against the promotion target's current inputs on this read. It is absent
-	// before approve_merge succeeds, whenever the target's suite, environment or
-	// binary digests have changed since, and whenever current inputs cannot be
+	// Checkpoint 5 approval of this revision, present while suite_commit is still
+	// the tests' commit chosen for this revision and (when a promotion target is
+	// configured) the promotion target's current binary digests still equal
+	// artifacts on this read. It is absent before approve_merge succeeds, whenever
+	// the chosen tests' commit or the staged binary digests have changed since,
+	// and whenever a configured promotion target's staged binaries cannot be
 	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *jsonApprovalItemTransport `json:"approval,omitempty"`
-	// Saved Checkpoint 5 approval of this revision when current promotion inputs
-	// could not be verified on this read (because no promotion target is
-	// configured or the target could not report its current inputs). At most one
-	// of approval or unverified_approval is set. It is never saved to disk or
-	// hashed into request_revision.
+	// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+	// the chosen tests' commit and promotion settings are configured, but the
+	// staged binaries could not be verified on this read. At most one of approval
+	// or unverified_approval is set. It is never saved to disk or hashed into
+	// request_revision.
 	UnverifiedApproval *jsonUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	// The revision the guide proposed beside this confirmed revision, while it
 	// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -3484,11 +3567,10 @@ type jsonChangeListTransport struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version *string `json:"version"`
-	// Whether approve_merge can record approvals on this server. It is false when
-	// no promotion target is configured, or when the server could not resolve its
-	// promotion target; approve_merge then refuses every approval. To configure
-	// one, store the project's promotion settings with surla promotion set, then
-	// restart Surla.
+	// Whether approve_merge can record approvals on this server. It is true
+	// whenever Checkpoint 4 verification is configured and any stored promotion
+	// settings could be resolved; it is false when verification is not configured
+	// or when resolving the promotion target returns an error.
 	ApprovalAvailable *bool `json:"approval_available"`
 }
 
@@ -3670,6 +3752,33 @@ func validatejsonConfirmIntentPayloadTransport(value *jsonConfirmIntentPayloadTr
 				err = goa.MergeErrors(err, err2)
 			}
 		}
+	}
+	return err
+}
+
+// jsonConfirmedAnswerTransport stores JSON fields until they have been validated.
+type jsonConfirmedAnswerTransport struct {
+	// Question identifier on the Change Card.
+	ID *string `json:"id"`
+	// The question as the user answered it.
+	Question *string `json:"question"`
+	// The option the user confirmed, exactly as confirmed.
+	Answer *string `json:"answer"`
+}
+
+// validatejsonConfirmedAnswerTransport checks decoded JSON before it becomes a service value.
+func validatejsonConfirmedAnswerTransport(value *jsonConfirmedAnswerTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
 	}
 	return err
 }
@@ -4102,6 +4211,11 @@ type jsonLatestVerificationItemTransport struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State *string `json:"state"`
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent *bool `json:"inputs_current"`
 }
 
 // validatejsonLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
@@ -4114,6 +4228,9 @@ func validatejsonLatestVerificationItemTransport(value *jsonLatestVerificationIt
 	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.State != nil {
 		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
@@ -5648,6 +5765,19 @@ type jsonTestWriterAssignmentTransport struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*jsonRequiredTestTransport `json:"required_tests"`
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*jsonConfirmedAnswerTransport `json:"answers"`
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*jsonExampleItemTransport `json:"examples"`
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string `json:"preserved_behaviors"`
 }
 
 // validatejsonTestWriterAssignmentTransport checks decoded JSON before it becomes a service value.
@@ -5682,6 +5812,15 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	if value.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if value.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if value.Progress != nil {
 		if err2 := validatejsonTestWriterProgressTransport(value.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -5697,6 +5836,20 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	for _, e := range value.RequiredTests {
 		if e != nil {
 			if err2 := validatejsonRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Answers {
+		if e != nil {
+			if err2 := validatejsonConfirmedAnswerTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := validatejsonExampleItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -6186,7 +6339,7 @@ type jsonUnverifiedApprovalItemTransport struct {
 	// Recorded promotion approval from the Change Card.
 	Approval *jsonApprovalItemTransport `json:"approval"`
 	// Explanation of why the recorded approval could not be verified against
-	// current promotion inputs and how to recover.
+	// current release binaries and how to recover.
 	Reason *string `json:"reason"`
 }
 
@@ -6665,6 +6818,14 @@ func validateApprovalItemOriginal(value *ApprovalItem) (err error) {
 	if value.Artifacts == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("artifacts", "value"))
 	}
+	if value.TestSource.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "value"))
+	}
+
+	if err2 := value.TestSource.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	}
+
 	return err
 }
 
@@ -7918,6 +8079,15 @@ func validateTestWriterAssignmentOriginal(value *TestWriterAssignment) (err erro
 	if value.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "value"))
 	}
+	if value.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "value"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "value"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
+	}
 	if value.Progress != nil {
 		if err2 := validateTestWriterProgressOriginal(value.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -7926,6 +8096,13 @@ func validateTestWriterAssignmentOriginal(value *TestWriterAssignment) (err erro
 	for _, e := range value.Stories {
 		if e != nil {
 			if err2 := validateStorySummaryItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Examples {
+		if e != nil {
+			if err2 := validateExampleItemOriginal(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -8091,6 +8268,171 @@ func validateVerificationNotCompletedOriginal(value *VerificationNotCompleted) (
 func validateVerifyChangePayloadOriginal(value *VerifyChangePayload) (err error) {
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.candidate_commit", value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	return err
+}
+
+// jsonApprovalTestSourceTransport stores exactly one selected Goa OneOf branch.
+type jsonApprovalTestSourceTransport struct {
+	kind         jsonApprovalTestSourceTransportKind
+	Evaluator    *jsonOperatorEvaluatorTestsTransport
+	WrittenTests *jsonAgentWrittenTestsTransport
+}
+
+// jsonApprovalTestSourceTransportKind identifies the selected branch of jsonApprovalTestSourceTransport.
+type jsonApprovalTestSourceTransportKind string
+
+const (
+	jsonApprovalTestSourceTransportKindEvaluator    jsonApprovalTestSourceTransportKind = "evaluator"
+	jsonApprovalTestSourceTransportKindWrittenTests jsonApprovalTestSourceTransportKind = "written_tests"
+)
+
+// Kind returns the selected branch.
+func (u jsonApprovalTestSourceTransport) Kind() jsonApprovalTestSourceTransportKind {
+	return u.kind
+}
+
+// newjsonApprovalTestSourceTransportEvaluator creates jsonApprovalTestSourceTransport with its evaluator branch selected.
+func newjsonApprovalTestSourceTransportEvaluator(value *jsonOperatorEvaluatorTestsTransport) jsonApprovalTestSourceTransport {
+	return jsonApprovalTestSourceTransport{kind: jsonApprovalTestSourceTransportKindEvaluator, Evaluator: value}
+}
+
+// AsEvaluator returns the evaluator branch when it is selected.
+func (u jsonApprovalTestSourceTransport) AsEvaluator() (_ *jsonOperatorEvaluatorTestsTransport, ok bool) {
+	if u.kind != jsonApprovalTestSourceTransportKindEvaluator {
+		return
+	}
+	return u.Evaluator, true
+}
+
+// SetEvaluator selects the evaluator branch.
+func (u *jsonApprovalTestSourceTransport) SetEvaluator(value *jsonOperatorEvaluatorTestsTransport) {
+	u.kind = jsonApprovalTestSourceTransportKindEvaluator
+	u.Evaluator = value
+}
+
+// newjsonApprovalTestSourceTransportWrittenTests creates jsonApprovalTestSourceTransport with its written_tests branch selected.
+func newjsonApprovalTestSourceTransportWrittenTests(value *jsonAgentWrittenTestsTransport) jsonApprovalTestSourceTransport {
+	return jsonApprovalTestSourceTransport{kind: jsonApprovalTestSourceTransportKindWrittenTests, WrittenTests: value}
+}
+
+// AsWrittenTests returns the written_tests branch when it is selected.
+func (u jsonApprovalTestSourceTransport) AsWrittenTests() (_ *jsonAgentWrittenTestsTransport, ok bool) {
+	if u.kind != jsonApprovalTestSourceTransportKindWrittenTests {
+		return
+	}
+	return u.WrittenTests, true
+}
+
+// SetWrittenTests selects the written_tests branch.
+func (u *jsonApprovalTestSourceTransport) SetWrittenTests(value *jsonAgentWrittenTestsTransport) {
+	u.kind = jsonApprovalTestSourceTransportKindWrittenTests
+	u.WrittenTests = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonApprovalTestSourceTransport) Validate() error {
+	switch u.kind {
+	case jsonApprovalTestSourceTransportKindEvaluator:
+		if u.Evaluator == nil {
+			return goa.MissingFieldError("value", "jsonApprovalTestSourceTransport")
+		}
+		return nil
+	case jsonApprovalTestSourceTransportKindWrittenTests:
+		if u.WrittenTests == nil {
+			return goa.MissingFieldError("value", "jsonApprovalTestSourceTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("source", "jsonApprovalTestSourceTransport")
+	default:
+		return goa.InvalidEnumValueError("source", u.kind, []any{string(jsonApprovalTestSourceTransportKindEvaluator), string(jsonApprovalTestSourceTransportKindWrittenTests)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonApprovalTestSourceTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonApprovalTestSourceTransportKindEvaluator:
+		value = u.Evaluator
+	case jsonApprovalTestSourceTransportKindWrittenTests:
+		value = u.WrittenTests
+	default:
+		return nil, fmt.Errorf("unexpected jsonApprovalTestSourceTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("source", nil, "non-null JSON object")
+	}
+	if _, exists := fields["source"]; exists {
+		return nil, fmt.Errorf("jsonApprovalTestSourceTransport branch already contains discriminator %q", "source")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["source"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonApprovalTestSourceTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["source"]
+	if !exists {
+		return goa.MissingFieldError("source", "jsonApprovalTestSourceTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("source", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "source")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonApprovalTestSourceTransportKindEvaluator):
+		var value *jsonOperatorEvaluatorTestsTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonApprovalTestSourceTransportKindEvaluator
+		u.Evaluator = value
+	case string(jsonApprovalTestSourceTransportKindWrittenTests):
+		var value *jsonAgentWrittenTestsTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonApprovalTestSourceTransportKindWrittenTests
+		u.WrittenTests = value
+	default:
+		return goa.InvalidEnumValueError("source", raw.Type, []any{string(jsonApprovalTestSourceTransportKindEvaluator), string(jsonApprovalTestSourceTransportKindWrittenTests)})
+	}
+	return u.Validate()
 }
 
 // jsonBuildTransport stores exactly one selected Goa OneOf branch.
@@ -10355,6 +10697,28 @@ func EncodeApprovalItem(in *ApprovalItem) ([]byte, error) {
 			tv := val
 			body.Artifacts[tk] = tv
 		}
+		var testSourceValue jsonApprovalTestSourceTransport
+		switch string(in.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := in.TestSource.AsEvaluator()
+			var obj *jsonOperatorEvaluatorTestsTransport
+			if actual != nil {
+				obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+			testSourceValue = u
+		case "written_tests":
+			actual, _ := in.TestSource.AsWrittenTests()
+			var obj *jsonAgentWrittenTestsTransport
+			if actual != nil {
+				obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+			testSourceValue = u
+		}
+		body.TestSource = &testSourceValue
 	}
 	if err := validatejsonApprovalItemTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ApprovalItem JSON: %w", err)
@@ -10399,6 +10763,28 @@ func ValidateApprovalItemValue(in *ApprovalItem) error {
 			tv := val
 			body.Artifacts[tk] = tv
 		}
+		var testSourceValue jsonApprovalTestSourceTransport
+		switch string(in.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := in.TestSource.AsEvaluator()
+			var obj *jsonOperatorEvaluatorTestsTransport
+			if actual != nil {
+				obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+			testSourceValue = u
+		case "written_tests":
+			actual, _ := in.TestSource.AsWrittenTests()
+			var obj *jsonAgentWrittenTestsTransport
+			if actual != nil {
+				obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+			}
+			u := testSourceValue
+			u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+			testSourceValue = u
+		}
+		body.TestSource = &testSourceValue
 	}
 	if err := validatejsonApprovalItemTransport(body); err != nil {
 		return fmt.Errorf("validate ApprovalItem value: %w", err)
@@ -10445,6 +10831,26 @@ func DecodeApprovalItem(data []byte) (out *ApprovalItem, err error) {
 			tk := key
 			tv := val
 			out.Artifacts[tk] = tv
+		}
+		switch string(body.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := body.TestSource.AsEvaluator()
+			var obj *OperatorEvaluatorTests
+			if actual != nil {
+				obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+			}
+			u := out.TestSource
+			u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+			out.TestSource = u
+		case "written_tests":
+			actual, _ := body.TestSource.AsWrittenTests()
+			var obj *AgentWrittenTests
+			if actual != nil {
+				obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+			}
+			u := out.TestSource
+			u.SetWrittenTests((*AgentWrittenTests)(obj))
+			out.TestSource = u
 		}
 	}
 	return out, nil
@@ -13795,6 +14201,89 @@ func DecodeConfirmIntentPayload(data []byte) (out *ConfirmIntentPayload, err err
 	return out, nil
 }
 
+// EncodeConfirmedAnswer turns a service value into JSON using the field names in the Goa design.
+func EncodeConfirmedAnswer(in *ConfirmedAnswer) ([]byte, error) {
+	if err := checkConfirmedAnswerValue(in); err != nil {
+		return nil, fmt.Errorf("encode ConfirmedAnswer JSON: %w", err)
+	}
+	var body *jsonConfirmedAnswerTransport
+	{
+		body = &jsonConfirmedAnswerTransport{
+			ID:       &in.ID,
+			Question: &in.Question,
+			Answer:   &in.Answer,
+		}
+	}
+	if err := validatejsonConfirmedAnswerTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ConfirmedAnswer JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ConfirmedAnswer JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateConfirmedAnswerValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateConfirmedAnswerValue(in *ConfirmedAnswer) error {
+	if err := checkConfirmedAnswerValue(in); err != nil {
+		return fmt.Errorf("validate ConfirmedAnswer value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ConfirmedAnswer")
+	}
+
+	var body *jsonConfirmedAnswerTransport
+	{
+		body = &jsonConfirmedAnswerTransport{
+			ID:       &in.ID,
+			Question: &in.Question,
+			Answer:   &in.Answer,
+		}
+	}
+	if err := validatejsonConfirmedAnswerTransport(body); err != nil {
+		return fmt.Errorf("validate ConfirmedAnswer value: %w", err)
+	}
+	return nil
+}
+
+// DecodeConfirmedAnswer checks JSON field names from the Goa design and returns a service value.
+func DecodeConfirmedAnswer(data []byte) (out *ConfirmedAnswer, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON: %w", err)
+	}
+	if err := validateConfirmedAnswerJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON: %w", err)
+	}
+	var body *jsonConfirmedAnswerTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ConfirmedAnswer JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ConfirmedAnswer JSON after first value: %w", err)
+	}
+	if err := validatejsonConfirmedAnswerTransport(body); err != nil {
+		return out, fmt.Errorf("validate ConfirmedAnswer JSON: %w", err)
+	}
+	{
+		out = &ConfirmedAnswer{
+			ID:       *body.ID,
+			Question: *body.Question,
+			Answer:   *body.Answer,
+		}
+	}
+	return out, nil
+}
+
 // EncodeDeclineRevisionPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeDeclineRevisionPayload(in *DeclineRevisionPayload) ([]byte, error) {
 	if err := checkDeclineRevisionPayloadValue(in); err != nil {
@@ -15121,8 +15610,9 @@ func EncodeLatestVerificationItem(in *LatestVerificationItem) ([]byte, error) {
 	var body *jsonLatestVerificationItemTransport
 	{
 		body = &jsonLatestVerificationItemTransport{
-			RunID: &in.RunID,
-			State: &in.State,
+			RunID:         &in.RunID,
+			State:         &in.State,
+			InputsCurrent: &in.InputsCurrent,
 		}
 	}
 	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
@@ -15153,8 +15643,9 @@ func ValidateLatestVerificationItemValue(in *LatestVerificationItem) error {
 	var body *jsonLatestVerificationItemTransport
 	{
 		body = &jsonLatestVerificationItemTransport{
-			RunID: &in.RunID,
-			State: &in.State,
+			RunID:         &in.RunID,
+			State:         &in.State,
+			InputsCurrent: &in.InputsCurrent,
 		}
 	}
 	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
@@ -15189,8 +15680,9 @@ func DecodeLatestVerificationItem(data []byte) (out *LatestVerificationItem, err
 	}
 	{
 		out = &LatestVerificationItem{
-			RunID: *body.RunID,
-			State: *body.State,
+			RunID:         *body.RunID,
+			State:         *body.State,
+			InputsCurrent: *body.InputsCurrent,
 		}
 	}
 	return out, nil
@@ -16735,7 +17227,7 @@ func DecodeOperatorEvaluatorTests(data []byte) (out *OperatorEvaluatorTests, err
 	if err != nil {
 		return out, fmt.Errorf("decode OperatorEvaluatorTests JSON: %w", err)
 	}
-	if err := validateOperatorEvaluatorTestsJSONValue("", root, ""); err != nil {
+	if err := validateApprovalItemJSONValue4("", root, ""); err != nil {
 		return out, fmt.Errorf("decode OperatorEvaluatorTests JSON: %w", err)
 	}
 	var body *jsonOperatorEvaluatorTestsTransport
@@ -19343,6 +19835,26 @@ func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
 			}
 			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
 		}
+		body.Answers = make([]*jsonConfirmedAnswerTransport, len(in.Answers))
+		for i, val := range in.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = encodeConfirmedAnswerToConfirmedAnswerTransport(val)
+		}
+		body.Examples = make([]*jsonExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
 	}
 	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
 		return nil, fmt.Errorf("validate TestWriterAssignment JSON: %w", err)
@@ -19398,6 +19910,26 @@ func ValidateTestWriterAssignmentValue(in *TestWriterAssignment) error {
 				continue
 			}
 			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
+		}
+		body.Answers = make([]*jsonConfirmedAnswerTransport, len(in.Answers))
+		for i, val := range in.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = encodeConfirmedAnswerToConfirmedAnswerTransport(val)
+		}
+		body.Examples = make([]*jsonExampleItemTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+		}
+		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
 		}
 	}
 	if err := validatejsonTestWriterAssignmentTransport(body); err != nil {
@@ -19458,6 +19990,26 @@ func DecodeTestWriterAssignment(data []byte) (out *TestWriterAssignment, err err
 				continue
 			}
 			out.RequiredTests[i] = decodeRequiredTestTransportToRequiredTest(val)
+		}
+		out.Answers = make([]*ConfirmedAnswer, len(body.Answers))
+		for i, val := range body.Answers {
+			if val == nil {
+				out.Answers[i] = nil
+				continue
+			}
+			out.Answers[i] = decodeConfirmedAnswerTransportToConfirmedAnswer(val)
+		}
+		out.Examples = make([]*ExampleItem, len(body.Examples))
+		for i, val := range body.Examples {
+			if val == nil {
+				out.Examples[i] = nil
+				continue
+			}
+			out.Examples[i] = decodeExampleItemTransportToExampleItem(val)
+		}
+		out.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
+		for i, val := range body.PreservedBehaviors {
+			out.PreservedBehaviors[i] = val
 		}
 	}
 	return out, nil
@@ -22267,6 +22819,26 @@ func decodeApprovalItemTransportToApprovalItem(v *jsonApprovalItemTransport) *Ap
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *OperatorEvaluatorTests
+		if actual != nil {
+			obj = decodeOperatorEvaluatorTestsTransportToOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *AgentWrittenTests
+		if actual != nil {
+			obj = decodeAgentWrittenTestsTransportToAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*AgentWrittenTests)(obj))
+		res.TestSource = u
+	}
 
 	return res
 }
@@ -22534,6 +23106,16 @@ func decodeChangeListItemTransportToChangeListItem(v *jsonChangeListItemTranspor
 	return res
 }
 
+func decodeConfirmedAnswerTransportToConfirmedAnswer(v *jsonConfirmedAnswerTransport) *ConfirmedAnswer {
+	res := &ConfirmedAnswer{
+		ID:       *v.ID,
+		Question: *v.Question,
+		Answer:   *v.Answer,
+	}
+
+	return res
+}
+
 func decodeDesignSnapshotTransportToDesignSnapshot(v *jsonDesignSnapshotTransport) *DesignSnapshot {
 	res := &DesignSnapshot{}
 	res.Files = make(map[string]string, len(v.Files))
@@ -22560,8 +23142,9 @@ func decodeExampleItemTransportToExampleItem(v *jsonExampleItemTransport) *Examp
 
 func decodeLatestVerificationItemTransportToLatestVerificationItem(v *jsonLatestVerificationItemTransport) *LatestVerificationItem {
 	res := &LatestVerificationItem{
-		RunID: *v.RunID,
-		State: *v.State,
+		RunID:         *v.RunID,
+		State:         *v.State,
+		InputsCurrent: *v.InputsCurrent,
 	}
 
 	return res
@@ -23259,6 +23842,28 @@ func encodeApprovalItemToApprovalItemTransport(v *ApprovalItem) *jsonApprovalIte
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue jsonApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *jsonOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *jsonAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -23280,6 +23885,28 @@ func encodeApprovalItemToApprovalItemTransport2(v *ApprovalItem) *jsonApprovalIt
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	var testSourceValue jsonApprovalTestSourceTransport
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *jsonOperatorEvaluatorTestsTransport
+		if actual != nil {
+			obj = encodeOperatorEvaluatorTestsToOperatorEvaluatorTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetEvaluator((*jsonOperatorEvaluatorTestsTransport)(obj))
+		testSourceValue = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *jsonAgentWrittenTestsTransport
+		if actual != nil {
+			obj = encodeAgentWrittenTestsToAgentWrittenTestsTransport(actual)
+		}
+		u := testSourceValue
+		u.SetWrittenTests((*jsonAgentWrittenTestsTransport)(obj))
+		testSourceValue = u
+	}
+	res.TestSource = &testSourceValue
 
 	return res
 }
@@ -23559,6 +24186,16 @@ func encodeChangeListItemToChangeListItemTransport(v *ChangeListItem) *jsonChang
 	return res
 }
 
+func encodeConfirmedAnswerToConfirmedAnswerTransport(v *ConfirmedAnswer) *jsonConfirmedAnswerTransport {
+	res := &jsonConfirmedAnswerTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+		Answer:   &v.Answer,
+	}
+
+	return res
+}
+
 func encodeDesignSnapshotToDesignSnapshotTransport(v *DesignSnapshot) *jsonDesignSnapshotTransport {
 	res := &jsonDesignSnapshotTransport{}
 	res.Files = make(map[string]string, len(v.Files))
@@ -23597,8 +24234,9 @@ func encodeExampleItemToExampleItemTransport(v *ExampleItem) *jsonExampleItemTra
 
 func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVerificationItem) *jsonLatestVerificationItemTransport {
 	res := &jsonLatestVerificationItemTransport{
-		RunID: &v.RunID,
-		State: &v.State,
+		RunID:         &v.RunID,
+		State:         &v.State,
+		InputsCurrent: &v.InputsCurrent,
 	}
 
 	return res
@@ -24632,7 +25270,7 @@ func validateApprovalItemJSONValue(path string, value any, description string) e
 		case "artifacts":
 			if err := validateApprovalItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+				typed[key], "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.",
 			); err != nil {
 				return err
 			}
@@ -24646,7 +25284,7 @@ func validateApprovalItemJSONValue(path string, value any, description string) e
 		case "environment":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Dependency profile the promotion target requires, such as sim.",
+				typed[key], "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).",
 			); err != nil {
 				return err
 			}
@@ -24660,21 +25298,28 @@ func validateApprovalItemJSONValue(path string, value any, description string) e
 		case "scenario_count":
 			if err := validateAgentPolicyItemJSONValue4(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Number of declared evaluator scenarios, every one of which passed.",
+				typed[key], "Number of declared scenarios in the report, every one of which passed.",
 			); err != nil {
 				return err
 			}
 		case "suite_commit":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Evaluator suite commit the promotion target requires.",
+				typed[key], "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
 			); err != nil {
 				return err
 			}
 		case "suite_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Evaluator suite the promotion target requires.",
+				typed[key], "Suite identifier the tests at suite_commit declared in the report (shown, not compared).",
+			); err != nil {
+				return err
+			}
+		case "test_source":
+			if err := validateApprovalItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.",
 			); err != nil {
 				return err
 			}
@@ -24688,6 +25333,7 @@ func validateApprovalItemJSONValue(path string, value any, description string) e
 				"scenario_count",
 				"suite_commit",
 				"suite_id",
+				"test_source",
 			})
 		}
 	}
@@ -24718,6 +25364,66 @@ func validateApprovalItemJSONValue2(path string, value any, description string) 
 			typed[key], description,
 		); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validateApprovalItemJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateApprovalItemJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["source"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "source" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "evaluator":
+		return validateApprovalItemJSONValue4(path, branch, "")
+	case "written_tests":
+		return validateAgentWrittenTestsJSONValue(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
+}
+
+// validateApprovalItemJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateApprovalItemJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
 		}
 	}
 	return nil
@@ -27180,7 +27886,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "approval":
 			if err := validateApprovalItemJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+				typed[key], "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 			); err != nil {
 				return err
 			}
@@ -27264,7 +27970,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "unverified_approval":
 			if err := validateChangeCardResultJSONValue19(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+				typed[key], "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 			); err != nil {
 				return err
 			}
@@ -28279,7 +28985,7 @@ func validateChangeCardResultJSONValue19(path string, value any, description str
 		case "reason":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+				typed[key], "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.",
 			); err != nil {
 				return err
 			}
@@ -28316,7 +29022,7 @@ func validateChangeListJSONValue(path string, value any, description string) err
 		case "approval_available":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.",
+				typed[key], "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.",
 			); err != nil {
 				return err
 			}
@@ -28476,6 +29182,13 @@ func validateChangeListJSONValue4(path string, value any, description string) er
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "inputs_current":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+			); err != nil {
+				return err
+			}
 		case "run_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -28492,6 +29205,7 @@ func validateChangeListJSONValue4(path string, value any, description string) er
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"inputs_current",
 				"run_id",
 				"state",
 			})
@@ -28827,6 +29541,58 @@ func validateConfirmIntentPayloadJSONValue3(path string, value any, description 
 			item, description,
 		); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validateConfirmedAnswerJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateConfirmedAnswerJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "answer":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The option the user confirmed, exactly as confirmed.",
+			); err != nil {
+				return err
+			}
+		case "id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Question identifier on the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "question":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The question as the user answered it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"answer",
+				"id",
+				"question",
+			})
 		}
 	}
 	return nil
@@ -30480,33 +31246,6 @@ func validateModelSettingsResultJSONValue3(path string, value any, description s
 	return nil
 }
 
-// validateOperatorEvaluatorTestsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateOperatorEvaluatorTestsJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		default:
-			return unknownJSONFieldError(path, key, []string{})
-		}
-	}
-	return nil
-}
-
 // validatePreviewArchitecturePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validatePreviewArchitecturePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -31506,6 +32245,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "answers":
+			if err := validateTestWriterAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -31520,8 +32266,15 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
+		case "examples":
+			if err := validateTestWriterAssignmentJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.",
+			); err != nil {
+				return err
+			}
 		case "findings":
-			if err := validateTestWriterAssignmentJSONValue2(
+			if err := validateTestWriterAssignmentJSONValue4(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
 			); err != nil {
@@ -31531,6 +32284,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateTestWriterAssignmentJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.",
 			); err != nil {
 				return err
 			}
@@ -31549,14 +32309,14 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 				return err
 			}
 		case "required_tests":
-			if err := validateTestWriterAssignmentJSONValue3(
+			if err := validateTestWriterAssignmentJSONValue6(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "One test per finished flow of stories, in declaration order; unfinished flows require none.",
 			); err != nil {
 				return err
 			}
 		case "stories":
-			if err := validateTestWriterAssignmentJSONValue4(
+			if err := validateTestWriterAssignmentJSONValue7(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
 			); err != nil {
@@ -31571,10 +32331,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"answers",
 				"change_id",
 				"design_source",
+				"examples",
 				"findings",
 				"in_force",
+				"preserved_behaviors",
 				"progress",
 				"request_revision",
 				"required_tests",
@@ -31600,7 +32363,10 @@ func validateTestWriterAssignmentJSONValue2(path string, value any, description 
 		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
 	}
 	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
+		if item == nil {
+			continue
+		}
+		if err := validateConfirmedAnswerJSONValue(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -31627,7 +32393,7 @@ func validateTestWriterAssignmentJSONValue3(path string, value any, description 
 		if item == nil {
 			continue
 		}
-		if err := validateRequiredTestJSONValue(
+		if err := validateChangeCardResultJSONValue21(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -31639,6 +32405,81 @@ func validateTestWriterAssignmentJSONValue3(path string, value any, description 
 
 // validateTestWriterAssignmentJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
 func validateTestWriterAssignmentJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateRequiredTestJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestWriterAssignmentJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestWriterAssignmentJSONValue7(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -32453,7 +33294,7 @@ func validateVerificationListResultJSONValue7(path string, value any, descriptio
 	}
 	switch discriminator {
 	case "evaluator":
-		return validateOperatorEvaluatorTestsJSONValue(path, branch, "")
+		return validateApprovalItemJSONValue4(path, branch, "")
 	case "written_tests":
 		return validateAgentWrittenTestsJSONValue(path, branch, "")
 	default:
@@ -32823,6 +33664,37 @@ func checkApprovalItemApprovalItemValue(in *ApprovalItem, field string, active m
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "artifacts", false), string(key1), true))
 			}
 		}
+		if branch1, ok := in.TestSource.AsEvaluator(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkApprovalItemOperatorEvaluatorTestsValue(branch1, generatedJSONChildPath(field, "test_source", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.TestSource.AsWrittenTests(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkAgentWrittenTestsAgentWrittenTestsValue(branch1, generatedJSONChildPath(field, "test_source", false), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkApprovalItemOperatorEvaluatorTestsValue checks one generated value on the active path.
+func checkApprovalItemOperatorEvaluatorTestsValue(in *OperatorEvaluatorTests, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
 	}
 	return nil
 }
@@ -34785,6 +35657,42 @@ func checkConfirmIntentPayloadConfirmIntentPayloadValue(in *ConfirmIntentPayload
 	return nil
 }
 
+// checkConfirmedAnswerValue checks text and cycles before conversion.
+func checkConfirmedAnswerValue(in *ConfirmedAnswer) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkConfirmedAnswerConfirmedAnswerValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkConfirmedAnswerConfirmedAnswerValue checks one generated value on the active path.
+func checkConfirmedAnswerConfirmedAnswerValue(in *ConfirmedAnswer, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "id", false))
+		}
+		if !utf8.ValidString(string(in.Question)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "question", false))
+		}
+		if !utf8.ValidString(string(in.Answer)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "answer", false))
+		}
+	}
+	return nil
+}
+
 // checkDeclineRevisionPayloadValue checks text and cycles before conversion.
 func checkDeclineRevisionPayloadValue(in *DeclineRevisionPayload) error {
 	if in == nil {
@@ -35870,23 +36778,8 @@ func checkOperatorEvaluatorTestsValue(in *OperatorEvaluatorTests) error {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue(in, "$", active); err != nil {
+	if err := checkApprovalItemOperatorEvaluatorTestsValue(in, "$", active); err != nil {
 		return err
-	}
-	return nil
-}
-
-// checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue checks one generated value on the active path.
-func checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue(in *OperatorEvaluatorTests, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
 	}
 	return nil
 }
@@ -36654,6 +37547,27 @@ func checkTestWriterAssignmentTestWriterAssignmentValue(in *TestWriterAssignment
 				return err
 			}
 		}
+		for index1, item1 := range in.Answers {
+			_ = index1
+			_ = item1
+			if err := checkConfirmedAnswerConfirmedAnswerValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "answers", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Examples {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultExampleItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "examples", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.PreservedBehaviors {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "preserved_behaviors", false), strconv.Itoa(index1), true))
+			}
+		}
 	}
 	return nil
 }
@@ -37141,7 +38055,7 @@ func checkVerificationListResultVerificationStatusResultValue(in *VerificationSt
 			_ = branch1
 			if branch1 != nil {
 			}
-			if err := checkOperatorEvaluatorTestsOperatorEvaluatorTestsValue(branch1, generatedJSONChildPath(field, "test_source", false), active); err != nil {
+			if err := checkApprovalItemOperatorEvaluatorTestsValue(branch1, generatedJSONChildPath(field, "test_source", false), active); err != nil {
 				return err
 			}
 		}

@@ -324,9 +324,11 @@ func (c *Client) ListVerifications(ctx context.Context, p *ListVerificationsPayl
 // ApproveMerge calls the "approve_merge" endpoint of the "surla" service.
 // ApproveMerge may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
-//   - "unprocessable" (type *goa.ServiceError): The verification report did not pass or does not match the Change Card and promotion target inputs.
-//   - "not_implemented" (type *goa.ServiceError): This control plane has no promotion target bound to it.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed, its request_revision does not match, or the accepted tests changed while approving; confirm the card, read the current revision with get_change, or approve again.
+//   - "no_build" (type *goa.ServiceError): Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.
+//   - "tests_not_accepted" (type *goa.ServiceError): Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.
+//   - "unprocessable" (type *goa.ServiceError): The verification report did not pass or does not match the Change Card, the chosen tests' commit, or (when promotion settings are configured) the promotion target's staged binary digests.
+//   - "not_implemented" (type *goa.ServiceError): This control plane has no verification configuration bound to it.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ApproveMerge(ctx context.Context, p *ApproveMergePayload) (res *ChangeCardResult, err error) {

@@ -275,10 +275,13 @@ func TestRefusedHandOverStopsStartBeforeTheTeam(t *testing.T) {
 			t.Setenv("ANTHROPIC_API_KEY", shellFamily["ANTHROPIC_API_KEY"])
 			state, err := fixtureProjectState("")
 			require.NoError(t, err)
-			// The held card store makes start attach to the answering server.
+			// The held card store makes start attach to the answering server,
+			// which reports this test binary's build, as a server of this
+			// surla does.
 			cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+			build := testBuild(t)
 			var mu sync.Mutex
 			var requested []string
 			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +292,7 @@ func TestRefusedHandOverStopsStartBeforeTheTeam(t *testing.T) {
 				switch r.URL.Path {
 				case "/project/identity":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
-						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner, "build": build,
 					}))
 				case "/cp1/model/settings":
 					w.WriteHeader(tc.status)
