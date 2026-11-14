@@ -150,8 +150,13 @@ const open = async (changeId) => {
 const openChange = async (page, changeId) => {
   page.$("#surla-nav-changes").click();
   await until(() => page.$("#surla-open-change-" + changeId) && !page.$("#surla-open-change-" + changeId).disabled, changeId + " is not offered");
+  const buildPath = "/changes/" + changeId + "/build";
+  const buildReads = page.sent("GET", buildPath).length;
   page.$("#surla-open-change-" + changeId).click();
   await until(() => page.$("#surla-cp1-editor").dataset.changeId === changeId, changeId + " did not open");
+  // The initial build observation may invalidate selected proof. Settle this
+  // opening's own read before testing status actions under unchanged inputs.
+  await until(() => page.sent("GET", buildPath).slice(buildReads).some((r) => r.status === 200) && !page.$("#surla-build-loading") && !page.$("#surla-build-error"), changeId + " did not settle its initial build read");
 };
 const proof = async (page, changeId) => {
   const lists = page.sent("GET", "/changes/" + changeId + "/verifications").length;
