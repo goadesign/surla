@@ -1950,6 +1950,10 @@ type VerificationStatusResult struct {
 	SuiteCommit string
 	// When the run was accepted.
 	AcceptedAt string
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSource
@@ -6482,6 +6486,10 @@ type jsonVerificationStatusResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *jsonTestSourceTransport `json:"test_source"`
@@ -6511,6 +6519,9 @@ func validatejsonVerificationStatusResultTransport(value *jsonVerificationStatus
 	}
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
@@ -21902,6 +21913,7 @@ func EncodeVerificationStatusResult(in *VerificationStatusResult) ([]byte, error
 			CandidateCommit: &in.CandidateCommit,
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
+			InputsCurrent:   &in.InputsCurrent,
 		}
 		var testSourceValue jsonTestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -21991,6 +22003,7 @@ func ValidateVerificationStatusResultValue(in *VerificationStatusResult) error {
 			CandidateCommit: &in.CandidateCommit,
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
+			InputsCurrent:   &in.InputsCurrent,
 		}
 		var testSourceValue jsonTestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -22084,6 +22097,7 @@ func DecodeVerificationStatusResult(data []byte) (out *VerificationStatusResult,
 			CandidateCommit: *body.CandidateCommit,
 			SuiteCommit:     *body.SuiteCommit,
 			AcceptedAt:      *body.AcceptedAt,
+			InputsCurrent:   *body.InputsCurrent,
 		}
 		switch string(body.TestSource.Kind()) {
 		case "evaluator":
@@ -23190,6 +23204,7 @@ func decodeVerificationStatusResultTransportToVerificationStatusResult(v *jsonVe
 		CandidateCommit: *v.CandidateCommit,
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
+		InputsCurrent:   *v.InputsCurrent,
 	}
 	switch string(v.TestSource.Kind()) {
 	case "evaluator":
@@ -24383,6 +24398,7 @@ func encodeVerificationStatusResultToVerificationStatusResultTransport(v *Verifi
 		CandidateCommit: &v.CandidateCommit,
 		SuiteCommit:     &v.SuiteCommit,
 		AcceptedAt:      &v.AcceptedAt,
+		InputsCurrent:   &v.InputsCurrent,
 	}
 	var testSourceValue jsonTestSourceTransport
 	switch string(v.TestSource.Kind()) {
@@ -32351,6 +32367,13 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 			); err != nil {
 				return err
 			}
+		case "inputs_current":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+			); err != nil {
+				return err
+			}
 		case "request_revision":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -32391,6 +32414,7 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 				"accepted_at",
 				"candidate_commit",
 				"change_id",
+				"inputs_current",
 				"request_revision",
 				"run_id",
 				"state",

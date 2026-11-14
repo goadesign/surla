@@ -236,7 +236,7 @@ func latestVerification(run verifyrun.Run, inputsCurrent bool) *gensurla.LatestV
 }
 
 // verificationInputsCurrent compares only the agreed revision and selected
-// tests, using the usable build rendering already read for the list version.
+// tests, using the usable build rendering already read by the owning operation.
 // A matching run remains historical evidence of its recorded candidate; it
 // does not establish the state of a working tree, deployment or approval.
 func (c *ControlPlane) verificationInputsCurrent(

@@ -85,10 +85,25 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 		Timeout:    verCfg.Timeout,
 		Plan:       plan,
 	}
+	// Observe the selected inputs before accepting work. A later edit can
+	// invalidate this observation, but no failed read can hide an accepted run.
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.start_verification",
+		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)))
+	defer span.End()
+	c.mu.RLock()
+	inputsCurrent, err := c.currentVerificationInputs(principal, p.ChangeID, plan)
+	c.mu.RUnlock()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read verification inputs")
+		return nil, fmt.Errorf("start verification for %q: saved verification inputs could not be read", p.ChangeID)
+	}
 	if _, err := verifyrun.Start(verCfg.RunsDir, req, verCfg.Command); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "start verification run")
 		return nil, fmt.Errorf("start verification: %w", err)
 	}
-	return statusResult(req, verifyrun.State{Kind: verifyrun.StateRunning}), nil
+	return statusResult(req, verifyrun.State{Kind: verifyrun.StateRunning}, inputsCurrent), nil
 }
 
 // verifiableCard checks, under the read lock, that principal owns the card
@@ -146,19 +161,31 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 		span.SetStatus(codes.Error, "read verification run")
 		return nil, fmt.Errorf("read verification %q: saved verification record could not be read", p.RunID)
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if principal.Kind == CallerTestWriter {
-		c.mu.RLock()
 		holds, err := c.testWriterHolds(principal, req.ChangeID)
-		c.mu.RUnlock()
 		if err != nil {
-			return nil, err
+			var refusal *goa.ServiceError
+			if errors.As(err, &refusal) {
+				return nil, err
+			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "read verification assignment")
+			return nil, fmt.Errorf("read verification %q: saved verification inputs could not be read", p.RunID)
 		}
 		if !holds {
 			return nil, gensurla.MakeForbidden(fmt.Errorf(
 				"the test writer reads only the runs of a change it has an assignment for, and change %q has none", req.ChangeID))
 		}
 	}
-	return statusResult(req, state), nil
+	inputsCurrent, err := c.currentVerificationInputs(principal, req.ChangeID, req.Plan)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read verification inputs")
+		return nil, fmt.Errorf("read verification %q: saved verification inputs could not be read", p.RunID)
+	}
+	return statusResult(req, state, inputsCurrent), nil
 }
 
 // ListVerifications returns all Checkpoint 4 verification runs started by the
@@ -189,11 +216,24 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 			if holdErr != nil || !holds {
 				c.mu.RUnlock()
 				if holdErr != nil {
-					return nil, holdErr
+					var refusal *goa.ServiceError
+					if errors.As(holdErr, &refusal) {
+						return nil, holdErr
+					}
+					span.RecordError(holdErr)
+					span.SetStatus(codes.Error, "read verification assignment")
+					return nil, fmt.Errorf("list verifications for %q: saved verification inputs could not be read", p.ChangeID)
 				}
 				return nil, gensurla.MakeForbidden(fmt.Errorf(
 					"the test writer reads only the runs of a change it has an assignment for, and change %q has none", p.ChangeID))
 			}
+		}
+		build, buildErr := c.changeBuild(record)
+		if buildErr != nil {
+			c.mu.RUnlock()
+			span.RecordError(buildErr)
+			span.SetStatus(codes.Error, "read verification inputs")
+			return nil, fmt.Errorf("list verifications for %q: saved verification inputs could not be read", p.ChangeID)
 		}
 		runs, listErr := verifyrun.List(runsDir, principal.ID, p.ChangeID)
 		c.mu.RUnlock()
@@ -204,7 +244,8 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 		}
 		out := make([]*gensurla.VerificationStatusResult, 0, len(runs))
 		for _, r := range runs {
-			out = append(out, statusResult(r.Request, r.State))
+			out = append(out, statusResult(r.Request, r.State,
+				c.verificationInputsCurrent(record, build, r.Request.Plan)))
 		}
 		return &gensurla.VerificationListResult{
 			ChangeID: p.ChangeID,
@@ -222,6 +263,28 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	default:
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
+}
+
+// currentVerificationInputs observes the current owned card and its canonical
+// build once. Historical runs remain readable without an owned card; malformed
+// current records remain errors. Callers hold c.mu after authorizing access.
+func (c *ControlPlane) currentVerificationInputs(
+	principal Principal,
+	changeID string,
+	plan verify.Plan,
+) (bool, error) {
+	record, exists, err := c.cards.load(changeID)
+	if err != nil {
+		return false, err
+	}
+	if !exists || record.owner != principal.ID {
+		return false, nil
+	}
+	build, err := c.changeBuild(record)
+	if err != nil {
+		return false, err
+	}
+	return c.verificationInputsCurrent(record, build, plan), nil
 }
 
 // runTestSource renders where a run's tests came from, from its stored plan,
@@ -253,8 +316,13 @@ func (c *ControlPlane) testWriterHolds(principal Principal, changeID string) (bo
 }
 
 // statusResult returns the wire form of a run: its request and its state,
-// with a completed run's report reduced to the builder view.
-func statusResult(req verifyrun.Request, state verifyrun.State) *gensurla.VerificationStatusResult {
+// with a completed run's report reduced to the builder view and the caller's
+// separately observed current-input match.
+func statusResult(
+	req verifyrun.Request,
+	state verifyrun.State,
+	inputsCurrent bool,
+) *gensurla.VerificationStatusResult {
 	acceptedAt := req.AcceptedAt.UTC().Format(time.RFC3339Nano)
 	res := &gensurla.VerificationStatusResult{
 		RunID:           req.RunID,
@@ -263,6 +331,7 @@ func statusResult(req verifyrun.Request, state verifyrun.State) *gensurla.Verifi
 		CandidateCommit: req.Plan.CandidateCommit,
 		SuiteCommit:     req.Plan.SuiteCommit,
 		AcceptedAt:      acceptedAt,
+		InputsCurrent:   inputsCurrent,
 		TestSource:      runTestSource(req.Plan),
 	}
 	switch state.Kind {

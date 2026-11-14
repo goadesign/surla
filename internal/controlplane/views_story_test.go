@@ -83,7 +83,7 @@ expect(page.doc.activeElement === summary && summary.textContent.includes("3 flo
 page.$("#surla-nav-cp1").click();
 await until(() => page.$("#surla-confirm-submit"), "returning to the change did not show the confirm view");
 page.$("#surla-confirm-submit").click();
-await until(() => page.$("#surla-cp1-editor").dataset.requestRevision !== undefined && page.text("#surla-cp1-editor").includes("Confirmed Change Decision"), "a change with draft flows could not be confirmed");
+await until(() => page.$("#surla-cp1-editor").dataset.requestRevision !== undefined && page.text("#surla-cp1-editor").includes("Agreed:"), "a change with draft flows could not be confirmed");
 page.close();
 `)
 }
