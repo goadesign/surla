@@ -271,9 +271,18 @@ jobs:
             job_timeout: 25
           - suite: generation
             module: .
-            args: -tags=e2e ./cmd/surla
+            # The whole-journey test has its own entry, journey, below.
+            args: -tags=e2e -skip '^TestWholeJourneyThroughTheProjectServer$' ./cmd/surla
             test_timeout: 40m
             job_timeout: 45
+          - suite: journey
+            module: .
+            # One change through the project server, its team, a sandboxed
+            # verification run and approval: about 2.5 to 4 minutes on a
+            # developer machine with -race, several times that on this runner.
+            args: -tags=e2e -run '^TestWholeJourneyThroughTheProjectServer$' ./cmd/surla
+            test_timeout: 30m
+            job_timeout: 40
           - suite: starter
             module: .
             args: -tags=scaffold ./internal/scaffold
