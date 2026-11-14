@@ -191,7 +191,9 @@ func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
 // TestWrittenTestRunsReceiveNoProviderSettings prove. The reference states
 // the exported log's guarantee as TestProtectExcerptReplacesEveryByteOfHeldValues
 // proves it: no byte of an exact occurrence, or of an unfinished value at
-// the log's end, and other forms of a value exported as printed.
+// the log's end, and other forms of a value exported as printed; and that
+// the excerpt is valid UTF-8, as TestProtectExcerptExportsValidUTF8 and
+// TestStartErrorExportsValidUTF8 prove.
 func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 	openAPI := documentText(t, "../../gen/http/openapi3.json")
 	reference := documentText(t, "../../docs/REFERENCE.md")
@@ -206,6 +208,7 @@ func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 	for _, promise := range []string{
 		"no byte of an exact occurrence of a setting the target was given, or of one whose writing stopped at the end of the log, is exported",
 		"is not recognized and is exported as printed",
+		"apart from what keeps the excerpt valid UTF-8, as the span exporter requires: a character the excerpt's start cuts, or one left unfinished at the end of the log, is left out, and any other invalid UTF-8 is exported as U+FFFD.",
 	} {
 		assert.True(t, strings.Contains(reference, promise), promise)
 	}

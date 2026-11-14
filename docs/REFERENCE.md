@@ -1643,8 +1643,11 @@ the target declares the same method in its own Goa design and implements it:
   end of the log when it stops partway through such a value. It exports each
   run of those bytes that reaches the excerpt once, as `[redacted]`, or, when
   the run is exactly one occurrence of the base URL, as the URL's scheme and
-  host (`[redacted]` when none can be read), and every other byte as printed.
-  So no byte of an exact occurrence of a setting the target was given, or of
+  host (`[redacted]` when none can be read), and every other byte as printed,
+  apart from what keeps the excerpt valid UTF-8, as the span exporter
+  requires: a character the excerpt's start cuts, or one left unfinished at
+  the end of the log, is left out, and any other invalid UTF-8 is exported as
+  U+FFFD. So no byte of an exact occurrence of a setting the target was given, or of
   one whose writing stopped at the end of the log, is exported. The same
   value printed in another form, such as quoted, escaped, or rewritten by a
   URL parser or an SDK, is not recognized and is exported as printed; a

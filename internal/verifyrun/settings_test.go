@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -203,8 +204,9 @@ func TestStartErrorReplacesValuesTheTailCuts(t *testing.T) {
 // back to back across the whole tail and read while its last copy is being
 // written; a custom-headers value of 3,000 CJK characters, longer than the
 // tail, read while it is being written and once written; and the longest
-// value a hand-over allows, whose last byte begins the tail, which only a
-// context of ExcerptContext bytes before the tail reveals.
+// value a hand-over allows, whose last character begins the tail, which only
+// the context of ExcerptContext bytes before the tail reveals, and whose last
+// byte begins the tail, which leaves out the character the tail cuts.
 func TestStartErrorReplacesValuesThatFillTheTail(t *testing.T) {
 	const border = "sk-proj-sentinelBORDERKEY-0123456789abcdefghijklmnopqrs"
 	borderKey, err := modelsettings.New("openai", map[string]string{"OPENAI_API_KEY": border})
@@ -227,10 +229,37 @@ func TestStartErrorReplacesValuesThatFillTheTail(t *testing.T) {
 	edge, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-edge-key", "ANTHROPIC_CUSTOM_HEADERS": longest})
 	require.NoError(t, err)
 	before := strings.Repeat("p", 99) + "\n"
-	after := "\n" + strings.Repeat("y", maxLiveDetail-2)
-	assert.Equal(t, modelsettings.Redacted+after, startErrorDetail(t, before+longest+after, edge), "the value's last byte begins the tail")
+	after := "\n" + strings.Repeat("y", maxLiveDetail-utf8.UTFMax-1)
+	assert.Equal(t, modelsettings.Redacted+after, startErrorDetail(t, before+longest+after, edge), "the value's last character begins the tail")
+	after = "\n" + strings.Repeat("y", maxLiveDetail-2)
+	assert.Equal(t, after, startErrorDetail(t, before+longest+after, edge), "the value's last byte begins the tail")
 	after += "y"
 	assert.Equal(t, after, startErrorDetail(t, before+longest+after, edge), "the value ends just before the tail")
+}
+
+// TestStartErrorExportsValidUTF8 exports logs of four-byte characters
+// whose tail starts inside a character, at each byte of it and at a
+// character boundary, and a log whose writer stopped inside a character.
+// The detail is valid UTF-8, which the span exporter requires, and keeps
+// every whole character of the tail.
+func TestStartErrorExportsValidUTF8(t *testing.T) {
+	const clef = "\U0001D11E"
+	key, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-utf8-key"})
+	require.NoError(t, err)
+	for pad := range utf8.UTFMax {
+		// The tail holds maxLiveDetail-1-pad bytes of characters, the pad
+		// and a newline, so it starts pad bytes later each time.
+		log := "head\n" + strings.Repeat(clef, 3000) + strings.Repeat("y", pad) + "\n"
+		detail := startErrorDetail(t, log, key)
+		whole := (maxLiveDetail - 1 - pad) / utf8.UTFMax
+		assert.Equal(t, strings.Repeat(clef, whole)+strings.Repeat("y", pad)+"\n", detail, "pad %d", pad)
+		assert.True(t, utf8.ValidString(detail), "pad %d", pad)
+	}
+	for c := 1; c < utf8.UTFMax; c++ {
+		detail := startErrorDetail(t, "head\nline "+clef+clef[:c], key)
+		assert.Equal(t, "head\nline "+clef, detail, "the log ends %d bytes into a character", c)
+		assert.True(t, utf8.ValidString(detail))
+	}
 }
 
 // startErrorDetail writes log as a live directory's executor log and

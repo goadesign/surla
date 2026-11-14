@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -312,6 +313,41 @@ func TestProtectReplacesHeldValuesInExportedText(t *testing.T) {
 	})
 }
 
+// TestProtectExcerptExportsValidUTF8 cuts four-byte characters at the
+// excerpt's start and at the end of the text, with and without a held value
+// next to the cut, and prints bytes that are not UTF-8. The excerpt is
+// valid UTF-8 each time and keeps every whole character.
+func TestProtectExcerptExportsValidUTF8(t *testing.T) {
+	const clef = "\U0001D11E"
+	held := mustNew(t, "anthropic", map[string]string{"ANTHROPIC_API_KEY": keySentinel, "ANTHROPIC_CUSTOM_HEADERS": "X-Sentinel: " + clef + "q" + clef})
+	type excerpt struct {
+		name, text string
+		start      int
+		want       string
+	}
+	var cases []excerpt
+	for c := 1; c < utf8.UTFMax; c++ {
+		before := "earlier " + clef[:c]
+		cases = append(cases,
+			excerpt{fmt.Sprintf("start cuts %d bytes into a character", c), "earlier " + clef + " later " + clef + "\n", len(before), " later " + clef + "\n"},
+			excerpt{fmt.Sprintf("start cuts %d bytes into a character before a key", c), "earlier " + clef + keySentinel + "\n", len(before), Redacted + "\n"},
+			excerpt{fmt.Sprintf("the text ends %d bytes into a character", c), "line " + clef + " end " + clef[:c], 0, "line " + clef + " end "},
+			excerpt{fmt.Sprintf("the text ends %d bytes into a held value's character", c), "line X-Sentinel: " + clef[:c], 0, "line " + Redacted},
+			excerpt{fmt.Sprintf("both edges cut, %d bytes", c), "x" + clef + " key " + keySentinel + " " + clef + clef[:c], len("x") + c, " key " + Redacted + " " + clef},
+		)
+	}
+	cases = append(cases,
+		excerpt{"a byte that is no character inside the excerpt", "a\xffb\n", 0, "a\uFFFDb\n"},
+		excerpt{"a continuation byte that follows no character", "ab\x80c\n", 2, "\uFFFDc\n"},
+		excerpt{"the whole log, starting with a continuation byte", "\x80log\n", 0, "\uFFFDlog\n"},
+	)
+	for _, tc := range cases {
+		got := ProtectExcerpt(tc.text, tc.start, held)
+		assert.Equal(t, tc.want, got, tc.name)
+		assert.True(t, utf8.ValidString(got), tc.name)
+	}
+}
+
 // TestProtectExcerptReplacesEveryByteOfHeldValues covers excerpts whose
 // edges or whole extent cut held values: a cut at every offset of a key
 // shaped like a real one, a token and a base URL with a path credential,
@@ -403,7 +439,8 @@ func TestProtectExcerptReplacesEveryByteOfHeldValues(t *testing.T) {
 		require.Len(t, longest, ExcerptContext+1)
 		held := mustNew(t, "anthropic", map[string]string{"ANTHROPIC_API_KEY": keySentinel, "ANTHROPIC_CUSTOM_HEADERS": longest})
 		text := longest + "\nrest\n"
-		assert.Equal(t, Redacted+"\nrest\n", ProtectExcerpt(text, ExcerptContext, held), "the value's last byte begins the excerpt")
+		assert.Equal(t, Redacted+"\nrest\n", ProtectExcerpt(text, ExcerptContext-(utf8.UTFMax-1), held), "the value's last character begins the excerpt")
+		assert.Equal(t, "\nrest\n", ProtectExcerpt(text, ExcerptContext, held), "the value's last byte begins the excerpt, which leaves out the character it cuts")
 		assert.Equal(t, "\nrest\n", ProtectExcerpt(text, len(longest), held), "the value ends just before the excerpt")
 		shorter := "earlier " + keySentinel + "\nrest\n"
 		assert.Equal(t, "\nrest\n", ProtectExcerpt(shorter, len("earlier "+keySentinel), held))

@@ -287,6 +287,11 @@ func New(provider string, values map[string]string) (Settings, error) {
 // from it or they contain a held secret), and Redacted otherwise. Account
 // and project names stay.
 //
+// The excerpt it returns is valid UTF-8, which a span exporter requires.
+// Before marking, it leaves out a character that start cuts, when something
+// precedes the excerpt, and one whose last bytes are missing at the end of
+// text; any other invalid UTF-8 in the excerpt becomes U+FFFD.
+//
 // Every occurrence that overlaps the excerpt starts at most ExcerptContext
 // bytes before it, so it lies wholly inside text and is marked. Hence no
 // byte of an exact occurrence of a held value, or of a held value whose
@@ -296,6 +301,7 @@ func New(provider string, values map[string]string) (Settings, error) {
 func ProtectExcerpt(text string, start int, held ...Settings) string {
 	// span is the byte interval [from, to) of text one mark covers.
 	type span struct{ from, to int }
+	text, start = wholeCharacters(text, start)
 	var secrets []string
 	for _, s := range held {
 		p, _ := Lookup(s.provider)
@@ -366,7 +372,7 @@ func ProtectExcerpt(text string, start int, held ...Settings) string {
 		}
 		i = j
 	}
-	return out.String()
+	return strings.ToValidUTF8(out.String(), string(utf8.RuneError))
 }
 
 // Settings returns the names of p's request settings, in table order.
@@ -423,6 +429,33 @@ func (Value) MarshalJSON() ([]byte, error) { return json.Marshal(Redacted) }
 
 // MarshalText returns Redacted.
 func (Value) MarshalText() ([]byte, error) { return []byte(Redacted), nil }
+
+// wholeCharacters returns text and start without the partial characters at
+// the edges of the excerpt text[start:]: when start > 0 and falls inside a
+// character that begins before it, start moves past that character, and
+// when text ends with the first bytes of a character, they are dropped.
+// Bytes that are not part of any character are left for the caller.
+func wholeCharacters(text string, start int) (string, int) {
+	if start > 0 && start < len(text) && !utf8.RuneStart(text[start]) {
+		for r := start - 1; r >= max(start-(utf8.UTFMax-1), 0); r-- {
+			if utf8.RuneStart(text[r]) {
+				if _, size := utf8.DecodeRuneInString(text[r:]); size > 1 && r+size > start {
+					start = r + size
+				}
+				break
+			}
+		}
+	}
+	for k := 1; k < utf8.UTFMax && k <= len(text)-start; k++ {
+		if utf8.RuneStart(text[len(text)-k]) {
+			if !utf8.FullRuneInString(text[len(text)-k:]) {
+				text = text[:len(text)-k]
+			}
+			break
+		}
+	}
+	return text, start
+}
 
 // kind returns how ProtectExcerpt treats the setting name of p; a name p does not
 // list is plain.

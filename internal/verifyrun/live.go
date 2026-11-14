@@ -137,7 +137,8 @@ type LiveStartError struct {
 	Summary string
 	// Detail is the last maxLiveDetail bytes of executor.log with the
 	// settings the target was given replaced (modelsettings.ProtectExcerpt),
-	// so a replacement can make it longer.
+	// so a replacement can make it longer, as valid UTF-8 for the span
+	// exporter: a character the tail cuts is left out.
 	Detail string
 	// Err is the underlying cause, or nil.
 	Err error
