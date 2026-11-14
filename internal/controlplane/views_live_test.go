@@ -400,6 +400,7 @@ await openLive(page);
 await until(() => page.text("#surla-model-current").includes("anthropic / claude-sonnet-4-6"), "the start-up choice is not shown: " + page.text("#surla-model-current"));
 expect(page.text("#surla-model-current").startsWith("Live targets started from now on use"), "the choice does not say what it applies to");
 expect(page.text("#surla-model-note").includes("live targets started afterwards") && page.text("#surla-model-note").includes("verification is not affected"), "the note does not say what the choice changes: " + page.text("#surla-model-note"));
+expect(page.text("#surla-model-note").includes("outside Surla’s sandbox") && page.text("#surla-model-note").includes("test writer’s tests Surla accepted") && page.text("#surla-model-note").includes("Surla gives it no provider setting") && page.text("#surla-model-note").includes("can still read keys your other programs hold"), "the model note must explain the live program's actual access and accepted-test boundary");
 const shown = (p, id) => p.win.getComputedStyle(p.$(id)).display !== "none";
 expect(page.$("input[name='surla-model-kind'][value='direct']").checked, "the form does not open on the current choice's kind");
 expect(shown(page, "#surla-model-direct-fields") && !shown(page, "#surla-model-gateway-fields"), "the unused kind's fields are displayed");
@@ -426,11 +427,19 @@ expect(page.text("#surla-model-current").includes("anthropic / claude-sonnet-4-6
 page.$("input[name='surla-model-kind'][value='gateway']").click();
 await until(() => shown(page, "#surla-model-gateway-fields"), "the gateway fields were not displayed");
 expect(!shown(page, "#surla-model-direct-fields"), "the provider fields are still displayed beside the gateway's");
+const gateway = page.$("#surla-model-gateway");
+page.type(gateway, "127.0.0.1:65536");
+page.$("#surla-model-apply").click();
+await until(() => page.requests.some((r) => r.method === "POST" && r.path === "/cp1/model" && r.body.gateway_addr === "127.0.0.1:65536" && r.status === 422), "the invalid gateway was not refused over HTTP");
+await until(() => page.$("#surla-model-outcome") && page.$("#surla-model-outcome").getAttribute("role") === "alert" && !page.$("#surla-model-apply").disabled, "the invalid gateway refusal was not shown");
+expect(page.text("#surla-model-current").includes("anthropic / claude-sonnet-4-6"), "an invalid gateway replaced the chosen model");
+expect(page.$("#surla-model-gateway") === gateway && gateway.value === "127.0.0.1:65536", "the refusal lost the typed gateway address");
+expect(!page.text("#surla-model-outcome").includes("127.0.0.1:65536"), "the refusal echoed the submitted address");
 page.type(page.$("#surla-model-gateway"), "127.0.0.1:9090");
 page.$("#surla-model-apply").click();
 await until(() => page.text("#surla-model-outcome") === "Live targets started from now on use the model gateway at 127.0.0.1:9090.", "the accepted change was not shown: " + page.text("#surla-model-outcome"));
 await until(() => page.text("#surla-model-current").includes("the model gateway at 127.0.0.1:9090"), "the new choice was not read again");
-expect(page.sent("POST", "/cp1/model").length === 2, "each Apply should send one request");
+expect(page.sent("POST", "/cp1/model").length === 3, "each Apply should send one request");
 
 const second = await openPage(origin, { link: input.link + "-2" });
 await openLive(second);
