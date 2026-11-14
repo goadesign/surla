@@ -186,8 +186,13 @@ func TestViewsPageFollowsRealTestReports(t *testing.T) {
 	team := &teamServiceFixture{snapshot: gensurla.TeamSnapshot{
 		Team: "shop", Roles: []*gensurla.TeamRoleState{},
 	}}
+	// Written-test runs make the project verify with the tests a build
+	// accepts, so the build uses a test writer; without them the page harness
+	// stores verification settings and the build would use none.
 	cp := pageControlPlane(t, Options{
 		WorkspaceDir: project, Team: &TeamBinding{Owner: pageOwner, Service: team},
+		RunsDir:         t.TempDir(),
+		WrittenTestRuns: &WrittenTestRuns{ReportDir: t.TempDir(), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
 	})
 	card := saveStoryCard(t, cp, "chg-real-report", StatusConfirmed, refundStory("Refund over the limit"))
 	user := asCaller(pageOwner, CallerUser)

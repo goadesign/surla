@@ -16,8 +16,11 @@ import (
 )
 
 // TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames checks ProgramEnv and
-// LiveProgramEnv for each test source, from a server environment holding a
-// variable of its own, both providers' keys and the live copy's settings.
+// LiveProgramEnv for each test source, from an environment holding a
+// variable of the server's own, both providers' keys, a request setting and
+// an unlisted family member, and the live copy's settings. A live copy of
+// written tests gets the chosen provider's request settings, no unlisted
+// member and no other provider's.
 func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 	server := []string{
 		"PATH=/usr/bin:/bin",
@@ -25,6 +28,8 @@ func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 		"TMPDIR=/var/tmp/server",
 		"SURLA_TEST_SERVER_VAR=present",
 		"ANTHROPIC_API_KEY=ant-k",
+		"ANTHROPIC_BASE_URL=https://gateway.invalid",
+		"ANTHROPIC_ADMIN_KEY=admin-k",
 		"OPENAI_API_KEY=oai-k",
 	}
 	// live returns a live copy's executor environment as LaunchLive makes
@@ -66,7 +71,7 @@ func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 			name: "live copy of written tests with a direct provider",
 			got:  LiveProgramEnv(written, live(LiveModelProviderEnv+"=anthropic", LiveModelNameEnv+"=claude")),
 			want: []string{
-				"PATH=/usr/bin:/bin", "ANTHROPIC_API_KEY=ant-k", "TMPDIR=/runs/live/tmp", suite.LiveKeyEnv + "=live-key",
+				"PATH=/usr/bin:/bin", "ANTHROPIC_API_KEY=ant-k", "ANTHROPIC_BASE_URL=https://gateway.invalid", "TMPDIR=/runs/live/tmp", suite.LiveKeyEnv + "=live-key",
 				LiveModelProviderEnv + "=anthropic", LiveModelNameEnv + "=claude",
 			},
 		},

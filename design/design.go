@@ -157,7 +157,7 @@ var UpdateDependenciesResult = Type("UpdateDependenciesResult", func() {
 
 // ConfigureModelPayload is the input to the configure_model tool.
 var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
-	Description("Selects either a direct model provider and model name (using the API key already present in the project server's process environment) or a running goa-ai model gateway address.")
+	Description("Selects either a direct model provider and model name (whose request settings the surla command handed to the project server) or a running goa-ai model gateway address.")
 	Attribute("provider", String, "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.", func() {
 		Enum("anthropic", "openai")
 		Example("anthropic")
@@ -512,7 +512,7 @@ var ModelNone = Type("ModelNone", func() {
 
 // ModelDirect is a direct model provider and model name.
 var ModelDirect = Type("ModelDirect", func() {
-	Description("A direct model provider and model name. The provider's API key stays in the project server's environment and is never returned.")
+	Description("A direct model provider and model name. The provider's request settings stay in the project server's memory and are never returned.")
 	Attribute("provider", String, "Direct model provider.", func() {
 		Enum("anthropic", "openai")
 	})
@@ -985,26 +985,36 @@ var _ = Service("surla", func() {
 	})
 
 	Method("configure_model", func() {
-		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.")
+		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request settings.")
 		Payload(ConfigureModelPayload)
 		Result(ModelConfigResult)
-		Error("unprocessable", ErrorResult, "The model provider, model name, gateway address, or required environment credential is invalid.")
-		Error("not_implemented", ErrorResult, "Runtime model reconfiguration is not configured on this control plane.")
-		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in the project server's environment) or attach a running model gateway address, without restarting the project server. Live targets that start_live_target starts afterwards plan with this model.")
+		Error("unprocessable", ErrorResult, "The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider's key variable and how to hand it over.")
+		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, whose key the user exported in the shell that ran surla) or attach a running model gateway address, without restarting the project server. Live targets that start_live_target starts afterwards plan with this model.")
 		HTTP(func() {
 			POST("/cp1/model")
 			Response(StatusOK)
 			Response("unprocessable", StatusUnprocessableEntity)
-			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
 	Method("get_model_connection", func() {
-		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.")
+		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none. While no model is chosen, a hand_over_model_settings call that holds a provider's settings selects that provider's default model; every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.")
 		Result(ModelConnection)
 		HTTP(func() {
 			GET("/cp1/model")
 			Response(StatusOK)
+		})
+	})
+
+	Method("hand_over_model_settings", func() {
+		Description("The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target's test program, including a candidate commit's test module that agents wrote, receives the chosen provider's held settings; a verification with the operator's stored evaluator receives every held provider's settings; tests a separate agent wrote for a verification, and the check helper, receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.")
+		Payload(HandOverModelSettingsPayload)
+		Result(ModelSettingsResult)
+		Error("unprocessable", ErrorResult, "A provider's settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.")
+		HTTP(func() {
+			POST("/cp1/model/settings")
+			Response(StatusOK)
+			Response("unprocessable", StatusUnprocessableEntity)
 		})
 	})
 

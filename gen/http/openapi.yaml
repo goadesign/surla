@@ -1201,7 +1201,7 @@ paths:
             tags:
                 - surla
             summary: get_model_connection surla
-            description: 'Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.'
+            description: 'Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none. While no model is chosen, a hand_over_model_settings call that holds a provider''s settings selects that provider''s default model; every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.'
             operationId: surla#get_model_connection
             responses:
                 "200":
@@ -1228,7 +1228,7 @@ paths:
             tags:
                 - surla
             summary: configure_model surla
-            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider''s API key from the project server''s environment) or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.'
+            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider''s held request settings.'
             operationId: surla#configure_model
             parameters:
                 - name: configure_model_request_body
@@ -1254,7 +1254,7 @@ paths:
                             temporary: false
                             timeout: false
                 "422":
-                    description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
+                    description: 'unprocessable: The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider''s key variable and how to hand it over.'
                     schema:
                         $ref: '#/definitions/SurlaConfigureModelUnprocessableResponseBody'
                     examples:
@@ -1265,16 +1265,51 @@ paths:
                             name: unprocessable
                             temporary: false
                             timeout: false
-                "501":
-                    description: 'not_implemented: Runtime model reconfiguration is not configured on this control plane.'
+            schemes:
+                - http
+    /cp1/model/settings:
+        post:
+            tags:
+                - surla
+            summary: hand_over_model_settings surla
+            description: 'The surla command, after it confirms the project server''s identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider''s requests. The project server holds them in memory only and forgets them when it stops. A live target''s test program, including a candidate commit''s test module that agents wrote, receives the chosen provider''s held settings; a verification with the operator''s stored evaluator receives every held provider''s settings; tests a separate agent wrote for a verification, and the check helper, receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider''s key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider''s default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command''s management credential may call this operation; it is never an MCP tool.'
+            operationId: surla#hand_over_model_settings
+            parameters:
+                - name: hand_over_model_settings_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/HandOverModelSettingsPayload'
+            responses:
+                "200":
+                    description: OK response.
                     schema:
-                        $ref: '#/definitions/SurlaConfigureModelNotImplementedResponseBody'
+                        $ref: '#/definitions/ModelSettingsResult'
+                        required:
+                            - held
+                            - connection
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaHandOverModelSettingsForbiddenResponseBody'
                     examples:
                         application/vnd.goa.error:
                             fault: false
                             id: 123abc
                             message: parameter 'p' must be an integer
-                            name: not_implemented
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: A provider''s settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.'
+                    schema:
+                        $ref: '#/definitions/SurlaHandOverModelSettingsUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
                             temporary: false
                             timeout: false
             schemes:
@@ -6515,6 +6550,41 @@ definitions:
             - target
             - files_written
             - warnings
+    HandOverModelSettingsPayload:
+        title: HandOverModelSettingsPayload
+        type: object
+        properties:
+            anthropic:
+                type: object
+                description: Request settings for anthropic, keyed by variable name, replacing everything held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute to keep what is held.
+                example:
+                    ANTHROPIC_API_KEY: bb4
+                    ANTHROPIC_AUTH_TOKEN: j
+                additionalProperties:
+                    type: string
+                    example: j
+                    minLength: 1
+                    maxLength: 4096
+            openai:
+                type: object
+                description: Request settings for openai, keyed by variable name, replacing everything held for openai. They must include OPENAI_API_KEY. Omit the attribute to keep what is held.
+                example:
+                    OPENAI_BASE_URL: qsj
+                    OPENAI_CUSTOM_HEADERS: p1
+                    OPENAI_ORG_ID: "6"
+                additionalProperties:
+                    type: string
+                    example: qsj
+                    minLength: 1
+                    maxLength: 4096
+        example:
+            anthropic:
+                ANTHROPIC_API_KEY: bb4
+                ANTHROPIC_AUTH_TOKEN: j
+            openai:
+                OPENAI_BASE_URL: qsj
+                OPENAI_CUSTOM_HEADERS: p1
+                OPENAI_ORG_ID: "6"
     InitProjectPayload:
         title: InitProjectPayload
         type: object
@@ -6851,6 +6921,89 @@ definitions:
                 gateway_addr: mk
                 kind: gateway
         required:
+            - connection
+    ModelSettingsResult:
+        title: ModelSettingsResult
+        type: object
+        properties:
+            connection:
+                type: object
+                description: none when no model is chosen; direct with a provider and model name; gateway with a model gateway address.
+                example:
+                    kind: none
+                anyOf:
+                    - type: object
+                      properties:
+                        kind:
+                            type: string
+                            enum:
+                                - none
+                      required:
+                        - kind
+                    - type: object
+                      properties:
+                        kind:
+                            type: string
+                            enum:
+                                - direct
+                        model_name:
+                            type: string
+                            description: Provider model identifier.
+                            example: va
+                            minLength: 1
+                        provider:
+                            type: string
+                            description: Direct model provider.
+                            example: openai
+                            enum:
+                                - anthropic
+                                - openai
+                      required:
+                        - provider
+                        - model_name
+                        - kind
+                    - type: object
+                      properties:
+                        gateway_addr:
+                            type: string
+                            description: Plaintext gRPC host:port of the gateway.
+                            example: rey
+                            minLength: 1
+                        kind:
+                            type: string
+                            enum:
+                                - gateway
+                      required:
+                        - gateway_addr
+                        - kind
+            held:
+                type: object
+                description: Names of the request settings held for each provider, sorted; a provider holds nothing until its settings are handed over.
+                example:
+                    anthropic:
+                        - Corrupti cum esse cupiditate harum natus.
+                        - Consequatur provident et.
+                        - Neque sequi aspernatur assumenda atque odio.
+                additionalProperties:
+                    type: array
+                    items:
+                        type: string
+                        example: Corrupti cum esse cupiditate harum natus.
+                    example:
+                        - Corrupti cum esse cupiditate harum natus.
+                        - Consequatur provident et.
+                        - Neque sequi aspernatur assumenda atque odio.
+        description: The provider request settings the project server holds, by variable name only, and the model live targets started afterwards use, as get_model_connection reports it. It never carries a value.
+        example:
+            connection:
+                kind: none
+            held:
+                anthropic:
+                    - Corrupti cum esse cupiditate harum natus.
+                    - Consequatur provident et.
+                    - Neque sequi aspernatur assumenda atque odio.
+        required:
+            - held
             - connection
     PreviewArchitecturePayload:
         title: PreviewArchitecturePayload
@@ -12417,49 +12570,6 @@ definitions:
             - temporary
             - timeout
             - fault
-    SurlaConfigureModelNotImplementedResponseBody:
-        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
-        type: object
-        properties:
-            fault:
-                type: boolean
-                description: Is the error a server-side fault?
-                example: false
-            id:
-                type: string
-                description: ID is a unique identifier for this particular occurrence of the problem.
-                example: 123abc
-            message:
-                type: string
-                description: Message is a human-readable explanation specific to this occurrence of the problem.
-                example: parameter 'p' must be an integer
-            name:
-                type: string
-                description: Name is the name of this class of errors.
-                example: bad_request
-            temporary:
-                type: boolean
-                description: Is the error temporary?
-                example: false
-            timeout:
-                type: boolean
-                description: Is the error a timeout?
-                example: false
-        description: Error response result type (default view)
-        example:
-            fault: false
-            id: 123abc
-            message: parameter 'p' must be an integer
-            name: bad_request
-            temporary: false
-            timeout: false
-        required:
-            - name
-            - id
-            - message
-            - temporary
-            - timeout
-            - fault
     SurlaConfigureModelUnprocessableResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -14129,6 +14239,92 @@ definitions:
             message: parameter 'p' must be an integer
             name: bad_request
             temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaHandOverModelSettingsForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaHandOverModelSettingsUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
             timeout: false
         required:
             - name
@@ -17332,14 +17528,15 @@ definitions:
                     - unknown
             attention:
                 type: string
-                description: Reported block kind or the reason a silent running agent needs the user.
-                example: auth
+                description: 'Reported block kind, or why a running agent needs the user: silent when it reports nothing for 60 seconds, assignment when it has waited with an unread assignment for 90 seconds.'
+                example: assignment
                 enum:
                     - none
                     - permission
                     - question
                     - auth
                     - silent
+                    - assignment
                     - unknown
             handle:
                 type: string
@@ -17376,7 +17573,7 @@ definitions:
                     - unknown
         example:
             assignment: unknown
-            attention: auth
+            attention: assignment
             handle: Quae ea aut iusto ea blanditiis.
             role: test_writer
             state: waiting
@@ -17399,19 +17596,19 @@ definitions:
                 description: Registered roles in guide, builder, test_writer order; empty before registration.
                 example:
                     - assignment: unknown
-                      attention: auth
+                      attention: assignment
                       handle: Quae ea aut iusto ea blanditiis.
                       role: test_writer
                       state: waiting
                       watcher: unknown
                     - assignment: unknown
-                      attention: auth
+                      attention: assignment
                       handle: Quae ea aut iusto ea blanditiis.
                       role: test_writer
                       state: waiting
                       watcher: unknown
                     - assignment: unknown
-                      attention: auth
+                      attention: assignment
                       handle: Quae ea aut iusto ea blanditiis.
                       role: test_writer
                       state: waiting
@@ -17423,19 +17620,19 @@ definitions:
         example:
             roles:
                 - assignment: unknown
-                  attention: auth
+                  attention: assignment
                   handle: Quae ea aut iusto ea blanditiis.
                   role: test_writer
                   state: waiting
                   watcher: unknown
                 - assignment: unknown
-                  attention: auth
+                  attention: assignment
                   handle: Quae ea aut iusto ea blanditiis.
                   role: test_writer
                   state: waiting
                   watcher: unknown
                 - assignment: unknown
-                  attention: auth
+                  attention: assignment
                   handle: Quae ea aut iusto ea blanditiis.
                   role: test_writer
                   state: waiting
@@ -18740,7 +18937,7 @@ definitions:
                 type: string
                 description: 'Folder to write the tests in: your own working copy of the project.'
                 example: Ut voluptatum vel totam.
-        description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user''s confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
+        description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user''s confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla writes eval/design/story_tests.go, which declares the required tests, from the agreed Story and generates the module when the build starts and again at each report; the test writer leaves that file as it is. After changing the module''s design, the test writer reports to have it generated again or, from a shell that is not sandboxed, runs surla gen -dir eval in the working folder first; regenerating keeps the required tests. go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
         example:
             answers:
                 - answer: Ipsum repellendus adipisci.

@@ -161,8 +161,8 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 		wantFault  bool
 		wantMsg    string
 	}{
-		{"configure_model without LiveModelEnv on fixed host", fixedHostHandler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
-		{"configure_model without LiveModelEnv on configured fixed host", handler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
+		{"configure_model provider without held settings on fixed host", fixedHostHandler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"provider": "anthropic", "model_name": "claude-sonnet-4-6"}, http.StatusUnprocessableEntity, false, "provider anthropic needs ANTHROPIC_API_KEY: export it"},
+		{"configure_model provider without held settings on configured host", handler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"provider": "openai", "model_name": "gpt-5.4-mini"}, http.StatusUnprocessableEntity, false, "provider openai needs OPENAI_API_KEY: export it"},
 		{"propose duplicate change_id", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "chg", "prompt": "p", "analysis": proposalAnalysis}, http.StatusConflict, false, `change_id "chg" already exists`},
 		{"propose blank prompt", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "blank", "prompt": "  ", "analysis": proposalAnalysis}, http.StatusUnprocessableEntity, false, "change_id and prompt are required"},
 		{"revise unknown change_id", handler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "missing", "request_revision": strings.Repeat("0", 64), "prompt": "p", "analysis": revisionAnalysis("check_01")}, http.StatusNotFound, false, `unknown change_id "missing"`},

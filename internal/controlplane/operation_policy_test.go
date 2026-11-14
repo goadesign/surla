@@ -30,7 +30,7 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 	runReads := []CallerKind{CallerUser, CallerGuide, CallerBuilder, CallerTestWriter}
 	expected := map[string][]CallerKind{
 		"golden_path":    {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
-		"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
+		"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser}, "hand_over_model_settings": {CallerManagement},
 		"propose_change": {CallerGuide}, "revise_change": {CallerGuide}, "refresh_story": {CallerGuide}, "init_project": {CallerGuide},
 		"generate_code": {CallerBuilder}, "check_project": {CallerBuilder}, "update_dependencies": {CallerBuilder}, "start_live_target": {CallerBuilder}, "draft_override": {CallerBuilder}, "verify_change": {CallerBuilder},
 		"stop_live_target": {CallerUser, CallerBuilder}, "get_live_target": {CallerUser, CallerBuilder}, "get_model_connection": {CallerUser},

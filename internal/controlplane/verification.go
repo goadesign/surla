@@ -14,6 +14,7 @@ import (
 	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -99,7 +100,13 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 		span.SetStatus(codes.Error, "read verification inputs")
 		return nil, fmt.Errorf("start verification for %q: saved verification inputs could not be read", p.ChangeID)
 	}
-	if _, err := verifyrun.Start(verCfg.RunsDir, req, verCfg.Command); err != nil {
+	// Only the operator's stored evaluator receives provider settings, every
+	// held provider's, snapshotted now: later hand-overs affect later runs.
+	var settings []modelsettings.Settings
+	if plan.Tests == verify.TestsEvaluator {
+		settings = c.evaluatorSettings()
+	}
+	if _, err := verifyrun.Start(verCfg.RunsDir, req, verCfg.Command, settings); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "start verification run")
 		return nil, fmt.Errorf("start verification: %w", err)

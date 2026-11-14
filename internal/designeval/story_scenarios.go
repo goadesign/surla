@@ -1,9 +1,9 @@
 // This file is compiled twice: as part of package designeval, where its unit
-// tests run, and, with its package clause changed to main, as a source file of
-// the generation program that Evaluator.GenerateWithStories builds when at
-// least one complete Story flow is present. Because the harness module
-// compiles against the target's Goa and Goa-AI versions, this file imports
-// only Goa and Goa-AI packages.
+// tests run, and, after its package clause, as the body of every test
+// module's Story table (StoryTests), compiled in the module's design package
+// with the module's own Goa and Goa-AI. It therefore imports only Goa and
+// Goa-AI packages, and declares nothing a design package could already
+// declare beyond its two type names.
 package designeval
 
 import (
@@ -12,8 +12,8 @@ import (
 )
 
 type (
-	// storyScenarioSpec holds the scenario name and description rendered into
-	// the generation harness for one complete Story flow.
+	// storyScenarioSpec holds the scenario name and description of one
+	// finished Story flow.
 	storyScenarioSpec struct {
 		// name is the lower_snake_case scenario identifier added to the suite.
 		name string
@@ -21,20 +21,20 @@ type (
 		description string
 	}
 
-	// storyScenarioRoot is the Goa evaluation root registered by the
-	// generation harness when at least one complete Story flow is present.
-	// It runs after evalexpr.Root, appends Story scenarios to the single
-	// declared suite during Prepare before validation runs, and rejects
-	// designs declaring zero or multiple suites during Validate.
+	// storyScenarioRoot is the Goa evaluation root the Story table registers.
+	// It runs after evalexpr.Root, appends the Story's scenarios to the
+	// single declared suite during Prepare before validation runs, and
+	// rejects designs declaring zero or several suites during Validate.
 	storyScenarioRoot struct {
-		// scenarios lists the complete Story flows mapped on the host.
+		// scenarios lists the finished Story flows, in declaration order.
 		scenarios []storyScenarioSpec
 	}
 )
 
-// EvalName implements eval.Expression.
+// EvalName implements eval.Expression. Surla's generator recognizes the Story
+// table's root by this name.
 func (*storyScenarioRoot) EvalName() string {
-	return "Story scenario adapter"
+	return "Story table (design/story_tests.go)"
 }
 
 // DependsOn orders storyScenarioRoot after Goa-AI's evaluation suites root so
@@ -51,7 +51,7 @@ func (*storyScenarioRoot) Packages() []string {
 // WalkSets implements eval.Root. SuiteExpr walks the attached scenarios itself.
 func (*storyScenarioRoot) WalkSets(eval.SetWalker) {}
 
-// Prepare attaches each complete Story flow to the single evaluation suite
+// Prepare attaches each finished Story flow to the single evaluation suite
 // before SuiteExpr.Validate and ScenarioExpr.Validate run.
 func (r *storyScenarioRoot) Prepare() {
 	if evalexpr.Root == nil || len(evalexpr.Root.Suites) != 1 {
@@ -67,9 +67,8 @@ func (r *storyScenarioRoot) Prepare() {
 	}
 }
 
-// Validate requires the evaluator design to declare exactly one evaluation
-// suite when complete Story flows are present, in the words the test
-// writer's check uses for the same rule.
+// Validate requires the test module's design to declare exactly one
+// evaluation suite, the one the Story's scenarios join.
 func (r *storyScenarioRoot) Validate() error {
 	var suites int
 	if evalexpr.Root != nil {
@@ -81,7 +80,7 @@ func (r *storyScenarioRoot) Validate() error {
 	verr := new(eval.ValidationErrors)
 	verr.Add(
 		r,
-		"Story scenario generation needs exactly one evaluation suite, but the design declares %d; keep exactly one Suite(...) in design/",
+		"the test module must declare exactly one evaluation suite, but its design declares %d: keep exactly one Suite(...) in design/",
 		suites,
 	)
 	return verr

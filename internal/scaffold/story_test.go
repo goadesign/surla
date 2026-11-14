@@ -4,8 +4,10 @@ package scaffold
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +15,7 @@ import (
 	"golang.org/x/mod/modfile"
 
 	"github.com/goadesign/surla"
+	"github.com/goadesign/surla/internal/designeval"
 )
 
 // TestStarterRequiresAndShipsItsStory checks that newData copies the Story
@@ -70,7 +73,40 @@ func TestStarterRequiresAndShipsItsStory(t *testing.T) {
 		"the starter ships the test its Story's finished flow requires")
 	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
 	require.NoError(t, err)
-	for _, named := range []string{"`design/story.go`", "`prices-cookie`", "`PricesCookie`"} {
+	for _, named := range []string{"`design/story.go`", "`prices-cookie`", "`PricesCookie`", "`eval/design/story_tests.go`"} {
 		assert.Contains(t, string(readme), named, "the README says where the Story and its test are")
 	}
+
+	// The test module's design holds the Story table rendered from the
+	// starter's Story, and its generation sees it.
+	require.Len(t, gen.inputs, 2)
+	want, requiredTests, err := designeval.StoryTests(os.DirFS(filepath.Join(dir, "eval")), starterStory)
+	require.NoError(t, err)
+	assert.Equal(t, []designeval.StoryScenario{
+		{Story: "Prices", Key: "prices-cookie", Scenario: "prices_cookie", Hook: "PricesCookie"},
+	}, requiredTests)
+	assert.Equal(t, string(want), gen.inputs[1][designeval.StoryTestsPath], "the test module is generated with its table")
+	shippedTable, err := os.ReadFile(filepath.Join(dir, "eval", filepath.FromSlash(designeval.StoryTestsPath)))
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(shippedTable), "the project holds the table the generator saw")
+	assert.NotContains(t, gen.inputs[0], designeval.StoryTestsPath, "the service module has no table")
+}
+
+// TestStarterStoryMatchesTheShippedStory checks the literal summary Init
+// renders the starter's Story table from against the Story template, without
+// evaluating it: each of its flows is declared there with its key and title,
+// and the template declares no other flow. The starter's scaffold-tagged
+// suite compares the literal with the evaluated Story.
+func TestStarterStoryMatchesTheShippedStory(t *testing.T) {
+	raw, err := templatesFS.ReadFile("templates/candidate/design/story.go.tmpl")
+	require.NoError(t, err)
+	story := string(raw)
+	require.Len(t, starterStory, 1)
+	assert.Contains(t, story, fmt.Sprintf("Story(%q,", starterStory[0].Name))
+	assert.Equal(t, len(starterStory[0].Flows), strings.Count(story, "Flow("))
+	for _, flow := range starterStory[0].Flows {
+		assert.Contains(t, story, fmt.Sprintf("Flow(%q, %q,", flow.Key, flow.Title))
+		assert.True(t, flow.Complete, "the starter's flow has a start, an outcome and no question")
+	}
+	assert.NotContains(t, story, "Question(", "no flow of the starter is unfinished")
 }

@@ -122,10 +122,10 @@ func GenerationDiagnostic(err error) string {
 	return message
 }
 
-// FailedOnModule reports whether err, from Evaluate, Generate or
-// GenerateWithStories, ended in a phase that works on the target module's own
-// files: checking them, loading the dependencies its go.mod and go.sum name,
-// compiling its design, or evaluating it. Such a failure is first the
+// FailedOnModule reports whether err, from Evaluate or Generate, ended in a
+// phase that works on the target module's own files: checking them, loading
+// the dependencies its go.mod and go.sum name, compiling its design, or
+// evaluating it. Such a failure is first the
 // module's author's to look at. A failure while preparing or removing the
 // compiler's own files, while starting the sandboxed generator or reading its
 // output, is not; nor is any failure of an evaluation that Close ended or
@@ -145,9 +145,9 @@ func FailedOnModule(err error) bool {
 	return errors.As(err, &operation) && slices.Contains(modulePhases, operation.phase)
 }
 
-// FailedLoadingDependencies reports whether err, from Evaluate, Generate or
-// GenerateWithStories, is a failure FailedOnModule reports that ended while
-// loading the target module's dependencies: the go commands that resolve the
+// FailedLoadingDependencies reports whether err, from Evaluate or Generate, is
+// a failure FailedOnModule reports that ended while loading the target
+// module's dependencies: the go commands that resolve the
 // packages its design imports and the versions its go.mod and go.sum select.
 // Those commands run outside the sandbox and may download modules, so such a
 // failure can come from the module's files or from where the evaluator runs

@@ -313,11 +313,15 @@ answers, examples and preserved behaviors as you confirmed them, and one
 required test per finished flow. It may not read the change itself, so the
 assignment is how its tests learn what you agreed, and they must hold the
 service to it as well as to the Story's flows. It writes the tests inside the
-test module, `eval/` in its working copy, and changes nothing outside it. It
-never regenerates that module itself, because Surla writes the required
-tests into it at the start and again at each report. It checks its work
-with `go build ./...` in `eval/`, which fails naming any required method not
-yet written.
+test module, `eval/` in its working copy, and changes nothing outside it.
+Surla declares the required tests in that module's Story table,
+`eval/design/story_tests.go`, which it writes at the start and again at each
+report; the test writer leaves that file as it is, and regenerating the
+module keeps the required tests. After changing the module's design, the
+test writer reports to have it generated again or, from a shell that is not
+sandboxed, runs `surla gen -dir eval` in its working copy first. It checks
+its work with `go build ./...` in `eval/`, which fails naming any required
+method not yet written.
 Then it calls `report_tests_finished`. The report returns at once with the
 report's number; the build shows the test writer as **Reported**. In a
 starter project the test of the starter's own flow, the method `PricesCookie`
@@ -387,10 +391,15 @@ builder edits it into the prompt's source and commits it.
 In the Live target view you see the target's state and commit, the prompts it
 changed (never their text), and **Stop live target**. Under **Model
 connection** you choose the model that live targets started afterwards use: a
-provider and model name, whose key must be in the server's environment, or a
-running model gateway. The server runs in a Herdr terminal, which has the
-environment of the Herdr core rather than of the shell where you typed
-`surla`. See the [live target prompt contract](REFERENCE.md#live-target-prompt-contract).
+provider and model name, whose key and request settings `surla` handed to the
+server from the shell where you typed it, or a running model gateway. While no
+model is chosen, a hand-over picks the default model of the provider whose
+settings it holds, `anthropic` first when it holds both, in the order of the
+reference's [provider table](REFERENCE.md#hand_over_model_settings). The
+server runs in a Herdr terminal, which has the environment of the Herdr core
+rather than of your shell, so `surla` hands the settings over itself; see
+[model provider settings](REFERENCE.md#model-provider-settings) and the
+[live target prompt contract](REFERENCE.md#live-target-prompt-contract).
 
 ## Verifying the builder's commit
 
@@ -523,6 +532,13 @@ registered role's pane in Herdr and shows, on every view of the page, one line
 per role that waits for you, for example "Builder needs you: permission",
 with a **Show builder pane** action that brings that pane forward. You answer
 in the pane.
+
+When the builder or the test writer has an assignment it has not read, the
+server sends that agent one fixed Chorus direct message asking it to read its
+assignments; nothing is typed into its pane. An agent that stays idle with the
+assignment unread for 90 seconds needs you too, for example "Builder needs
+you: idle with an unread assignment. Show its pane and tell it to read its
+assignments and to keep its Chorus watcher running."
 
 The Team view shows each role's pane state (Not started, Starting, Working,
 Waiting, Needs you, Ended, Error or Status unknown), whether its Chorus

@@ -81,6 +81,7 @@ const attentionLabels: Record<TeamRoleState["attention"], string> = {
   question: "question",
   auth: "sign-in required",
   silent: "no status reported",
+  assignment: "idle with an unread assignment. Show its pane and tell it to read its assignments and to keep its Chorus watcher running.",
   unknown: "reason unknown",
 };
 

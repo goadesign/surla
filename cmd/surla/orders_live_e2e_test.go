@@ -73,7 +73,7 @@ func TestOrdersLiveCopyAppliesADraftThroughTheProjectServer(t *testing.T) {
 	t.Chdir(workspace)
 	require.NoError(t, runProjectSettings("verification", []string{"set", settingsFile}, io.Discard))
 
-	opts, err := serveOptions(func(string) string { return "" }, os.Environ(), workspace)
+	opts, err := serveOptions(os.Environ(), workspace)
 	require.NoError(t, err)
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)

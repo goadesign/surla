@@ -5,6 +5,6 @@ This guide maps the agents, tools and generated packages of this design for codi
 > **A Quick Note on This File:**
 >
 > - **Want to hide me?** No problem! Add `DisableAgentDocs()` to your `API` design and I won't be generated next time.
-> - **Safety First:** It's safe to delete this file. Surla's `generate_code` MCP tool (or `surla gen`) writes it again with `gen/`.
+> - **Safety First:** It's safe to delete this file. Each generation of this module, as section 2 describes, writes it again with `gen/`.
 > - **Golden Rule:** Never edit the `gen/` directory directly. Your design files are the source of truth!
 

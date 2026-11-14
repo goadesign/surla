@@ -91,9 +91,13 @@ func TestStartBuildNamesARealGenerationLimit(t *testing.T) {
 	if err := candidate.CheckSandbox(); err != nil {
 		t.Skipf("real generation-limit proof requires the candidate sandbox: %v", err)
 	}
+	// The design imports Goa-AI's evaluation DSL, as a test module's does, so
+	// its module keeps the Goa-AI requirement the Story table's imports need.
 	design := strings.Replace(buildProbeDesign, `import . "goa.design/goa/v3/dsl"`, `import (
 	. "goa.design/goa/v3/dsl"
 	"time"
+
+	_ "goa.design/goa-ai/eval/dsl"
 )
 
 func init() { time.Sleep(30 * time.Second) }`, 1)
