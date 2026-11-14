@@ -336,11 +336,14 @@ Approval hashes those binaries again in `<release_dir>/<candidate_commit>/`,
 through one folder handle. A missing, non-regular or escaping file, or one
 that differs from the binary the run verified, prevents approval; the
 refusal names no folder path and ends with the step "publish the binaries
-the run built into the release folder that the promotion settings name, in a
-folder named after the commit, or remove the promotion settings". Without
-promotion settings, an approval records no release binaries. A stored file
-the server cannot accept, such as one with any other field (`suite_id`),
-stops the server while it starts; the shown error ends by naming
+the run built, whose folder the run's Proof view shows, into the release
+folder that the promotion settings name, in a folder named after the commit,
+or remove the promotion settings". The Proof view shows the selected run's
+actual source folder under **Binaries built by this run**, as selectable code;
+the approval error panel repeats it. Without promotion settings, an approval
+records no release binaries. A stored file the server cannot accept, such
+as one with any other field (`suite_id`), stops the server while it starts;
+the shown error ends by naming
 `surla promotion show` to see the settings, `surla promotion set <file>` to
 store them again and `surla promotion remove` to remove them, then `surla`.
 Approval never merges or deploys.
@@ -1131,6 +1134,14 @@ builder.` The test writer may read only the runs of a change it has an
 assignment for; any other run is refused as `forbidden` (`403`). `not_found`
 (`404`) means no such run.
 
+For a completed run, get and list responses also include optional
+`candidate_binaries_dir` when the caller is the user and the server has
+promotion settings. It names the actual folder of binaries built by that
+run, read from its recorded plan, rather than a reconstructed run layout.
+Agents never receive this path. The Proof view shows it under **Binaries
+built by this run**, as selectable code, and repeats it in the approval
+error panel for that selected run.
+
 Every `VerificationStatusResult`, including the start and list responses,
 carries required `inputs_current`. It uses the [change list
 comparison](#list_changes) for that individual run: the agreed revision and
@@ -1182,7 +1193,7 @@ merge. Surla merges and deploys nothing.
 | `conflict` (`409`) | The card is not confirmed, `request_revision` is stale, or the accepted tests changed while approving (approve again). |
 | `no_build`, `tests_not_accepted` (`409`) | As for `verify_change`. |
 | `unprocessable` (`422`) | The report did not pass, does not follow from its own evidence, was made for another candidate commit or another revision than the ones named, or ran tests at another commit than the tests chosen for the revision. For other tests the message names both commits and ends with the step `the builder verifies the candidate again; then approve that run`. |
-| `unprocessable` (`422`) | Promotion settings are stored and a release binary is missing, unreadable or differs from the run's. The message names no folder path and ends with the step `publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings`: that folder is `<release_dir>/<candidate_commit>/`, and removing the settings is `surla promotion remove`, then `surla stop` and `surla`. |
+| `unprocessable` (`422`) | Promotion settings are stored and a release binary is missing, unreadable or differs from the run's. The message names no folder path and ends with the step `publish the binaries the run built, whose folder the run's Proof view shows, into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings`: that folder is `<release_dir>/<candidate_commit>/`, and removing the settings is `surla promotion remove`, then `surla stop` and `surla`. |
 | `not_implemented` (`501`) | The server runs no verification. A server started by `surla` always does. |
 
 ### Diagnostics
@@ -1624,7 +1635,7 @@ holds it beside them (**Switch to Incoming Card**).
 | **Live target** | Whether a live target is starting, running or not confirmed stopped, its commit, address and accepted prompt versions (never the text), and **Stop live target**, which asks first. Below it, the model live targets started afterwards use and a form whose **Apply** sends [`configure_model`](#configure_model); a refusal names a missing key's variable. |
 | **Decisions & Approval** | The Change Card: questions to answer, examples, preserved behaviors, and **Confirm Intent & Lock Examples** (on an agreed card, **Refine Confirmed Answers & Examples**). A proposed revision appears above the agreed one with everything adopting it would confirm (changed request and summary, questions and examples marked **New**, **Edited**, **Kept** or **Removed**, Story and design changes), **Adopt this revision** and **Decline**. A stale submission offers **Load Latest Card**. On a confirmed card the **Build** section comes first, with the saved agreement below it under **Agreed:** and the request. **Agreement details** and **Refine agreed answers and examples** remain available for review and refinement; an active edit stays open. After approval, the recorded approval names the builder's commit and the tests commit. |
 | **Architecture** | [`preview_architecture`](#preview_architecture) for the revision shown. |
-| **Proof** | The change's verification runs and each report's scenario outcomes, hidden scenarios anonymous, with **Approve this result** for a matching passed run. **Check started** shows the request's start time in local time, not a completion time; the exact recorded timestamp stays in details. A single saved run needs no selector. A run of written tests shows the `notice` of its `test_source`. **Candidate and run details** shows the run's candidate commit and its tests commit, labeled **Accepted tests commit** for written tests and **Evaluator commit** for an evaluator named in stored verification settings. |
+| **Proof** | The change's verification runs and each report's scenario outcomes, hidden scenarios anonymous, with **Approve this result** for a matching passed run. **Check started** shows the request's start time in local time, not a completion time; the exact recorded timestamp stays in details. A single saved run needs no selector. With promotion settings, a completed run shows its actual binary folder under **Binaries built by this run**, as selectable code; the approval error panel repeats the selected run's folder. A run of written tests shows the `notice` of its `test_source`. **Candidate and run details** shows the run's candidate commit and its tests commit, labeled **Accepted tests commit** for written tests and **Evaluator commit** for an evaluator named in stored verification settings. |
 | **Traces** | A drawer listing recorded errors, with **All statuses** and **Without error status**, older pages, and **Retry from newest** after a failed read. |
 
 **The Build section.** It appears once the change is confirmed or has a
