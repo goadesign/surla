@@ -42,6 +42,10 @@ type (
 	gitEntryKind int
 )
 
+// errNoRepository is resolveStarterRepo's error for a folder outside any git
+// repository.
+var errNoRepository = errors.New("not inside a git repository")
+
 const (
 	// layoutReadTimeout bounds all the git queries one verification plan or
 	// live start makes together, so an unresponsive repository is refused
@@ -63,10 +67,6 @@ const (
 	// gitOther is anything else at the path: a link, a submodule.
 	gitOther
 )
-
-// errNoRepository is resolveStarterRepo's error for a folder outside any git
-// repository.
-var errNoRepository = errors.New("not inside a git repository")
 
 // Write appends p, or records the overflow and fails when p would take the
 // stream past limit, so the git command stops instead of producing output

@@ -77,7 +77,8 @@ type (
 		// CheckTimeout is the configured check timeout, named in messages.
 		CheckTimeout time.Duration `json:"check_timeout"`
 		// StoredEvaluator is true when the project verifies with stored
-		// verification settings, so update_dependencies includes eval/.
+		// verification settings, so check_project and update_dependencies
+		// include eval/.
 		StoredEvaluator bool `json:"stored_evaluator,omitempty"`
 		// TraceContext carries the W3C trace context of serve's request span,
 		// so the helper's spans are its children.

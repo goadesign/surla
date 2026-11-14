@@ -30,8 +30,9 @@ const (
 	// maxCleanupWarningBytes bounds the post-write failure text in an
 	// update_dependencies message, so it never displaces the written paths.
 	maxCleanupWarningBytes = 2 << 10
-	// skippedTestModuleNote explains in update_dependencies' result and
-	// output why the starter test module eval was left untouched.
+	// skippedTestModuleNote explains in check_project's and
+	// update_dependencies' result and output why the starter test module
+	// eval was left untouched.
 	skippedTestModuleNote = "Left test module eval out (tests belong to the test writer)"
 )
 
@@ -138,7 +139,8 @@ func (op *checkOperation) updateDependencies(ctx context.Context) (*gensurla.Upd
 // op.copy.modules when the project has no stored verification settings and
 // the workspace holds a starter test layout (go.mod and eval/go.mod accepted
 // by scaffold.StarterLayout). Tests in eval then belong to the test writer,
-// so update_dependencies neither tidies nor writes eval/go.mod or eval/go.sum.
+// so check_project does not test eval and update_dependencies neither tidies
+// nor writes eval/go.mod or eval/go.sum.
 func (op *checkOperation) leaveOutStarterTestModule() bool {
 	if op.storedEvaluator || !slices.Contains(op.copy.modules, ".") || !slices.Contains(op.copy.modules, scaffold.SuiteDir) {
 		return false

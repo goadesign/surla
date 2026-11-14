@@ -159,8 +159,8 @@ func (r *layoutRefusal) Error() string {
 	case refusedUnknownCommit:
 		return fmt.Sprintf("the candidate commit %s is not in the project's repository; commit it and try again", r.commit)
 	case refusedNoCommonBase:
-		return fmt.Sprintf("candidate commit %s shares no history with the accepted tests' commit %s:"+
-			" commit the candidate on the project branch that the build started from, then verify again", r.commit, r.testsCommit)
+		return fmt.Sprintf("candidate commit %s shares no history with the accepted tests' commit %s;"+
+			" ask the user: %s", r.commit, r.testsCommit, stepNoCommonBase)
 	case refusedTestModuleChanged:
 		shown := r.changed[:min(len(r.changed), maxChangedTestFiles)]
 		names := make([]string, len(shown))
@@ -214,8 +214,10 @@ func (r *layoutRefusal) Error() string {
 // source; the caller adds the run's work folder. It refuses with
 // not_implemented when this control plane runs no verification; no_build,
 // tests_not_accepted and no_test_layout as the error constructors below
-// describe; and conflict when the repository does not hold candidateCommit or
-// the project folder was replaced.
+// describe; and conflict when the repository does not hold candidateCommit,
+// the project folder was replaced, candidateCommit shares no history with the
+// accepted tests' commit, or candidateCommit changes hand-written files in the
+// test module since their common ancestor.
 func (c *ControlPlane) verificationPlan(
 	ctx context.Context,
 	principal Principal,
@@ -307,10 +309,13 @@ func (c *ControlPlane) testsChoice(
 // Verification passes the accepted tests' commit; a live copy passes the
 // candidate commit twice. A project folder that is no longer the directory
 // this control plane bound or is outside any git repository, a commit the
-// repository does not hold, or a commit lacking the layout is refused with a
-// *layoutRefusal saying what and who acts: the builder for the folder and
-// candidateCommit, testsActor for testsCommit. New guarantees a bound
-// workspace whenever this runs.
+// repository does not hold, a commit lacking the layout, a candidate commit
+// that shares no history with testsCommit, or a candidate commit that changes
+// hand-written files in the test module since merge-base(testsCommit,
+// candidateCommit) is refused with a *layoutRefusal saying what and who acts:
+// the builder for the folder, candidateCommit, and the test-module guard,
+// testsActor for testsCommit. New guarantees a bound workspace whenever this
+// runs.
 func (c *ControlPlane) starterPlanAt(ctx context.Context, candidateCommit, testsCommit string, testsActor layoutActor) (verify.Plan, error) {
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)

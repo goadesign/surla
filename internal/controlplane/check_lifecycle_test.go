@@ -181,6 +181,7 @@ func TestCheckProjectLifecycle(t *testing.T) {
 	runGitForTest(t, workspace, "init", "-q")
 	clients := newCheckTestServer(t, Options{
 		WorkspaceDir: workspace,
+		Verification: &VerificationConfig{RunsDir: realTempDir(t)},
 		GoProxyEnv:   []string{"GOPROXY=https://proxy.example.test", "GOPRIVATE=example.com/*"},
 	})
 
@@ -317,6 +318,45 @@ func TestCheckProjectLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.LessOrEqual(t, len(httpPage.Text), maxCheckMessageBytes)
 	assert.NotEmpty(t, httpPage.Text)
+
+	// 4. On a server that runs written tests (WrittenTestRuns), check_project
+	// leaves the starter test module eval out and says so in its result and
+	// captured output, so check_project -> update_dependencies -> check_project
+	// repairs "." without entering eval (even while failEvalTest is true).
+	writtenClients := newCheckTestServer(t, Options{
+		WorkspaceDir:    workspace,
+		RunsDir:         realTempDir(t),
+		WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Timeout: time.Minute},
+		GoProxyEnv:      []string{"GOPROXY=https://proxy.example.test", "GOPRIVATE=example.com/*"},
+	})
+	daemon.resetContainers()
+	require.NoError(t, os.WriteFile(filepath.Join(workspace, "go.sum"), []byte("stale-sum\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workspace, "eval", "go.sum"), []byte("broken-eval-sum\n"), 0o644))
+
+	writtenFail := callMCPTool(t, writtenClients.mcpClient, "check_project", `{}`, gensurla.DecodeCheckProjectResult)
+	assert.False(t, writtenFail.Passed)
+	assert.Contains(t, writtenFail.Message, "tested 1 module(s): .. Left test module eval out (tests belong to the test writer).")
+	assert.Contains(t, writtenFail.Message, "Dependencies for . could not be prepared (go list exited 1)")
+	assert.Contains(t, writtenFail.Message, "call update_dependencies and check again")
+	created = daemon.createdContainers()
+	require.Len(t, created, 1, "eval is not entered during check_project")
+	assert.Equal(t, workspace, created[0].WorkDir)
+
+	writtenRepair := callMCPTool(t, writtenClients.mcpClient, "update_dependencies", `{}`, gensurla.DecodeUpdateDependenciesResult)
+	assert.Equal(t, []string{"go.sum"}, writtenRepair.FilesWritten)
+	assert.Equal(t, "Wrote 1 file(s): go.sum. Left test module eval out (tests belong to the test writer).", writtenRepair.Message)
+	assertFileContent(t, filepath.Join(workspace, "eval", "go.sum"), "broken-eval-sum\n")
+
+	daemon.resetContainers()
+	writtenPass := callMCPTool(t, writtenClients.mcpClient, "check_project", `{}`, gensurla.DecodeCheckProjectResult)
+	assert.True(t, writtenPass.Passed)
+	assert.Equal(t, "tested 1 module(s): .. Left test module eval out (tests belong to the test writer). All passed.", writtenPass.Message)
+	created = daemon.createdContainers()
+	require.Len(t, created, 2, "only the root module runs list and test")
+	assert.Equal(t, []string{workspace, workspace}, []string{created[0].WorkDir, created[1].WorkDir})
+	writtenOut, err := writtenClients.httpClient.ReadCheckOutput(ctx, &gensurla.ReadCheckOutputPayload{OpID: writtenPass.OpID})
+	require.NoError(t, err)
+	assert.Contains(t, writtenOut.Text, "note: Left test module eval out (tests belong to the test writer)\n")
 }
 
 // TestUpdateDependenciesLifecycle verifies that update_dependencies runs
