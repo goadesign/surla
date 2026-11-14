@@ -169,7 +169,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Vet and short race tests (packages that need no sandbox)
+      - name: Vet and short race tests (including Linux candidate sandbox)
         # Only packages with tests are listed. The others, the generated
         # packages among them, have nothing to run, and compiling them and
         # their large dependencies with the race detector took much of this
@@ -178,6 +178,7 @@ jobs:
           go test -race -vet=all -short -timeout 3m -json \
             ./cmd/surla \
             ./internal/abspath \
+            ./internal/designeval \
             ./internal/diff \
             ./internal/genpublish \
             ./internal/gitenv \
@@ -186,6 +187,7 @@ jobs:
             ./internal/procgroup \
             ./internal/renameat \
             ./internal/scaffold \
+            ./internal/testwriter \
             ./internal/traceview \
             ./internal/verify \
             ./internal/verifyrun \

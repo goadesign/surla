@@ -491,7 +491,7 @@ paths:
                             temporary: false
                             timeout: false
                 "501":
-                    description: 'sandbox_unavailable: This system has no candidate sandbox; nothing was saved. Start this project on a system with Surla''s candidate sandbox, then build again.'
+                    description: 'sandbox_unavailable: This system has no candidate sandbox; nothing was saved. When the host reports a specific sandbox prerequisite failure, the message includes its cause and remedy before: Start this project on a system with Surla''s candidate sandbox, then build again.'
                     schema:
                         $ref: '#/definitions/SurlaStartBuildSandboxUnavailableResponseBody'
                     examples:

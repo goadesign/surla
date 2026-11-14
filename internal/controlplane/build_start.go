@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	genproject "github.com/goadesign/surla/gen/project"
@@ -290,6 +291,14 @@ func buildStartError(ctx context.Context, workspace string, err error) error {
 	case errors.Is(err, testwriter.ErrBranchInUse):
 		return gensurla.MakeTestsBranchInUse(err)
 	case errors.Is(err, candidate.ErrIsolationUnavailable):
+		detail := strings.TrimSpace(strings.TrimPrefix(err.Error(), candidate.ErrIsolationUnavailable.Error()))
+		detail = strings.TrimSpace(strings.TrimPrefix(detail, ":"))
+		if detail != "" {
+			return gensurla.MakeSandboxUnavailable(fmt.Errorf(
+				"This system has no candidate sandbox (%s). Start this project on a system with Surla's candidate sandbox, then build again.",
+				detail,
+			))
+		}
 		return gensurla.MakeSandboxUnavailable(errors.New("This system has no candidate sandbox. Start this project on a system with Surla's candidate sandbox, then build again."))
 	default:
 		return err

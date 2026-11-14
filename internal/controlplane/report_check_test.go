@@ -584,6 +584,8 @@ func TestACheckThatCannotRunNamesTheUsersStep(t *testing.T) {
 			wantReason: []string{"could not open the test writer's working copy", "open <absolute path>: permission denied"}, wantStep: stepOpenCopy},
 		{name: "the sandbox does not start", tests: &standInCopy{prepareErr: fmt.Errorf("%w: sandbox-exec: sandbox_apply: Operation not permitted", candidate.ErrIsolationUnavailable)},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"sandbox could not start", "Operation not permitted"}, wantStep: stepSandbox},
+		{name: "the sandbox does not start on Linux", tests: &standInCopy{prepareErr: fmt.Errorf("%w: pidfd_getfd(child) failed (operation not permitted): if running inside a container, pass --cap-add SYS_PTRACE", candidate.ErrIsolationUnavailable)},
+			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"sandbox could not start", "--cap-add SYS_PTRACE"}, wantStep: stepSandbox},
 		{name: "the history was replaced", tests: &standInCopy{check: failing(fmt.Errorf("measure the copy's changes: %w", testwriter.ErrNoCommonBase))},
 			wantKind: gensurla.TestsKindCouldNotRun, wantReason: []string{"share no history"}, wantStep: stepNoCommonBase},
 		{name: "the required tests cannot be written", tests: &standInCopy{prepareErr: fmt.Errorf(

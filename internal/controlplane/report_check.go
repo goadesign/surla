@@ -110,7 +110,7 @@ const (
 	// fits the design's 512 characters.
 	stepOpenCopy = "Build the change again: starting a build opens the test writer's working copy " +
 		"and names the step when it cannot."
-	stepSandbox = "Run surla from a terminal on macOS that is not itself sandboxed, " +
+	stepSandbox = "Fix the sandbox problem the reason names (or run surla from a terminal that is not itself sandboxed), " +
 		"then ask the test writer to report again."
 	stepNoCommonBase = "Delete the test writer's working copy and branch, then build the change again: " +
 		"in the project folder run git worktree remove .surla-tests and git branch -D surla/tests."

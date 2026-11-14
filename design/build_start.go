@@ -87,7 +87,7 @@ func buildStartRefusals() {
 	Error("copy_folder_in_use", ErrorResult, "The test-writer copy's named folder is occupied; nothing was saved. The message ends with the step to free that folder and build again.")
 	Error("tests_branch_in_use", ErrorResult, "The named tests branch is held by another working copy; nothing was saved. The message ends with the library's step to free that branch and build again.")
 	Error("working_copy_busy", ErrorResult, "Another build is starting or a test check holds the project's working-copy turn; nothing was saved. Start the build again when that has ended.")
-	Error("sandbox_unavailable", ErrorResult, "This system has no candidate sandbox; nothing was saved. Start this project on a system with Surla's candidate sandbox, then build again.")
+	Error("sandbox_unavailable", ErrorResult, "This system has no candidate sandbox; nothing was saved. When the host reports a specific sandbox prerequisite failure, the message includes its cause and remedy before: Start this project on a system with Surla's candidate sandbox, then build again.")
 }
 
 // buildStartRefusalResponses maps project state and host availability distinctly.

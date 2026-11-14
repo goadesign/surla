@@ -34,9 +34,7 @@ const libGoMod = "module example.com/lib\n\ngo 1.26\n"
 // checks, from what the operating system actually allowed, that every
 // forbidden access fails and every assigned access works.
 func TestExecEnforcesTheSandbox(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	probe := buildProbe(t)
 	state := t.TempDir()
 	protected := t.TempDir()
@@ -61,6 +59,7 @@ func TestExecEnforcesTheSandbox(t *testing.T) {
 			fmt.Sprintf("listen:127.0.0.1:%d", freePort(t)),
 			"spawn",
 			"read:/etc/hosts",
+			"readdir:" + protected,
 			"stat:" + secret,
 			"stat:" + filepath.Join(state, "ok.txt"),
 		},
@@ -88,6 +87,7 @@ func TestExecEnforcesTheSandbox(t *testing.T) {
 		allow  bool
 	}{
 		{"read a protected file", "read:" + secret, false},
+		{"list a protected directory", "readdir:" + protected, false},
 		{"write outside its state", "write:" + filepath.Join(protected, "out.txt"), false},
 		{"write its own state", "write:" + filepath.Join(state, "ok.txt"), true},
 		{"see the evaluator's environment", "env:EVAL_SECRET", false},
@@ -98,7 +98,7 @@ func TestExecEnforcesTheSandbox(t *testing.T) {
 		{"listen on its assigned port", fmt.Sprintf("listen:127.0.0.1:%d", listenPort), true},
 		{"spawn a child process", "spawn", false},
 		{"read other system files", "read:/etc/hosts", false},
-		{"learn whether a protected file exists", "stat:" + secret, false},
+		{"learn whether a protected file exists", "stat:" + secret, runtime.GOOS == "linux"},
 		{"stat its own state", "stat:" + filepath.Join(state, "ok.txt"), true},
 	}
 	for _, c := range cases {
@@ -119,9 +119,9 @@ func TestExecEnforcesTheSandbox(t *testing.T) {
 }
 
 func TestExecRefusesAModifiedBinary(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		_, err := Exec(t.Context(), Artifact{}, Spec{})
-		require.ErrorIs(t, err, ErrIsolationUnavailable)
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		_, execErr := Exec(t.Context(), Artifact{}, Spec{})
+		require.ErrorIs(t, execErr, ErrIsolationUnavailable)
 		return
 	}
 	probe := buildProbe(t)
@@ -174,9 +174,7 @@ func TestPinKeepsItsBinaryAfterTheCallerChangesDirectories(t *testing.T) {
 // TestExecUsesRelativeSymlinkedState preserves the physical state directory
 // selected by relative paths and by symlinks followed by parent components.
 func TestExecUsesRelativeSymlinkedState(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	probe := buildProbe(t)
 	base := t.TempDir()
 	t.Chdir(base)
@@ -240,9 +238,7 @@ func TestExecUsesRelativeSymlinkedState(t *testing.T) {
 }
 
 func TestExcerptIsBoundedAndReportsTruncation(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	probe := buildProbe(t)
 	state := t.TempDir()
 	p, err := Exec(t.Context(), probe, Spec{
@@ -267,9 +263,7 @@ func TestExcerptIsBoundedAndReportsTruncation(t *testing.T) {
 // standard output holds exactly the probe's result lines, and the log holds
 // only the noise. A limit below the output fails without returning a part.
 func TestOutputKeepsStandardOutputApart(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	probe := buildProbe(t)
 	const noise = `{"id":"noise","scenarios":[]}`
 	args := []string{"stderr:" + noise, "env:GIVEN", "stderr:after"}
@@ -320,9 +314,7 @@ func TestOutputKeepsStandardOutputApart(t *testing.T) {
 // its state directory and starting a child process are denied as under Exec,
 // and an unsuccessful exit is returned with what the probe printed first.
 func TestOutputEnforcesTheSandbox(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	outside := filepath.Join(t.TempDir(), "out.txt")
 	out, err := Output(t.Context(), buildProbe(t), Spec{
 		Args:     []string{"write:" + outside, "spawn", "exit:3"},
@@ -346,9 +338,7 @@ func TestOutputEnforcesTheSandbox(t *testing.T) {
 }
 
 func TestExecRejectsALogFileInsideTheState(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	state := t.TempDir()
 	_, err := Exec(t.Context(), buildProbe(t), Spec{StateDir: state, LogFile: filepath.Join(state, "probe.log")})
 	require.ErrorContains(t, err, "outside the candidate state directory")
@@ -357,9 +347,7 @@ func TestExecRejectsALogFileInsideTheState(t *testing.T) {
 // TestExecRejectsAliasedLogAdmission uses inert bytes as the digest-pinned
 // artifact. Every case must fail before launching it or opening its log.
 func TestExecRejectsAliasedLogAdmission(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Exec admission requires the macOS sandbox launcher")
-	}
+	requireSandbox(t)
 	base := t.TempDir()
 	state := filepath.Join(base, "state")
 	alias := filepath.Join(base, "STATE")
@@ -411,6 +399,7 @@ func buildProbe(t *testing.T) Artifact {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "probe")
 	build := exec.Command("go", "build", "-o", bin, "./testdata/probe")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, string(out))
 	store := filepath.Join(t.TempDir(), "artifacts")
@@ -452,9 +441,7 @@ func TestBuildDeniesReadsOutsideTheModule(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	goroot, modCache := goEnv(t, "GOROOT"), goEnv(t, "GOMODCACHE")
 	protected := t.TempDir()
 	secret := filepath.Join(protected, "secret.h")
@@ -463,19 +450,25 @@ func TestBuildDeniesReadsOutsideTheModule(t *testing.T) {
 	mod := t.TempDir()
 	includePath, err := filepath.Rel(mod, secret)
 	require.NoError(t, err)
+	asmBody := func(expr string) string {
+		if runtime.GOARCH == "amd64" {
+			return "TEXT ·answer(SB),$0-8\n\tMOVQ $" + expr + ", AX\n\tMOVQ AX, ret+0(FP)\n\tRET\n"
+		}
+		return "TEXT ·answer(SB),$0-8\n\tMOVD $" + expr + ", R0\n\tMOVD R0, ret+0(FP)\n\tRET\n"
+	}
 	cases := []struct {
 		name    string
 		asm     string
 		wantErr bool
 	}{
-		{"plain module builds", "TEXT ·answer(SB),$0-8\n\tMOVD $42, R0\n\tMOVD R0, ret+0(FP)\n\tRET\n", false},
-		{"assembly include of a protected file is denied", "#include \"" + includePath + "\"\nTEXT ·answer(SB),$0-8\n\tMOVD $SECRET, R0\n\tMOVD R0, ret+0(FP)\n\tRET\n", true},
+		{"plain module builds", asmBody("42"), false},
+		{"assembly include of a protected file is denied", "#include \"" + includePath + "\"\n" + asmBody("SECRET"), true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(mod, "go.mod"), []byte("module probebuild\n\ngo 1.26\n"), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(mod, "main.go"), []byte("package main\n\nfunc answer() int\n\nfunc main() { println(answer()) }\n"), 0o600))
-			require.NoError(t, os.WriteFile(filepath.Join(mod, "answer_arm64.s"), []byte("#include \"textflag.h\"\n"+c.asm), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(mod, "answer_"+runtime.GOARCH+".s"), []byte("#include \"textflag.h\"\n"+c.asm), 0o600))
 			logs := t.TempDir()
 			err := Build(t.Context(), BuildSpec{
 				SourceDir: mod, ModuleDir: mod, Package: ".", Out: filepath.Join(t.TempDir(), "probe"),
@@ -510,9 +503,7 @@ func TestBuildReadsOnlyItsSourceDir(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	goroot, modCache := goEnv(t, "GOROOT"), goEnv(t, "GOMODCACHE")
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "extra.go"), []byte("package main\n\nfunc extra() int { return 1 }\n"), 0o600))
@@ -573,7 +564,11 @@ func TestBuildReadsOnlyItsSourceDir(t *testing.T) {
 		unsandboxed(t, filepath.Join(root, "app"))
 		log, err := build(t, filepath.Join(root, "app"), filepath.Join(root, "app"))
 		require.Error(t, err, "lib is outside SourceDir, so the sandbox must deny reading it")
-		assert.Contains(t, log, "lib", "the build failed reading the replaced module:\n%s", log)
+		wantReplaceLog := "example.com/lib"
+		if runtime.GOOS == "linux" {
+			wantReplaceLog = "/lib: permission denied"
+		}
+		assert.Contains(t, log, wantReplaceLog, "the build failed reading the replaced module:\n%s", log)
 	})
 	t.Run("module directory outside the source tree is rejected", func(t *testing.T) {
 		root := newTree(t)
@@ -590,9 +585,7 @@ func TestBuildTestReportsWhetherThePackageHasTests(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	cases := []struct {
 		name      string
 		pkg       string
@@ -746,9 +739,7 @@ func TestBuildTestReportsWhetherThePackageHasTests(t *testing.T) {
 // place of the package directory, and an existing output path are refused
 // before any command runs.
 func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	mod := writeModule(t, map[string]string{
 		"go.mod":      libGoMod,
 		"lib.go":      "package lib\n",
@@ -877,9 +868,7 @@ func TestBuildRunsWithoutHomeOrTelemetry(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	mod := writeModule(t, map[string]string{
 		"go.mod": libGoMod, "main.go": "package main\n\nfunc main() {}\n",
 		"main_test.go": "package main\n\nimport \"testing\"\n\nfunc TestMainBuild(t *testing.T) {}\n",
@@ -970,12 +959,14 @@ func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "extra_test.go"),
 		[]byte("package lib\n\nimport \"testing\"\n\nfunc TestExtra(t *testing.T) {}\n"), 0o600))
+	wantReplaceLog := "example.com/lib"
+	if runtime.GOOS == "linux" {
+		wantReplaceLog = "/lib: permission denied"
+	}
 	cases := []struct {
 		name    string
 		prepare func(t *testing.T, root string) (sourceDir string)
@@ -996,7 +987,7 @@ func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
 		{
 			name:    "replace leaving the source tree",
 			prepare: func(t *testing.T, root string) string { return filepath.Join(root, "app") },
-			wantLog: "example.com/lib",
+			wantLog: wantReplaceLog,
 		},
 	}
 	for _, c := range cases {
@@ -1026,7 +1017,11 @@ func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
 			}
 			require.Error(t, err, "the sandboxed test build must not read outside SourceDir")
 			assert.Contains(t, string(logText), c.wantLog, "the build failed at the outside read:\n%s", logText)
-			assert.Contains(t, string(logText), "operation not permitted", "the sandbox denied the read:\n%s", logText)
+			wantDenied := "operation not permitted"
+			if runtime.GOOS == "linux" {
+				wantDenied = "permission denied"
+			}
+			assert.Contains(t, string(logText), wantDenied, "the sandbox denied the read:\n%s", logText)
 		})
 	}
 }
@@ -1039,9 +1034,7 @@ func TestBuildTestBinaryRunsUnderExec(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
-	}
+	requireSandbox(t)
 	mod := writeModule(t, map[string]string{
 		"go.mod": libGoMod,
 		"lib.go": "package lib\n",
@@ -1114,4 +1107,14 @@ func testBuildSpec(t *testing.T, sourceDir, moduleDir, out, log string) BuildSpe
 		SourceDir: sourceDir, ModuleDir: moduleDir, Package: ".", Out: out,
 		GOROOT: goEnv(t, "GOROOT"), ModCache: goEnv(t, "GOMODCACHE"), WorkDir: t.TempDir(), LogFile: log,
 	}
+}
+
+// requireSandbox skips t on unsupported OSes and requires CheckSandbox to
+// succeed on macOS and Linux.
+func requireSandbox(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("the sandbox is implemented on macOS and Linux")
+	}
+	require.NoError(t, CheckSandbox())
 }

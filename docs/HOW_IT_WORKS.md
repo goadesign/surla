@@ -25,9 +25,9 @@ Each has its own credential, so the server always knows who is calling.
 
 Four more words appear on every step:
 
-- The **sandbox** is the operating-system sandbox of macOS (`sandbox-exec`),
-  in which the server evaluates designs and builds and runs the code the
-  agents write for the application.
+- The **sandbox** is the operating-system sandbox (macOS `sandbox-exec` or
+  Linux Landlock and Seccomp-BPF) in which the server evaluates designs and
+  builds and runs the code the agents write for the application.
 - A **Story** is a plain description of what the system does, written as Go
   code in the project's design. It names the actors and their **flows**. A flow
   is one path from a starting event to an outcome, for example "a customer
@@ -256,8 +256,8 @@ The reference gives the exact contract of
    the project lacks what a build with a test writer needs: a Git repository
    with at least one commit, the test module `surla init` makes (`eval/` in
    the project folder), a Git name and address, a `.surla-tests` folder and a
-   `surla/tests` branch that nothing else uses, macOS for Surla's sandbox,
-   and no other build start or test check in progress. Each refusal says
+   `surla/tests` branch that nothing else uses, Surla's candidate sandbox
+   (macOS or Linux), and no other build start or test check in progress. Each refusal says
    what is missing and the step to take; the reference lists them under
    [`start_build`](REFERENCE.md#start_build).
 2. **The server opens the test writer's working copy** (described below) and
@@ -430,15 +430,15 @@ run's request, its lock, its result and its logs. The run continues when the
 builder disconnects or the server restarts. It:
 
 1. checks out the builder's commit and builds the application in Surla's
-   macOS sandbox, which lets a build write only its own folders;
+   sandbox, which lets a build write only its own folders;
 2. takes the accepted tests at the exact commit Surla recorded for this
    build, and builds their generated test program;
 3. runs that program, which starts each of the builder's programs in its own
    sandbox, with access only to the local ports the run assigns.
 
 The test program itself runs outside the sandbox: it starts the builder's
-programs in their own sandboxes, and macOS does not nest one sandbox inside
-another. It starts with only `PATH` and a temporary folder in its
+programs in their own sandboxes, and macOS `sandbox-exec` does not nest one
+sandbox inside another. It starts with only `PATH` and a temporary folder in its
 environment: no model key and nothing else of yours. Surla's test layout
 plans with a scripted model during verification.
 

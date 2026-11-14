@@ -46,7 +46,7 @@ func failingDownload(marker string, calls *int) func(context.Context, string, st
 // files are at fault, it stays the author's finding: the author cannot hide a
 // defect of its own module behind a failed download.
 func TestALoadFailureOutsideTheModuleIsNotTheAuthorsFinding(t *testing.T) {
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("Prepare refuses before generating where the sandbox does not exist")
 	}
 	// No go command of this test may reach the network.
