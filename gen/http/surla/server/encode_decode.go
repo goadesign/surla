@@ -1406,6 +1406,32 @@ func EncodeApproveMergeError(encoder func(context.Context, http.ResponseWriter) 
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
+		case "no_build":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewApproveMergeNoBuildResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "tests_not_accepted":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewApproveMergeTestsNotAcceptedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
 		case "unprocessable":
 			var res *goa.ServiceError
 			errors.As(v, &res)
@@ -3743,6 +3769,49 @@ func marshalSurlaApprovalItemToApprovalItemResponseBody(v *surla.ApprovalItem) *
 			res.Artifacts[tk] = tv
 		}
 	}
+	if v.TestSource.Kind() != "" {
+		switch string(v.TestSource.Kind()) {
+		case "evaluator":
+			actual, _ := v.TestSource.AsEvaluator()
+			var obj *OperatorEvaluatorTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(actual)
+			}
+			u := res.TestSource
+			u.SetEvaluator((*OperatorEvaluatorTestsResponseBody)(obj))
+			res.TestSource = u
+		case "written_tests":
+			actual, _ := v.TestSource.AsWrittenTests()
+			var obj *AgentWrittenTestsResponseBody
+			if actual != nil {
+				obj = marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(actual)
+			}
+			u := res.TestSource
+			u.SetWrittenTests((*AgentWrittenTestsResponseBody)(obj))
+			res.TestSource = u
+		}
+	}
+
+	return res
+}
+
+// marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody
+// builds a value of type *OperatorEvaluatorTestsResponseBody from a value of
+// type *surla.OperatorEvaluatorTests.
+func marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(v *surla.OperatorEvaluatorTests) *OperatorEvaluatorTestsResponseBody {
+	res := &OperatorEvaluatorTestsResponseBody{}
+
+	return res
+}
+
+// marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody builds a value
+// of type *AgentWrittenTestsResponseBody from a value of type
+// *surla.AgentWrittenTests.
+func marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(v *surla.AgentWrittenTests) *AgentWrittenTestsResponseBody {
+	res := &AgentWrittenTestsResponseBody{
+		Commit: v.Commit,
+		Notice: v.Notice,
+	}
 
 	return res
 }
@@ -4051,27 +4120,6 @@ func marshalSurlaLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedRes
 	res := &LiveTargetNotConfirmedStoppedResponseBody{
 		CandidateCommit: v.CandidateCommit,
 		Message:         v.Message,
-	}
-
-	return res
-}
-
-// marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody
-// builds a value of type *OperatorEvaluatorTestsResponseBody from a value of
-// type *surla.OperatorEvaluatorTests.
-func marshalSurlaOperatorEvaluatorTestsToOperatorEvaluatorTestsResponseBody(v *surla.OperatorEvaluatorTests) *OperatorEvaluatorTestsResponseBody {
-	res := &OperatorEvaluatorTestsResponseBody{}
-
-	return res
-}
-
-// marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody builds a value
-// of type *AgentWrittenTestsResponseBody from a value of type
-// *surla.AgentWrittenTests.
-func marshalSurlaAgentWrittenTestsToAgentWrittenTestsResponseBody(v *surla.AgentWrittenTests) *AgentWrittenTestsResponseBody {
-	res := &AgentWrittenTestsResponseBody{
-		Commit: v.Commit,
-		Notice: v.Notice,
 	}
 
 	return res

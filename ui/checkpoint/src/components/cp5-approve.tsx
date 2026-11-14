@@ -68,13 +68,8 @@ export function ApproveResultControl({
       {!available ? (
         <Alert id="surla-cp5-unavailable" variant="warning" role="alert" tabIndex={-1}>
           <strong>Approval is unavailable on this server. </strong>
-          {unavailableReason}
-          <p>
-            Approval needs this project's promotion settings: the evaluator suite, environment
-            and release files a promotion requires. Store them with{" "}
-            <code>surla promotion set &lt;file&gt;</code>, then restart Surla (
-            <code>surla stop</code>, then <code>surla</code>).
-          </p>
+          {unavailableReason !== null ? `${unavailableReason} ` : ""}
+          Start Surla from a project directory so verification is configured.
         </Alert>
       ) : recorded ? (
         <p id="surla-cp5-approve-recorded" role="status">

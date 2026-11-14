@@ -309,7 +309,7 @@ page.close();
 // click, still explains an approval the server refuses as not set up, and
 // sends a stale approval through the editor's revision recovery.
 func TestViewsPageApprovesAPassedResult(t *testing.T) {
-	inputs := PromotionInputs{
+	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
 	}
@@ -318,7 +318,7 @@ func TestViewsPageApprovesAPassedResult(t *testing.T) {
 	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
 
 	t.Run("approves", func(t *testing.T) {
-		target := &pageTarget{inputs: inputs}
+		target := &pageTarget{artifacts: spec.Artifacts}
 		cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
 		proposed := mustPropose(t, cp, guide, "chg-approve", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
 		confirmed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
@@ -326,7 +326,7 @@ func TestViewsPageApprovesAPassedResult(t *testing.T) {
 			Answers: map[string]string{}, Examples: proposed.Examples,
 		})
 		require.NoError(t, err)
-		report := passingReport(t, confirmed.RequestRevision, commit, inputs)
+		report := passingReport(t, confirmed.RequestRevision, commit, spec)
 		target.update(func(p *pageTarget) { p.report = report })
 		svc := newPageVerifications(cp)
 		run := passedRun(confirmed, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", commit, report.Digest)
@@ -349,7 +349,7 @@ await control(origin, "release", { key: "POST /changes/approve" });
 await until(() => page.$("#surla-cp5-approval"), "the recorded approval is not shown");
 expect(page.doc.activeElement === page.$("#surla-cp5-approval"), "approving did not move focus to the result");
 const approval = page.text("#surla-cp5-approval");
-expect(approval.includes("Approval recorded") && approval.includes("No merge or deploy side effect") && approval.includes(input.owner) && approval.includes(input.digest) && approval.includes("orders_acceptance"), "the approval panel lacks its record: " + approval);
+expect(approval.includes("Approval recorded") && approval.includes("No merge or deploy side effect") && approval.includes(input.owner) && approval.includes(input.digest) && approval.includes("orders_acceptance") && approval.includes("Builder's commit:") && approval.includes("Tests' commit:") && approval.includes("1111111111111111111111111111111111111111") && approval.includes("2222222222222222222222222222222222222222"), "the approval panel lacks its record: " + approval);
 expect(!page.$("#surla-cp5-approval-dirty-warning"), "a clean approved card warned about unsaved edits");
 const outcome = page.$('textarea[data-field="expected_outcome"]');
 const saved = outcome.value;
@@ -373,9 +373,58 @@ again.close();
 `)
 	})
 
-	t.Run("unavailable without promotion settings", func(t *testing.T) {
-		target := &pageTarget{inputs: inputs, absent: true}
-		cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
+	t.Run("written tests approval without promotion settings shows both commits and hides automatically when tests change", func(t *testing.T) {
+		reportDir := t.TempDir()
+		cp := newBuildControlPlane(t, Options{
+			WorkspaceDir:    t.TempDir(),
+			RunsDir:         t.TempDir(),
+			SurlaVersion:    testSurlaVersion,
+			WrittenTestRuns: &WrittenTestRuns{ReportDir: reportDir, Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: 1000000000},
+		})
+		cp.changesWait = 400000000
+		cp.changesPoll = 20000000
+		confirmed := saveStoryCard(t, cp, "chg-written-approve", StatusConfirmed, refundStory("Refund over the limit waits"))
+		_, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: confirmed.ChangeID, RequestRevision: confirmed.RequestRevision})
+		require.NoError(t, err)
+		acceptTests(t, cp, confirmed.ChangeID, spec.SuiteCommit)
+		report := passingReport(t, confirmed.RequestRevision, commit, spec)
+		writeReportFile(t, reportDir, report)
+		svc := newPageVerifications(cp)
+		run := passedRun(confirmed, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", commit, report.Digest)
+		run.TestSource = gensurla.NewTestSourceWrittenTests(&gensurla.AgentWrittenTests{Commit: spec.SuiteCommit, Notice: writtenTestsNotice})
+		svc.set(run)
+		svc.list(confirmed.ChangeID, run.RunID)
+		ps := startPageServer(t, svc)
+		const nextCommit = "4444444444444444444444444444444444444444"
+		ps.act("accept-new-tests", func() {
+			acceptTests(t, cp, confirmed.ChangeID, nextCommit)
+		})
+		runPageScript(t, ps, map[string]any{"suiteCommit": spec.SuiteCommit, "nextCommit": nextCommit}, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-written-approve", "the change did not open");
+page.$("#surla-nav-cp4").click();
+await until(() => page.$("#surla-cp5-approve"), "a passed result without promotion settings offered no approval control");
+page.$("#surla-cp5-approve").click();
+await until(() => page.$("#surla-cp5-approval"), "the recorded approval is not shown");
+const approval = page.text("#surla-cp5-approval");
+expect(approval.includes("Builder's commit:") && approval.includes("1111111111111111111111111111111111111111") && approval.includes("Tests' commit:") && approval.includes("orders_acceptance @ " + input.suiteCommit) && approval.includes(" — merge commit " + input.suiteCommit + " (on branch surla/tests)."), "written-tests approval did not show both commits and the merge sentence: " + approval);
+const reads = page.sent("GET", "/changes/chg-written-approve").length;
+await control(origin, "act", { key: "accept-new-tests" });
+await until(() => page.sent("GET", "/changes/chg-written-approve").length > reads && !page.$("#surla-cp5-approval"), "accepting another tests commit did not automatically hide the approval and merge sentence without clicking refresh");
+page.$("#surla-nav-cp4").click();
+await until(() => page.$("#surla-cp5-approve"), "after the approval was hidden, Approve this result was not offered again");
+page.$("#surla-cp5-approve").click();
+await until(() => page.$("#surla-cp5-approve-error"), "pressing Approve this result on a report with old tests did not show the refusal");
+expect(page.text("#surla-cp5-approve-error").includes("the report ran the tests at " + input.suiteCommit) && page.text("#surla-cp5-approve-error").includes("are at " + input.nextCommit), "the refusal did not explain that the accepted tests changed: " + page.text("#surla-cp5-approve-error"));
+page.close();
+`)
+	})
+
+	t.Run("unavailable when verification is not configured", func(t *testing.T) {
+		target := &pageTarget{artifacts: spec.Artifacts, absent: true}
+		cp := newControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
+		cp.changesWait = 400000000
+		cp.changesPoll = 20000000
 		proposed := mustPropose(t, cp, guide, "chg-unavailable", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
 		confirmed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
 			ChangeID: proposed.ChangeID, RequestRevision: proposed.RequestRevision,
@@ -394,7 +443,7 @@ page.$("#surla-nav-cp4").click();
 await until(() => page.$("#surla-cp5-approve-region"), "a passed result showed no approval region");
 await until(() => page.$("#surla-cp5-unavailable"), "approval was not shown as unavailable before any click");
 const reason = page.text("#surla-cp5-unavailable");
-expect(reason.includes("Approval is unavailable on this server") && reason.includes("surla promotion set") && reason.includes("surla stop"), "unavailable approval does not name the enabling step: " + reason);
+expect(reason.includes("Approval is unavailable on this server") && reason.includes("Start Surla from a project directory") && !reason.includes("surla promotion set"), "unavailable approval does not name the enabling step: " + reason);
 expect(!page.$("#surla-cp5-approve"), "an unavailable approval still offered its control");
 expect(page.sent("POST", "/changes/approve").length === 0, "the page sent an approval it knew the server cannot record");
 page.close();
@@ -402,7 +451,7 @@ page.close();
 	})
 
 	t.Run("a refused approval still shows why", func(t *testing.T) {
-		target := &pageTarget{inputs: inputs}
+		target := &pageTarget{artifacts: spec.Artifacts}
 		cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
 		proposed := mustPropose(t, cp, guide, "chg-refused", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
 		confirmed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{
@@ -421,11 +470,11 @@ await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-refused"
 page.$("#surla-nav-cp4").click();
 await until(() => page.$("#surla-cp5-approve"), "an available approval offered no control");
 checkControl(page, page.$("#surla-cp5-approve"), "approve control");
-await control(origin, "reply", { key: "POST /changes/approve", status: 501, body: { name: "not_implemented", id: "x", message: "no promotion target is bound to this control plane", temporary: false, timeout: false, fault: false } });
+await control(origin, "reply", { key: "POST /changes/approve", status: 501, body: { name: "not_implemented", id: "x", message: "verification is not configured on this control plane", temporary: false, timeout: false, fault: false } });
 page.$("#surla-cp5-approve").click();
 await until(() => page.$("#surla-cp5-unavailable"), "a refused approval was not shown as unavailable");
 const reason = page.text("#surla-cp5-unavailable");
-expect(reason.includes("no promotion target is bound") && reason.includes("surla promotion set"), "the refusal does not carry the server's reason and the enabling step: " + reason);
+expect(reason.includes("verification is not configured") && reason.includes("Start Surla from a project directory") && !reason.includes("surla promotion set"), "the refusal does not carry the server's reason and the enabling step: " + reason);
 expect(page.doc.activeElement === page.$("#surla-cp5-unavailable"), "the unavailable result did not take focus");
 expect(!page.$("#surla-cp5-approve"), "a refused approval still offered its control");
 page.close();
@@ -433,7 +482,7 @@ page.close();
 	})
 
 	t.Run("stale revision uses the editor's recovery", func(t *testing.T) {
-		target := &pageTarget{inputs: inputs}
+		target := &pageTarget{artifacts: spec.Artifacts}
 		cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
 		proposed := mustPropose(t, cp, guide, "chg-stale", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
 		confirmed, err := cp.ConfirmIntent(user, &gensurla.ConfirmIntentPayload{

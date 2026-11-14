@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -67,7 +68,29 @@ type (
 		// UIComposition is the optional OpenUI Lang decision view for this revision.
 		UIComposition *gensurla.UICompositionItem
 		// Approval is the recorded Checkpoint 5 promotion approval for this revision.
-		Approval *gensurla.ApprovalItem
+		Approval *savedApproval
+	}
+
+	// savedApproval is the on-disk JSON representation of one recorded
+	// Checkpoint 5 approval. It keeps the exact untagged field names saved
+	// cards have always used and excludes the derived TestSource union.
+	savedApproval struct {
+		// ApprovedBy is the user who approved the result.
+		ApprovedBy string
+		// ReportDigest is the SHA-256 digest of the approved verification report.
+		ReportDigest string
+		// CandidateCommit is the candidate commit the report was checked against.
+		CandidateCommit string
+		// SuiteID is the suite identifier the tests at SuiteCommit declared.
+		SuiteID string
+		// SuiteCommit is the commit of the tests the report ran.
+		SuiteCommit string
+		// Environment is the dependency profile the tests at SuiteCommit declared.
+		Environment string
+		// Artifacts maps each candidate binary name to its measured SHA-256 digest.
+		Artifacts map[string]string
+		// ScenarioCount is the number of declared scenarios in the report.
+		ScenarioCount int
 	}
 
 	// cardFile is the saved form of one card. Saved cards that do not match
@@ -277,7 +300,7 @@ func decodeRevision(
 		ConfirmedBy:        saved.ConfirmedBy,
 		RequestRevision:    saved.RequestRevision,
 		UIComposition:      saved.UIComposition,
-		Approval:           saved.Approval,
+		Approval:           approvalItemOf(saved.Approval),
 	}
 	if card.Status != StatusNeedsConfirmation && card.Status != StatusConfirmed {
 		return nil, nil, fmt.Errorf("change card %q has unknown status %q", label, card.Status)
@@ -369,7 +392,47 @@ func savedCardOf(card *gensurla.ChangeCardResult) *savedCard {
 		ConfirmedBy:        card.ConfirmedBy,
 		RequestRevision:    card.RequestRevision,
 		UIComposition:      card.UIComposition,
-		Approval:           card.Approval,
+		Approval:           savedApprovalOf(card.Approval),
+	}
+}
+
+// approvalItemOf converts a stored approval into an ApprovalItem without
+// TestSource, which currentCard derives when the approval is read.
+func approvalItemOf(saved *savedApproval) *gensurla.ApprovalItem {
+	if saved == nil {
+		return nil
+	}
+	artifacts := maps.Clone(saved.Artifacts)
+	if artifacts == nil {
+		artifacts = map[string]string{}
+	}
+	return &gensurla.ApprovalItem{
+		ApprovedBy:      saved.ApprovedBy,
+		ReportDigest:    saved.ReportDigest,
+		CandidateCommit: saved.CandidateCommit,
+		SuiteID:         saved.SuiteID,
+		SuiteCommit:     saved.SuiteCommit,
+		Environment:     saved.Environment,
+		Artifacts:       artifacts,
+		ScenarioCount:   saved.ScenarioCount,
+	}
+}
+
+// savedApprovalOf converts an ApprovalItem into its on-disk form without the
+// derived TestSource union.
+func savedApprovalOf(item *gensurla.ApprovalItem) *savedApproval {
+	if item == nil {
+		return nil
+	}
+	return &savedApproval{
+		ApprovedBy:      item.ApprovedBy,
+		ReportDigest:    item.ReportDigest,
+		CandidateCommit: item.CandidateCommit,
+		SuiteID:         item.SuiteID,
+		SuiteCommit:     item.SuiteCommit,
+		Environment:     item.Environment,
+		Artifacts:       maps.Clone(item.Artifacts),
+		ScenarioCount:   item.ScenarioCount,
 	}
 }
 

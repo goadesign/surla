@@ -40,7 +40,7 @@ var ChangeList = Type("ChangeList", func() {
 	Description("The project's saved Change Cards, most recently saved first (tie-broken by change_id).")
 	Attribute("changes", ArrayOf(ChangeListItem), "Saved Change Cards, most recently saved first.")
 	Attribute("version", String, "Opaque value for change detection. Compare it only for equality; the returned fields contain the facts this operation makes readable.")
-	Attribute("approval_available", Boolean, "Whether approve_merge can record approvals on this server. It is false when no promotion target is configured, or when the server could not resolve its promotion target; approve_merge then refuses every approval. To configure one, store the project's promotion settings with surla promotion set, then restart Surla.")
+	Attribute("approval_available", Boolean, "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.")
 	Required("changes", "version", "approval_available")
 })
 

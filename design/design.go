@@ -198,24 +198,31 @@ var UICompositionItem = Type("UICompositionItem", func() {
 // ApprovalItem records a passed CP5 promotion check for one Change Card
 // revision.
 var ApprovalItem = Type("ApprovalItem", func() {
-	Description("Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when the user refines the confirmed revision or adopts a proposed one with confirm_intent. A revise_change on a confirmed card leaves it on the confirmed revision, which stays in force until the user adopts the proposal. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.")
+	Description("Checkpoint 5 approval recorded by approve_merge after the verification report passed and matched the change being promoted: the exact candidate commit, the tests' commit chosen for the revision, and (when promotion settings are configured) the binary digests the promotion target measured. suite_id and environment record what the tests at suite_commit declared in the report and are shown, not compared against separate promotion settings. test_source is derived on each read from how the server chooses tests. The approval is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when the user refines the confirmed revision or adopts a proposed one with confirm_intent. A revise_change on a confirmed card leaves it on the confirmed revision, which stays in force until the user adopts the proposal. get_change and confirm_intent return it in approval while the tests' commit chosen for the revision still equals suite_commit and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts, or in unverified_approval when the tests' commit still matches but a configured promotion target cannot verify the candidate's binaries on that read.")
 	Attribute("approved_by", String, "User who approved the result.")
 	Attribute("report_digest", String, "SHA-256 digest of the approved CP4 verification report.")
 	Attribute("candidate_commit", String, "Candidate commit the report was checked against.")
-	Attribute("suite_id", String, "Evaluator suite the promotion target requires.")
-	Attribute("suite_commit", String, "Evaluator suite commit the promotion target requires.")
-	Attribute("environment", String, "Dependency profile the promotion target requires, such as sim.")
-	Attribute("artifacts", MapOf(String, String), "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.")
-	Attribute("scenario_count", Int, "Number of declared evaluator scenarios, every one of which passed.")
-	Required("approved_by", "report_digest", "candidate_commit", "suite_id", "suite_commit", "environment", "artifacts", "scenario_count")
+	Attribute("suite_id", String, "Suite identifier the tests at suite_commit declared in the report (shown, not compared).")
+	Attribute("suite_commit", String, "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.")
+	Attribute("environment", String, "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).")
+	Attribute("artifacts", MapOf(String, String), "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.")
+	Attribute("scenario_count", Int, "Number of declared scenarios in the report, every one of which passed.")
+	OneOf("test_source", "Where the tests at suite_commit came from, derived on each read: evaluator, or written_tests with their commit and a notice.", func() {
+		TypeName("ApprovalTestSource")
+		Meta("oneof:json:flatten")
+		Meta("oneof:type:field", "source")
+		Attribute("evaluator", OperatorEvaluatorTests)
+		Attribute("written_tests", AgentWrittenTests)
+	})
+	Required("approved_by", "report_digest", "candidate_commit", "suite_id", "suite_commit", "environment", "artifacts", "scenario_count", "test_source")
 })
 
 // UnverifiedApprovalItem wraps a saved CP5 approval whose current promotion
 // inputs could not be verified on this read.
 var UnverifiedApprovalItem = Type("UnverifiedApprovalItem", func() {
-	Description("Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.")
+	Description("Saved Checkpoint 5 promotion approval recorded on the Change Card whose current release binaries could not be verified on this read.")
 	Attribute("approval", ApprovalItem, "Recorded promotion approval from the Change Card.")
-	Attribute("reason", String, "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.")
+	Attribute("reason", String, "Explanation of why the recorded approval could not be verified against current release binaries and how to recover.")
 	Required("approval", "reason")
 })
 
@@ -253,8 +260,8 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 	Attribute("confirmed_by", String, "User who confirmed the Change Card.")
 	Attribute("request_revision", String, "SHA-256 digest of the canonical versioned Change Card.")
 	Attribute("ui_composition", UICompositionItem, "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.")
-	Attribute("approval", ApprovalItem, "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.")
-	Attribute("unverified_approval", UnverifiedApprovalItem, "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.")
+	Attribute("approval", ApprovalItem, "Checkpoint 5 approval of this revision, present while suite_commit is still the tests' commit chosen for this revision and (when a promotion target is configured) the promotion target's current binary digests still equal artifacts on this read. It is absent before approve_merge succeeds, whenever the chosen tests' commit or the staged binary digests have changed since, and whenever a configured promotion target's staged binaries cannot be verified (see unverified_approval). It is never hashed into request_revision.")
+	Attribute("unverified_approval", UnverifiedApprovalItem, "Saved Checkpoint 5 approval of this revision when suite_commit still matches the chosen tests' commit and promotion settings are configured, but the staged binaries could not be verified on this read. At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.")
 	Attribute("proposed_revision", ProposedRevisionItem, "The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.")
 	Required("change_id", "status", "prompt", "summary", "examples", "preserved_behaviors", "request_revision")
 })
@@ -539,7 +546,7 @@ var ModelConnection = Type("ModelConnection", func() {
 
 // ApproveMergePayload is the input to the CP5 approve_merge tool.
 var ApproveMergePayload = Type("ApproveMergePayload", func() {
-	Description("Identifies the confirmed Change Card revision, the candidate commit being promoted, and the evaluator-written verification report to check. The report itself and the expected suite, environment and binary digests come from the control plane's promotion target, never from the caller.")
+	Description("Identifies the confirmed Change Card revision, the candidate commit being promoted, and the verification report to check. Which tests' commit the report must have run comes from the project's stored verification settings or the tests Surla accepted for the revision's build, and the report itself and the measured candidate binary digests come from the control plane's promotion target, never from the caller.")
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Current request_revision of the confirmed Change Card.")
 	Attribute("candidate_commit", String, "Full commit ID of the candidate being promoted (40 or 64 lowercase hex characters).", func() {
@@ -767,7 +774,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("confirm_intent", func() {
-		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Only the user's browser session calls it, from the views page; the guide revises with revise_change and never confirms. Naming the proposed revision's request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card's request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.")
+		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, or adopt the revision the guide proposed beside a confirmed card. Only the user's browser session calls it, from the views page; the guide revises with revise_change and never confirms. Naming the proposed revision's request_revision adopts it: its questions are answered, it becomes the confirmed revision in force under a new request_revision with no approval, and the proposal is gone. While a proposal waits, refining the confirmed revision is refused: adopt or decline the proposal first. Otherwise the request names the card's request_revision: changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while its suite_commit is still the tests' commit chosen for this revision and either no promotion target is configured or its binary digests still match the promotion target's current binaries, or in unverified_approval when a promotion target is configured and cannot measure the candidate's binaries. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.")
 		Payload(ConfirmIntentPayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
@@ -784,7 +791,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("get_change", func() {
-		Description("Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.")
+		Description("Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. The card's fields describe the revision in force; a revision the guide proposed beside a confirmed card is returned in proposed_revision while it waits. Reading never confirms or changes the card. A recorded approval is returned in approval only while its suite_commit is still the tests' commit chosen for this revision and either no promotion target is configured or its binary digests still match the promotion target's current binaries, or in unverified_approval when a promotion target is configured and cannot measure the candidate's binaries.")
 		Payload(GetChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
@@ -942,19 +949,23 @@ var _ = Service("surla", func() {
 	})
 
 	Method("approve_merge", func() {
-		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.")
+		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane chooses the tests' commit the same way verify_change does (the suite commit in the project's stored verification settings, or the tests Surla accepted for the change's build at request_revision), loads the verification report by digest, re-derives the report from its evidence with verify.Approve, and records the approval on the card when the report passed for candidate_commit, request_revision, and that tests' commit. When promotion settings are configured with surla promotion set (or a PromotionTarget is bound), approve_merge also checks that the staged binaries in <release_dir>/<candidate_commit>/ match the report's binary digests and records those digests in artifacts; without promotion settings, no release folder or staged binaries are required and artifacts is empty. The report's suite_id and environment are what the tests at suite_commit declared and are recorded on the approval without a separate comparison. Nothing is merged or deployed.")
 		Payload(ApproveMergePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
-		Error("unprocessable", ErrorResult, "The verification report did not pass or does not match the Change Card and promotion target inputs.")
-		Error("not_implemented", ErrorResult, "This control plane has no promotion target bound to it.")
-		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, configured with surla promotion set.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed, its request_revision does not match, or the accepted tests changed while approving; confirm the card, read the current revision with get_change, or approve again.")
+		Error("no_build", ErrorResult, "Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.")
+		Error("tests_not_accepted", ErrorResult, "Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.")
+		Error("unprocessable", ErrorResult, "The verification report did not pass or does not match the Change Card, the chosen tests' commit, or (when promotion settings are configured) the promotion target's staged binary digests.")
+		Error("not_implemented", ErrorResult, "This control plane has no verification configuration bound to it.")
+		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit and the tests chosen for the revision. When promotion settings are configured with surla promotion set, also checks that the staged release binaries match the report.")
 		HTTP(func() {
 			POST("/changes/approve")
 			Response(StatusOK)
 			Response("not_found", StatusNotFound)
 			Response("conflict", StatusConflict)
+			Response("no_build", StatusConflict)
+			Response("tests_not_accepted", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
 		})

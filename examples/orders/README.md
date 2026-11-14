@@ -180,9 +180,6 @@ EOF
 cat > "$WORK_DIR/promotion.json" <<EOF
 {
   "release_dir": "$WORK_DIR/releases",
-  "suite_id": "orders_acceptance",
-  "suite_commit": "$COMMIT",
-  "environment": "sim",
   "binaries": ["orders", "orders-worker"]
 }
 EOF
