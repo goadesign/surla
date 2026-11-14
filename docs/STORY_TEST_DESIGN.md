@@ -197,9 +197,12 @@ check, `generate_code` with `target: "eval"`, `surla gen`, `surla init`, and
 `goa gen` run by hand. Because the required tests are part of the module's
 design, regenerating the module, by any caller and with any tool, keeps them.
 
-Surla writes the table when a build starts and again at each check of the
-test writer's report, in the check's private snapshot, so the version the
-test writer leaves in its working copy never counts. The file is replaced by
+When a build starts and again at each check of the test writer's report, in
+the check's private snapshot, Surla generates the module with the table it
+renders in place of whatever the test writer left at that path, so the test
+writer's version never counts, then writes the table beside the generated
+folder. A failed generation writes neither, so the working copy stays as it
+was and a later build can still bring it forward. The file is replaced by
 renaming a new file over it, so a symbolic link at its path is replaced, not
 followed. `surla init` writes the starter's table from the starter's own
 Story. A project whose operator stored verification settings for another

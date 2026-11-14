@@ -106,7 +106,8 @@ func TestPrepareWritesOneRequiredMethodPerFinishedFlow(t *testing.T) {
 
 // TestPrepareGivesTheAuthorItsGenerationFailure breaks the copy's design, as
 // its author could: Prepare returns an *AuthorError whose finding quotes the
-// compiler, with no absolute path, and writes no generated folder.
+// compiler, with no absolute path, and writes neither the Story table nor the
+// generated folder, so the copy holds only the author's change.
 func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
 	skipWithoutSandbox(t)
 	repo, _ := newProject(t, fixtureProject(t))
@@ -123,6 +124,8 @@ func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
 	assert.Equal(t, FindingGeneration, author.Finding.Kind)
 	assert.Contains(t, author.Finding.Message, "undefinedInTheDesign")
 	assert.NotContains(t, author.Finding.Message, wc.Dir())
+	assert.NoFileExists(t, filepath.Join(wc.Project(), "eval", filepath.FromSlash(designeval.StoryTestsPath)))
+	assert.Equal(t, "M eval/design/design.go", runGit(t, wc.Dir(), "status", "--porcelain", "--untracked-files=all"))
 }
 
 // TestCheckJudgesTheWorkingCopy plays the test writer through a prepared copy:
