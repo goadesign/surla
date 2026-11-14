@@ -316,8 +316,10 @@ func TestProtectReplacesHeldValuesInExportedText(t *testing.T) {
 // edges or whole extent cut held values: a cut at every offset of a key
 // shaped like a real one, a token and a base URL with a path credential,
 // with the cut value in the context; a text ending at every offset inside
-// one; values overlapping each other, the second unfinished; a value that
-// begins with its own end printed back to back across the excerpt; a value
+// one; values overlapping each other, the second unfinished; a value whose
+// copies overlap each other, which a search that resumes after each whole
+// match would leave half exported; a value that begins with its own end
+// printed back to back across the excerpt; a value
 // longer than the excerpt, finished and unfinished; an excerpt shorter than
 // a value; text that merely looks like a value's end, which stays whole;
 // and values at the edge of ExcerptContext. No byte of a held value is
@@ -363,6 +365,16 @@ func TestProtectExcerptReplacesEveryByteOfHeldValues(t *testing.T) {
 		assert.Equal(t, "x "+Redacted, ProtectExcerpt("x sentinel-chain-abcd-efgh-", 0, chained), "the second value is unfinished")
 		shared := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "sentinel-AAAA-shared", "OPENAI_CUSTOM_HEADERS": "shared-sentinelBBBB"})
 		assert.Equal(t, "x "+Redacted+" y", ProtectExcerpt("x sentinel-AAAA-shared-sentinelBBBB y", 0, shared))
+	})
+
+	t.Run("a value overlapping its own next copy", func(t *testing.T) {
+		// The second copy begins with the first copy's last "zq".
+		self := mustNew(t, "anthropic", map[string]string{"ANTHROPIC_API_KEY": "zq-sentinelSELF-zq"})
+		text := "log zq-sentinelSELF-zq-sentinelSELF-zq\n"
+		assert.Equal(t, "log "+Redacted+"\n", ProtectExcerpt(text, 0, self))
+		for c := len("log "); c < len(text)-1; c++ {
+			assert.Equal(t, Redacted+"\n", ProtectExcerpt(text, c, self), "excerpt from %d", c)
+		}
 	})
 
 	t.Run("a value beginning with its own end, back to back", func(t *testing.T) {
