@@ -81,7 +81,8 @@ to $50 get instant store credit; larger ones wait for a manager":
    `surla/tests`.
 7. **Code and verify.** Meanwhile the builder writes the code, builds and
    tests it, and commits. If the application calls a model, the builder can
-   try prompt wording on a *live target*, a running copy of the application
+   try prompt wording after Surla accepts the tests, using a *live target*:
+   a running copy of the application
    that the server starts from a commit. The builder then asks Surla to
    verify its commit. Surla builds that commit in its sandbox and runs the
    tests accepted for that exact revision against it. It refuses to verify
@@ -118,7 +119,7 @@ writer reports again after findings. Adopting a revised change gives it a new
 needs a build of that revision: before you adopt, the page says that the
 existing build stays on the earlier revision. Building again replaces the
 build and requires the tests to be reported, judged and accepted again before
-verification.
+verification or a new live target.
 
 Two limits hold. All agents run as you on one machine, so they are separated
 by job, not walled off from each other. The test writer's test program runs on
@@ -164,8 +165,8 @@ installed in `~/.local/bin`; an older Chorus is named with
 `chorus update -yes`. The reference says what each prerequisite is for under
 [Prerequisites](docs/REFERENCE.md#prerequisites).
 
-Surla itself calls no model, so it needs no model key; each coding agent
-uses its own sign-in. An application that calls a model needs a key only when
+Surla's design and generation steps need no model key; each coding agent
+uses its own sign-in. An application that calls a model needs a key when
 the builder tries prompts on a live target. Export the provider's key, such as
 `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, with any request settings it needs,
 in the shell where you run `surla`: `surla` hands them to the server, which
@@ -319,7 +320,8 @@ under test running in the sandbox too.
 Prompt wording and compiled business rules are kept apart. The builder names
 the confirmed change and a commit to start a live target. Without stored
 verification settings, the current build's accepted tests start that copy
-using the chosen model; they receive no provider settings. The builder sends new prompt wording to it with
+using the chosen model; they receive no provider settings. The builder sends
+new prompt wording to it with
 `draft_override`, without rebuilding Go code. A draft aimed at a compiled
 business rule changes nothing and says that the rule needs a rebuild and
 verification. A draft lasts as long as the live target: to

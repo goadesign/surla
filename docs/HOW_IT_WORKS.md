@@ -350,7 +350,7 @@ unread, so it reads it again.
 | Verdict on the page | What happened | Who acts |
 | --- | --- | --- |
 | Needs changes | Surla found problems. The page shows their number; **Read findings** shows their text. | The test writer reads them in its assignment, fixes them and reports again. |
-| Accepted | Surla committed exactly the checked files on `surla/tests`, with your Git identity and the message `Add the tests Surla accepted for change <id>, report <n>`. The build details show that commit. The builder's assignment is marked unread too. | The builder can verify. |
+| Accepted | Surla committed exactly the checked files on `surla/tests`, with your Git identity and the message `Add the tests Surla accepted for change <id>, report <n>`. The build details show that commit. The builder's assignment is marked unread too. | The builder can verify or start a live target with the chosen model. |
 | Could not run | The check stopped for a cause the test writer cannot fix, such as a time limit, Git trouble, a sandbox that could not start, or dependencies that cannot be downloaded where Surla runs. The page shows the reason and your step. | You take the step; it says whether the test writer then reports again or you build again. |
 
 An acceptance always carries the same sentence, which the page shows: "Surla
@@ -563,7 +563,7 @@ revision a build, a run or an approval belongs to.
 | You decline the proposed revision | Everything, exactly as it was. | Nothing. |
 | You adopt the proposed revision (answer its questions, then **Adopt this revision**) | Earlier runs stay readable for their revision. | The adopted revision has another `request_revision` and no approval. The build is marked **Earlier revision** and the builder's `verify_change` for the old revision is refused: build again. |
 | You change answers or examples of the agreed revision (**Refine Confirmed Answers & Examples**) | A submit with no change keeps everything. | A change gives another `request_revision`, drops the approval, and needs a build of that revision. |
-| You build the same revision again (**Build again…**, which asks first) | The agreed revision. | Both assignments become unread, the test writer's work returns to Assigned without report or verdict, and its tests must be reported, checked and accepted again before verification. |
+| You build the same revision again (**Build again…**, which asks first) | The agreed revision and any live target already running. | Both assignments become unread, the test writer's work returns to Assigned without report or verdict, and its tests must be reported, checked and accepted again before verification or a new live target. |
 | The test writer reports again | The build. | Its earlier verdict is cleared; Surla checks the report again. |
 | Surla says the tests branch and the project share no history | Commits you already merged. | Run `git worktree remove .surla-tests` and `git branch -D surla/tests` in the project folder, then build again. |
 
@@ -572,8 +572,9 @@ does to it, above **Adopt this revision** and, once you have edited an answer
 or an example, above **Refine Confirmed Answers & Examples**: the build stays
 on the earlier revision, and a build of the changed revision replaces both
 assignments and clears the test writer's report and verdict, so its tests
-must be reported, checked and accepted again before verification. With stored
-verification settings it says instead that a build of the changed revision
+must be reported, checked and accepted again before verification. The same
+acceptance is also required for a new live target; an existing one keeps
+running. With stored verification settings it says instead that a build of the changed revision
 updates the builder's assignment and that verification keeps using those
 settings.
 

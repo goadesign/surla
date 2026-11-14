@@ -1221,7 +1221,7 @@ provider's settings.
 | Refusal (all `409`) | When and the step |
 | --- | --- |
 | `no_build` | The user has not built the agreed revision, the build is of another revision (named), or the build was started without a test writer while verification settings were stored, and they have since been removed. The user builds again. |
-| `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next, and ends with the builder's own step, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again`. |
+| `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next, and ends with the builder's own step, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again`. |
 | `no_test_layout` | A commit lacks the layout, naming what is missing: the builder fixes its commit, or the test writer reports again for the tests commit. Also an accepted tests commit the repository does not hold (the test writer reports again, or the user builds again), and a project folder in no Git repository (make it one and commit). |
 | `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); or the project folder was replaced after the server started (stop and start Surla). |
 
@@ -1705,53 +1705,66 @@ the target declares the same method in its own Goa design and implements it:
   that does not render. The target renders before it saves, so a refused
   template leaves the text in use unchanged.
 - The server mints the key for each start. It reaches the program in
-  `SURLA_LIVE_TARGET_KEY`, and the program's `Live` function passes it to the
+  `SURLA_LIVE_TARGET_KEY`, and the program's live entry point passes it to the
   application through `candidate.Spec.Env`.
-- The model choice reaches the program as `SURLA_LIVE_MODEL_PROVIDER` and
-  `SURLA_LIVE_MODEL_NAME` for a direct provider, with that provider's
-  handed-over request settings in their own variables, such as
-  `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`, or as
-  `SURLA_LIVE_MODEL_GATEWAY`. Nothing is set when the choice is none.
-- A test module from the commit, which agents wrote, receives only `PATH`,
-  `TMPDIR`, `SURLA_LIVE_TARGET_KEY`, the model variables and the chosen
-  provider's request settings, no other provider's. An evaluator named in
-  stored verification settings receives the server's environment, which holds
-  no inherited `ANTHROPIC_` or `OPENAI_` variable, with these variables and
-  settings set. The target's build and preparation run without any provider
-  setting.
+- The test writer's accepted test program receives only `PATH`, `TMPDIR`,
+  `SURLA_LIVE_TARGET_KEY` and `SURLA_LIVE_MODEL_GATEWAY`. It receives no
+  provider setting or `SURLA_LIVE_MODEL_PROVIDER`/`SURLA_LIVE_MODEL_NAME`.
+  For a direct provider, the executor receives that provider's held settings
+  over standard input, applies them after preparation, constructs the
+  provider and serves a model gateway on `127.0.0.1:<port>`. For a chosen
+  gateway, its address passes through unchanged. The program uses
+  `LiveThroughGateway` in either case.
+- An evaluator named in stored verification settings keeps its existing
+  environment: the server's environment, without inherited `ANTHROPIC_` or
+  `OPENAI_` variables, plus the chosen provider's held settings and
+  `SURLA_LIVE_MODEL_PROVIDER`/`SURLA_LIVE_MODEL_NAME`, or
+  `SURLA_LIVE_MODEL_GATEWAY`. No model variable is set when no model is
+  chosen; the stored evaluator may supply its own model. This profile opens
+  no executor-owned gateway. Both profiles build and prepare without any
+  provider setting.
 - The target's `executor.log`, in its folder under `<cards>/live/`, is the
   program's own output: whatever it prints, a setting included, stays there
   until the folder is removed. Stopping the target removes the folder once its
   processes are gone; a folder left after a failed stop or a server crash is
   named at the next start and kept until you remove it. When a start fails,
-  the server exports the last 8 KiB of that log only to its diagnostics span.
-  It reads up to 16 KiB before that excerpt as well, finds every exact
-  occurrence of a key, token, custom-headers or base URL value the target was
-  given, overlapping ones and ones the excerpt's start cuts included, and the
-  end of the log when it stops partway through such a value. It exports each
+  the server exports a protected excerpt only to its diagnostics span, bounded
+  to 8 KiB **after** protection. It starts with the last 8 KiB of the raw log
+  and reads up to 16 KiB before that excerpt as well. It finds every exact
+  occurrence of a held API key, Anthropic auth token, custom-headers or base
+  URL value the target was given, including overlapping ones, ones the
+  excerpt's start cuts, and the end of the log when it stops partway through
+  such a value. It exports each
   run of those bytes that reaches the excerpt once, as `[redacted]`, or, when
   the run is exactly one occurrence of the base URL, as the URL's scheme and
   host (`[redacted]` when none can be read), and every other byte as printed,
   apart from what keeps the excerpt valid UTF-8, as the span exporter
   requires: a character the excerpt's start cuts, or one left unfinished at
   the end of the log, is left out, and any other invalid UTF-8 is exported as
-  U+FFFD. So, apart from a base URL's scheme and host, no byte of an exact
-  occurrence of a setting the target was given, or of one whose writing
-  stopped at the end of the log, is exported. The same value printed in
-  another form, such as quoted, escaped, or rewritten by a URL parser or an
+  U+FFFD. If replacement expands the excerpt beyond 8 KiB, it keeps only the
+  tail of the protected text, beginning at a UTF-8 character boundary. This
+  final bound applies to protected text, not the unprotected raw excerpt.
+  So, apart from a base URL's scheme and host, no byte of an exact
+  occurrence of those protected values, or of one whose writing stopped at
+  the end of the log, is exported. Organization and project identifiers stay
+  visible. The same protected value printed in another form, such as quoted,
+  escaped, or rewritten by a URL parser or an
   SDK, is not recognized and is exported as printed; a custom-headers value
   is recognized only as a whole, not header by header.
 - The starter's test module implements this contract: `override_prompt`
-  replaces `<name>.helper.system`, and its `Live` function serves a direct
-  provider through its own loopback model gateway so the key stays out of the
-  application. It passes a literal loopback gateway address, such as
-  `127.0.0.1:9090`, to the application directly, and reaches any other
-  gateway, including `localhost`, through a forwarder it owns, because the
+  replaces `<name>.helper.system`. As accepted written tests, its
+  `LiveThroughGateway` function uses the model gateway, keeping provider
+  settings out of the test program's and application's environments. Its
+  `Live` function still serves a direct provider when an operator stores that module as the
+  evaluator; that is the stored-evaluator profile above. It passes a literal
+  loopback gateway address, such as `127.0.0.1:9090`, to the application
+  directly, and reaches any other gateway, including `localhost`, through a
+  forwarder it owns, because the
   application's sandbox allows only loopback connections and resolves no
   names.
 - [`examples/orders`](../examples/orders/README.md) implements it in its
   `prompts` service and replaces `orders.refund.system`; its evaluator's
-  `Live` function uses a scripted model and needs no key.
+  `Live` function uses a scripted model and needs no provider key.
 
 Changing this contract breaks every target that implements it.
 

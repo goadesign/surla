@@ -60,7 +60,8 @@ can run against it.
   Without stored verification settings, a live target uses the tests Surla
   accepted for that build. Their `--live` mode starts `[[.Name]]` for that
   change, using the model chosen in the Live target view through Surla's model
-  gateway, without receiving provider settings. Its program,
+  gateway, without receiving provider settings. A changed model choice applies
+  to targets started afterwards; a running target keeps its model. Its program,
   `eval/gen/cmd/[[.Name]]-evals`, is generated with the rest of `eval/gen/`
   from `eval/design/` and calls `eval/acceptance`, the package you write: its
   `Name`, `Hooks`, `New`, `Live` and `LiveThroughGateway`. After changing
