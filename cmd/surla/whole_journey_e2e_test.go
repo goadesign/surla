@@ -13,10 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,8 +54,8 @@ type (
 		workspace string
 		// dir is the project folder, as the server stores it: symlink-free.
 		dir string
-		// projectCommit is the starter's commit, C1, where the build's working
-		// copy for the test writer starts.
+		// projectCommit is the starter's first commit, where the build's
+		// working copy for the test writer starts.
 		projectCommit string
 		// state is the project's private state, which the server owns.
 		state *project.State
@@ -72,13 +72,13 @@ type (
 		// names it.
 		testsFolder string
 		// proposed and confirmed are the change's revisions before and after the
-		// user confirmed it, R0 and R1.
+		// user confirmed it; confirmed is the agreed revision the build is for.
 		proposed, confirmed string
 		// testsCommit is the commit Surla recorded the test writer's first
-		// accepted tests at, T1.
+		// accepted tests at.
 		testsCommit string
-		// passed is the verification run of the builder's commit against T1,
-		// as it finished with its passed report.
+		// passed is the verification run of the builder's commit against the
+		// tests at testsCommit, as it finished with its passed report.
 		passed *gensurla.VerificationStatusResult
 	}
 
@@ -156,12 +156,19 @@ func (h *Hooks) PricesScone(ctx context.Context) (eval.Result, error) {
 	// prices scones.
 	journeyCookiePrice = `	"cookie": 125,
 `
-	// journeyStepWait bounds one step's server-owned work: a Story evaluation
-	// or a build start (5 minutes each in the control plane), the team's
-	// 45-second window phase, or one check of the test writer's report, whose
-	// sandboxed build and listing have their own 10-minute and 60-second
-	// limits but take seconds here.
+	// journeyStepWait bounds a Story evaluation or a build start. The control
+	// plane gives each 5 minutes of its own work (the build start's copy and
+	// generation), and a build start then 45 seconds for the team's window
+	// phase; one more minute lets the server report its own limit first.
 	journeyStepWait = 6 * time.Minute
+	// journeyCheckWait bounds one check of the test writer's report, from the
+	// report to the verdict. The control plane gives the whole check 15
+	// minutes (checkLimit in internal/controlplane), within which its
+	// sandboxed build has 10 minutes and its listing 60 seconds, and reaches
+	// could_not_run itself at that limit; one more minute lets that verdict
+	// arrive before this wait ends. The verification run's wait is
+	// journeyOwnerWait, the server's own run limit plus its stop path.
+	journeyCheckWait = 16 * time.Minute
 	// journeyWrittenTestsNotice is the fixed notice every run of written tests,
 	// and every approval of one, carries.
 	journeyWrittenTestsNotice = "These tests were written by a separate agent on this machine " +
@@ -239,8 +246,11 @@ func (d credentialDoer) Do(r *http.Request) (*http.Response, error) {
 	return d.client.Do(r)
 }
 
-// newWholeJourney isolates the journey from the user's configuration, Git
-// identity, model keys and trace export, and moves into an empty workspace.
+// newWholeJourney isolates the journey from the user's Surla configuration,
+// the Git identity of the commits the test and the server make, model keys,
+// trace export and the caller's Herdr terminal, and moves into an empty
+// workspace. The product's own read-only git calls still read the user's Git
+// configuration, as they do for every user.
 func newWholeJourney(t *testing.T) *wholeJourney {
 	t.Helper()
 	workspace := isolateServeWorkspace(t)
@@ -254,6 +264,9 @@ func newWholeJourney(t *testing.T) *wholeJourney {
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY",
 		verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv,
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		// The in-process server would otherwise record the caller's own Herdr
+		// terminal in the project's running record.
+		"HC_TERMINAL_ID",
 	} {
 		t.Setenv(name, "")
 	}
@@ -282,7 +295,8 @@ func journeyRefusal(t *testing.T, ctx context.Context, client *genmcpsurla.Clien
 	require.NoError(t, err)
 	complete, ok := result.Outcome.AsComplete()
 	require.True(t, ok, "%s completes in the same call", name)
-	require.True(t, complete.IsError != nil && *complete.IsError, "%s must be refused", name)
+	require.True(t, complete.IsError != nil && *complete.IsError,
+		"%s must be refused; it returned %s", name, complete.StructuredContent)
 	return toolErrorText(complete.Content)
 }
 
@@ -337,18 +351,39 @@ func replaceOnce(t *testing.T, path, old, replacement string) {
 }
 
 // commitStarter creates the starter with surla init, which ships its Story,
-// and makes the project's first commit of every file, as the commands surla
-// init prints do.
+// and runs, in a POSIX shell from the workspace, exactly the commands surla
+// init prints to make the first commit: its first block of indented lines,
+// up to the closing surla, which starts the project's server and which the
+// next leg replaces with the in-process server. Those commands must commit
+// every file the starter has, or every user's first commit leaves one out.
 func (j *wholeJourney) commitStarter(t *testing.T) {
 	dir := filepath.Join(j.workspace, "shop")
+	var printed strings.Builder
 	require.NoError(t, runInit([]string{
 		"-dir", dir, "-module", "example.com/shop", "-surla-version", starterSurlaVersion,
-	}, io.Discard))
-	runTestGit(t, dir, "init", "-q")
-	commit := gitCommitAll(t, dir, "Start shop")
+	}, &printed))
+	var commands []string
+	for _, line := range strings.Split(printed.String(), "\n") {
+		command, indented := strings.CutPrefix(line, "  ")
+		if !indented && len(commands) > 0 {
+			break
+		}
+		if indented {
+			commands = append(commands, command)
+		}
+	}
+	require.NotEmpty(t, commands, "surla init prints the first commit's commands:\n%s", printed.String())
+	require.Equal(t, "surla", commands[len(commands)-1], "the commands end by starting Surla")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	shell := exec.CommandContext(ctx, "/bin/sh", "-c", strings.Join(commands[:len(commands)-1], " && "))
+	shell.Dir = j.workspace
+	out, err := shell.CombinedOutput()
+	require.NoError(t, err, "the printed commands %q: %s", commands, out)
+	commit := strings.TrimSpace(runTestGit(t, dir, "rev-parse", "HEAD"))
 	assert.Regexp(t, "^[0-9a-f]{40}$", commit)
 	assert.Empty(t, runTestGit(t, dir, "status", "--porcelain", "--untracked-files=all"),
-		"the commit holds every file")
+		"the printed commands commit every file the starter has")
 	physical, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
 	j.dir, j.projectCommit = physical, commit
@@ -605,7 +640,7 @@ func (j *wholeJourney) refuseUnacceptedVerification(t *testing.T) {
 // has, only the test writer and the user read their text, and the tests
 // branch stays where the build started it.
 func (j *wholeJourney) sendBackOutsideChange(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	ctx, cancel := context.WithTimeout(t.Context(), journeyCheckWait)
 	defer cancel()
 	readme := filepath.Join(j.testsFolder, "README.md")
 	raw, err := os.ReadFile(readme)
@@ -655,7 +690,7 @@ func (j *wholeJourney) sendBackOutsideChange(t *testing.T) {
 // report back with the compiler's finding naming it, for the test writer and
 // the user; the tests branch stays where the build started it.
 func (j *wholeJourney) sendBackMissingHook(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	ctx, cancel := context.WithTimeout(t.Context(), journeyCheckWait)
 	defer cancel()
 	runTestGit(t, j.testsFolder, "checkout", "--", "README.md")
 
@@ -679,7 +714,7 @@ func (j *wholeJourney) sendBackMissingHook(t *testing.T) {
 // report again. Surla accepts the tests and records them on the tests branch,
 // and the builder's assignment, unread again, names that commit.
 func (j *wholeJourney) acceptTests(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	ctx, cancel := context.WithTimeout(t.Context(), journeyCheckWait)
 	defer cancel()
 	replaceOnce(t, filepath.Join(j.testsFolder, "eval", "acceptance", "acceptance.go"),
 		journeyCookieHook, journeyCookieHook+journeySconeHook)
@@ -688,6 +723,7 @@ func (j *wholeJourney) acceptTests(t *testing.T) {
 	accepted, ok := build.TestWriter.Tests.AsAccepted()
 	require.True(t, ok, "the tests are accepted: %s", build.TestWriter.Tests.Kind())
 	require.Regexp(t, "^[0-9a-f]{40}$", accepted.Commit)
+	assert.NotEqual(t, j.projectCommit, accepted.Commit, "the accepted tests are a new commit")
 	assert.Equal(t, accepted.Commit, j.testsBranch(t), "the accepted commit is the tests branch's tip")
 	assignment := j.readTestWriterAssignment(t, ctx)
 	assert.Equal(t, build.TestWriter.Tests, assignment.Progress.Tests)
@@ -713,7 +749,7 @@ func (j *wholeJourney) acceptTests(t *testing.T) {
 // not allow is refused, and the builder and the user's page see it as the
 // change's latest verification, passed, with current inputs.
 func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	ctx, cancel := context.WithTimeout(t.Context(), journeyOwnerWait)
 	defer cancel()
 	replaceOnce(t, filepath.Join(j.dir, "internal", "service", "service.go"),
 		journeyCookiePrice, journeyCookiePrice+"\t\"scone\":  275,\n")
@@ -831,7 +867,7 @@ func (j *wholeJourney) approvePassedRun(t *testing.T) {
 // longer shows the approval of the earlier tests, and approving that run
 // again is refused with the builder's step.
 func (j *wholeJourney) acceptLaterTests(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	ctx, cancel := context.WithTimeout(t.Context(), journeyCheckWait)
 	defer cancel()
 	replaceOnce(t, filepath.Join(j.testsFolder, "eval", "acceptance", "acceptance.go"),
 		"// PricesScone is the test the Story's finished flow prices-scone requires.\n",
