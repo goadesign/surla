@@ -241,6 +241,142 @@ page.close();
 `)
 }
 
+// TestViewsPageWaitOutageDisablesRenderedApprovalUntilSameVersionRecovers
+// exercises recovery without a changed owner version or another navigation.
+// Retained evidence cannot keep an already rendered approval control usable
+// while the update channel cannot establish that the page is current.
+func TestViewsPageWaitOutageDisablesRenderedApprovalUntilSameVersionRecovers(t *testing.T) {
+	cp, card, runsDir := selectedInputsFixture(t)
+	runID := strings.Repeat("1", 32)
+	writeListedRun(t, runsDir, pageOwner, card, runID,
+		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), true)
+	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, map[string]any{"run": runID}, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-build-review-check")?.classList.contains("shadcn-btn-primary") && !page.$("#surla-build-review-check").disabled, "the saved passing check did not load");
+page.$("#surla-build-review-check").click();
+await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.$("#surla-cp5-approve") && !page.$("#surla-cp5-approve").disabled, "the initial approval did not settle");
+const approve = page.$("#surla-cp5-approve");
+const verdict = page.text("#surla-cp4-title");
+const details = page.text("#surla-cp4-details");
+const lists = page.sent("GET", "/changes").length;
+const version = JSON.parse(page.sent("GET", "/changes").findLast((r) => r.status === 200).answer).version;
+const waits = page.sent("GET", "/change-updates").length;
+await control(origin, "reply", { key: "GET /change-updates", status: 503, body: { name: "internal", message: "The update channel is temporarily unavailable." } });
+await until(() => page.sent("GET", "/change-updates").some((r) => r.status === 503) && page.status().includes("Lost contact with the Surla server"), "the wait outage was not announced");
+expect(page.$("#surla-cp5-approve") === approve && approve.disabled && page.text("#surla-cp4-inputs").includes("not known"), "the outage left the already rendered approval usable");
+expect(page.text("#surla-cp4-title") === verdict && page.text("#surla-cp4-details") === details, "the outage discarded saved evidence");
+approve.click();
+expect(page.sent("POST", "/changes/approve").length === 0, "the unavailable update channel allowed approval submission");
+await until(() => page.status() === "This page is up to date with the Surla server again." && !approve.disabled && page.text("#surla-cp4-inputs").includes("matches the agreed revision"), "same-version wait recovery did not restore rendered approval", 15000);
+expect(page.sent("GET", "/changes").length === lists, "the recovery depended on a changed version or another list read");
+expect(page.sent("GET", "/change-updates").slice(waits).some((r) => r.status === 200 && JSON.parse(r.answer).version === version), "recovery did not observe the unchanged owner version");
+expect(page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title") === verdict, "wait recovery changed the selected evidence");
+page.close();
+`)
+}
+
+// TestViewsPageBackgroundCardReadRequiresRecoveryBeforeApproval keeps a
+// terminal report and unsaved draft through a pending and failed background
+// card refresh. Retrying the card must perform a successful owner read before
+// the retained result becomes approvable again.
+func TestViewsPageBackgroundCardReadRequiresRecoveryBeforeApproval(t *testing.T) {
+	cp, card, runsDir := selectedInputsFixture(t)
+	runID := strings.Repeat("1", 32)
+	writeListedRun(t, runsDir, pageOwner, card, runID,
+		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), true)
+	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
+	ps := startPageServer(t, cp)
+	ps.act("builder-reads-assignment", func() {
+		_, err := cp.GetBuilderAssignment(asCaller(pageOwner, CallerBuilder),
+			&gensurla.GetBuilderAssignmentPayload{ChangeID: card.ChangeID})
+		require.NoError(t, err)
+	})
+	runPageScript(t, ps, map[string]any{"run": runID}, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-build-review-check")?.classList.contains("shadcn-btn-primary") && !page.$("#surla-build-review-check").disabled, "the saved passing check did not load");
+page.$("#surla-refine-agreement").open = true;
+const draft = page.$('textarea[data-field="expected_outcome"]');
+page.type(draft, "Preserve this draft through the card read");
+page.$("#surla-build-review-check").click();
+await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.$("#surla-cp5-approve") && !page.$("#surla-cp5-approve").disabled, "the selected passing proof did not settle");
+const approve = page.$("#surla-cp5-approve");
+const verdict = page.text("#surla-cp4-title");
+const details = page.text("#surla-cp4-details");
+const preserved = () => page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title") === verdict && page.text("#surla-cp4-details") === details && page.$('textarea[data-field="expected_outcome"]') === draft && draft.value === "Preserve this draft through the card read";
+const cardPath = "/changes/chg-selected-inputs";
+const buildPath = cardPath + "/build";
+const runPath = "/verifications/" + input.run;
+const before = page.sent("GET", cardPath).length;
+await control(origin, "reply", { key: "GET " + cardPath, status: 503, body: { name: "internal", message: "The saved card could not be refreshed." } });
+await control(origin, "hold", { key: "GET " + cardPath });
+await control(origin, "act", { key: "builder-reads-assignment" });
+await until(() => page.sent("GET", cardPath).length > before && page.sent("GET", buildPath).every((r) => r.status === 200) && page.sent("GET", runPath).every((r) => r.status === 200) && page.$("#surla-build-builder").textContent.includes("Assignment read"), "the changed build did not reach the page with its card refresh held");
+const held = page.sent("GET", cardPath)[before];
+expect(held.status === undefined && approve.disabled && page.text("#surla-cp4-inputs").includes("not known"), "an outstanding background card read left the rendered approval usable");
+expect(preserved(), "the pending card read discarded the report or draft");
+approve.click();
+expect(page.sent("POST", "/changes/approve").length === 0, "a pending card refresh submitted approval");
+await control(origin, "release", { key: "GET " + cardPath });
+await until(() => held.status === 503 && page.$("#surla-cp4-card-error") && page.$("#surla-cp4-retry-card") && !page.$("#surla-cp4-retry-card").disabled, "the failed background card read exposed no user recovery");
+expect(page.text("#surla-cp4-card-error").includes("The saved card could not be refreshed.") && approve.disabled && preserved(), "the failed card read hid its failure, enabled approval or discarded work");
+approve.click();
+expect(page.sent("POST", "/changes/approve").length === 0, "a failed background card refresh submitted approval");
+await control(origin, "hold", { key: "GET " + cardPath });
+const retries = page.sent("GET", cardPath).length;
+page.$("#surla-cp4-retry-card").click();
+await until(() => page.sent("GET", cardPath).length > retries && page.$("#surla-cp4-retry-card").disabled, "retry did not issue a new card read");
+expect(approve.disabled && preserved(), "requesting recovery cleared the card-read failure before its owner answered");
+await control(origin, "release", { key: "GET " + cardPath });
+await until(() => page.sent("GET", cardPath).slice(retries).some((r) => r.status === 200) && !page.$("#surla-cp4-card-error") && !approve.disabled, "a successful card retry did not restore current-input approval");
+expect(preserved(), "card recovery replaced the saved report or unsaved draft");
+expect(page.sent("POST", "/changes/approve").length === 0 && page.sent("POST", "/changes/confirm").length === 0, "card recovery submitted approval or draft edits");
+page.close();
+`)
+}
+
+// TestViewsPageBuildRetryInvalidatesProofBeforeTheVersionNotification makes
+// an explicit build read discover changed tests before the held wait channel
+// can announce them. A cached positive run observation cannot survive that
+// independently obtained build fact.
+func TestViewsPageBuildRetryInvalidatesProofBeforeTheVersionNotification(t *testing.T) {
+	cp, card, runsDir := selectedInputsFixture(t)
+	runID := strings.Repeat("1", 32)
+	writeListedRun(t, runsDir, pageOwner, card, runID,
+		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), true)
+	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
+	ps := startPageServer(t, cp)
+	selectedInputsActions(t, ps, cp, card.ChangeID)
+	runPageScript(t, ps, map[string]any{"run": runID}, `
+const cardPath = "/changes/chg-selected-inputs";
+const buildPath = cardPath + "/build";
+const runPath = "/verifications/" + input.run;
+// Install both controls before opening the page: there is no earlier wait
+// request that can deliver the changed version around the test's gate.
+await control(origin, "hold", { key: "GET /change-updates" });
+await control(origin, "reply", { key: "GET " + buildPath, status: 503, body: { name: "internal", message: "Retry the saved build read." } });
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-build-refresh") && !page.$("#surla-build-refresh").disabled && page.sent("GET", runPath).some((r) => r.status === 200 && JSON.parse(r.answer).inputs_current === true), "the initial failed build read did not retain the positive T1 owner observation");
+page.$("#surla-refine-agreement").open = true;
+page.type(page.$('textarea[data-field="expected_outcome"]'), "Keep the editor beside saved proof");
+page.$("#surla-nav-cp4").click();
+await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.$("#surla-cp5-approve") && page.$("#surla-cp5-approve").disabled && !page.$("#surla-load-verifications").disabled, "the failed build's saved proof did not load");
+const verdict = page.text("#surla-cp4-title");
+const lists = page.sent("GET", "/changes").length;
+const before = page.requests.length;
+await control(origin, "act", { key: "accept-t2" });
+page.$("#surla-build-refresh").click();
+await until(() => !page.$("#surla-build-error") && page.sent("GET", buildPath).some((r) => r.status === 200 && JSON.parse(r.answer).build.test_writer.tests.commit === "3333333333333333333333333333333333333333"), "the explicit retry did not discover accepted T2");
+await until(() => page.requests.slice(before).some((r) => r.path === runPath && r.status === 200 && JSON.parse(r.answer).inputs_current === false) && page.text("#surla-cp4-inputs").includes("does not match"), "discovering T2 through Build did not replace the positive T1 run observation");
+expect(page.sent("GET", "/changes").length === lists && page.sent("GET", "/change-updates").every((r) => r.status === undefined), "the test received a version notification before the explicit retry established freshness");
+expect(page.$("#surla-cp5-approve").disabled && page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title") === verdict, "Build recovery enabled stale proof or replaced the selected report");
+page.$("#surla-cp5-approve").click();
+expect(page.sent("POST", "/changes/approve").length === 0 && page.sent("POST", buildPath).length === 0, "the independent build read submitted approval or started a build");
+page.close();
+`)
+}
+
 // ListVerifications preserves the actual owner result and captures only the
 // armed answer. The HTTP answer-later gate controls its later delivery.
 func (s *selectedInputsListRead) ListVerifications(
