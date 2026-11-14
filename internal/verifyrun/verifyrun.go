@@ -218,8 +218,10 @@ func NewRunID() string {
 // program may use; they pass to the executor only through the environment,
 // never an argument or request.json, so the run keeps this snapshot whatever
 // its caller holds later. The supervisor, which starts nothing but the
-// executor, thus holds the snapshot in its environment for the run's life,
-// as the executor does until it hands it to the test program alone. The run directory must not exist,
+// executor, thus holds the snapshot in its environment for the run's life.
+// So does the executor: it removes the families from its own process at
+// entry, so only the test program receives them, but its initial
+// environment block, which same-user processes can read, keeps them. The run directory must not exist,
 // req.Plan.WorkDir must name the run's work directory, and req.Plan.Tests
 // must name one of the declared test sources.
 func Start(root string, req Request, command []string, settings []modelsettings.Settings) (int, error) {
