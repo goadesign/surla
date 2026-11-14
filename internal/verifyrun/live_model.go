@@ -1,4 +1,4 @@
-// This file owns a written-test live target's private model gateway. It runs
+// This file owns a written-test live target's executor-owned loopback model gateway. It runs
 // only in the disposable executor process, never in the project server.
 package verifyrun
 
