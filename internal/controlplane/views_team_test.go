@@ -58,6 +58,27 @@ page.close();
 `)
 }
 
+// TestViewsPageTeamNamesUnreadAssignmentStep shows, above every view, the
+// user's step for a role that needs them because it has waited with an unread
+// assignment, with that role's Show pane as the primary action.
+func TestViewsPageTeamNamesUnreadAssignmentStep(t *testing.T) {
+	snapshot := pageTeamSnapshot("needs_you")
+	snapshot.Roles[1].Attention = "assignment"
+	f := &teamServiceFixture{snapshot: snapshot}
+	cp := pageControlPlane(t, Options{Team: &TeamBinding{Owner: pageOwner, Service: f}})
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-team-attention-builder"), "builder attention is missing outside Team");
+expect(page.text("#surla-team-attention-builder").includes("Builder needs you: idle with an unread assignment. Show its pane and tell it to read its assignments and to keep its Chorus watcher running."), "the user's step is missing: " + page.text("#surla-team-attention-builder"));
+const show = page.$("#surla-team-attention-show-pane-builder");
+expect(show !== null && show.textContent === "Show builder pane", "Show pane is missing");
+expect(show.classList.contains("surla-btn-primary"), "Show pane is not the primary action");
+expect(page.$("#surla-team-attention-test_writer") === null, "a role that does not need the user is listed");
+page.close();
+`)
+}
+
 // TestViewsPageTeamStartsExplicitlyAndRetainsFailedFacts checks an explicit
 // start receipt and a failed read without replacing known facts with emptiness.
 func TestViewsPageTeamStartsExplicitlyAndRetainsFailedFacts(t *testing.T) {

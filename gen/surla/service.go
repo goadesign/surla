@@ -1599,7 +1599,9 @@ type TeamRoleState struct {
 	Handle string
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State string
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention string
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -5529,7 +5531,9 @@ type jsonTeamRoleStateTransport struct {
 	Handle *string `json:"handle"`
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State *string `json:"state"`
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention *string `json:"attention"`
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -5574,8 +5578,8 @@ func validatejsonTeamRoleStateTransport(value *jsonTeamRoleStateTransport) (err 
 		}
 	}
 	if value.Attention != nil {
-		if !(*value.Attention == "none" || *value.Attention == "permission" || *value.Attention == "question" || *value.Attention == "auth" || *value.Attention == "silent" || *value.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *value.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*value.Attention == "none" || *value.Attention == "permission" || *value.Attention == "question" || *value.Attention == "auth" || *value.Attention == "silent" || *value.Attention == "assignment" || *value.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *value.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if value.Watcher != nil {
@@ -8048,8 +8052,8 @@ func validateTeamRoleStateOriginal(value *TeamRoleState) (err error) {
 	if !(value.State == "not_started" || value.State == "ended" || value.State == "starting" || value.State == "needs_you" || value.State == "working" || value.State == "waiting" || value.State == "error" || value.State == "unknown") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.state", value.State, []any{"not_started", "ended", "starting", "needs_you", "working", "waiting", "error", "unknown"}))
 	}
-	if !(value.Attention == "none" || value.Attention == "permission" || value.Attention == "question" || value.Attention == "auth" || value.Attention == "silent" || value.Attention == "unknown") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.attention", value.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+	if !(value.Attention == "none" || value.Attention == "permission" || value.Attention == "question" || value.Attention == "auth" || value.Attention == "silent" || value.Attention == "assignment" || value.Attention == "unknown") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.attention", value.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 	}
 	if !(value.Watcher == "held" || value.Watcher == "gone" || value.Watcher == "unknown") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.watcher", value.Watcher, []any{"held", "gone", "unknown"}))
@@ -32049,7 +32053,7 @@ func validateTeamRoleStateJSONValue(path string, value any, description string) 
 		case "attention":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Reported block kind or the reason a silent running agent needs the user.",
+				typed[key], "Reported block kind, or why a running agent needs the user: silent when it reports nothing for 60 seconds, assignment when it has waited with an unread assignment for 90 seconds.",
 			); err != nil {
 				return err
 			}

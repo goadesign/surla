@@ -290,41 +290,6 @@ func readTeamWatcherPrefix(reader io.Reader, team string, roles []project.TeamRo
 	return held, nil
 }
 
-// Send implements the recorded adapter contract. It is intentionally not bound
-// by projectTeamDependencies until an agent receiver proves exact untagged text.
-// Remove that unbound composition when the receiver proof is accepted.
-func (c teamCommands) Send(ctx context.Context, reminder project.TeamReminder) (string, error) {
-	args := []string{"send", reminder.Terminal, reminder.Text, "--json"}
-	if reminder.Condition != "" {
-		args = append(args, "--if", reminder.Condition)
-	}
-	var result struct{}
-	err := c.json(ctx, c.core, &result, args...)
-	if err == nil {
-		return "sent", nil
-	}
-	var exit interface{ ExitCode() int }
-	if errors.As(err, &exit) {
-		switch exit.ExitCode() {
-		case 9:
-			return "blocked", nil
-		case 10:
-			return "status_changed", nil
-		case 11:
-			return "finished", nil
-		}
-	}
-	return "unavailable", errors.New("Herdr reminder delivery is unavailable")
-}
-
-// unboundTeamSender truthfully refuses the unproven production delivery binding.
-type unboundTeamSender struct{}
-
-// Send never invokes Herdr or changes terminal settings.
-func (unboundTeamSender) Send(context.Context, project.TeamReminder) (string, error) {
-	return "unavailable", nil
-}
-
 // teamCommandExit preserves only a bounded exit code, never stderr or arguments.
 type teamCommandExit struct{ code int }
 

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	goa "goa.design/goa/v3/pkg"
@@ -91,6 +92,16 @@ type (
 		// missing says what the commit lacks, for refusedNoLayout.
 		missing string
 	}
+
+	// testsNotAccepted is testsChoice's refusal of a build whose tests are not
+	// accepted. It carries the test writer's saved assignment, not text: the
+	// builder refused by verify_change and the user refused by approve_merge
+	// each read the refusal worded for them, so each caller that returns it
+	// turns it into refuseTestsNotAccepted or refuseApprovalTestsNotAccepted.
+	testsNotAccepted struct {
+		// saved is the test writer's assignment whose state is not accepted.
+		saved testWriterAssignment
+	}
 )
 
 const (
@@ -118,6 +129,12 @@ const (
 	refusedNoLayout
 )
 
+// testsNotAcceptedBuilderStep is the one step a builder refused with
+// tests_not_accepted can take in every state. Only an acceptance makes the
+// builder's assignment unread, so the project server's Chorus reminder reaches
+// the builder exactly then.
+const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"
+
 // Error says what is refused, why and who acts.
 func (r *layoutRefusal) Error() string {
 	switch r.reason {
@@ -138,6 +155,12 @@ func (r *layoutRefusal) Error() string {
 		step = "the test writer reports again, so Surla checks and records its tests again"
 	}
 	return fmt.Sprintf("commit %s does not have the test layout surla init makes (%s): %s", r.commit, r.missing, step)
+}
+
+// Error says only what is refused; each caller words the state and the step
+// for its own reader.
+func (r testsNotAccepted) Error() string {
+	return "the tests of this build are not accepted"
 }
 
 // verificationPlan returns the configuration of a verification run of
@@ -167,6 +190,11 @@ func (c *ControlPlane) verificationPlan(
 	c.mu.RLock()
 	testsCommit, _, err := c.testsChoice(principal, changeID, revision)
 	c.mu.RUnlock()
+	var notAccepted testsNotAccepted
+	if errors.As(err, &notAccepted) {
+		// verify_change's caller is the builder, so it reads the builder's step.
+		return VerificationConfig{}, refuseTestsNotAccepted(notAccepted.saved)
+	}
 	if err != nil {
 		return VerificationConfig{}, err
 	}
@@ -207,7 +235,10 @@ func (c *ControlPlane) verificationPlan(
 //   - With written-test runs, the change's build (read through ownedBuild, so
 //     an unusable build is no build) must be at revision and its tests must be
 //     accepted; it returns that accepted commit and verify.TestsWritten, or
-//     refuses with no_build or tests_not_accepted.
+//     refuses with no_build, or returns testsNotAccepted. verificationPlan
+//     and ApproveMerge word that refusal for their readers; ApproveMerge's
+//     second check under the lock and the saved approval's read only test
+//     for an error.
 //   - Without verification configured, it refuses with not_implemented.
 func (c *ControlPlane) testsChoice(
 	principal Principal,
@@ -231,7 +262,7 @@ func (c *ControlPlane) testsChoice(
 			return "", "", refuseNoBuild(changeID, revision, build, true)
 		}
 		if build.TestWriter.State != testsAccepted {
-			return "", "", refuseTestsNotAccepted(build.TestWriter)
+			return "", "", testsNotAccepted{saved: build.TestWriter}
 		}
 		return build.TestWriter.Commit, verify.TestsWritten, nil
 	default:
@@ -423,10 +454,32 @@ func refuseNoBuild(changeID, revision string, build buildFile, found bool) error
 		changeID, build.RequestRevision, revision, revision))
 }
 
-// refuseTestsNotAccepted is testsChoice's tests_not_accepted refusal of a
-// build whose tests are not accepted: it names the test writer's state in the
-// state's own words, then who acts, and ends with the step.
+// refuseTestsNotAccepted is verify_change's tests_not_accepted refusal of a
+// build whose tests are not accepted, worded for the builder who calls
+// verify_change: it names the test writer's state in the state's own words,
+// then who acts, and ends with the builder's step.
 func refuseTestsNotAccepted(saved testWriterAssignment) error {
+	var state, who string
+	switch saved.State {
+	case testsAssigned:
+		state, who = "assigned", "the test writer writes the required tests and reports them finished"
+	case testsReported:
+		state, who = "reported", "Surla is checking the test writer's report"
+	case testsNeedChanges:
+		state, who = "needs changes", "the test writer fixes Surla's findings and reports again"
+	case testsCouldNotRun:
+		// The saved step is a sentence; its full stop would end the refusal early.
+		state, who = "could not run", "Surla's check could not run ("+saved.Reason+"); the user's step: "+strings.TrimSuffix(saved.Step, ".")
+	}
+	return gensurla.MakeTestsNotAccepted(fmt.Errorf("the tests of this build are not accepted; their state is %s: %s; your step: %s", state, who, testsNotAcceptedBuilderStep))
+}
+
+// refuseApprovalTestsNotAccepted is approve_merge's tests_not_accepted refusal
+// of a build whose tests are not accepted, worded for the user who reads it on
+// the views page: it names the test writer's state in the state's own words,
+// then who acts, and ends with the step, naming the builder rather than
+// instructing it.
+func refuseApprovalTestsNotAccepted(saved testWriterAssignment) error {
 	var state, step string
 	switch saved.State {
 	case testsAssigned:

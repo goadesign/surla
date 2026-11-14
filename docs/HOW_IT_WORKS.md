@@ -516,6 +516,13 @@ per role that waits for you, for example "Builder needs you: permission",
 with a **Show builder pane** action that brings that pane forward. You answer
 in the pane.
 
+When the builder or the test writer has an assignment it has not read, the
+server sends that agent one fixed Chorus direct message asking it to read its
+assignments; nothing is typed into its pane. An agent that stays idle with the
+assignment unread for 90 seconds needs you too, for example "Builder needs
+you: idle with an unread assignment. Show its pane and tell it to read its
+assignments and to keep its Chorus watcher running."
+
 The Team view shows each role's pane state (Not started, Starting, Working,
 Waiting, Needs you, Ended, Error or Status unknown), whether its Chorus
 watcher is held, and whether it owes an assignment read. **Start agents**

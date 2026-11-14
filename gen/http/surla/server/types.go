@@ -3867,7 +3867,9 @@ type TeamRoleStateResponseBody struct {
 	Handle string `form:"handle" json:"handle" xml:"handle"`
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State string `form:"state" json:"state" xml:"state"`
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention string `form:"attention" json:"attention" xml:"attention"`
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
