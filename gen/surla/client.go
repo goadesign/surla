@@ -599,7 +599,7 @@ func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (
 //   - "copy_folder_in_use" (type *goa.ServiceError): The test-writer copy's named folder is occupied; nothing was saved. The message ends with the step to free that folder and build again.
 //   - "tests_branch_in_use" (type *goa.ServiceError): The named tests branch is held by another working copy; nothing was saved. The message ends with the library's step to free that branch and build again.
 //   - "working_copy_busy" (type *goa.ServiceError): Another build is starting or a test check holds the project's working-copy turn; nothing was saved. Start the build again when that has ended.
-//   - "sandbox_unavailable" (type *goa.ServiceError): This system has no candidate sandbox; nothing was saved. Start this project on a system with Surla's candidate sandbox, then build again.
+//   - "sandbox_unavailable" (type *goa.ServiceError): This system has no candidate sandbox; nothing was saved. When the host reports a specific sandbox prerequisite failure, the message includes its cause and remedy before: Start this project on a system with Surla's candidate sandbox, then build again.
 //   - "not_implemented" (type *goa.ServiceError): Start this project with surla to bind the team; nothing was saved.
 //   - "unavailable" (type *goa.ServiceError): The server is stopping or the start's time limit ended before saving; call again on a running server. Nothing was saved.
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.

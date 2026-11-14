@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -79,6 +78,43 @@ type (
 		waitErr error
 	}
 
+	// BuildSpec describes one sandboxed compile of candidate source.
+	BuildSpec struct {
+		// SourceDir is the declared source tree the build may read, such as the
+		// candidate module or a whole checkout whose modules replace each other.
+		// Besides SourceDir, the build can read only GOROOT, ModCache, WorkDir,
+		// the output directory and system libraries; a symbolic link or local
+		// replace directive that resolves anywhere else is denied.
+		SourceDir string
+		// ModuleDir is the directory of the module being built. It must resolve
+		// inside SourceDir.
+		ModuleDir string
+		// Package is the package to build, relative to ModuleDir, such as
+		// "./cmd/orders".
+		Package string
+		// Out is the output binary path; its directory is writable.
+		Out string
+		// GOROOT is the resolved Go toolchain root the build runs with. Its bin
+		// and tool binaries are the only programs the build may execute.
+		GOROOT string
+		// ModCache is the already populated module cache, read-only.
+		ModCache string
+		// WorkDir is a private writable directory for TMPDIR and GOCACHE.
+		WorkDir string
+		// LogFile receives the build's output; it must lie outside ModuleDir.
+		LogFile string
+	}
+
+	// resolvedBuild is a BuildSpec whose directories resolveBuild has resolved to
+	// symlink-free paths, with Out inside outDir. Only resolveBuild creates one.
+	resolvedBuild struct {
+		// spec holds the resolved paths; spec.Out is the absolute output file.
+		spec BuildSpec
+		// outDir is the resolved output directory, the only place besides
+		// spec.WorkDir that the build may write.
+		outDir string
+	}
+
 	// limitedBuffer keeps a candidate's standard output for Output, up to a
 	// fixed size. Only the copy into it writes; Output reads it after the
 	// process and that copy have finished.
@@ -92,32 +128,24 @@ type (
 	}
 )
 
-// sandboxExec is the macOS sandbox launcher. It applies the profile and then
-// executes the candidate in place, so the candidate keeps the started PID.
-const sandboxExec = "/usr/bin/sandbox-exec"
+var (
+	// ErrIsolationUnavailable reports that this platform cannot enforce the
+	// candidate sandbox, so the candidate must not run.
+	ErrIsolationUnavailable = errors.New("candidate isolation is unavailable on this platform")
 
-// ErrIsolationUnavailable reports that this platform cannot enforce the
-// candidate sandbox, so the candidate must not run.
-var ErrIsolationUnavailable = errors.New("candidate isolation is unavailable on this platform")
+	// ErrDigestMismatch reports that the binary on disk is not the pinned artifact.
+	ErrDigestMismatch = errors.New("candidate binary does not match its pinned digest")
 
-// ErrDigestMismatch reports that the binary on disk is not the pinned artifact.
-var ErrDigestMismatch = errors.New("candidate binary does not match its pinned digest")
+	// ErrOutputTooLarge reports a candidate whose standard output exceeded the
+	// limit its Output caller set; the output read so far is discarded.
+	ErrOutputTooLarge = errors.New("candidate standard output exceeds its limit")
+)
 
-// ErrOutputTooLarge reports a candidate whose standard output exceeded the
-// limit its Output caller set; the output read so far is discarded.
-var ErrOutputTooLarge = errors.New("candidate standard output exceeds its limit")
-
-// CheckSandbox reports whether this host has the sandbox launcher used by both
-// Build and Exec. It reads only host facts and starts no process. A failure wraps
+// CheckSandbox reports whether this host can enforce the candidate and build
+// sandboxes used by both Build and Exec. A failure wraps
 // ErrIsolationUnavailable; callers must not run candidate code without isolation.
 func CheckSandbox() error {
-	if runtime.GOOS != "darwin" {
-		return ErrIsolationUnavailable
-	}
-	if _, err := os.Stat(sandboxExec); err != nil {
-		return fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
-	}
-	return nil
+	return checkSandbox()
 }
 
 // Pin copies the binary at src into store, the verifier's own artifact
@@ -224,9 +252,9 @@ func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 // only standard error. Standard output may hold at most maxBytes; one byte
 // more stops the read and fails with ErrOutputTooLarge, which the candidate
 // sees as a closed pipe. A candidate that exits unsuccessfully returns its
-// standard output with the exit error, an *exec.ExitError. Every Exec
-// admission error, including ErrIsolationUnavailable, is returned before the
-// candidate starts. The process is killed when ctx ends.
+// standard output with the exit error, which wraps an *exec.ExitError. Every
+// Exec admission error, including ErrIsolationUnavailable, is returned before
+// the candidate starts. The process is killed when ctx ends.
 //
 // Output suits short programs whose answer fits in memory, such as an
 // evaluator suite's --describe.
@@ -258,107 +286,12 @@ func ExcerptFile(path string, maxBytes int64) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("stat log file: %w", err)
 	}
-	start := max(info.Size()-maxBytes, 0)
-	b := make([]byte, info.Size()-start)
-	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+	startOffset := max(info.Size()-maxBytes, 0)
+	b := make([]byte, info.Size()-startOffset)
+	if _, err := f.ReadAt(b, startOffset); err != nil && !errors.Is(err, io.EOF) {
 		return "", false, fmt.Errorf("read log file: %w", err)
 	}
-	return string(b), start > 0, nil
-}
-
-// start verifies the artifact and starts it in the sandbox described by spec.
-// stdout receives standard output when non-nil; otherwise standard output joins
-// standard error in spec.LogFile.
-func start(ctx context.Context, a Artifact, spec Spec, stdout io.Writer) (*Process, error) {
-	if err := CheckSandbox(); err != nil {
-		return nil, err
-	}
-	if a.path == "" {
-		return nil, errors.New("artifact was not pinned")
-	}
-	digest, err := fileDigest(a.path)
-	if err != nil {
-		return nil, err
-	}
-	if digest != a.digest {
-		return nil, fmt.Errorf("%w: %s is %s, pinned %s", ErrDigestMismatch, a.path, digest, a.digest)
-	}
-	stateDir, err := abspath.Eval(spec.StateDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve state directory: %w", err)
-	}
-	binary := a.path
-	logPath, err := abspath.EvalMissing(spec.LogFile)
-	if err != nil {
-		return nil, fmt.Errorf("resolve log file %q: %w", spec.LogFile, err)
-	}
-	inside, err := abspath.Within(stateDir, logPath)
-	if err != nil {
-		return nil, fmt.Errorf("check log file outside candidate state directory: %w", err)
-	}
-	if inside {
-		return nil, fmt.Errorf("log file %s must lie outside the candidate state directory", logPath)
-	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
-	}
-	profile := Profile(binary, stateDir, spec.ConnectPorts, spec.ListenPort)
-	cmd := exec.CommandContext(ctx, sandboxExec, append([]string{"-p", profile, binary}, spec.Args...)...)
-	cmd.Env = append([]string{"HOME=" + stateDir, "TMPDIR=" + stateDir}, spec.Env...)
-	cmd.Dir = stateDir
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if stdout != nil {
-		cmd.Stdout = stdout
-	}
-	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
-		return nil, fmt.Errorf("start candidate %s: %w", binary, err)
-	}
-	p := &Process{cmd: cmd, logFile: logPath, done: make(chan struct{})}
-	go func() {
-		p.waitErr = cmd.Wait()
-		_ = logFile.Close()
-		close(p.done)
-	}()
-	return p, nil
-}
-
-// BuildSpec describes one sandboxed compile of candidate source.
-type BuildSpec struct {
-	// SourceDir is the declared source tree the build may read, such as the
-	// candidate module or a whole checkout whose modules replace each other.
-	// Besides SourceDir, the build can read only GOROOT, ModCache, WorkDir,
-	// the output directory and system libraries; a symbolic link or local
-	// replace directive that resolves anywhere else is denied.
-	SourceDir string
-	// ModuleDir is the directory of the module being built. It must resolve
-	// inside SourceDir.
-	ModuleDir string
-	// Package is the package to build, relative to ModuleDir, such as
-	// "./cmd/orders".
-	Package string
-	// Out is the output binary path; its directory is writable.
-	Out string
-	// GOROOT is the resolved Go toolchain root the build runs with. Its bin
-	// and tool binaries are the only programs the build may execute.
-	GOROOT string
-	// ModCache is the already populated module cache, read-only.
-	ModCache string
-	// WorkDir is a private writable directory for TMPDIR and GOCACHE.
-	WorkDir string
-	// LogFile receives the build's output; it must lie outside ModuleDir.
-	LogFile string
-}
-
-// resolvedBuild is a BuildSpec whose directories resolveBuild has resolved to
-// symlink-free paths, with Out inside outDir. Only resolveBuild creates one.
-type resolvedBuild struct {
-	// spec holds the resolved paths; spec.Out is the absolute output file.
-	spec BuildSpec
-	// outDir is the resolved output directory, the only place besides
-	// spec.WorkDir that the build may write.
-	outDir string
+	return string(b), startOffset > 0, nil
 }
 
 // Build compiles source in the build sandbox. The Go toolchain may start its
@@ -466,8 +399,8 @@ func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (
 	return true, nil
 }
 
-// BuildProfile renders the build sandbox profile. Paths must be absolute and
-// free of symlinks.
+// BuildProfile renders the macOS build sandbox profile. Paths must be absolute
+// and free of symlinks.
 func BuildProfile(sourceDir, goroot, modCache, workDir, outDir string) string {
 	var b strings.Builder
 	b.WriteString("(version 1)\n(deny default)\n(allow process-fork)\n(allow sysctl-read)\n(allow signal (target self))\n")
@@ -487,8 +420,8 @@ func BuildProfile(sourceDir, goroot, modCache, workDir, outDir string) string {
 	return b.String()
 }
 
-// Profile renders the sandbox profile for one candidate process. Paths must be
-// absolute and already free of symlinks.
+// Profile renders the macOS sandbox profile for one candidate process. Paths
+// must be absolute and already free of symlinks.
 func Profile(binary, stateDir string, connectPorts []int, listenPort int) string {
 	var b strings.Builder
 	b.WriteString("(version 1)\n(deny default)\n")
@@ -559,24 +492,52 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 
-// fileDigest returns the lowercase hex SHA-256 of the file's bytes.
-func fileDigest(path string) (string, error) {
-	f, err := os.Open(path)
+// start verifies the artifact and starts it in the sandbox described by spec.
+// stdout receives standard output when non-nil; otherwise standard output joins
+// standard error in spec.LogFile.
+func start(ctx context.Context, a Artifact, spec Spec, stdout io.Writer) (*Process, error) {
+	if err := CheckSandbox(); err != nil {
+		return nil, err
+	}
+	if a.path == "" {
+		return nil, errors.New("artifact was not pinned")
+	}
+	digest, err := fileDigest(a.path)
 	if err != nil {
-		return "", fmt.Errorf("open %s: %w", path, err)
+		return nil, err
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", fmt.Errorf("hash %s: %w", path, err)
+	if digest != a.digest {
+		return nil, fmt.Errorf("%w: %s is %s, pinned %s", ErrDigestMismatch, a.path, digest, a.digest)
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	stateDir, err := abspath.Eval(spec.StateDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve state directory: %w", err)
+	}
+	binary := a.path
+	logPath, err := abspath.EvalMissing(spec.LogFile)
+	if err != nil {
+		return nil, fmt.Errorf("resolve log file %q: %w", spec.LogFile, err)
+	}
+	inside, err := abspath.Within(stateDir, logPath)
+	if err != nil {
+		return nil, fmt.Errorf("check log file outside candidate state directory: %w", err)
+	}
+	if inside {
+		return nil, fmt.Errorf("log file %s must lie outside the candidate state directory", logPath)
+	}
+	spec.StateDir = stateDir
+	spec.LogFile = logPath
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open log file: %w", err)
+	}
+	return startProcess(ctx, binary, spec, logFile, stdout)
 }
 
 // resolveBuild checks that the build sandbox is available and resolves every
 // directory in spec to its symlink-free path, placing Out in the resolved
-// output directory. The sandbox profile is written in those resolved paths, so
-// the toolchain sees the same paths the profile allows.
+// output directory. The sandbox rules use those resolved paths, so the
+// toolchain sees the same paths the sandbox allows.
 func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 	if err := CheckSandbox(); err != nil {
 		return resolvedBuild{}, err
@@ -607,24 +568,11 @@ func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 	if err != nil {
 		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", err)
 	}
+	if err := ensureGOROOTCanary(spec.GOROOT); err != nil {
+		return resolvedBuild{}, err
+	}
 	spec.Out = filepath.Join(outDir, filepath.Base(absOut))
 	return resolvedBuild{spec: spec, outDir: outDir}, nil
-}
-
-// resolvedArtifact returns the Artifact for a pinned copy with an absolute,
-// symlink-free path, so a caller changing directories cannot change the binary
-// the sandbox profile permits or the process executes.
-func resolvedArtifact(path, digest string) (Artifact, error) {
-	resolved, err := abspath.Eval(path)
-	if err != nil {
-		return Artifact{}, fmt.Errorf("resolve pinned copy: %w", err)
-	}
-	return Artifact{path: resolved, digest: digest}, nil
-}
-
-// quote renders s as a sandbox profile string literal.
-func quote(s string) string {
-	return strconv.Quote(s)
 }
 
 // goRun runs `go <args> -o <outPath> <Package>` from ModuleDir in the build
@@ -662,12 +610,13 @@ func (b resolvedBuild) goRun(
 		}
 		return aliasErr
 	}
-	goBin := filepath.Join(spec.GOROOT, "bin", "go")
-	profile := BuildProfile(spec.SourceDir, spec.GOROOT, spec.ModCache, spec.WorkDir, b.outDir)
-	cmdArgs := append([]string{"-p", profile, goBin}, args...)
-	cmd := exec.CommandContext(ctx, sandboxExec, append(cmdArgs, "-o", outPath, spec.Package)...)
-	cmd.Dir = spec.ModuleDir
-	cmd.Env = []string{
+	return b.runGoBuild(ctx, run, logFile, outPath, args...)
+}
+
+// buildEnv returns the fixed environment for a sandboxed Go build.
+func (b resolvedBuild) buildEnv() []string {
+	spec := b.spec
+	return []string{
 		"PATH=" + filepath.Join(spec.GOROOT, "bin") + ":/usr/bin:/bin",
 		"TMPDIR=" + spec.WorkDir,
 		"GOROOT=" + spec.GOROOT,
@@ -679,6 +628,34 @@ func (b resolvedBuild) goRun(
 		"GONOSUMDB=*",
 		"CGO_ENABLED=0",
 	}
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	return run(cmd)
+}
+
+// fileDigest returns the lowercase hex SHA-256 of the file's bytes.
+func fileDigest(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("hash %s: %w", path, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// resolvedArtifact returns the Artifact for a pinned copy with an absolute,
+// symlink-free path, so a caller changing directories cannot change the binary
+// the sandbox permits or the process executes.
+func resolvedArtifact(path, digest string) (Artifact, error) {
+	resolved, err := abspath.Eval(path)
+	if err != nil {
+		return Artifact{}, fmt.Errorf("resolve pinned copy: %w", err)
+	}
+	return Artifact{path: resolved, digest: digest}, nil
+}
+
+// quote renders s as a sandbox profile string literal.
+func quote(s string) string {
+	return strconv.Quote(s)
 }

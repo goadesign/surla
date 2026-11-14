@@ -355,7 +355,7 @@ type (
 		liveState
 		// buildCopyFactory replaces the copy owner only in deterministic start tests.
 		buildCopyFactory func(context.Context, string, scaffold.Layout) (buildCopy, error)
-		// buildIdentityCheck and buildSandboxCheck replace read-only host facts in tests.
+		// buildIdentityCheck and buildSandboxCheck replace host identity and sandbox availability checks in tests.
 		buildIdentityCheck func(context.Context, string) error
 		buildSandboxCheck  func() error
 		// workingCopyTurn is the one lock on the project's test working copy,

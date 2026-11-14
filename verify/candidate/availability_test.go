@@ -7,13 +7,16 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSandboxAvailabilityIsShared verifies that preflight and both execution
 // entries agree before any candidate path is opened or any process is started.
 func TestSandboxAvailabilityIsShared(t *testing.T) {
 	err := CheckSandbox()
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		require.NoError(t, err)
+	} else {
 		assert.ErrorIs(t, err, ErrIsolationUnavailable)
 	}
 	_, execErr := Exec(t.Context(), Artifact{}, Spec{})

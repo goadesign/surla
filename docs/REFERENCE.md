@@ -43,7 +43,7 @@ an operation, who may call it, what it returns and how it refuses.
 
 | Need | Why | How to get it |
 | --- | --- | --- |
-| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
+| **macOS or Linux (Landlock ABI v4+, Linux 6.7+)** | Surla builds agent-written code, and runs the application it builds, only inside its operating-system sandbox (macOS `sandbox-exec`, or Linux Landlock and Seccomp-BPF; when running `surla` inside a Linux container, pass `--cap-add SYS_PTRACE` or `--security-opt seccomp=unconfined`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). Where the sandbox is unavailable, every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable` (including the specific prerequisite failure and remedy when reported by the host). | — |
 | **Go 1.27.3 or later** | `surla` is a Go program, and the project's checks use Go. Surla runs Goa inside its sandbox with each module's own versions, so no `goa` binary is needed. | [go.dev/dl](https://go.dev/dl/) |
 | **Surla** | The command itself. | `go install github.com/goadesign/surla/cmd/surla@latest` |
 | **Herdr core** (`herdr-core` and `hc`) | The server and every agent run in Herdr terminals. | `curl -fsSL https://releases.herdr.dev/core/install.sh \| sh` ([herdr.dev/core](https://herdr.dev/core/)) |
@@ -1399,7 +1399,7 @@ next build reuses it.
 | `copy_folder_in_use` | 409 | Move the project's `.surla-tests` entry, which is not Surla's working copy, out of the project. |
 | `tests_branch_in_use` | 409 | Another working copy holds `surla/tests`; the message names it and the step. |
 | `working_copy_busy` | 409 | Build again when the current start or check has ended. |
-| `sandbox_unavailable` | 501 | Use macOS. |
+| `sandbox_unavailable` | 501 | Use a system with Surla's candidate sandbox (macOS or Linux with Landlock ABI v4+); when the host reports a specific prerequisite failure, the message includes its cause and remedy. |
 | `not_implemented` | 501 | The server has no team; start the project with `surla`. |
 | `unavailable` | 503 | The server is stopping or the start ran out of time; build again. |
 
@@ -1960,7 +1960,8 @@ checks are:
   so every test runs in exactly one of the two.
 - A Linux build and vet of the root module, once without build tags and once
   with each of `e2e`, `scaffold`, `herdr`, `browser` and `docker`, and the
-  Linux tests of the packages that need no sandbox.
+  Linux short tests (including `verify/candidate` in the Linux Landlock +
+  Seccomp-BPF sandbox).
 - Formatting, generated-code and views page type checks.
 
 To run the short tests locally, run `go test -race -short ./...` in each
@@ -2030,6 +2031,6 @@ go test -race -count=1 -tags browser ./internal/project
 ├── story/                       # The Story language, a separate Go module
 ├── ui/checkpoint/               # Views page source; build.mjs writes checkpoint.html, its types and the decision catalog
 └── verify/
-    ├── candidate/               # The macOS sandbox for building and running agent-written code
+    ├── candidate/               # The macOS and Linux sandbox for building and running agent-written code
     └── suite/                   # The evaluator suite command contract (suite.Main)
 ```

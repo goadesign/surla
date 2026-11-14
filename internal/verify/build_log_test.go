@@ -17,13 +17,13 @@ import (
 // carries the end of the compiler's output and names the build log Prepare
 // kept under WorkDir/evidence, while the Summary that builders see stays free
 // of paths and compiler output. It runs real sandboxed builds, so it needs
-// macOS.
+// macOS or Linux.
 func TestPrepareNamesTheBuildLogOnlyInThePrivateError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the build sandbox is implemented with sandbox-exec on macOS")
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("the build sandbox is implemented on macOS and Linux")
 	}
 	const (
 		goodMain = "package main\n\nfunc main() {}\n"
