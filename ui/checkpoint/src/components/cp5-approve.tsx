@@ -67,7 +67,7 @@ export function ApproveResultControl({
       aria-labelledby="surla-cp5-approve-title"
       aria-busy={busy ? "true" : undefined}
     >
-      <h3 id="surla-cp5-approve-title">Approve this result</h3>
+      <h3 id="surla-cp5-approve-title" tabIndex={-1}>Approve this result</h3>
       <p>
         Approval records that this passed result may be promoted for the Change Card revision
         shown. It does not merge or deploy anything.

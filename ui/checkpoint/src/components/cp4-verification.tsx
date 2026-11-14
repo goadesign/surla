@@ -132,7 +132,7 @@ export function VerificationView({
           aria-labelledby="surla-cp4-title"
           aria-busy="true"
         >
-          <h2 id="surla-cp4-title">Loading saved verifications</h2>
+          <h2 id="surla-cp4-title" tabIndex={-1}>Loading saved verifications</h2>
           <p>Reading saved verification runs for this Change Card...</p>
           <div className="surla-field-row">
             <Button id="surla-load-verifications" disabled={true} onClick={onLoadVerifications}>
@@ -168,7 +168,7 @@ export function VerificationView({
           id="surla-cp4-verification"
           aria-labelledby="surla-cp4-title"
         >
-          <h2 id="surla-cp4-title">Could not load saved verifications</h2>
+          <h2 id="surla-cp4-title" tabIndex={-1}>Could not load saved verifications</h2>
           <Alert id="surla-cp4-list-error" variant="destructive" role="alert">
             <strong>Could not load saved verifications. </strong>
             {listError}
@@ -215,7 +215,7 @@ export function VerificationView({
         id="surla-cp4-verification"
         aria-labelledby="surla-cp4-title"
       >
-        <h2 id="surla-cp4-title">No saved verifications</h2>
+        <h2 id="surla-cp4-title" tabIndex={-1}>No saved verifications</h2>
         <p id="surla-cp4-empty">
           No checks are saved for this change yet. Once the tests are accepted,
           the builder finishes the code and asks Surla to check it. The result appears here.
@@ -269,7 +269,7 @@ export function VerificationView({
       aria-labelledby="surla-cp4-title"
       aria-busy={checking || loadingList ? "true" : undefined}
     >
-      <h2 id="surla-cp4-title">{title}</h2>
+      <h2 id="surla-cp4-title" tabIndex={-1}>{title}</h2>
       {testSource.source === "written_tests" ? (
         <p id="surla-cp4-test-source">
           {testSource.notice}

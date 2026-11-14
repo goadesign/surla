@@ -57,6 +57,7 @@ await control(origin, "act", { key: "accept-t1" });
 await until(currentBuild, "reaccepting the recorded tests did not restore Build's decision");
 review().click();
 await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.$("#surla-cp5-approve") && !page.$("#surla-cp5-approve").disabled, "Review and approve did not open the exact owner-supplied saved run");
+expect(page.doc.activeElement === page.$("#surla-cp5-approve-title"), "Review and approve did not focus the approval destination");
 const verdict = page.text("#surla-cp4-title");
 const details = page.text("#surla-cp4-details");
 expect(verdict === "The check passed: 2 of 2 scenarios.", "the saved passing verdict is missing");
@@ -94,6 +95,7 @@ await until(() => page.$("#surla-build-review-check") && !page.$("#surla-build-r
 expect(!page.$("#surla-build-review-check").classList.contains("shadcn-btn-primary"), "the latest stale run was presented as an approval decision");
 page.$("#surla-build-review-check").click();
 await until(() => page.$("#surla-result-view").dataset.runId === input.latest && page.$("#surla-cp4-run-" + input.older) && page.text("#surla-cp4-inputs").includes("does not match"), "Build did not open the exact latest identity with its stale observation");
+expect(page.doc.activeElement === page.$("#surla-cp5-approve-title"), "reviewing a stale passed check did not focus its blocked approval");
 const listPath = "/changes/chg-selected-inputs/verifications";
 await control(origin, "answer-later", { key: "GET " + listPath });
 const listsBeforeSelection = page.sent("GET", listPath).length;
@@ -377,6 +379,26 @@ page.$("#surla-cp4-retry-card").click();
 await until(() => !page.$("#surla-cp4-card-error") && !approve.disabled, "a successful explicit retry did not restore eligibility");
 expect(preserved(), "successful recovery replaced the saved report or draft");
 expect(page.sent("POST", "/changes/approve").length === 0 && page.sent("POST", "/changes/confirm").length === 1, "recovery submitted approval or resubmitted the draft");
+page.close();
+`)
+}
+
+// TestViewsPageReviewFailedCheckFocusesItsSavedResult verifies the nonpassing
+// branch of Build's review action moves keyboard focus to the report itself.
+func TestViewsPageReviewFailedCheckFocusesItsSavedResult(t *testing.T) {
+	cp, card, runsDir := selectedInputsFixture(t)
+	runID := strings.Repeat("1", 32)
+	writeListedRun(t, runsDir, pageOwner, card, runID,
+		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), false)
+	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, map[string]any{"run": runID}, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-build-review-check") && !page.$("#surla-build-review-check").disabled, "the failed saved check did not reach Build");
+page.$("#surla-build-review-check").click();
+await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title").includes("failed"), "review did not open the exact failed result");
+expect(page.doc.activeElement === page.$("#surla-cp4-title"), "reviewing a failed check did not focus its report");
+expect(!page.$("#surla-cp5-approve"), "a failed result offered approval");
 page.close();
 `)
 }
