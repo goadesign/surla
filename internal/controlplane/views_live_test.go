@@ -290,6 +290,7 @@ func TestViewsPageLiveTargetNotConfirmedStopped(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
+	saveStoryCard(t, cp, "chg-live", StatusConfirmed, refundStory("Start a live target"))
 	cp.changesWait = 400 * time.Millisecond
 	cp.changesPoll = 20 * time.Millisecond
 	t.Cleanup(func() { assert.Error(t, cp.Close(), "Close reports the target it could not confirm stopped") })
