@@ -317,13 +317,17 @@ it registers the prompt `<name>.helper.system`.
 `prices-cookie`. The service's `go.mod` requires the Story language's module,
 `github.com/goadesign/surla/story`, at the version Surla itself requires.
 
-`eval/` is the test module. It declares three scenarios, all tagged `repair`
-(`prices_tea`, `unknown_item` and `prompt_override_reaches_model`), runs them
-against a scripted model, and implements the
+`eval/` is the test module. Its suite declares three scenarios, all tagged
+`repair` (`prices_tea`, `unknown_item` and `prompt_override_reaches_model`),
+and its Story table, `eval/design/story_tests.go`, adds `prices_cookie`, the
+test the Story's finished flow requires; `surla init` writes the table from
+`design/story.go`. The module runs these scenarios against a scripted model
+and implements the
 [live target prompt contract](#live-target-prompt-contract). Its hand-written
 parts are `eval/design` (its own copy of the service's public contract and
-the scenarios), `eval/acceptance` (the scenarios' implementation and the
-program's entry points) and `eval/scripted` (the scripted model); its
+the scenarios, apart from the Story table), `eval/acceptance` (the
+scenarios' implementation and the program's entry points) and
+`eval/scripted` (the scripted model); its
 program, `eval/gen/cmd/<name>-evals`, is generated with the rest of
 `eval/gen/`. `eval/acceptance` also holds the test the Story's finished flow
 requires, the method `PricesCookie`, so the first build of a change needs
@@ -435,9 +439,10 @@ version in use. The named-section rewrite of `AGENTS_QUICKSTART.md` needs
 `goa.design/goa-ai` `v0.90.1-0.20261110011046-f32bd628f2bf` or later. A design
 with gRPC transports is refused, because protoc cannot run in the sandbox;
 generate it with the module's own `go run goa.design/goa/v3/cmd/goa gen`.
-`generate_code` writes the same files. The test writer never regenerates its
-test module: Surla does that with the required tests at each build start and
-report.
+`generate_code` writes the same files. A Surla test module's Story table,
+`design/story_tests.go`, is a source file of its design, so regenerating the
+module keeps the tests the table requires (see
+[builds and assignments](#builds-and-assignments)).
 
 ### `surla verify`
 
@@ -1326,15 +1331,21 @@ does not contain; the user merges `surla/tests`, then builds again. Accepted
 tests are commits on `surla/tests`, so deleting `.surla-tests` loses only
 uncommitted work: the next build recreates the folder on the same branch.
 
-**Required tests.** The build writes one required test per finished flow of
-the saved Story into the test module's generated code. Flow
+**Required tests.** The build writes the test module's Story table,
+`eval/design/story_tests.go`, which declares one scenario per finished flow
+of the saved Story, and generates the module from its design. Flow
 `refund-over-limit` requires scenario `refund_over_limit` and the hook method
 `RefundOverLimit`. Unfinished flows require none; with no finished flow, the
-test program must still build. Surla writes the test module's generated code
-at the build start and again at each report, so the test writer never
-regenerates it. When the start cannot write it, a cause the test writer can
-fix, such as a test module design that does not compile, sets the tests to
-`needs_changes` with that finding, at report 0. Any other cause sets
+test program must still build. Surla writes the table and the test module's
+generated code at the build start and again at each report, generating with
+the table it renders in place of whatever the test writer left at that path;
+the test writer leaves that file as it is. Because the required tests are
+part of the module's design, regenerating the module keeps them. A
+generation that fails writes neither the table nor the generated code, so the
+copy stays as it was; only a symbolic link at the table's path is replaced by
+the table first. When the start cannot write them, a cause the test
+writer can fix, such as a test module design that does not compile, sets the
+tests to `needs_changes` with that finding, at report 0. Any other cause sets
 `could_not_run`, with a reason that says what failed (the start's time
 limit or a server stop, a download of the module's dependencies that fails
 outside the test writer's changes, the generator and its phase, or writing
@@ -1521,9 +1532,14 @@ again on the views page`.
 The test writer aligns the service interface in its copy with the agreed
 design, writes the tests in `eval/` of `working_folder`, checks them with
 `go build ./...` in `eval/`, which names any required method still missing,
-and then reports. It never calls `generate_code` or `surla gen`, which would
-drop the required tests; after changing the test module's design it reports,
-and Surla generates the module again. Reading an assignment marks it read.
+and then reports. It leaves the Story table, `eval/design/story_tests.go`,
+as it is: Surla writes it from the agreed Story at the build start and again
+at each report. Because the required tests are part of the module's design,
+regenerating the module with `surla gen -dir eval` keeps them. After changing
+the test module's design, the test writer reports, and Surla generates the
+module again; from a shell that is not sandboxed it can also run
+`surla gen -dir eval` in `working_folder` first. Reading an assignment marks
+it read.
 
 ### `report_tests_finished`
 

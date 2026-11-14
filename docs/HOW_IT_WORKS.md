@@ -313,11 +313,15 @@ answers, examples and preserved behaviors as you confirmed them, and one
 required test per finished flow. It may not read the change itself, so the
 assignment is how its tests learn what you agreed, and they must hold the
 service to it as well as to the Story's flows. It writes the tests inside the
-test module, `eval/` in its working copy, and changes nothing outside it. It
-never regenerates that module itself, because Surla writes the required
-tests into it at the start and again at each report. It checks its work
-with `go build ./...` in `eval/`, which fails naming any required method not
-yet written.
+test module, `eval/` in its working copy, and changes nothing outside it.
+Surla declares the required tests in that module's Story table,
+`eval/design/story_tests.go`, which it writes at the start and again at each
+report; the test writer leaves that file as it is, and regenerating the
+module keeps the required tests. After changing the module's design, the
+test writer reports to have it generated again or, from a shell that is not
+sandboxed, runs `surla gen -dir eval` in its working copy first. It checks
+its work with `go build ./...` in `eval/`, which fails naming any required
+method not yet written.
 Then it calls `report_tests_finished`. The report returns at once with the
 report's number; the build shows the test writer as **Reported**. In a
 starter project the test of the starter's own flow, the method `PricesCookie`

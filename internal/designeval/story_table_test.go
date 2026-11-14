@@ -1,0 +1,181 @@
+package designeval
+
+import (
+	"bytes"
+	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
+	"testing"
+	"testing/fstest"
+	"text/template"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestStoryTestsRendersTheTable renders Story tables without running
+// anything: the rows follow the naming rule StoryScenarios applies, titles are
+// quoted, the package is the one the design's compiled files declare, and the
+// file is generated Go with no package-level variable another file of the
+// package could change. Colliding flows and an unnamed design package fail.
+func TestStoryTestsRendersTheTable(t *testing.T) {
+	t.Parallel()
+	const design = "// Package evaldesign is the test module's design.\npackage evaldesign\n"
+	special := "Line 1: \"quoted\" `backtick` \\backslash\\\nLine 2"
+	refunds := []StorySummary{{
+		Name: "Refunds",
+		Flows: []StoryFlow{
+			{Key: "tricky-title", Title: special, Complete: true},
+			{Key: "blank-title-flow", Complete: true},
+			{Key: "disputed-chargeback", Title: "A chargeback.", Complete: false},
+		},
+	}}
+	cases := []struct {
+		name    string
+		files   fstest.MapFS
+		stories []StorySummary
+		// wantPackage is the table's package clause; empty means an error.
+		wantPackage string
+		// wantRows are the rendered row literals, in order.
+		wantRows []string
+		// wantErr lists fragments of the expected error.
+		wantErr []string
+		// wantDesignPackageErr says the error wraps ErrDesignPackage.
+		wantDesignPackageErr bool
+	}{
+		{
+			name:        "finished flows, a blank title and a draft",
+			files:       fstest.MapFS{"design/design.go": {Data: []byte(design)}},
+			stories:     refunds,
+			wantPackage: "evaldesign",
+			wantRows: []string{
+				`{name: "tricky_title", description: ` + `"Line 1: \"quoted\" ` + "`backtick`" + ` \\backslash\\\nLine 2"},`,
+				`{name: "blank_title_flow", description: "blank-title-flow"},`,
+			},
+		},
+		{
+			name:        "no finished flow",
+			files:       fstest.MapFS{"design/design.go": {Data: []byte(design)}},
+			stories:     []StorySummary{{Name: "Refunds", Flows: []StoryFlow{{Key: "draft", Complete: false}}}},
+			wantPackage: "evaldesign",
+		},
+		{
+			name: "files the build leaves out and the table itself declare other packages",
+			files: fstest.MapFS{
+				"design/design.go":         {Data: []byte(design)},
+				"design/ignored.go":        {Data: []byte("//go:build ignore\n\npackage main\n")},
+				"design/design_test.go":    {Data: []byte("package evaldesign_test\n")},
+				"design/_hidden.go":        {Data: []byte("package hidden\n")},
+				"design/story_tests.go":    {Data: []byte("package stale\n")},
+				"design/notes.md":          {Data: []byte("package notes\n")},
+				"design/sub/other.go":      {Data: []byte("package sub\n")},
+				"acceptance/acceptance.go": {Data: []byte("package acceptance\n")},
+			},
+			stories:     refunds[:1],
+			wantPackage: "evaldesign",
+			wantRows: []string{
+				`{name: "tricky_title", description: ` + `"Line 1: \"quoted\" ` + "`backtick`" + ` \\backslash\\\nLine 2"},`,
+				`{name: "blank_title_flow", description: "blank-title-flow"},`,
+			},
+		},
+		{
+			name:  "two finished flows with the same scenario",
+			files: fstest.MapFS{"design/design.go": {Data: []byte(design)}},
+			stories: []StorySummary{{Name: "Refunds", Flows: []StoryFlow{
+				{Key: "a-b", Complete: true}, {Key: "a_b", Complete: true},
+			}}},
+			wantErr: []string{`"a-b" in story "Refunds"`, `"a_b" in story "Refunds"`, `scenario "a_b"`},
+		},
+		{
+			name:                 "two design packages",
+			files:                fstest.MapFS{"design/a.go": {Data: []byte("package one\n")}, "design/b.go": {Data: []byte("package two\n")}},
+			wantErr:              []string{"packages one (design/a.go) and two (design/b.go)"},
+			wantDesignPackageErr: true,
+		},
+		{
+			name:                 "no design file",
+			files:                fstest.MapFS{"design/story_tests.go": {Data: []byte("package design\n")}},
+			wantErr:              []string{"no Go file"},
+			wantDesignPackageErr: true,
+		},
+		{
+			name:                 "no design folder",
+			files:                fstest.MapFS{"go.mod": {Data: []byte("module example.com/x\n")}},
+			wantErr:              []string{"design"},
+			wantDesignPackageErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			table, required, err := StoryTests(tc.files, tc.stories)
+			if len(tc.wantErr) > 0 {
+				require.Error(t, err)
+				for _, w := range tc.wantErr {
+					assert.ErrorContains(t, err, w)
+				}
+				assert.Equal(t, tc.wantDesignPackageErr, errors.Is(err, ErrDesignPackage))
+				return
+			}
+			require.NoError(t, err)
+			wantRequired, _, err := StoryScenarios(tc.stories)
+			require.NoError(t, err)
+			assert.Equal(t, wantRequired, required, "the table requires what StoryScenarios names")
+
+			src := string(table)
+			assert.True(t, strings.HasPrefix(src, "// Code generated by surla from the Story's finished flows. DO NOT EDIT.\n"))
+			file, err := parser.ParseFile(token.NewFileSet(), StoryTestsPath, table, parser.ParseComments)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantPackage, file.Name.Name)
+			assert.Nil(t, file.Doc, "the table does not document the package")
+			for _, decl := range file.Decls {
+				if gen, ok := decl.(*ast.GenDecl); ok {
+					assert.Contains(t, []token.Token{token.IMPORT, token.TYPE}, gen.Tok,
+						"the table declares no package-level variable or constant")
+				}
+			}
+			start := strings.Index(src, "scenarios: []storyScenarioSpec{")
+			require.Positive(t, start, "the rows are in the registered literal")
+			var rows []string
+			for _, line := range strings.Split(src[start:], "\n")[1:] {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "{name: ") {
+					break
+				}
+				rows = append(rows, line)
+			}
+			assert.Equal(t, tc.wantRows, rows)
+		})
+	}
+}
+
+// TestStoryTableRootIsRecognized checks that the name the test-program section
+// looks for is the Story table root's own name.
+func TestStoryTableRootIsRecognized(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, storyTableRootName, (&storyScenarioRoot{}).EvalName())
+}
+
+// TestTestProgramSectionDescribesTheStoryTable renders the test-program
+// section with and without a Story table: only a module that has one is told
+// what it declares and that regenerating keeps it, and no text says
+// regenerating drops a test.
+func TestTestProgramSectionDescribesTheStoryTable(t *testing.T) {
+	t.Parallel()
+	section := template.Must(template.New("section").Parse(testProgramSection))
+	for _, storyTests := range []bool{false, true} {
+		var out bytes.Buffer
+		require.NoError(t, section.Execute(&out, suiteCommandData{
+			Service: "shop", Suite: "shop_acceptance", Command: "./gen/cmd/shop-evals",
+			Environment: suiteCommandEnvironment, StoryTests: storyTests,
+		}))
+		text := out.String()
+		assert.Equal(t, storyTests, strings.Contains(text, "`design/story_tests.go` declares one scenario per finished flow"), text)
+		assert.Equal(t, storyTests, strings.Contains(text, "Regenerating this module keeps those scenarios."), text)
+		assert.NotContains(t, text, "drop")
+		assert.NotContains(t, text, "\n\n\n", "paragraphs stay one blank line apart")
+		assert.Contains(t, text, "environment `scripted-model`.\n\n", "the paragraph before stays a paragraph")
+	}
+}

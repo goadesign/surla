@@ -273,12 +273,14 @@ func TestStrictAgentRecord(t *testing.T) {
 }
 
 // TestFirstMessagesNameOnlyAllowedOperations checks each named operation against the invocation policy.
+// File paths such as eval/design/story_tests.go name files, not operations.
 func TestFirstMessagesNameOnlyAllowedOperations(t *testing.T) {
 	names := regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`)
+	files := regexp.MustCompile(`\S+\.go\b`)
 	for _, role := range []string{"guide", "builder", "test_writer"} {
 		_, message := roleFirstMessage(role)
 		assert.True(t, controlplane.OperationAllowed(controlplane.CallerKind(role), "golden_path"))
-		for _, operation := range names.FindAllString(message, -1) {
+		for _, operation := range names.FindAllString(files.ReplaceAllString(message, ""), -1) {
 			assert.Contains(t, gensurla.MethodNames, operation)
 			assert.True(t, controlplane.OperationAllowed(controlplane.CallerKind(role), operation), "%s may not call %s", role, operation)
 		}
@@ -294,4 +296,25 @@ func TestProjectRecordRejectsTrailingData(t *testing.T) {
 	require.NoError(t, writePrivate(filepath.Join(state.Dir, "project.json"), raw))
 	_, err = Discover(filepath.Dir(state.Dir), state.Record.Directory)
 	assert.ErrorContains(t, err, "trailing project state")
+}
+
+// TestTheTestWriterMayRegenerateItsTestModule checks the test writer's first
+// message: Surla writes the Story table and the test writer leaves it as it
+// is, reporting or regenerating after a design change, because regenerating
+// keeps the required tests. No role is told that regenerating drops a test.
+func TestTheTestWriterMayRegenerateItsTestModule(t *testing.T) {
+	_, message := roleFirstMessage("test_writer")
+	for _, sentence := range []string{
+		"Surla writes eval/design/story_tests.go, which declares the required tests, from the agreed Story",
+		"leave that file as it is",
+		"report to have it generated again or, when your shell is not sandboxed, run surla gen -dir eval in the working folder first",
+		"regenerating keeps the required tests",
+	} {
+		assert.Contains(t, message, sentence)
+	}
+	for _, role := range []string{"guide", "builder", "test_writer"} {
+		_, message := roleFirstMessage(role)
+		assert.NotContains(t, message, "drop", role)
+		assert.NotContains(t, message, "never regenerate", role)
+	}
 }

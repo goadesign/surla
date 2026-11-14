@@ -10,6 +10,18 @@ tests in `gen/evals/{{ .Suite }}` and from your package `acceptance`. Write only
 that package; a `main` package of your own is never built. Every run declares the
 environment `{{ .Environment }}`.
 
+After you change `design/`, generate this module again: the builder calls
+`generate_code` with `target: "eval"`, and the test writer reports with
+`report_tests_finished` to have Surla generate it again or, from a shell that is
+not sandboxed, runs `surla gen -dir eval` in its working folder first.
+{{- if .StoryTests }}
+
+This module's `design/story_tests.go` declares one scenario per finished flow of
+the project's Story, each run by the `Hooks` method of the same name.
+Regenerating this module keeps those scenarios. The file is generated from the
+Story: do not edit it by hand.
+{{- end }}
+
 The program calls exactly these names in `acceptance`:
 
 | Name | What it must be |

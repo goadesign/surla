@@ -91,6 +91,15 @@ func TestSurlaSuiteCommandWritesTheProgramOfASurlaTestModule(t *testing.T) {
 		assert.Equal(t, "surla-test-program", last.Name, "the section is added to Goa-AI's guide")
 		assert.Equal(t, testProgramSection, last.Source)
 	})
+	t.Run("a Surla test module with a Story table", func(t *testing.T) {
+		withTable := append(roots("shop_acceptance"), &storyScenarioRoot{})
+		files, err := surlaSuiteCommand(true)("example.com/shop/eval/gen", withTable, []*codegen.File{suiteFile("shop_acceptance")})
+		require.NoError(t, err)
+		require.Len(t, files, 3)
+		want := suiteCommandData{Service: "shop", Suite: "shop_acceptance", Command: "./gen/cmd/shop-evals", Environment: "scripted-model", StoryTests: true}
+		assert.Equal(t, want, files[1].SectionTemplates[1].Data, "the program is the same")
+		assert.Equal(t, want, files[2].SectionTemplates[0].Data, "the section says what the table declares")
+	})
 	t.Run("a Surla test module without Goa-AI's guide", func(t *testing.T) {
 		files, err := surlaSuiteCommand(true)("example.com/shop/eval/gen", roots("shop_acceptance"), []*codegen.File{suiteFile("shop_acceptance")})
 		require.NoError(t, err)
@@ -166,7 +175,7 @@ func TestGeneratedProgramRunsTheStarterSuite(t *testing.T) {
 	}
 	evalInput, fullTree := starterEvalModule(t)
 	stories := []StorySummary{{Name: "Refunds", Flows: []StoryFlow{{Key: "refund-over-limit", Title: "A refund over the limit.", Complete: true}}}}
-	gen, err := testEvaluator.GenerateWithStories(t.Context(), evalInput, stories)
+	gen, err := generateWithTable(t, evalInput, stories)
 	require.NoError(t, err)
 	program := string(gen.Files["gen/cmd/shop-evals/main.go"])
 	require.NotEmpty(t, program, "the program is generated at "+SuiteCommandPackage("shop"))
