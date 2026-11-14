@@ -133,8 +133,9 @@ type Service interface {
 	// each prompt whose draft it accepted, the prompt identifier, the version in
 	// force and when it was accepted; ended after an unexpected ending with
 	// confirmed cleanup, or not confirmed stopped, with what to do next. Prompt
-	// text is never returned. It changes nothing and saves nothing: the answer
-	// lasts as long as the live target and this server.
+	// text is never returned. It changes nothing and saves nothing: an ended
+	// observation lasts until explicit stop, an accepted replacement, or server
+	// restart.
 	GetLiveTarget(context.Context) (res *LiveTargetStatus, err error)
 	// Start Checkpoint 4 verification of a candidate commit for the owner's
 	// confirmed Change Card revision and return its run_id at once. With
@@ -183,11 +184,11 @@ type Service interface {
 	// Choose, on a running control plane without restarting, the model that CP3
 	// live targets started afterwards receive: a direct provider and model name,
 	// whose request settings the surla command handed to the project server with
-	// hand_over_model_settings, or a running gRPC model gateway. start_live_target
-	// passes the choice to the target's evaluator suite as
-	// SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as
-	// SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request
-	// settings.
+	// hand_over_model_settings, or a running gRPC model gateway. With written
+	// tests, a direct provider is served by the executor's private loopback model
+	// gateway and the accepted test program receives only that gateway, never
+	// provider settings. A stored evaluator receives the choice and its chosen
+	// provider's settings. A configured gateway is passed through unchanged.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Report the model choice live targets started afterwards receive: none, a
 	// direct provider and model name, or a model gateway address. It starts as
@@ -201,20 +202,21 @@ type Service interface {
 	// over the request settings of each model provider whose key is set in the
 	// shell it runs in: the key and the listed settings that route and
 	// authenticate the provider's requests. The project server holds them in
-	// memory only and forgets them when it stops. A live target's test program,
-	// including a candidate commit's test module that agents wrote, receives the
-	// chosen provider's held settings; a verification with the operator's stored
-	// evaluator receives every held provider's settings; tests a separate agent
-	// wrote for a verification, and the check helper, receive none. An absent
-	// provider attribute keeps what is held for that provider. A present one
-	// replaces everything held for it and must include the provider's key
-	// variable; an empty one is refused, because it is neither a way to keep nor a
-	// way to forget. A request with neither attribute changes nothing and reports
-	// what is held. When no model is chosen and a provider is now held, live
-	// targets use that provider's default model, anthropic before openai; any
-	// other choice stays. The result names the held variables and the model
-	// choice, never a value. Only the surla command's management credential may
-	// call this operation; it is never an MCP tool.
+	// memory only and forgets them when it stops. A live target with the
+	// operator's stored evaluator receives the chosen provider's held settings; a
+	// verification with that evaluator receives every held provider's settings.
+	// Accepted written tests receive no provider settings in verification or live
+	// targets: for a direct live model the executor serves a private loopback
+	// model gateway. The check helper receives none. An absent provider attribute
+	// keeps what is held for that provider. A present one replaces everything held
+	// for it and must include the provider's key variable; an empty one is
+	// refused, because it is neither a way to keep nor a way to forget. A request
+	// with neither attribute changes nothing and reports what is held. When no
+	// model is chosen and a provider is now held, live targets use that provider's
+	// default model, anthropic before openai; any other choice stays. The result
+	// names the held variables and the model choice, never a value. Only the surla
+	// command's management credential may call this operation; it is never an MCP
+	// tool.
 	HandOverModelSettings(context.Context, *HandOverModelSettingsPayload) (res *ModelSettingsResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the

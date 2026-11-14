@@ -211,7 +211,7 @@ func (c *Client) PreviewArchitecture(ctx context.Context, p *PreviewArchitecture
 
 // DraftOverride calls the "draft_override" endpoint of the "surla" service.
 // DraftOverride may return the following errors:
-//   - "no_live_target" (type *goa.ServiceError): No live target is running, so nothing changed. Call start_live_target with a candidate commit first.
+//   - "no_live_target" (type *goa.ServiceError): No live target is running, so nothing changed. Call start_live_target with an owned confirmed change_id and a candidate commit first.
 //   - "prompt_not_found" (type *goa.ServiceError): The live target has no prompt with this ID; nothing changed.
 //   - "invalid_prompt" (type *goa.ServiceError): The live target rejected the template because it does not render; nothing changed.
 //   - "live_target_ended" (type *goa.ServiceError): The live target is no longer running; start it again with start_live_target.

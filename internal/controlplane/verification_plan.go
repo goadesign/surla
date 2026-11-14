@@ -199,12 +199,11 @@ func (c *ControlPlane) verificationPlan(
 func (c *ControlPlane) verificationPlanForTests(
 	ctx context.Context,
 	candidateCommit, revision, testsCommit string,
-	selectionErr error,
+	err error,
 ) (VerificationConfig, error) {
-	err := selectionErr
 	var notAccepted testsNotAccepted
 	if errors.As(err, &notAccepted) {
-		// verify_change's caller is the builder, so it reads the builder's step.
+		// Both verification and live starts are builder operations.
 		return VerificationConfig{}, refuseTestsNotAccepted(notAccepted.saved)
 	}
 	if err != nil {
@@ -238,7 +237,7 @@ func (c *ControlPlane) verificationPlanForTests(
 // testsChoice returns the commit and source of the tests that judge changeID
 // at revision for principal, which its caller has already authorized as the
 // change's owner. It is the only function that chooses which tests a
-// verification run uses, which tests approve_merge requires a report to have
+// verification or live target uses, which tests approve_merge requires a report to have
 // run, and which tests a saved approval must still match on read. Callers hold
 // c.mu (for reading or writing); it takes no lock.
 //
