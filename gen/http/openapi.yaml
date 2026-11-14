@@ -2143,7 +2143,7 @@ paths:
             tags:
                 - surla
             summary: check_project surla
-            description: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.
+            description: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so), each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.
             operationId: surla#check_project
             responses:
                 "200":
@@ -2271,7 +2271,7 @@ paths:
             tags:
                 - surla
             summary: update_dependencies surla
-            description: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.
+            description: Run go mod tidy for every Go module of the active workspace (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so) in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.
             operationId: surla#update_dependencies
             responses:
                 "200":

@@ -232,7 +232,7 @@ func (c *Client) DraftOverride(ctx context.Context, p *DraftOverridePayload) (re
 // service.
 // StartLiveTarget may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No owned Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The change is not confirmed, a required commit is unavailable, or the project folder was replaced.
+//   - "conflict" (type *goa.ServiceError): The change is not confirmed, a required commit is unavailable, the project folder was replaced, or the candidate changes hand-written test-module files or shares no history with the accepted tests.
 //   - "no_build" (type *goa.ServiceError): The current change revision has no usable build.
 //   - "tests_not_accepted" (type *goa.ServiceError): The current build has no accepted tests; the message names who acts next.
 //   - "no_test_layout" (type *goa.ServiceError): The candidate or accepted tests lacks the required test layout.
@@ -279,7 +279,7 @@ func (c *Client) GetLiveTarget(ctx context.Context) (res *LiveTargetStatus, err 
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.
 // VerifyChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, or the project folder was replaced after the server started; the message ends with the step.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, the project folder was replaced after the server started, or (without stored verification settings) the candidate commit shares no history with the accepted tests' commit or changes hand-written files in the test module; the message names any changed test-module files and ends with the restore or user step.
 //   - "no_build" (type *goa.ServiceError): Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.
 //   - "tests_not_accepted" (type *goa.ServiceError): Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.
 //   - "no_test_layout" (type *goa.ServiceError): Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests' commit is no longer in the project's repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.

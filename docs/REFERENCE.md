@@ -937,8 +937,11 @@ An error means `gen/` was not replaced; a warning means it was.
 (`op_id`, `passed`, `message`).
 
 Runs `go test ./...` in every Go module of the project folder (skipping
-`testdata`, `vendor` and folders starting with `.` or `_`) on the current
-files, uncommitted edits included, without changing them. The server copies
+`testdata`, `vendor` and folders starting with `.` or `_`, and leaving out
+`eval` without stored verification settings when the project has the starter
+test layout `go.mod` and `eval/go.mod`: `Left test module eval out (tests
+belong to the test writer)`) on the current files, uncommitted edits included,
+without changing them. The server copies
 the files (leaving out `.git` and `.surla*`, never following a link) into a
 private folder, then runs each module in two Linux containers from
 `golang:1.27.3`: first downloading dependencies with your `GOPROXY`,
@@ -964,7 +967,10 @@ output with [`read_check_output`](#read_check_output). When the message says
 
 Runs `go mod tidy` for every module in the same kind of private copy and
 containers, with network, then writes back only the `go.mod`, `go.sum` and
-`go.work.sum` files whose bytes changed. A file that is a symlink, or that
+`go.work.sum` files whose bytes changed. Without stored verification settings,
+when the project has the starter test layout (`go.mod` and `eval/go.mod` for
+`<module>/eval`), `eval` is left out (`Left test module eval out (tests belong
+to the test writer)`). A file that is a symlink, or that
 someone edited during the call, is not written, and `message` says why.
 Modules and files are written one at a time, so a stopped call can leave a
 module with its updated `go.mod` and its earlier `go.sum`; `message` lists
@@ -1228,7 +1234,7 @@ provider's settings.
 | `no_build` | The user has not built the agreed revision, the build is of another revision (named), or the build was started without a test writer while verification settings were stored, and they have since been removed. The user builds again. |
 | `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next, and ends with the builder's own step, for example `the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again`. |
 | `no_test_layout` | A commit lacks the layout, naming what is missing: the builder fixes its commit, or the test writer reports again for the tests commit. Also an accepted tests commit the repository does not hold (the test writer reports again, or the user builds again), and a project folder in no Git repository (make it one and commit). |
-| `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); or the project folder was replaced after the server started (stop and start Surla). |
+| `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); without stored verification settings, `candidate_commit` changes hand-written files of the test module since the last commit it shares with the accepted tests commit (`eval/gen/...` and `eval/AGENTS_QUICKSTART.md` excluded; the message names up to 20 files, notes on `eval/go.mod` changes that renaming the service module is the user's to do on their own branch between changes, and gives the `git restore` or `git rm -f` command to restore or remove them and commit again) or shares no commit with the accepted tests commit (ask the user to delete the test writer's working copy and branch — `git worktree remove .surla-tests` and `git branch -D surla/tests` in the project folder — then build the change again); or the project folder was replaced after the server started (stop and start Surla). |
 
 `not_found` (`404`) means no card has this `change_id`.
 
