@@ -5826,13 +5826,14 @@ func unmarshalVerificationNotCompletedResponseBodyToSurlaVerificationNotComplete
 // *VerificationStatusResultResponseBody.
 func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResult(v *VerificationStatusResultResponseBody) *surla.VerificationStatusResult {
 	res := &surla.VerificationStatusResult{
-		RunID:           *v.RunID,
-		ChangeID:        *v.ChangeID,
-		RequestRevision: *v.RequestRevision,
-		CandidateCommit: *v.CandidateCommit,
-		SuiteCommit:     *v.SuiteCommit,
-		AcceptedAt:      *v.AcceptedAt,
-		InputsCurrent:   *v.InputsCurrent,
+		RunID:                *v.RunID,
+		ChangeID:             *v.ChangeID,
+		RequestRevision:      *v.RequestRevision,
+		CandidateCommit:      *v.CandidateCommit,
+		SuiteCommit:          *v.SuiteCommit,
+		AcceptedAt:           *v.AcceptedAt,
+		InputsCurrent:        *v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	switch string(v.TestSource.Kind()) {
 	case "evaluator":

@@ -4248,13 +4248,14 @@ func marshalSurlaVerificationNotCompletedToVerificationNotCompletedResponseBody(
 // type *surla.VerificationStatusResult.
 func marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody(v *surla.VerificationStatusResult) *VerificationStatusResultResponseBody {
 	res := &VerificationStatusResultResponseBody{
-		RunID:           v.RunID,
-		ChangeID:        v.ChangeID,
-		RequestRevision: v.RequestRevision,
-		CandidateCommit: v.CandidateCommit,
-		SuiteCommit:     v.SuiteCommit,
-		AcceptedAt:      v.AcceptedAt,
-		InputsCurrent:   v.InputsCurrent,
+		RunID:                v.RunID,
+		ChangeID:             v.ChangeID,
+		RequestRevision:      v.RequestRevision,
+		CandidateCommit:      v.CandidateCommit,
+		SuiteCommit:          v.SuiteCommit,
+		AcceptedAt:           v.AcceptedAt,
+		InputsCurrent:        v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	if v.TestSource.Kind() != "" {
 		switch string(v.TestSource.Kind()) {

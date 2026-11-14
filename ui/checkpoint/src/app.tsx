@@ -2593,6 +2593,9 @@ export function bootstrapViewsPage() {
     const snapshot = {
       ...evidence,
       inputs_current: observed ? run.inputs_current : (existing?.inputs_current ?? false),
+      candidate_binaries_dir: observed
+        ? run.candidate_binaries_dir
+        : existing?.candidate_binaries_dir,
     };
     runsById.set(run.run_id, snapshot);
     if (observed) {
