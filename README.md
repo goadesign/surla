@@ -130,7 +130,8 @@ Surla needs:
 
 - **macOS.** Surla's sandbox uses macOS `sandbox-exec`. On another system,
   every step that compiles or runs code in that sandbox is refused, such as
-  `surla preview`, `surla gen`, starting a build and verification.
+  `surla preview`, `surla gen`, starting a build with a test writer and
+  verification.
 - **Go 1.27.3** or newer.
 - **Git**, with your name and address configured (`git config --global
   user.name` and `user.email`). Surla records accepted tests as commits under

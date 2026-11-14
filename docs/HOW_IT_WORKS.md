@@ -41,6 +41,11 @@ Four more words appear on every step:
   Card. Building, verifying and approving each name it, so none of them can
   apply to a version you did not confirm.
 
+The table below also names the **live target**: a running copy of your
+application that the server builds from a commit, so the builder can try
+prompt wording before committing it (see
+[Trying prompt wording on a live target](#trying-prompt-wording-on-a-live-target)).
+
 The server decides who may call what from one table. A call by anyone else is
 refused with `forbidden` before anything changes. The agents call the server
 through an MCP (Model Context Protocol) connection named `surla`. You and the
@@ -137,7 +142,7 @@ always there; the others appear once you open a change.
 | View | What it is for |
 | --- | --- |
 | Changes | The project's Change Cards, most recently saved first, each with its latest saved verification run. |
-| Team | Each role's pane state, its Chorus watcher and whether it read its assignment, with **Start agents** and an action per role that brings its pane forward, such as **Show guide pane**. |
+| Team | Each role's pane state, its Chorus watcher (the agent's background wait for messages) and whether it read its assignment, with **Start agents** and an action per role that brings its pane forward, such as **Show guide pane**. |
 | Story | The Story of the change shown, and the guide's latest Story draft. |
 | Live target | The running copy of your application that the builder tries prompts on, and the model connection it uses. |
 | Decisions & Approval | The Change Card: its questions, your answers, confirmation, a proposed revision, the build and the recorded approval. |
@@ -234,7 +239,7 @@ Card, run `surla preview -dir <module>`.
 You press **Build this change** in Decisions & Approval. Above the button the
 page says what starts: "Building starts a builder and, unless this project has
 stored verification settings, a test writer whose tests Surla runs on this
-machine outside the sandbox to check the builder's work." **Stored
+machine outside the sandbox to check the builder’s work." **Stored
 verification settings** name a test suite of your own, an **evaluator**, at
 one exact commit; you save them with `surla verification set <file>`, and
 they apply when the server starts again. Building always uses the agreed
@@ -488,8 +493,7 @@ in the pane.
 
 The Team view shows each role's pane state (Not started, Starting, Working,
 Waiting, Needs you, Ended, Error or Status unknown), whether its Chorus
-watcher (the agent's background wait for messages) is held, and whether it
-owes an assignment read. **Start agents**
+watcher is held, and whether it owes an assignment read. **Start agents**
 opens the Chorus dialog for roles that are not running. What the server cannot
 observe stays "unknown"; it never guesses. Surla never types into an agent's
 pane. See [team supervision](REFERENCE.md#team-supervision).

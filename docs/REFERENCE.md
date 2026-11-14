@@ -690,13 +690,14 @@ from). The server checks each saved revision's digest when it reads the file.
 A saved approval is returned in `approval` only while the tests chosen for
 its revision are still at the approval's `suite_commit` and, when promotion
 settings are stored, the release binaries still have the approved digests. A
-later report of the tests, the acceptance of other tests, a build that does
-not accept the same commit again, or changed release binaries hide it; the
-card file keeps it. A build accepts the same commit again only while
-`surla/tests` still points at it and the regenerated tests are identical. A
-build that brings the working copy to a later project commit, such as the
-user's merge of the tests, moves `surla/tests` there, so the approval stays
-hidden. When the tests still match and promotion settings are stored but the
+later report of the tests, the acceptance of other tests, a build after which
+Surla does not accept the same commit again, or changed release binaries
+hide it; the card file keeps it. After a build, Surla's check of a report
+accepts the same commit again only while `surla/tests` still points at it
+and the files it checked are exactly the files that commit holds. A build
+that brings the working copy to a later project commit, such as the user's
+merge of the tests, moves `surla/tests` there, so the approval stays hidden.
+When the tests still match and promotion settings are stored but the
 release binaries cannot be read, `unverified_approval` carries the saved
 approval and this `reason`: "Saved approval for candidate
 commit <commit> could not be verified because the release binaries could not
@@ -1624,7 +1625,7 @@ proposed revision waits. Once the agreed revision is built, it offers **Build
 again…** instead, which asks first. Next to each control that sends a start it
 says: `Building starts a builder and, unless this project has stored
 verification settings, a test writer whose tests Surla runs on this machine
-outside the sandbox to check the builder's work.` It refuses to start from an
+outside the sandbox to check the builder’s work.` It refuses to start from an
 unconfirmed change (`Confirm the change before building it.`) or an older
 revision, and builds the agreed revision even while the editor holds unsaved
 edits. It shows when the build started, the required test count, whether
