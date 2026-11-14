@@ -577,6 +577,15 @@ type VerifyChangeResponseBody struct {
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
@@ -600,6 +609,15 @@ type GetVerificationResponseBody struct {
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
@@ -3735,6 +3753,15 @@ type VerificationStatusResultResponseBody struct {
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
@@ -7043,12 +7070,14 @@ func NewGetLiveTargetResponseBody(res *surla.LiveTargetStatus) *GetLiveTargetRes
 // the "verify_change" endpoint of the "surla" service.
 func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyChangeResponseBody {
 	body := &VerifyChangeResponseBody{
-		RunID:           res.RunID,
-		ChangeID:        res.ChangeID,
-		RequestRevision: res.RequestRevision,
-		CandidateCommit: res.CandidateCommit,
-		SuiteCommit:     res.SuiteCommit,
-		AcceptedAt:      res.AcceptedAt,
+		RunID:                res.RunID,
+		ChangeID:             res.ChangeID,
+		RequestRevision:      res.RequestRevision,
+		CandidateCommit:      res.CandidateCommit,
+		SuiteCommit:          res.SuiteCommit,
+		AcceptedAt:           res.AcceptedAt,
+		InputsCurrent:        res.InputsCurrent,
+		CandidateBinariesDir: res.CandidateBinariesDir,
 	}
 	if res.TestSource.Kind() != "" {
 		switch string(res.TestSource.Kind()) {
@@ -7110,12 +7139,14 @@ func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyCha
 // of the "get_verification" endpoint of the "surla" service.
 func NewGetVerificationResponseBody(res *surla.VerificationStatusResult) *GetVerificationResponseBody {
 	body := &GetVerificationResponseBody{
-		RunID:           res.RunID,
-		ChangeID:        res.ChangeID,
-		RequestRevision: res.RequestRevision,
-		CandidateCommit: res.CandidateCommit,
-		SuiteCommit:     res.SuiteCommit,
-		AcceptedAt:      res.AcceptedAt,
+		RunID:                res.RunID,
+		ChangeID:             res.ChangeID,
+		RequestRevision:      res.RequestRevision,
+		CandidateCommit:      res.CandidateCommit,
+		SuiteCommit:          res.SuiteCommit,
+		AcceptedAt:           res.AcceptedAt,
+		InputsCurrent:        res.InputsCurrent,
+		CandidateBinariesDir: res.CandidateBinariesDir,
 	}
 	if res.TestSource.Kind() != "" {
 		switch string(res.TestSource.Kind()) {

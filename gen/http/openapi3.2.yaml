@@ -3411,8 +3411,10 @@ paths:
                                 change_id: Culpa voluptas voluptas.
                                 runs:
                                     - accepted_at: "1984-07-01T17:36:31Z"
+                                      candidate_binaries_dir: baf
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                                      inputs_current: true
                                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                                       run_id: Qui distinctio.
                                       state:
@@ -3483,8 +3485,10 @@ paths:
                                       test_source:
                                         source: evaluator
                                     - accepted_at: "1984-07-01T17:36:31Z"
+                                      candidate_binaries_dir: baf
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                                      inputs_current: true
                                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                                       run_id: Qui distinctio.
                                       state:
@@ -3555,8 +3559,10 @@ paths:
                                       test_source:
                                         source: evaluator
                                     - accepted_at: "1984-07-01T17:36:31Z"
+                                      candidate_binaries_dir: baf
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                                      inputs_current: true
                                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                                       run_id: Qui distinctio.
                                       state:
@@ -3700,8 +3706,10 @@ paths:
                                 $ref: '#/components/schemas/VerificationStatusResult'
                             example:
                                 accepted_at: "1996-01-07T22:40:11Z"
+                                candidate_binaries_dir: k5
                                 candidate_commit: Molestiae totam nam nobis quidem reprehenderit quae.
                                 change_id: Sunt ut sit omnis nobis.
+                                inputs_current: true
                                 request_revision: Enim et.
                                 run_id: Quas natus.
                                 state:
@@ -13992,8 +14000,10 @@ paths:
                                 $ref: '#/components/schemas/VerificationStatusResult'
                             example:
                                 accepted_at: "1971-11-20T13:11:41Z"
+                                candidate_binaries_dir: "n"
                                 candidate_commit: Dicta reprehenderit.
                                 change_id: Dolor optio et non.
+                                inputs_current: false
                                 request_revision: Maxime mollitia exercitationem ab voluptatem qui facilis.
                                 run_id: Aperiam hic iure repellendus laborum temporibus id.
                                 state:
@@ -28615,8 +28625,10 @@ components:
                     description: Verification runs for change_id in newest-first order.
                     example:
                         - accepted_at: "1984-07-01T17:36:31Z"
+                          candidate_binaries_dir: baf
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                          inputs_current: true
                           request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                           run_id: Qui distinctio.
                           state:
@@ -28687,8 +28699,10 @@ components:
                           test_source:
                             source: evaluator
                         - accepted_at: "1984-07-01T17:36:31Z"
+                          candidate_binaries_dir: baf
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                          inputs_current: true
                           request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                           run_id: Qui distinctio.
                           state:
@@ -28759,8 +28773,10 @@ components:
                           test_source:
                             source: evaluator
                         - accepted_at: "1984-07-01T17:36:31Z"
+                          candidate_binaries_dir: baf
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                          inputs_current: true
                           request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                           run_id: Qui distinctio.
                           state:
@@ -28835,8 +28851,10 @@ components:
                 change_id: Culpa voluptas voluptas.
                 runs:
                     - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_binaries_dir: baf
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      inputs_current: true
                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                       run_id: Qui distinctio.
                       state:
@@ -28907,8 +28925,10 @@ components:
                       test_source:
                         source: evaluator
                     - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_binaries_dir: baf
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      inputs_current: true
                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                       run_id: Qui distinctio.
                       state:
@@ -28979,8 +28999,10 @@ components:
                       test_source:
                         source: evaluator
                     - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_binaries_dir: baf
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      inputs_current: true
                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                       run_id: Qui distinctio.
                       state:
@@ -29167,6 +29189,11 @@ components:
                     description: When the run was accepted.
                     example: "1996-01-07T22:40:11Z"
                     format: date-time
+                candidate_binaries_dir:
+                    type: string
+                    description: Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.
+                    example: k5
+                    minLength: 1
                 candidate_commit:
                     type: string
                     description: Candidate commit the run builds and verifies.
@@ -29175,6 +29202,10 @@ components:
                     type: string
                     description: Change Card the run verifies.
                     example: Sunt ut sit omnis nobis.
+                inputs_current:
+                    type: boolean
+                    description: Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.
+                    example: true
                 request_revision:
                     type: string
                     description: Change Card revision the run verifies.
@@ -29267,8 +29298,10 @@ components:
             description: One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.
             example:
                 accepted_at: "1996-01-07T22:40:11Z"
+                candidate_binaries_dir: k5
                 candidate_commit: Molestiae totam nam nobis quidem reprehenderit quae.
                 change_id: Sunt ut sit omnis nobis.
+                inputs_current: true
                 request_revision: Enim et.
                 run_id: Quas natus.
                 state:
@@ -29285,6 +29318,7 @@ components:
                 - candidate_commit
                 - suite_commit
                 - accepted_at
+                - inputs_current
                 - test_source
                 - state
         VerifyChangePayload:

@@ -191,7 +191,7 @@ expect(page.text("#surla-cp2-error").includes("must be confirmed before architec
 page.$("#surla-nav-cp1").click();
 page.$('[data-ambiguity-id="chg-arch-ambiguity-01"][data-option="subtotal_only"]').click();
 page.$("#surla-confirm-submit").click();
-await until(() => page.$("#surla-cp1-editor").textContent.includes("Confirmed Change Decision"), "confirmation did not finish");
+await until(() => page.$("#surla-cp1-editor").textContent.includes("Agreed:"), "confirmation did not finish");
 const revision = page.$("#surla-cp1-editor").dataset.requestRevision;
 page.$("#surla-nav-cp2").click();
 expect(page.$("#surla-cp2-loading") && page.$("#surla-cp2-loading").getAttribute("aria-busy") === "true", "evaluating showed no loading state");
