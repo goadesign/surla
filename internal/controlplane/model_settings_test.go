@@ -94,7 +94,8 @@ func TestHandOverModelSettingsReplacesOrKeepsByProvider(t *testing.T) {
 		t.Run(step.name, func(t *testing.T) {
 			res := handOverSettings(t, cp, step.payload)
 			assert.Equal(t, step.held, res.Held)
-			_, settings := cp.liveLaunch()
+			_, settings, err := cp.liveLaunch(false)
+			require.NoError(t, err)
 			require.Len(t, settings, 1, "the default anthropic choice launches with its provider's settings")
 			assert.Equal(t, step.launched, settings[0].Environ())
 		})

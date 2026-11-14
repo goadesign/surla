@@ -171,7 +171,8 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, "openai", *res.Provider)
 		assert.Equal(t, longModelName, *res.ModelName)
 		assert.Nil(t, res.GatewayAddr)
-		env, settings := cp.liveLaunch()
+		env, settings, err := cp.liveLaunch(false)
+		require.NoError(t, err)
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + longModelName}, env)
 		require.Len(t, settings, 1)
 		assert.Equal(t, []string{"OPENAI_API_KEY=" + sentinelKey}, settings[0].Environ())
@@ -195,16 +196,17 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 
 		// 2. Switch via MCP tools/call to a long gateway_addr.
 		sr.Reset()
-		longGatewayAddr := "127.0.0.1:9090/" + strings.Repeat("g", 4096)
+		longGatewayAddr := strings.Repeat("g", 63) + "." + strings.Repeat("h", 63) + "." + strings.Repeat("i", 63) + ":9090"
 		adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
-		argsJSON, err := json.Marshal(map[string]any{"gateway_addr": " " + longGatewayAddr + " "})
+		argsJSON, err := json.Marshal(map[string]any{"gateway_addr": longGatewayAddr})
 		require.NoError(t, err)
 		mcpRes, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "configure_model", Arguments: argsJSON})
 		require.NoError(t, err)
 		complete, ok := mcpRes.Outcome.AsComplete()
 		require.True(t, ok)
 		assert.False(t, complete.IsError != nil && *complete.IsError)
-		env, settings = cp.liveLaunch()
+		env, settings, err = cp.liveLaunch(false)
+		require.NoError(t, err)
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=" + longGatewayAddr}, env)
 		assert.Empty(t, settings, "a gateway gets no provider settings")
 		read, err = cp.GetModelConnection(alice)
@@ -256,10 +258,11 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 
+		seedLiveChange(t, cp)
 		commit := strings.Repeat("a", 40)
 		start := func() string {
 			t.Helper()
-			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 			require.NoError(t, err)
 			got, err := os.ReadFile(envFile)
 			require.NoError(t, err)

@@ -39,6 +39,8 @@ import (
 )
 
 const (
+	// liveTestChangeID is the confirmed change used by stored-evaluator live fixtures.
+	liveTestChangeID = "chg-live"
 	// liveTargetModeEnv selects what the fake live target does: "serve"
 	// serves the prompt operation; "drop" closes every update's connection
 	// without answering; "leaky" rejects templates with a message quoting a
@@ -76,7 +78,7 @@ func TestMain(m *testing.M) {
 		os.Exit(checkHost(os.Args[2], os.Args[3], os.Args[4]))
 	}
 	if len(os.Args) == 4 && os.Args[1] == "verify-run" && os.Args[2] == "live" {
-		if err := verifyrun.Live(os.Args[3], fakeLivePrepare, os.Stdout, os.Stderr); err != nil {
+		if err := verifyrun.Live(os.Args[3], fakeLivePrepare, nil, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -189,6 +191,9 @@ func serveFakeTarget() int {
 		defer target.mu.Unlock()
 		fmt.Fprint(w, target.last)
 	})
+	root.HandleFunc("GET /model", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, os.Getenv("SURLA_LIVE_MODEL_GATEWAY"))
+	})
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 2
@@ -219,7 +224,23 @@ func newLiveControlPlane(t *testing.T, mode string) (*ControlPlane, string) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	seedLiveChange(t, cp)
 	return cp, LiveRoot(cardsDir)
+}
+
+// seedLiveChange gives the stored-evaluator fixture a confirmed card owned by alice.
+// It does not create a build: stored evaluator starts must keep that capability.
+func seedLiveChange(t *testing.T, cp *ControlPlane) {
+	t.Helper()
+	saveStoryCard(t, cp, liveTestChangeID, StatusConfirmed, refundStory("Refund over the limit waits"))
+}
+
+// boundTargetForTest reads the bound target for lifecycle assertions. Consumer
+// tests exercise draft_override's no-target and ended errors separately.
+func boundTargetForTest(cp *ControlPlane) *liveTarget {
+	cp.bindMu.RLock()
+	defer cp.bindMu.RUnlock()
+	return cp.bound
 }
 
 // draft sends text for promptID through draft_override.
@@ -252,7 +273,7 @@ func TestLiveTargetAppliesDraftsThroughTheGeneratedContract(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	commit := strings.Repeat("a", 40)
 
-	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 	require.NoError(t, err)
 	assert.Equal(t, commit, res.CandidateCommit)
 	assert.True(t, strings.HasPrefix(res.URL, "http://127.0.0.1:"), res.URL)
@@ -303,9 +324,9 @@ func TestLiveTargetAppliesDraftsThroughTheGeneratedContract(t *testing.T) {
 func TestLiveTargetRejectsAWrongKey(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "serve")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	lt := cp.boundLive()
+	lt := boundTargetForTest(cp)
 	require.NotNil(t, lt)
 	lt.key = "not-the-key"
 	_, err = draft(alice, cp, fakePromptID, "x")
@@ -315,7 +336,7 @@ func TestLiveTargetRejectsAWrongKey(t *testing.T) {
 func TestLiveTargetReportsAnUnconfirmedUpdate(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "drop")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	_, err = draft(alice, cp, fakePromptID, "x")
 	assert.Equal(t, "update_not_confirmed", goaErrorName(err))
@@ -324,26 +345,27 @@ func TestLiveTargetReportsAnUnconfirmedUpdate(t *testing.T) {
 func TestLiveTargetThatEndsIsUnboundAndCleanedUp(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "serve")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	lt := cp.boundLive()
+	lt := boundTargetForTest(cp)
 	require.NotNil(t, lt)
 	resp, err := http.Post(res.URL+"/exit", "text/plain", nil)
 	if err == nil {
 		resp.Body.Close()
 	}
-	require.Eventually(t, func() bool { return cp.boundLive() == nil }, 30*time.Second, 20*time.Millisecond,
-		"an ended target is unbound")
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindEnded }, 30*time.Second, 20*time.Millisecond,
+		"an ended target is unbound and cleaned up before publishing the ended notice")
+	assert.Nil(t, boundTargetForTest(cp))
 	<-lt.proc.Done()
 	_, err = draft(alice, cp, fakePromptID, "x")
-	assert.Equal(t, "no_live_target", goaErrorName(err), "later drafts find no live target")
+	assert.Equal(t, "live_target_ended", goaErrorName(err), "later drafts retain the ended target's safe explanation")
 	stopped, err := cp.StopLiveTarget(alice)
 	require.NoError(t, err)
 	assert.False(t, stopped.Stopped, "nothing runs after the target ended and was cleaned up")
 	assert.Equal(t, "live_target_ended", goaErrorName(liveDraftError(errors.New("connection reset"), lt)),
 		"a draft in flight when the target ended is reported as ended")
 
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("b", 40)})
 	require.NoError(t, err)
 	_, err = draft(alice, cp, fakePromptID, "y")
 	require.NoError(t, err, "a new start binds a running target again")
@@ -352,7 +374,7 @@ func TestLiveTargetThatEndsIsUnboundAndCleanedUp(t *testing.T) {
 func TestLiveTargetStartFailuresAreTyped(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp, root := newLiveControlPlane(t, "fail")
-	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
 	assert.Contains(t, err.Error(), "The evaluator suite did not start a live target. Check that its suite.Command sets Live")
 	dirs, err := verifyrun.LeftoverLiveDirs(root)
@@ -362,19 +384,19 @@ func TestLiveTargetStartFailuresAreTyped(t *testing.T) {
 	unconfigured, err := New(Options{CardsDir: t.TempDir()})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, unconfigured.Close()) })
-	_, err = unconfigured.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = unconfigured.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_unavailable", goaErrorName(err))
 
-	_, err = cp.StartLiveTarget(context.Background(), &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(context.Background(), &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assert.EqualError(t, err, "authenticated principal is required")
 }
 
 func TestLiveTargetReplacementNeverReachesTwoTargets(t *testing.T) {
 	cp, root := newLiveControlPlane(t, "serve")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	first, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	first, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	oldProc := cp.boundLive().proc
+	oldProc := boundTargetForTest(cp).proc
 
 	var wg sync.WaitGroup
 	results := make(chan error, 40)
@@ -397,7 +419,7 @@ func TestLiveTargetReplacementNeverReachesTwoTargets(t *testing.T) {
 			}
 		}()
 	}
-	second, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	second, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("b", 40)})
 	close(stop)
 	wg.Wait()
 	close(results)
@@ -437,10 +459,11 @@ func TestCloseStopsTheLiveTarget(t *testing.T) {
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	proc := cp.boundLive().proc
+	proc := boundTargetForTest(cp).proc
 	require.NoError(t, cp.Close())
 	select {
 	case <-proc.Done():
@@ -463,10 +486,11 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 			StartTimeout: time.Hour},
 	})
 	require.NoError(t, err)
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	first := make(chan error, 1)
 	go func() {
-		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 		first <- err
 	}()
 	require.Eventually(t, func() bool {
@@ -475,7 +499,7 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 	}, 30*time.Second, 20*time.Millisecond, "the first start is preparing")
 	queued := make(chan error, 1)
 	go func() {
-		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("b", 40)})
 		queued <- err
 	}()
 
@@ -484,7 +508,7 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 	assert.Less(t, time.Since(closed), 30*time.Second, "Close does not wait for the build to finish")
 	assert.Equal(t, "live_target_failed", goaErrorName(<-first), "the start in progress ended")
 	assert.Equal(t, "live_target_unavailable", goaErrorName(<-queued), "a queued start is refused before launching")
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("c", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("c", 40)})
 	assert.Equal(t, "live_target_unavailable", goaErrorName(err), "a start after Close is refused")
 	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
 	require.NoError(t, err)
@@ -503,10 +527,11 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	lt := cp.boundLive()
+	lt := boundTargetForTest(cp)
 	require.NotNil(t, lt)
 	// An immutable file makes removing the live directory fail, so Stop
 	// cannot confirm the cleanup.
@@ -521,7 +546,7 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 	_, err = cp.StopLiveTarget(alice)
 	assert.Equal(t, "live_target_stop_failed", goaErrorName(err))
 	assert.NotContains(t, err.Error(), cardsDir, "the public error names no private directory")
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("b", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
 	assert.Contains(t, err.Error(), "could not be confirmed stopped")
 	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
@@ -567,7 +592,7 @@ func workspaces(t *testing.T, dir string) []string {
 func TestTargetMessagesNeverReachCallers(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "leaky")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	args, err := json.Marshal(map[string]string{"target_kind": TargetKindPromptTemplate, "prompt_id": fakePromptID, "new_content": "x"})
 	require.NoError(t, err)
@@ -688,7 +713,7 @@ func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(liveTargetVersionEnv, tc.version)
 			cp, _ := newLiveControlPlane(t, "version")
-			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 			require.NoError(t, err)
 			out, err := draft(alice, cp, fakePromptID, "x")
 			if !tc.valid {
@@ -707,7 +732,7 @@ func TestServersWithDifferentCardsDirectoriesNeverSeeEachOthersTargets(t *testin
 	a, rootA := newLiveControlPlane(t, "serve")
 	_, rootB := newLiveControlPlane(t, "serve")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err := a.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := a.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	dirsA, err := verifyrun.LeftoverLiveDirs(rootA)
 	require.NoError(t, err)
@@ -728,7 +753,8 @@ func TestToolsListWarnsThatStartingDiscardsTheRunningTargetsDrafts(t *testing.T)
 			descriptions[tool.Name] = *tool.Description
 		}
 	}
-	assert.Contains(t, descriptions["start_live_target"], "first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails")
+	assert.Contains(t, descriptions["start_live_target"], "Refused preflight preserves a running target; an accepted replacement discards its drafts even if startup then fails")
+	assert.Contains(t, descriptions["start_live_target"], "Commit prompt text to preserve it")
 	assert.Contains(t, descriptions["stop_live_target"], "discards every prompt draft applied to it")
 }
 
@@ -749,16 +775,17 @@ func TestAStartThatFailsBeforeReadyAndCannotBeCleanedUpKeepsItsOwner(t *testing.
 			require.NoError(t, exec.Command("chflags", "nouchg", m).Run())
 		}
 	})
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
 	assert.Contains(t, err.Error(), "could not be confirmed stopped")
 	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
 	require.NoError(t, err)
 	require.Len(t, dirs, 1)
 
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("b", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
 	again, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
 	require.NoError(t, err)
@@ -782,8 +809,9 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
 	assert.Contains(t, err.Error(), "did not become ready within the configured start timeout (300ms)")
 	assert.NotContains(t, err.Error(), "commit exists")
@@ -795,7 +823,7 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 func TestLiveTargetAnsweringForAnotherPromptIsNotConfirmed(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "other-prompt")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	out, err := draft(alice, cp, fakePromptID, "x")
 	assert.Nil(t, out, "no applied-success result")
@@ -809,7 +837,7 @@ func TestLiveTargetAnsweringForAnotherPromptIsNotConfirmed(t *testing.T) {
 // through a real fake target's life: none before a start; running with its
 // commit, address and start time and no prompts; one entry per prompt whose
 // draft was accepted, a second draft replacing it and refused drafts adding
-// nothing; none once the target ends by itself; a later target with a later
+// nothing; ended once the target ends by itself; a later target with a later
 // start time and no entries; and none after a stop. Over HTTP the read
 // carries the version in force but never the drafted text, and no span the
 // server recorded holds that text.
@@ -827,11 +855,12 @@ func TestGetLiveTargetFollowsEachTransition(t *testing.T) {
 			StartTimeout: time.Minute,
 		},
 	})
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	assert.Equal(t, gensurla.LiveTargetKindNone, cp.liveTargetState().Kind(), "no live target before a start")
 
 	commit := strings.Repeat("a", 40)
-	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 	require.NoError(t, err)
 	running := readRunning(t, cp)
 	assert.Equal(t, commit, running.CandidateCommit)
@@ -888,16 +917,16 @@ func TestGetLiveTargetFollowsEachTransition(t *testing.T) {
 		}
 	}
 
-	lt := cp.boundLive()
+	lt := boundTargetForTest(cp)
 	require.NotNil(t, lt)
 	if resp, err := http.Post(res.URL+"/exit", "text/plain", nil); err == nil {
 		require.NoError(t, resp.Body.Close())
 	}
-	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindNone },
-		30*time.Second, 20*time.Millisecond, "a target that ended by itself is shown as none")
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindEnded },
+		30*time.Second, 20*time.Millisecond, "a target that ended by itself retains an ended observation")
 	<-lt.proc.Done()
 
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("b", 40)})
 	require.NoError(t, err)
 	running = readRunning(t, cp)
 	assert.Empty(t, running.Prompts, "drafts end with the target that accepted them")
@@ -922,12 +951,13 @@ func TestGetLiveTargetShowsAStartInProgressWithoutWaiting(t *testing.T) {
 			StartTimeout: time.Hour},
 	})
 	require.NoError(t, err)
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	commit := strings.Repeat("a", 40)
 	started := make(chan error, 1)
 	before := time.Now()
 	go func() {
-		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 		started <- err
 	}()
 	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindStarting },
@@ -966,11 +996,12 @@ func TestGetLiveTargetShowsATargetNotConfirmedStopped(t *testing.T) {
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	commit := strings.Repeat("a", 40)
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 	require.NoError(t, err)
-	lt := cp.boundLive()
+	lt := boundTargetForTest(cp)
 	require.NotNil(t, lt)
 	// An immutable file makes removing the live directory fail, so Stop
 	// cannot confirm the cleanup.
@@ -1057,6 +1088,7 @@ func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
 	})
 	cp.changesWait = 20 * time.Second
 	cp.changesPoll = 20 * time.Millisecond
+	seedLiveChange(t, cp)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	version := func() string {
 		list, err := cp.ListChanges(alice)
@@ -1066,7 +1098,7 @@ func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
 	idle := version()
 	assert.Equal(t, idle, version(), "nothing changed, so the version stays")
 
-	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	started := version()
 	assert.NotEqual(t, idle, started, "a started target changes the version")
@@ -1103,18 +1135,18 @@ func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
 	if resp, err := http.Post(res.URL+"/exit", "text/plain", nil); err == nil {
 		require.NoError(t, resp.Body.Close())
 	}
-	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindNone },
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindEnded },
 		30*time.Second, 20*time.Millisecond)
 	assert.NotEqual(t, redrafted, version(), "a target that ended changes the version")
 
 	// A stop and a new start of the same commit, between two reads of the
 	// version, still change it: only the start time tells the targets apart.
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	before := version()
 	_, err = cp.StopLiveTarget(alice)
 	require.NoError(t, err)
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	assert.NotEqual(t, before, version(), "a new target of the same commit changes the version")
 	_, err = cp.StopLiveTarget(alice)
