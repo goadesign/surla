@@ -4757,6 +4757,10 @@ type GetVerificationResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *GetVerificationResulttestSourceTransport `json:"test_source"`
@@ -4786,6 +4790,9 @@ func ValidateGetVerificationResultTransport(value *GetVerificationResultTranspor
 	}
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
@@ -6179,6 +6186,10 @@ type ListVerificationsResultVerificationStatusResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *ListVerificationsResulttestSourceTransport `json:"test_source"`
@@ -6208,6 +6219,9 @@ func ValidateListVerificationsResultVerificationStatusResultTransport(value *Lis
 	}
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
@@ -9175,6 +9189,10 @@ type VerifyChangeResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *VerifyChangeResulttestSourceTransport `json:"test_source"`
@@ -9204,6 +9222,9 @@ func ValidateVerifyChangeResultTransport(value *VerifyChangeResultTransport) (er
 	}
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
@@ -13307,6 +13328,7 @@ func EncodeGetVerificationResult(in *surla.VerificationStatusResult) ([]byte, er
 			CandidateCommit: &in.CandidateCommit,
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
+			InputsCurrent:   &in.InputsCurrent,
 		}
 		var testSourceValue GetVerificationResulttestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -14145,6 +14167,7 @@ func EncodeVerifyChangeResult(in *surla.VerificationStatusResult) ([]byte, error
 			CandidateCommit: &in.CandidateCommit,
 			SuiteCommit:     &in.SuiteCommit,
 			AcceptedAt:      &in.AcceptedAt,
+			InputsCurrent:   &in.InputsCurrent,
 		}
 		var testSourceValue VerifyChangeResulttestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -18532,6 +18555,7 @@ func encodeVerificationStatusResultToListVerificationsResultVerificationStatusRe
 		CandidateCommit: &v.CandidateCommit,
 		SuiteCommit:     &v.SuiteCommit,
 		AcceptedAt:      &v.AcceptedAt,
+		InputsCurrent:   &v.InputsCurrent,
 	}
 	var testSourceValue ListVerificationsResulttestSourceTransport
 	switch string(v.TestSource.Kind()) {

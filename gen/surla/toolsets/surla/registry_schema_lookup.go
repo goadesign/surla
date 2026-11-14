@@ -48,37 +48,37 @@ func ToolSchema(name tools.Ident) (*genregistry.ToolSchema, bool) {
 	case "surla.get_verification":
 		return declarations.schema985(), true
 	case "surla.init_project":
-		return declarations.schema1037(), true
+		return declarations.schema1038(), true
 	case "surla.list_builder_assignments":
-		return declarations.schema1052(), true
+		return declarations.schema1053(), true
 	case "surla.list_changes":
-		return declarations.schema1073(), true
+		return declarations.schema1074(), true
 	case "surla.list_test_writer_assignments":
-		return declarations.schema1094(), true
+		return declarations.schema1095(), true
 	case "surla.list_traces":
-		return declarations.schema1125(), true
+		return declarations.schema1126(), true
 	case "surla.list_verifications":
-		return declarations.schema1154(), true
+		return declarations.schema1155(), true
 	case "surla.preview_architecture":
-		return declarations.schema1209(), true
+		return declarations.schema1211(), true
 	case "surla.propose_change":
-		return declarations.schema1267(), true
+		return declarations.schema1269(), true
 	case "surla.read_check_output":
-		return declarations.schema1468(), true
+		return declarations.schema1470(), true
 	case "surla.refresh_story":
-		return declarations.schema1483(), true
+		return declarations.schema1485(), true
 	case "surla.report_tests_finished":
-		return declarations.schema1531(), true
+		return declarations.schema1533(), true
 	case "surla.revise_change":
-		return declarations.schema1564(), true
+		return declarations.schema1566(), true
 	case "surla.start_live_target":
-		return declarations.schema1773(), true
+		return declarations.schema1775(), true
 	case "surla.stop_live_target":
-		return declarations.schema1785(), true
+		return declarations.schema1787(), true
 	case "surla.update_dependencies":
-		return declarations.schema1794(), true
+		return declarations.schema1796(), true
 	case "surla.verify_change":
-		return declarations.schema1805(), true
+		return declarations.schema1807(), true
 	default:
 		return nil, false
 	}

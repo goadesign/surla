@@ -2,7 +2,7 @@
 // Change Card. The page owns requests, revision correlation and receipts.
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ChangeBuild, ChangeCardResult, StartBuildResult, StartedBuild } from "../types";
+import type { ChangeBuild, ChangeCardResult, StartBuildResult, StartedBuild, VerificationStatusResult } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
 
 // BuildStartReceipt records one start's answers, rather than current health.
@@ -30,10 +30,16 @@ export interface BuildSectionProps {
   findingTexts: readonly string[] | null;
   findingsLoading: boolean;
   findingsError: string | null;
+  // check is the owner's exact latest saved run for this change.
+  check: VerificationStatusResult | null;
+  checkKnown: boolean;
+  checkError: string | null;
+  approvalAvailable: boolean;
   onRefresh: () => void;
   onReadFindings: () => void;
   onBuild: () => void;
   onOpenTeam: () => void;
+  onReviewCheck: () => void;
 }
 
 // BuildSectionView shows the owner's saved facts without starting work on a
@@ -52,10 +58,15 @@ export function BuildSectionView({
   findingTexts,
   findingsLoading,
   findingsError,
+  check,
+  checkKnown,
+  checkError,
+  approvalAvailable,
   onRefresh,
   onReadFindings,
   onBuild,
   onOpenTeam,
+  onReviewCheck,
 }: BuildSectionProps) {
   const saved = build !== null && build.state === "started" ? build : null;
   const current = saved !== null && saved.in_force;
@@ -65,6 +76,13 @@ export function BuildSectionView({
   const eligible = confirmed && displayedCurrent && build !== null && error === null;
   const blocked = disabled || starting || loading || !eligible;
   const otherPrimary = !confirmed || !displayedCurrent || dirty || card.proposed_revision !== undefined;
+  const report = check?.state.type === "completed" ? check.state.value.report : null;
+  const matchedCheck = checkKnown && check?.inputs_current === true &&
+    check.change_id === card.change_id && check.request_revision === card.request_revision;
+  const recordedCheck = report !== null && card.approval?.report_digest === report.report_digest;
+  const sentBack = current && saved.test_writer.tests.state === "needs_changes";
+  const reviewPrimary = approvalAvailable && !otherPrimary && !sentBack && matchedCheck &&
+    report?.passed === true && !recordedCheck;
   // identity binds the question to the exact subject and start it described.
   const identity = JSON.stringify([card.change_id, card.request_revision, saved?.started_at ?? null]);
   const [questionIdentity, setQuestionIdentity] = useState<string | null>(null);
@@ -188,10 +206,28 @@ export function BuildSectionView({
       {actionError !== null ? (
         <Alert id="surla-build-action-error" variant="destructive" role="alert">{actionError}</Alert>
       ) : null}
-      {build?.state === "not_started" ? <p id="surla-build-state">Not built yet.</p> : null}
+      {check !== null && !sentBack ? (
+        <p id="surla-build-state" data-inputs-current={checkKnown ? String(check.inputs_current) : "unknown"}>
+          {check.state.type === "running"
+            ? "Surla is checking the builder’s code. Your next decision is approval after the check passes."
+            : !checkKnown
+            ? "A saved check is available. Its current agreement and tests have not been confirmed."
+            : !matchedCheck
+            ? "The saved check used an earlier agreement or test selection. The builder checks the current agreement and tests again; then you can approve."
+            : report?.passed
+            ? recordedCheck
+              ? "The check passed and your approval is recorded."
+              : `The check passed: ${report.counts.passed} of ${report.counts.required} scenarios. ${approvalAvailable ? "Review the result and approve it." : "Review the result; approval is unavailable on this server."}`
+            : check.state.type === "not_completed"
+            ? "The check could not finish. The builder reads the result and addresses its next step."
+            : "The check did not pass. The builder reviews the result before asking for another check."}
+          {" Check started "}<time dateTime={check.accepted_at}>{localBuildTime(check.accepted_at)}</time>.
+        </p>
+      ) : build?.state === "not_started" ? <p id="surla-build-state">Not built yet.</p> : null}
+      {checkError !== null ? <p id="surla-build-check-error">Could not refresh the saved check. {checkError}</p> : null}
       {saved !== null ? (
         <>
-          <BuildProgress build={saved} />
+          {check === null || sentBack ? <BuildProgress build={saved} /> : null}
           <p>
             {saved.required_test_count === 0
               ? "No tests of this change’s Story were required."
@@ -229,10 +265,18 @@ export function BuildSectionView({
         {showDirect ? (
           <Button
             id="surla-build-start"
-            variant={otherPrimary || saved?.test_writer.tests.state === "needs_changes" ? "default" : "primary"}
+            variant={otherPrimary || sentBack || reviewPrimary ? "default" : "primary"}
             disabled={blocked}
             onClick={start}
           >{directLabel}</Button>
+        ) : null}
+        {check !== null ? (
+          <Button
+            id="surla-build-review-check"
+            variant={reviewPrimary ? "primary" : "default"}
+            disabled={disabled || starting}
+            onClick={onReviewCheck}
+          >{reviewPrimary ? "Review and approve" : "Review saved check"}</Button>
         ) : null}
         <Button
           id="surla-build-view-team"

@@ -151,6 +151,15 @@ Surla cannot judge whether an analysis is complete or correct; the requester doe
 - **`list_verifications`** (`GET /changes/{change_id}/verifications`)
   - **Input:** `change_id` → **Output:** `VerificationListResult` (`change_id`, `runs: VerificationStatusResult[]`)
   - Lists all saved verification runs in `<runs_dir>/` recorded for `change_id` and owned by the authenticated principal (allowed whether the card is currently `confirmed` or `needs_confirmation`, so runs from earlier revisions remain discoverable after `revise_change`), ordered newest first by `accepted_at` (`run_id` ascending on ties), each with its `test_source` and with each completed report projected through `Report.ForBuilders()`. The test writer may list only the runs of a change it holds an assignment for, as for `get_verification`.
+  Every `VerificationStatusResult`, including the start response, carries required
+  `inputs_current`. It uses the same agreed-revision and selected-tests comparison
+  as `latest_verification.inputs_current` on the change list, for that individual
+  run. The observation may change while its saved verdict and report stay fixed;
+  it proves neither the current working tree nor deployment or approval. Start
+  observes the match before accepting work; get and list observe it while reading
+  current owned card/build facts. An authorized historical get with no current
+  owned card still returns the report with a false match. Unreadable current
+  records fail the read rather than produce a false match.
 - **`approve_merge`** (`POST /changes/approve`)
   - **Input:** `change_id`, `request_revision`, `candidate_commit`, `report_digest` → **Output:** `ChangeCardResult`
   - Records Checkpoint 5 (`CP5`) promotion approval on the owning principal's confirmed `ChangeCardResult` when verification or `controlplane.Options.PromotionTarget` (`surla promotion set <file>` followed by a server restart) is configured. It checks which tests are currently chosen for this change and `request_revision` (returning `no_build` or `tests_not_accepted` when written tests are not yet accepted), loads the full `verify.Report` for `report_digest` from the project's report store, verifies that the report passed and its `suite_commit` matches the chosen tests' commit (returning `unprocessable` when the report ran against a different commit), checks `PromotionTarget.CurrentArtifacts(ctx, candidate_commit)` when promotion settings are configured (returning `unprocessable` naming the publish or `surla promotion remove` step without host paths when the release files are missing or changed), re-verifies under the write lock that the card still has `request_revision` and the chosen tests' commit is unchanged, and saves and returns the updated `ChangeCardResult` with `approval` (`ApprovalItem`: `approved_by`, `report_digest`, `candidate_commit`, `suite_id`, `suite_commit`, `test_source`, `environment`, `artifacts`, `scenario_count`) in `Options.CardsDir` (`artifacts` is empty when no promotion settings are stored). Recording approval does not merge branches or deploy binaries. When neither verification nor `PromotionTarget` is configured, `approve_merge` requests return `not_implemented`.
@@ -350,8 +359,12 @@ accepted again before verification. Stored verification settings keep their
 own test source. An unchanged confirmation keeps the revision and build.
 
 The change list distinguishes the latest saved run from whether its revision
-and selected tests still match. **Proof** shows each run's recorded candidate
-and test commit. Runs using written tests carry the server's notice that the
+and selected tests still match. The opened build surfaces a matching passed
+check and **Review and approve** opens that exact run. **Proof** shows each run's
+recorded candidate and test commit, including an older selected run, and refreshes
+its input match when the agreement or build changes. Approval waits while that
+match is stale, pending or unreadable; saved reports and unsaved edits remain.
+Runs using written tests carry the server's notice that the
 tests were written by a separate agent on this machine and are not isolated
 from the builder; operator evaluator runs retain their evaluator labels.
 

@@ -491,6 +491,10 @@ type (
 		SuiteCommit string
 		// When the run was accepted.
 		AcceptedAt string
+		// Whether this run's agreed revision and selected tests match the current
+		// Change Card and usable build or stored evaluator. This observation does not
+		// establish the current candidate working tree, deployment or approval.
+		InputsCurrent bool
 		// Where the run's tests came from, recorded when the run started: evaluator,
 		// or written_tests with their commit and a notice.
 		TestSource TestSource
@@ -889,6 +893,10 @@ type (
 		SuiteCommit string
 		// When the run was accepted.
 		AcceptedAt string
+		// Whether this run's agreed revision and selected tests match the current
+		// Change Card and usable build or stored evaluator. This observation does not
+		// establish the current candidate working tree, deployment or approval.
+		InputsCurrent bool
 		// Where the run's tests came from, recorded when the run started: evaluator,
 		// or written_tests with their commit and a notice.
 		TestSource TestSource
@@ -1566,6 +1574,10 @@ type (
 		SuiteCommit string
 		// When the run was accepted.
 		AcceptedAt string
+		// Whether this run's agreed revision and selected tests match the current
+		// Change Card and usable build or stored evaluator. This observation does not
+		// establish the current candidate working tree, deployment or approval.
+		InputsCurrent bool
 		// Where the run's tests came from, recorded when the run started: evaluator,
 		// or written_tests with their commit and a notice.
 		TestSource TestSource

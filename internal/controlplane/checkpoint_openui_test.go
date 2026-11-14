@@ -156,7 +156,7 @@ expect(decisions && decisions.textContent.includes("Confirmed Decisions:") && de
 // A confirmed card without questions keeps the plain Summary heading.
 await open("chg-zero-amb");
 page.$("#surla-confirm-submit").click();
-await until(() => editorRegion().textContent.includes("Confirmed Change Decision"), "the zero-question card did not confirm");
+await until(() => editorRegion().textContent.includes("Agreed:"), "the zero-question card did not confirm");
 expect(!page.$("#surla-confirmed-decisions") && editorRegion().textContent.includes("Summary: ") && !editorRegion().textContent.includes("Initial Proposal Summary: "), "expected zero-ambiguity confirmed card to omit #surla-confirmed-decisions and keep Summary heading");
 
 // 4. Every invalid composition falls back to the canonical editor.

@@ -19,7 +19,8 @@ appears above every view. Failed reads retain facts labeled as last read;
 unknown observations remain unknown. Automatic reminder delivery is unavailable
 in the executable binding.
 
-After confirming a change, choose **Build this change** beside its summary.
+After confirming a change, choose **Build this change** at the top of the opened
+change. The agreement and its editable details remain available below the build.
 The page shows the saved build's revision, assignment reads, required Story test
 count and test-writer progress. It follows changes without reloading or losing
 unsaved edits. Building uses the agreed saved revision, including while a guide's
@@ -29,7 +30,12 @@ directly replaces an earlier build. Before refining or adopting a different
 agreed revision, the page explains that its build becomes earlier and that a
 replacement build's written tests need acceptance again. Saved run labels say
 whether the recorded revision and selected tests still match; **Proof** names
-the test source and shows the written-test isolation notice.
+the test source and shows the written-test isolation notice. Sent-back findings
+name the test writer as the actor that fixes and reports them. When a matching
+check passes, **Review and approve** opens that exact saved result. If the agreed
+revision or selected tests change, the result stays readable as history but
+cannot be approved until a matching check is available. Pending or failed reads
+also leave the report visible while approval waits for a fresh input match.
 See [builds and assignments](REFERENCE.md#builds-and-assignments).
 
 ## Overview: Strict Separation of Powers

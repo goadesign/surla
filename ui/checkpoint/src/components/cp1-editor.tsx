@@ -322,7 +322,8 @@ export function CP1EditorView({
             Approval recorded by bearer principal <code>{card.approval.approved_by}</code> for this
             confirmed <code>request_revision</code> on the saved Change Card. Recording approval
             does not merge branches or deploy binaries. This record describes the verified inputs
-            below; check the current approval to see whether they still match the promotion target.
+            below. Check current approval to compare the accepted tests commit again; when this
+            project stores promotion settings, Surla also compares the release binaries.
           </p>
           {draftDirty ? (
             <Alert id="surla-cp5-approval-dirty-warning" variant="warning" role="status">

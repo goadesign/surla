@@ -4254,6 +4254,7 @@ func marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody(
 		CandidateCommit: v.CandidateCommit,
 		SuiteCommit:     v.SuiteCommit,
 		AcceptedAt:      v.AcceptedAt,
+		InputsCurrent:   v.InputsCurrent,
 	}
 	if v.TestSource.Kind() != "" {
 		switch string(v.TestSource.Kind()) {

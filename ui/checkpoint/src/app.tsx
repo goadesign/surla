@@ -570,6 +570,14 @@ export function bootstrapViewsPage() {
   let findingsError: string | null = null;
   let findingsReadAgain = false;
   const runsById = new Map<string, VerificationStatusResult>();
+  // Verification observations follow the page's owner updates independently
+  // of immutable terminal reports. Request order also covers overlapping
+  // list/get reads of the same run within one update generation.
+  let verificationGeneration = 0;
+  let verificationReadOrder = 0;
+  const runObservationGeneration = new Map<string, number>();
+  const runObservationOrder = new Map<string, number>();
+  const runReadAgain = new Set<string>();
   const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
   let selectedRunId: string | null = null;
@@ -830,10 +838,16 @@ export function bootstrapViewsPage() {
       const previous = changeList;
       changeList = outcome.result;
       listError = null;
+      if (previous === null || previous.version !== outcome.result.version) {
+        verificationGeneration++;
+      }
       applyListChanges(previous, outcome.result);
       if (previous === null || previous.version !== outcome.result.version) {
         readTeam();
-        if (activeEditor !== null) readBuild(activeEditor.card.change_id);
+        if (activeEditor !== null) {
+          readBuild(activeEditor.card.change_id);
+          refreshVerificationObservations(activeEditor.card.change_id);
+        }
       }
       if (previous !== null && previous.version !== outcome.result.version) {
         // The version also covers the owner's Story evaluation. It is read
@@ -1068,6 +1082,11 @@ export function bootstrapViewsPage() {
     if (hasPending("list_verifications", changeId)) {
       return;
     }
+    const generation = verificationGeneration;
+    const order = ++verificationReadOrder;
+    for (const run of runsById.values()) {
+      if (run.change_id === changeId) markRunReadPending(run.run_id, order);
+    }
     callServer(
       "list_verifications",
       { change_id: changeId },
@@ -1077,7 +1096,7 @@ export function bootstrapViewsPage() {
           return;
         }
         for (let i = 0; i < payload.runs.length; i++) {
-          upsertRunSnapshot(payload.runs[i]);
+          upsertRunSnapshot(payload.runs[i], generation, order);
         }
         const loadedIds = payload.runs.map((r) => r.run_id);
         lastLoadedListByChangeId.set(changeId, loadedIds);
@@ -1096,6 +1115,51 @@ export function bootstrapViewsPage() {
   // snapshot when one is currently selected in runsById.
   function resolveDisplayedVerificationRun(): VerificationStatusResult | null {
     return selectedRunId !== null ? runsById.get(selectedRunId) ?? null : null;
+  }
+
+  // runInputsKnown means the displayed owner observation survived the latest
+  // update and all reads on which its action depends. Saved evidence remains
+  // visible while any of these facts are unknown.
+  function runInputsKnown(run: VerificationStatusResult): boolean {
+    return sessionState === "active" && !document.hidden && changeList !== null && listError === null &&
+      !waitTroubleShown && !editorBusy &&
+      runObservationGeneration.get(run.run_id) === verificationGeneration &&
+      !hasPending("get_verification", run.run_id) &&
+      !hasPending("list_verifications", run.change_id) &&
+      !hasPending("get_build", run.change_id) &&
+      !hasPending("start_build", run.change_id) &&
+      !cardLoadErrors.has(run.change_id) &&
+      (buildChangeId !== run.change_id || buildReadError === null);
+  }
+
+  // refreshVerificationObservations reads exact owner-supplied identities.
+  // An older selected run is independent of the latest run's match.
+  function refreshVerificationObservations(changeId: string) {
+    const latest = changeList?.changes.find((item) => item.change_id === changeId)?.latest_verification;
+    if (latest !== undefined) readVerification(latest.run_id, changeId);
+    if (selectedVerificationChangeId === changeId && selectedRunId !== null &&
+        selectedRunId !== latest?.run_id) readVerification(selectedRunId, changeId);
+  }
+
+  // latestVerificationFor uses the run identity supplied by the change owner.
+  function latestVerificationFor(changeId: string): VerificationStatusResult | null {
+    const id = changeList?.changes.find((item) => item.change_id === changeId)?.latest_verification?.run_id;
+    return id === undefined ? null : runsById.get(id) ?? null;
+  }
+
+  // reviewSavedCheck opens the exact result whose action the user selected.
+  function reviewSavedCheck(run: VerificationStatusResult) {
+    selectedVerificationChangeId = run.change_id;
+    selectedRunId = run.run_id;
+    editorOpen = shouldRetainEditor();
+    activeResult = { kind: "cp4-verification" };
+    rootEl.dataset.state = "cp4-verification";
+    statusEl.textContent = "Review the saved check before approving it.";
+    if (!lastLoadedListByChangeId.has(run.change_id)) refreshVerificationsInBackground(run.change_id);
+    if (!runInputsKnown(run)) readVerification(run.run_id, run.change_id);
+    syncAllRegions();
+    focusResult(run.state.type === "completed" && run.state.value.report.passed
+      ? "#surla-cp5-approve-title" : "#surla-cp4-title");
   }
 
   // isViewingChangeResult reports whether the active result view currently
@@ -1480,6 +1544,7 @@ export function bootstrapViewsPage() {
     if (listedRevision !== undefined && listedRevision !== revision) return;
     const begun = new Date().toISOString();
     buildGeneration++;
+    verificationGeneration++;
     buildStartReceipt = null;
     buildStartError = null;
     buildFindings = null;
@@ -1494,6 +1559,7 @@ export function bootstrapViewsPage() {
         // A read begun during the start may still describe its predecessor.
         // The successful answer supersedes it, including transient receipts.
         buildGeneration++;
+        verificationGeneration++;
         if (result.build.request_revision !== revision) {
           buildStartError = "The server returned a build for a different revision. Refresh the saved build.";
           statusEl.textContent = buildStartError;
@@ -1506,6 +1572,7 @@ export function bootstrapViewsPage() {
         followBuildFindings();
         statusEl.textContent = "The build started for the agreed revision.";
         readBuild(changeId);
+        refreshVerificationObservations(changeId);
         refreshOpenCard(changeId);
         readTeam();
       },
@@ -2053,6 +2120,7 @@ export function bootstrapViewsPage() {
     editorRegionEl.dataset.requestRevision = ed.card.request_revision;
     const proposal = ed.card.proposed_revision;
     const buildRevisionNotice = revisionBuildNotice(ed.card);
+    const latestCheck = latestVerificationFor(ed.card.change_id);
     flushSync(() => {
       editorRoot.render(
         <>
@@ -2098,10 +2166,15 @@ export function bootstrapViewsPage() {
               findingTexts={buildFindings?.findings ?? null}
               findingsLoading={hasPending("get_test_findings", ed.card.change_id)}
               findingsError={findingsError}
+              check={latestCheck}
+              checkKnown={latestCheck !== null && runInputsKnown(latestCheck)}
+              checkError={latestCheck !== null ? runRequestErrors.get(latestCheck.run_id) ?? null : null}
+              approvalAvailable={approvalUnavailable === null && changeList?.approval_available === true}
               onRefresh={() => readBuild(ed.card.change_id)}
               onReadFindings={readBuildFindings}
               onBuild={startBuild}
               onOpenTeam={openTeam}
+              onReviewCheck={() => { if (latestCheck !== null) reviewSavedCheck(latestCheck); }}
             />
           }
           proposalWaiting={proposal !== undefined}
@@ -2322,6 +2395,7 @@ export function bootstrapViewsPage() {
             <VerificationView
               changeId={effectiveChangeId}
               run={displayedRun}
+              inputsKnown={displayedRun !== null && runInputsKnown(displayedRun)}
               listedRuns={listedRuns}
               loadedCard={loadedCard}
               checking={displayedRun ? hasPending("get_verification", displayedRun.run_id) : false}
@@ -2341,6 +2415,7 @@ export function bootstrapViewsPage() {
             {displayedRun ? (
               <ApproveResultControl
                 run={displayedRun}
+                inputsKnown={runInputsKnown(displayedRun)}
                 card={
                   loadedCard !== null && loadedCard.change_id === displayedRun.change_id
                     ? loadedCard
@@ -2401,6 +2476,35 @@ export function bootstrapViewsPage() {
     syncResultRegion();
     syncNavRegion();
     syncTraceRegion();
+    syncOpenedCheckStatus();
+  }
+
+  // syncOpenedCheckStatus names the user's decision on the opened change,
+  // without replacing an agent's attention or an operation's failure message.
+  function syncOpenedCheckStatus() {
+    const ed = activeEditor;
+    if (sessionState !== "active" || activeResult !== null || ed?.card.status !== "confirmed" ||
+        editorBusy || buildStartError !== null || buildReadError !== null ||
+        listError !== null || waitTroubleShown || cardLoadErrors.has(ed.card.change_id) ||
+        (teamSnapshot?.roles.some((role) => role.state === "needs_you") ?? false) ||
+        isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)) return;
+    const run = latestVerificationFor(ed.card.change_id);
+    if (run === null || !runInputsKnown(run)) return;
+    let next: string;
+    if (!run.inputs_current) {
+      next = "The saved check describes earlier inputs. The builder checks the current agreement and tests again before you approve.";
+    } else if (run.state.type === "running") {
+      next = "Surla is checking the builder’s code. Your next decision is approval after the check passes.";
+    } else if (run.state.type === "completed" && run.state.value.report.passed) {
+      next = ed.card.approval?.report_digest === run.state.value.report.report_digest
+        ? "The check passed and your approval is recorded."
+        : changeList?.approval_available === true && approvalUnavailable === null
+        ? "The check passed. Review the result and approve it."
+        : "The check passed. Review the result; approval is unavailable on this server.";
+    } else {
+      next = "The check needs the builder’s attention. Review its saved result.";
+    }
+    if (statusEl.textContent !== next) statusEl.textContent = next;
   }
 
   // loadTracePage reads one diagnostics page without taking the editor's
@@ -2452,15 +2556,34 @@ export function bootstrapViewsPage() {
     );
   }
 
-  // upsertRunSnapshot stores run in runsById unless runsById.get(run.run_id)
-  // already holds a terminal state (state.type !== "running").
-  function upsertRunSnapshot(run: VerificationStatusResult): VerificationStatusResult {
+  // markRunReadPending makes every older response unable to restore a match.
+  function markRunReadPending(runId: string, order: number) {
+    runObservationOrder.set(runId, order);
+    runObservationGeneration.delete(runId);
+  }
+
+  // upsertRunSnapshot preserves a terminal report while accepting only a
+  // current, non-older observation of its input match.
+  function upsertRunSnapshot(
+    run: VerificationStatusResult,
+    generation: number,
+    order: number
+  ): VerificationStatusResult {
     const existing = runsById.get(run.run_id);
-    if (existing && existing.state.type !== "running") {
-      return existing;
+    const observed = generation === verificationGeneration &&
+      order >= (runObservationOrder.get(run.run_id) ?? -1);
+    const evidence = existing && existing.state.type !== "running" ? existing : run;
+    const snapshot = {
+      ...evidence,
+      inputs_current: observed ? run.inputs_current : (existing?.inputs_current ?? false),
+    };
+    runsById.set(run.run_id, snapshot);
+    if (observed) {
+      runObservationGeneration.set(run.run_id, generation);
+      runObservationOrder.set(run.run_id, order);
+      runRequestErrors.delete(run.run_id);
     }
-    runsById.set(run.run_id, run);
-    return run;
+    return snapshot;
   }
 
   // handleSelectVerificationRun switches the displayed run inside CP4.
@@ -2477,6 +2600,7 @@ export function bootstrapViewsPage() {
     activeResult = { kind: "cp4-verification" };
     rootEl.dataset.state = "cp4-verification";
     statusEl.textContent = "Showing the saved verification result.";
+    if (!runInputsKnown(target)) readVerification(target.run_id, target.change_id);
     syncAllRegions();
   }
 
@@ -2484,42 +2608,58 @@ export function bootstrapViewsPage() {
   // new verification. A late answer belongs only to that run, even if a
   // different run is displayed by then.
   function handleCheckVerificationStatus() {
-    if (
-      activeResult?.kind !== "cp4-verification" ||
-      selectedRunId === null ||
-      !runsById.has(selectedRunId) ||
-      hasPending("get_verification", selectedRunId)
-    ) {
+    const run = resolveDisplayedVerificationRun();
+    if (activeResult?.kind === "cp4-verification" && run !== null) {
+      readVerification(run.run_id, run.change_id);
+    }
+  }
+
+  // readVerification coalesces a read invalidated while pending into one
+  // replacement. A same-generation failure waits for an explicit retry.
+  function readVerification(runID: string, changeId: string) {
+    if (sessionState !== "active") return;
+    if (hasPending("get_verification", runID)) {
+      runReadAgain.add(runID);
       return;
     }
-    const runID = selectedRunId;
+    runReadAgain.delete(runID);
+    const generation = verificationGeneration;
+    const order = ++verificationReadOrder;
+    markRunReadPending(runID, order);
+    const finish = () => {
+      const again = runReadAgain.delete(runID) || generation !== verificationGeneration;
+      if (again && sessionState === "active" &&
+          (activeEditor?.card.change_id === changeId || selectedVerificationChangeId === changeId)) {
+        readVerification(runID, changeId);
+      }
+    };
     runRequestErrors.delete(runID);
     callServer(
       "get_verification",
       { run_id: runID },
       runID,
       (run) => {
-        if (run.run_id !== runID) {
-          if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
+        if (run.run_id !== runID || run.change_id !== changeId) {
+          if (generation === verificationGeneration && order >= (runObservationOrder.get(runID) ?? -1)) {
             runRequestErrors.set(runID, "The server returned a different verification run.");
-            statusEl.textContent =
-              "Could not check verification status; the last result is preserved.";
           }
+          finish();
           return;
         }
-        upsertRunSnapshot(run);
-        runRequestErrors.delete(runID);
-        if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
+        upsertRunSnapshot(run, generation, order);
+        if (generation === verificationGeneration && activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
           statusEl.textContent = "Showing the saved verification result.";
         }
+        finish();
       },
       (message) => {
-        if (activeResult?.kind !== "cp4-verification" || selectedRunId !== runID) {
-          return;
+        if (generation === verificationGeneration && order >= (runObservationOrder.get(runID) ?? -1)) {
+          runRequestErrors.set(runID, message);
+          if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
+            statusEl.textContent = "Could not check verification status; the last result is preserved.";
+          }
         }
-        runRequestErrors.set(runID, message);
-        statusEl.textContent =
-          "Could not check verification status; the last result is preserved.";
+        finish();
       }
     );
   }
@@ -2545,6 +2685,11 @@ export function bootstrapViewsPage() {
     activeResult = { kind: "cp4-verification" };
     rootEl.dataset.state = "cp4-verification";
     statusEl.textContent = "Loading saved verification runs...";
+    const generation = verificationGeneration;
+    const order = ++verificationReadOrder;
+    for (const run of runsById.values()) {
+      if (run.change_id === requestedChangeId) markRunReadPending(run.run_id, order);
+    }
 
     callServer(
       "list_verifications",
@@ -2565,7 +2710,7 @@ export function bootstrapViewsPage() {
           return;
         }
         for (let i = 0; i < payload.runs.length; i++) {
-          upsertRunSnapshot(payload.runs[i]);
+          upsertRunSnapshot(payload.runs[i], generation, order);
         }
         const loadedIds = payload.runs.map((r) => r.run_id);
         lastLoadedListByChangeId.set(requestedChangeId, loadedIds);
@@ -2590,6 +2735,9 @@ export function bootstrapViewsPage() {
             loadedIds.length > 0
               ? "Showing saved verification runs for Change Card " + requestedChangeId + "."
               : "No saved verification runs found for Change Card " + requestedChangeId + ".";
+        }
+        if (selectedRunId !== null && generation !== verificationGeneration) {
+          readVerification(selectedRunId, requestedChangeId);
         }
       },
       (message) => {
@@ -2623,7 +2771,7 @@ export function bootstrapViewsPage() {
         ? "Showing the recorded approval for these inputs."
         : card.unverified_approval
         ? "Showing the saved approval record (current promotion inputs could not be verified)."
-        : "Showing confirmed Change Card. You can refine answers or examples below."
+        : "Review the build and its next step. The agreed details stay available below."
       : "Review the open questions and examples below, then confirm your intent.";
     syncAllRegions();
   }
@@ -2867,11 +3015,17 @@ export function bootstrapViewsPage() {
   // recovery; a project without promotion settings shows approval as
   // unavailable with the server's reason.
   function handleApprove(run: VerificationStatusResult) {
-    if (!activeEditor || editorBusy || run.state.type !== "completed") {
+    const current = runsById.get(run.run_id);
+    const card = activeEditor?.card;
+    if (!current || !card || editorBusy || current.state.type !== "completed" ||
+        !current.state.value.report.passed || !runInputsKnown(current) || !current.inputs_current ||
+        card.change_id !== current.change_id || card.status !== "confirmed" ||
+        card.request_revision !== current.request_revision || approvalUnavailable !== null ||
+        changeList === null || !changeList.approval_available) {
       return;
     }
-    const card = activeEditor.card;
-    const report = run.state.value.report;
+    run = current;
+    const report = current.state.value.report;
     approveErrors.delete(run.run_id);
     statusEl.textContent = "Recording approval of this result...";
     callEditorServer(
@@ -2994,6 +3148,8 @@ export function bootstrapViewsPage() {
     preservedDraft: PreservedDraft | null,
     priorCard: ChangeCardResult | null = null
   ) {
+    if (activeEditor?.card.change_id !== card.change_id ||
+        activeEditor.card.request_revision !== card.request_revision) verificationGeneration++;
     cardLoadErrors.delete(card.change_id);
     const existingIncoming = activeEditor ? activeEditor.incomingCard : null;
     const keepIncoming =
@@ -3020,21 +3176,25 @@ export function bootstrapViewsPage() {
           ? "Showing the recorded approval for these inputs."
           : card.unverified_approval
           ? "Showing the saved approval record (current promotion inputs could not be verified)."
-          : "Showing confirmed Change Card. You can refine answers or examples below."
+          : "Review the build and its next step. The agreed details stay available below."
         : "Review the open questions and examples below, then confirm your intent.";
     rootEl.dataset.state = "cp1-change-card";
     readBuild(card.change_id);
+    refreshVerificationObservations(card.change_id);
     syncAllRegions();
   }
 
   // The tab's visibility pauses the waiting read; a hidden tab asks nothing.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      verificationGeneration++;
       if (waitController !== null) {
         waitController.abort();
       }
+      syncAllRegions();
       return;
     }
+    if (activeEditor !== null) refreshVerificationObservations(activeEditor.card.change_id);
     startWaiting();
   });
 
