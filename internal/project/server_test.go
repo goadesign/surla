@@ -450,7 +450,7 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 		{"get_change", "GET", "/changes/change", ""},
 		{"preview_architecture", "POST", "/changes/preview", fmt.Sprintf(`{"change_id":"change","request_revision":%q}`, revision)},
 		{"draft_override", "POST", "/sandbox/draft", `{"target_kind":"compiled_rule","new_content":"bounded"}`},
-		{"start_live_target", "POST", "/live-target", `{"candidate_commit":"` + commit + `"}`},
+		{"start_live_target", "POST", "/live-target", fmt.Sprintf(`{"change_id":%q,"candidate_commit":%q}`, card.ChangeID, commit)},
 		{"stop_live_target", "DELETE", "/live-target", ""},
 		{"get_live_target", "GET", "/live-target", ""},
 		{"get_model_connection", "GET", "/cp1/model", ""},
