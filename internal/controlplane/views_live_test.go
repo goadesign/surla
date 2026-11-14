@@ -295,7 +295,7 @@ func TestViewsPageLiveTargetNotConfirmedStopped(t *testing.T) {
 	t.Cleanup(func() { assert.Error(t, cp.Close(), "Close reports the target it could not confirm stopped") })
 	ps := startPageServer(t, cp)
 	ps.act("pin", func() {
-		lt := cp.boundLive()
+		lt := boundTargetForTest(cp)
 		require.NotNil(t, lt)
 		pinned = filepath.Join(lt.proc.Dir(), "tmp", "immutable")
 		require.NoError(t, os.WriteFile(pinned, []byte("x"), 0o600))
