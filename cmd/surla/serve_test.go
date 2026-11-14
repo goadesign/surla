@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"goa.design/goa-ai/features/model/gateway"
 	"goa.design/goa-ai/runtime/agent/model"
-	goa "goa.design/goa/v3/pkg"
 	"google.golang.org/grpc"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -35,44 +34,20 @@ type (
 	scriptedModelProvider struct{}
 )
 
-// TestNewLiveModelEnvBuildsTheLiveTargetEnvironment verifies configure_model's
-// inherited provider keys and selected model variables. A missing key is refused
-// as unprocessable and names the variable without revealing its value.
-func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
-	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k"}
-	env := map[string]string{"ANTHROPIC_API_KEY": "ant-k"}
-	build := newLiveModelEnv(func(k string) string { return env[k] }, environ)
-	got, err := build(gatewayChoice("127.0.0.1:9090"))
-	require.NoError(t, err)
-	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, got)
-
-	got, err = build(directChoice("anthropic", "claude-sonnet-4-6"))
-	require.NoError(t, err)
-	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}, got)
-
-	_, err = build(directChoice("openai", "claude-sonnet-4-6"))
-	var se *goa.ServiceError
-	require.ErrorAs(t, err, &se)
-	assert.Equal(t, "unprocessable", se.GoaErrorName())
-	assert.Contains(t, err.Error(), "provider openai requires OPENAI_API_KEY in the project server's environment")
-	assert.NotContains(t, err.Error(), "ant-k")
-}
-
 func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	isolateServeWorkspace(t)
 	path := filepath.Join(t.TempDir(), "verification.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
 	require.NoError(t, runProjectSettings("verification", []string{"set", path}, io.Discard))
-	opts, err := serveOptions(func(string) string { return "" },
-		[]string{"PATH=/bin", "ANTHROPIC_API_KEY=k"})
+	opts, err := serveOptions([]string{"PATH=/bin"})
 	require.NoError(t, err)
 	defer closeServeOptions(t, opts)
 	assert.Nil(t, opts.WrittenTestRuns, "stored verification settings leave no runs of written tests")
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
-	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "project credentials never enter the live-target environment")
+	assert.Equal(t, []string{"PATH=/bin"}, opts.Live.Env, "project credentials never enter the live-target environment")
 }
 
 // TestServeOptionsBindsTheCheckHelperOnEveryServePath checks that both ways
@@ -98,7 +73,7 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 			if tc.name == "verification config" {
 				require.NoError(t, runProjectSettings("verification", []string{"set", verificationPath}, io.Discard))
 			}
-			opts, err := serveOptions(func(string) string { return "" }, nil)
+			opts, err := serveOptions(nil)
 			require.NoError(t, err)
 			defer closeServeOptions(t, opts)
 			require.NotNil(t, opts.Checker)
@@ -110,175 +85,38 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 	}
 }
 
-func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
-	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=stale:1"}
-	cases := []struct {
-		name string
-		cfg  gensurla.Connection
-		want []string
-	}{
-		{name: "direct provider", cfg: directChoice("anthropic", "claude-x"),
-			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
-		{name: "gateway", cfg: gatewayChoice("127.0.0.1:9090"),
-			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
-		{name: "no model", cfg: noChoice(),
-			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, liveTargetEnv(environ, tc.cfg))
-		})
-	}
-}
-
-func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
+// TestServeOptionsStartLiveTargetsWithoutAModel composes the server from its
+// environment after serve removed the provider families: live targets start
+// from that environment, and no model is chosen until the surla command
+// hands settings over.
+func TestServeOptionsStartLiveTargetsWithoutAModel(t *testing.T) {
 	isolateServeWorkspace(t)
-	opts, err := serveOptions(
-		func(key string) string {
-			if key == "OPENAI_API_KEY" {
-				return "test-key"
-			}
-			return ""
-		},
-		nil,
-	)
+	opts, err := serveOptions([]string{"PATH=/bin"})
 	require.NoError(t, err)
-	assert.NotNil(t, opts.LiveModelEnv)
-	require.NotNil(t, opts.Live)
-	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + defaultOpenAIModel}, opts.Live.Env)
-	assert.Equal(t, directChoice("openai", defaultOpenAIModel), opts.Live.Model, "the start-up choice reaches the control plane as the choice the environment came from")
-	closeServeOptions(t, opts)
-
-	opts, err = serveOptions(func(string) string { return "" }, nil)
-	require.NoError(t, err)
-	require.NotNil(t, opts.Live)
-	configured, err := opts.LiveModelEnv(gatewayChoice("127.0.0.1:9090"))
-	require.NoError(t, err)
-	assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, configured)
-	closeServeOptions(t, opts)
-
-	opts, err = serveOptions(func(string) string { return "" }, nil)
-	require.NoError(t, err)
-	assert.NotNil(t, opts.LiveModelEnv)
+	defer closeServeOptions(t, opts)
 	assert.Nil(t, opts.Verification)
 	assert.NotNil(t, opts.WrittenTestRuns)
 	require.NotNil(t, opts.Live)
 	assert.Len(t, opts.Live.Command, 1)
 	assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
-	assert.Empty(t, opts.Live.Env, "no provider keys leave live targets without a model choice")
-	assert.Equal(t, noChoice(), opts.Live.Model)
-	closeServeOptions(t, opts)
-
-}
-
-func TestResolveStartupModelAndServeOptionsAutoDetection(t *testing.T) {
-	baseEnviron := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k"}
-	cases := []struct {
-		name        string
-		env         map[string]string
-		wantCfg     gensurla.Connection
-		wantLiveEnv []string
-	}{
-		{
-			name:    "anthropic key auto-detects claude-sonnet-4-6 without verification config",
-			env:     map[string]string{"ANTHROPIC_API_KEY": "ant-k"},
-			wantCfg: directChoice("anthropic", defaultAnthropicModel),
-			wantLiveEnv: []string{
-				"PATH=/bin",
-				"ANTHROPIC_API_KEY=ant-k",
-				"OPENAI_API_KEY=oai-k",
-				"SURLA_LIVE_MODEL_PROVIDER=anthropic",
-				"SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6",
-			},
-		},
-		{
-			name:    "openai key auto-detects gpt-5.4-mini when anthropic key is absent",
-			env:     map[string]string{"OPENAI_API_KEY": "oai-k"},
-			wantCfg: directChoice("openai", defaultOpenAIModel),
-			wantLiveEnv: []string{
-				"PATH=/bin",
-				"ANTHROPIC_API_KEY=ant-k",
-				"OPENAI_API_KEY=oai-k",
-				"SURLA_LIVE_MODEL_PROVIDER=openai",
-				"SURLA_LIVE_MODEL_NAME=gpt-5.4-mini",
-			},
-		},
-		{
-			name: "both keys prefer anthropic claude-sonnet-4-6 at startup",
-			env: map[string]string{
-				"ANTHROPIC_API_KEY": "ant-k",
-				"OPENAI_API_KEY":    "oai-k",
-			},
-			wantCfg: directChoice("anthropic", defaultAnthropicModel),
-			wantLiveEnv: []string{
-				"PATH=/bin",
-				"ANTHROPIC_API_KEY=ant-k",
-				"OPENAI_API_KEY=oai-k",
-				"SURLA_LIVE_MODEL_PROVIDER=anthropic",
-				"SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6",
-			},
-		},
-		{
-			name: "whitespace-only keys leave live targets without a model choice",
-			env: map[string]string{
-				"ANTHROPIC_API_KEY": "   ",
-				"OPENAI_API_KEY":    "\t\n",
-			},
-			wantCfg: noChoice(),
-			wantLiveEnv: []string{
-				"PATH=/bin",
-				"ANTHROPIC_API_KEY=ant-k",
-				"OPENAI_API_KEY=oai-k",
-			},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			isolateServeWorkspace(t)
-			getenv := func(k string) string { return tc.env[k] }
-			assert.Equal(t, tc.wantCfg, resolveStartupModel(getenv))
-			opts, err := serveOptions(getenv, baseEnviron)
-			require.NoError(t, err)
-			assert.Nil(t, opts.Verification, "no verification settings are stored")
-			assert.NotNil(t, opts.WrittenTestRuns, "the project verifies with each change's accepted tests")
-			require.NotNil(t, opts.Live)
-			assert.Len(t, opts.Live.Command, 1)
-			assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
-			assert.Equal(t, tc.wantLiveEnv, opts.Live.Env)
-			assert.Equal(t, tc.wantCfg, opts.Live.Model)
-			var statusBuf bytes.Buffer
-			writeServeStatus(&statusBuf, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8090}, opts)
-			assert.Contains(t, statusBuf.String(), "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit")
-			assert.Contains(t, statusBuf.String(), "surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build")
-			cp, err := controlplane.New(opts)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, cp.Close()) })
-			_, err = cp.StartLiveTarget(
-				controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: controlplane.CallerUser}),
-				&gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)},
-			)
-			require.Error(t, err)
-			var se *goa.ServiceError
-			require.ErrorAs(t, err, &se)
-			assert.Equal(t, "live_target_failed", se.GoaErrorName())
-			assert.Contains(t, se.Message, "is not inside a git repository, so it has no commits to verify: make the project folder a git repository and commit it")
-		})
-	}
+	assert.Equal(t, []string{"PATH=/bin"}, opts.Live.Env)
+	cp, err := controlplane.New(opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cp.Close()) })
+	read, err := cp.GetModelConnection(controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com", Kind: controlplane.CallerUser}))
+	require.NoError(t, err)
+	assert.Equal(t, noChoice(), read.Connection)
 }
 
 // TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel
-// starts the server without provider keys, proposes a change
+// starts the server without provider settings, proposes a change
 // over authenticated HTTP with the caller's analysis (no model is needed),
 // then switches the live-target model with POST /cp1/model: a provider whose
-// key is missing is refused with 422, and a gateway or a provider whose key
-// is present is accepted.
+// settings were not handed over is refused with 422, and a gateway or a
+// provider whose settings the surla command handed over is accepted.
 func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t *testing.T) {
 	isolateServeWorkspace(t)
-	env := map[string]string{}
-	opts, err := serveOptions(
-		func(k string) string { return env[k] },
-		[]string{"PATH=/bin"},
-	)
+	opts, err := serveOptions([]string{"PATH=/bin"})
 	require.NoError(t, err)
 
 	cp, err := controlplane.New(opts)
@@ -325,7 +163,7 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	assert.Equal(t, "check_01", card.Examples[0].ID)
 	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{64}$`), card.RequestRevision)
 
-	// 2. A direct provider whose API key is missing is refused with 422.
+	// 2. A direct provider whose settings were not handed over is refused with 422.
 	status, body = post("/cp1/model", `{"provider":"openai","model_name":"gpt-5.4-mini"}`)
 	var missingKeyBody struct {
 		Message string `json:"message"`
@@ -334,7 +172,7 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	require.NoError(t, json.Unmarshal(body, &missingKeyBody))
 	assert.Equal(t, http.StatusUnprocessableEntity, status)
 	assert.False(t, missingKeyBody.Fault)
-	assert.Contains(t, missingKeyBody.Message, "provider openai requires OPENAI_API_KEY in the project server's environment")
+	assert.Equal(t, "provider openai needs OPENAI_API_KEY: export it, with any OPENAI_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway.", missingKeyBody.Message)
 
 	// 3. A gateway address is accepted.
 	status, body = post("/cp1/model", `{"gateway_addr":"127.0.0.1:9090"}`)
@@ -350,8 +188,12 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	require.NotNil(t, gwResult.GatewayAddr)
 	assert.Equal(t, "127.0.0.1:9090", *gwResult.GatewayAddr)
 
-	// 4. A provider and model name are accepted once the key is in serve's environment.
-	env["ANTHROPIC_API_KEY"] = "test-anthropic-key"
+	// 4. A provider and model name are accepted once the surla command handed its settings over.
+	_, err = cp.HandOverModelSettings(
+		controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "operator@example.com", CallerID: "management", Kind: controlplane.CallerManagement}),
+		&gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": "test-anthropic-key"}},
+	)
+	require.NoError(t, err)
 	status, body = post("/cp1/model", `{"provider":"anthropic","model_name":"claude-sonnet-4-6"}`)
 	require.Equal(t, http.StatusOK, status, string(body))
 	var provResult struct {
@@ -428,7 +270,7 @@ surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
-surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept
+surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept and may hold what its test program printed: remove it once its processes have stopped
 surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
@@ -453,7 +295,7 @@ surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
-surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept
+surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept and may hold what its test program printed: remove it once its processes have stopped
 surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build (runs in /work/ops/runs, reports in /work/ops/reports)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,

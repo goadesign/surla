@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/scaffold"
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/internal/verify"
 )
 
@@ -68,14 +70,16 @@ type (
 	layoutActor string
 
 	// refusalReason is why starterPlanAt refuses: refusedReplacedFolder,
-	// refusedNoRepository, refusedUnknownCommit, refusedMissingTests or
-	// refusedNoLayout.
+	// refusedNoRepository, refusedUnknownCommit, refusedMissingTests,
+	// refusedNoLayout, refusedTestModuleChanged or refusedNoCommonBase.
 	refusalReason int
 
 	// layoutRefusal is starterPlanAt's refusal: the project folder was
 	// replaced or is not in a git repository, the repository does not hold
-	// the candidate commit or the accepted tests' commit, or a commit lacks
-	// the test layout. Each caller maps it to its own declared error.
+	// the candidate commit or the accepted tests' commit, a commit lacks
+	// the test layout, the candidate commit has no common history with the
+	// accepted tests' commit, or the candidate commit changed hand-written
+	// files in the test module. Each caller maps it to its own declared error.
 	layoutRefusal struct {
 		// reason is why starterPlanAt refused.
 		reason refusalReason
@@ -83,13 +87,35 @@ type (
 		// refusedNoRepository.
 		folder string
 		// commit is the commit refused, for refusedUnknownCommit,
-		// refusedMissingTests and refusedNoLayout.
+		// refusedMissingTests, refusedNoLayout, refusedTestModuleChanged and
+		// refusedNoCommonBase.
 		commit string
+		// testsCommit is the accepted tests' commit, for refusedNoCommonBase.
+		testsCommit string
+		// baseCommit is the common ancestor of the accepted tests' commit and
+		// the candidate commit, for refusedTestModuleChanged.
+		baseCommit string
+		// testModule is the repository-relative test module folder, for
+		// refusedTestModuleChanged.
+		testModule string
+		// changed lists the hand-written files under testModule that differ
+		// between baseCommit and commit, for refusedTestModuleChanged.
+		changed []changedGitFile
 		// actor is who changes that commit, for refusedMissingTests and
 		// refusedNoLayout.
 		actor layoutActor
 		// missing says what the commit lacks, for refusedNoLayout.
 		missing string
+	}
+
+	// testsNotAccepted is testsChoice's refusal of a build whose tests are not
+	// accepted. It carries the test writer's saved assignment, not text: the
+	// builder refused by verify_change and the user refused by approve_merge
+	// each read the refusal worded for them, so each caller that returns it
+	// turns it into refuseTestsNotAccepted or refuseApprovalTestsNotAccepted.
+	testsNotAccepted struct {
+		// saved is the test writer's assignment whose state is not accepted.
+		saved testWriterAssignment
 	}
 )
 
@@ -98,6 +124,9 @@ const (
 	builderActs layoutActor = "builder"
 	// testWriterActs refuses an accepted tests' commit without the layout.
 	testWriterActs layoutActor = "test writer"
+	// maxChangedTestFiles bounds how many changed test-module paths one
+	// refusal message names in full.
+	maxChangedTestFiles = 20
 )
 
 const (
@@ -116,7 +145,20 @@ const (
 	// refusedNoLayout is a commit without the test layout `surla init`
 	// makes.
 	refusedNoLayout
+	// refusedTestModuleChanged is a candidate commit that changed
+	// hand-written files in the test module since its common ancestor with
+	// the accepted tests' commit.
+	refusedTestModuleChanged
+	// refusedNoCommonBase is a candidate commit that shares no common
+	// ancestor with the accepted tests' commit.
+	refusedNoCommonBase
 )
+
+// testsNotAcceptedBuilderStep is the one step a builder refused with
+// tests_not_accepted can take in every state. Only an acceptance makes the
+// builder's assignment unread, so the project server's Chorus reminder reaches
+// the builder exactly then.
+const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"
 
 // Error says what is refused, why and who acts.
 func (r *layoutRefusal) Error() string {
@@ -132,12 +174,57 @@ func (r *layoutRefusal) Error() string {
 			" make the project folder a git repository and commit it", r.folder)
 	case refusedUnknownCommit:
 		return fmt.Sprintf("the candidate commit %s is not in the project's repository; commit it and try again", r.commit)
+	case refusedNoCommonBase:
+		return fmt.Sprintf("candidate commit %s shares no history with the accepted tests' commit %s;"+
+			" ask the user: %s", r.commit, r.testsCommit, stepNoCommonBase)
+	case refusedTestModuleChanged:
+		shown := r.changed[:min(len(r.changed), maxChangedTestFiles)]
+		names := make([]string, len(shown))
+		var restore, remove []string
+		for i, c := range shown {
+			names[i] = c.path
+			spec := shquote.Quote(":(top,literal)" + c.path)
+			if c.added {
+				remove = append(remove, spec)
+			} else {
+				restore = append(restore, spec)
+			}
+		}
+		list := strings.Join(names, ", ")
+		if rest := len(r.changed) - len(shown); rest > 0 {
+			list = fmt.Sprintf("%s (and %d more)", list, rest)
+		}
+		var cmds []string
+		if len(restore) > 0 {
+			cmds = append(cmds, fmt.Sprintf("git restore --source=%s --staged --worktree -- %s", r.baseCommit, strings.Join(restore, " ")))
+		}
+		if len(remove) > 0 {
+			cmds = append(cmds, fmt.Sprintf("git rm -f -- %s", strings.Join(remove, " ")))
+		}
+		renameNote := ""
+		testGoMod := path.Join(r.testModule, "go.mod")
+		for _, c := range r.changed {
+			if c.path == testGoMod {
+				renameNote = "; renaming the service module is the user's to do on their own branch between changes, not during a build"
+				break
+			}
+		}
+		return fmt.Sprintf("candidate commit %s changes hand-written files in the test module %s since base commit %s (%s);"+
+			" tests in %s belong to the test writer, not the builder%s:"+
+			" restore %s to base commit %s (%s), commit, and call verify_change again",
+			r.commit, r.testModule, r.baseCommit, list, r.testModule, renameNote, r.testModule, r.baseCommit, strings.Join(cmds, " && "))
 	}
 	step := "the builder commits the layout surla init makes and verifies again"
 	if r.actor == testWriterActs {
 		step = "the test writer reports again, so Surla checks and records its tests again"
 	}
 	return fmt.Sprintf("commit %s does not have the test layout surla init makes (%s): %s", r.commit, r.missing, step)
+}
+
+// Error says only what is refused; each caller words the state and the step
+// for its own reader.
+func (r testsNotAccepted) Error() string {
+	return "the tests of this build are not accepted"
 }
 
 // verificationPlan returns the configuration of a verification run of
@@ -157,8 +244,10 @@ func (r *layoutRefusal) Error() string {
 // source; the caller adds the run's work folder. It refuses with
 // not_implemented when this control plane runs no verification; no_build,
 // tests_not_accepted and no_test_layout as the error constructors below
-// describe; and conflict when the repository does not hold candidateCommit or
-// the project folder was replaced.
+// describe; and conflict when the repository does not hold candidateCommit,
+// the project folder was replaced, candidateCommit shares no history with the
+// accepted tests' commit, or candidateCommit changes hand-written files in the
+// test module since their common ancestor.
 func (c *ControlPlane) verificationPlan(
 	ctx context.Context,
 	principal Principal,
@@ -167,6 +256,11 @@ func (c *ControlPlane) verificationPlan(
 	c.mu.RLock()
 	testsCommit, _, err := c.testsChoice(principal, changeID, revision)
 	c.mu.RUnlock()
+	var notAccepted testsNotAccepted
+	if errors.As(err, &notAccepted) {
+		// verify_change's caller is the builder, so it reads the builder's step.
+		return VerificationConfig{}, refuseTestsNotAccepted(notAccepted.saved)
+	}
 	if err != nil {
 		return VerificationConfig{}, err
 	}
@@ -179,7 +273,10 @@ func (c *ControlPlane) verificationPlan(
 		plan, err := c.starterPlanAt(ctx, candidateCommit, testsCommit, testWriterActs)
 		var refusal *layoutRefusal
 		switch {
-		case errors.As(err, &refusal) && (refusal.reason == refusedUnknownCommit || refusal.reason == refusedReplacedFolder):
+		case errors.As(err, &refusal) && (refusal.reason == refusedUnknownCommit ||
+			refusal.reason == refusedReplacedFolder ||
+			refusal.reason == refusedTestModuleChanged ||
+			refusal.reason == refusedNoCommonBase):
 			return VerificationConfig{}, gensurla.MakeConflict(refusal)
 		case errors.As(err, &refusal):
 			return VerificationConfig{}, refuseNoTestLayout(refusal)
@@ -207,7 +304,10 @@ func (c *ControlPlane) verificationPlan(
 //   - With written-test runs, the change's build (read through ownedBuild, so
 //     an unusable build is no build) must be at revision and its tests must be
 //     accepted; it returns that accepted commit and verify.TestsWritten, or
-//     refuses with no_build or tests_not_accepted.
+//     refuses with no_build, or returns testsNotAccepted. verificationPlan
+//     and ApproveMerge word that refusal for their readers; ApproveMerge's
+//     second check under the lock and the saved approval's read only test
+//     for an error.
 //   - Without verification configured, it refuses with not_implemented.
 func (c *ControlPlane) testsChoice(
 	principal Principal,
@@ -231,7 +331,7 @@ func (c *ControlPlane) testsChoice(
 			return "", "", refuseNoBuild(changeID, revision, build, true)
 		}
 		if build.TestWriter.State != testsAccepted {
-			return "", "", refuseTestsNotAccepted(build.TestWriter)
+			return "", "", testsNotAccepted{saved: build.TestWriter}
 		}
 		return build.TestWriter.Commit, verify.TestsWritten, nil
 	default:
@@ -247,10 +347,13 @@ func (c *ControlPlane) testsChoice(
 // Verification passes the accepted tests' commit; a live copy passes the
 // candidate commit twice. A project folder that is no longer the directory
 // this control plane bound or is outside any git repository, a commit the
-// repository does not hold, or a commit lacking the layout is refused with a
-// *layoutRefusal saying what and who acts: the builder for the folder and
-// candidateCommit, testsActor for testsCommit. New guarantees a bound
-// workspace whenever this runs.
+// repository does not hold, a commit lacking the layout, a candidate commit
+// that shares no history with testsCommit, or a candidate commit that changes
+// hand-written files in the test module since merge-base(testsCommit,
+// candidateCommit) is refused with a *layoutRefusal saying what and who acts:
+// the builder for the folder, candidateCommit, and the test-module guard,
+// testsActor for testsCommit. New guarantees a bound workspace whenever this
+// runs.
 func (c *ControlPlane) starterPlanAt(ctx context.Context, candidateCommit, testsCommit string, testsActor layoutActor) (verify.Plan, error) {
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)
@@ -304,6 +407,32 @@ func (c *ControlPlane) starterPlanAt(ctx context.Context, candidateCommit, tests
 	entry := tests.GeneratedSuiteCommand()
 	if err := requireLayoutTree(ctx, repoRoot, testsCommit, path.Join(testModule, entry), testsActor); err != nil {
 		return verify.Plan{}, err
+	}
+	if testsCommit != candidateCommit {
+		base, hasBase, err := mergeBaseCommit(ctx, repoRoot, testsCommit, candidateCommit)
+		if err != nil {
+			return verify.Plan{}, err
+		}
+		if !hasBase {
+			return verify.Plan{}, &layoutRefusal{
+				reason:      refusedNoCommonBase,
+				commit:      candidateCommit,
+				testsCommit: testsCommit,
+			}
+		}
+		changed, err := changedTestModuleFiles(ctx, repoRoot, base, candidateCommit, testModule)
+		if err != nil {
+			return verify.Plan{}, err
+		}
+		if len(changed) > 0 {
+			return verify.Plan{}, &layoutRefusal{
+				reason:     refusedTestModuleChanged,
+				commit:     candidateCommit,
+				baseCommit: base,
+				testModule: testModule,
+				changed:    changed,
+			}
+		}
 	}
 	return verify.Plan{
 		CandidateRepo:   repoRoot,
@@ -423,10 +552,32 @@ func refuseNoBuild(changeID, revision string, build buildFile, found bool) error
 		changeID, build.RequestRevision, revision, revision))
 }
 
-// refuseTestsNotAccepted is testsChoice's tests_not_accepted refusal of a
-// build whose tests are not accepted: it names the test writer's state in the
-// state's own words, then who acts, and ends with the step.
+// refuseTestsNotAccepted is verify_change's tests_not_accepted refusal of a
+// build whose tests are not accepted, worded for the builder who calls
+// verify_change: it names the test writer's state in the state's own words,
+// then who acts, and ends with the builder's step.
 func refuseTestsNotAccepted(saved testWriterAssignment) error {
+	var state, who string
+	switch saved.State {
+	case testsAssigned:
+		state, who = "assigned", "the test writer writes the required tests and reports them finished"
+	case testsReported:
+		state, who = "reported", "Surla is checking the test writer's report"
+	case testsNeedChanges:
+		state, who = "needs changes", "the test writer fixes Surla's findings and reports again"
+	case testsCouldNotRun:
+		// The saved step is a sentence; its full stop would end the refusal early.
+		state, who = "could not run", "Surla's check could not run ("+saved.Reason+"); the user's step: "+strings.TrimSuffix(saved.Step, ".")
+	}
+	return gensurla.MakeTestsNotAccepted(fmt.Errorf("the tests of this build are not accepted; their state is %s: %s; your step: %s", state, who, testsNotAcceptedBuilderStep))
+}
+
+// refuseApprovalTestsNotAccepted is approve_merge's tests_not_accepted refusal
+// of a build whose tests are not accepted, worded for the user who reads it on
+// the views page: it names the test writer's state in the state's own words,
+// then who acts, and ends with the step, naming the builder rather than
+// instructing it.
+func refuseApprovalTestsNotAccepted(saved testWriterAssignment) error {
 	var state, step string
 	switch saved.State {
 	case testsAssigned:

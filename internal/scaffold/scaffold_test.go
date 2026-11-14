@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/gitenv"
 )
 
 // published is a Surla version that exists on the module proxy.
@@ -292,8 +293,9 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	assert.Equal(t, []string{"design/design.go", "design/model.go", "design/story.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[0])))
 	assert.Contains(t, gen.inputs[0]["go.mod"], "module example.com/bakery\n")
 	assert.Equal(t, []string{
-		"acceptance/acceptance.go", "acceptance/forwarder.go", "acceptance/forwarder_test.go", "design/design.go", "go.mod", "go.sum",
-	}, slices.Sorted(maps.Keys(gen.inputs[1])), "the test module is generated with its acceptance package")
+		"acceptance/acceptance.go", "acceptance/forwarder.go", "acceptance/forwarder_test.go", "design/design.go",
+		"design/story_tests.go", "go.mod", "go.sum",
+	}, slices.Sorted(maps.Keys(gen.inputs[1])), "the test module is generated with its acceptance package and Story table")
 	assert.Contains(t, gen.inputs[1]["go.mod"], "module example.com/bakery/eval\n")
 	assert.Equal(t, 1, gen.closes)
 	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
@@ -553,6 +555,13 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_VALUE_5", attrFile)
 	t.Setenv("GIT_CONFIG_KEY_6", "filter.rot.clean")
 	t.Setenv("GIT_CONFIG_VALUE_6", "sh -c 'touch "+hookMarker+"; exit 1'")
+	// Every variable that would point git at another repository, work tree,
+	// index or object store names the poison repository; GIT_DIR and
+	// GIT_WORK_TREE, the ones git's hooks export, are set by name too, so
+	// this test holds even if the shared list lost them.
+	for _, name := range gitenv.Redirects() {
+		t.Setenv(name, filepath.Join(poisonRepo, ".git"))
+	}
 	t.Setenv("GIT_DIR", filepath.Join(poisonRepo, ".git"))
 	t.Setenv("GIT_WORK_TREE", poisonRepo)
 	t.Setenv("GIT_TEMPLATE_DIR", tmplDir)
@@ -596,7 +605,7 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	_, err = os.Stat(filepath.Join(stagePath, ".git", "poison-template-file"))
 	assert.ErrorIs(t, err, os.ErrNotExist, "init.templateDir and GIT_TEMPLATE_DIR must not copy files into .git")
 	_, err = os.Stat(filepath.Join(poisonRepo, ".git"))
-	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip inherited GIT_DIR and GIT_WORK_TREE")
+	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip every inherited redirect")
 	_, err = os.Stat(filepath.Join(stagePath, ".git"))
 	require.NoError(t, err, "staged project has its own .git directory")
 }

@@ -106,7 +106,8 @@ func TestPrepareWritesOneRequiredMethodPerFinishedFlow(t *testing.T) {
 
 // TestPrepareGivesTheAuthorItsGenerationFailure breaks the copy's design, as
 // its author could: Prepare returns an *AuthorError whose finding quotes the
-// compiler, with no absolute path, and writes no generated folder.
+// compiler, with no absolute path, and writes neither the Story table nor the
+// generated folder, so the copy holds only the author's change.
 func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
 	skipWithoutSandbox(t)
 	repo, _ := newProject(t, fixtureProject(t))
@@ -123,6 +124,8 @@ func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
 	assert.Equal(t, FindingGeneration, author.Finding.Kind)
 	assert.Contains(t, author.Finding.Message, "undefinedInTheDesign")
 	assert.NotContains(t, author.Finding.Message, wc.Dir())
+	assert.NoFileExists(t, filepath.Join(wc.Project(), "eval", filepath.FromSlash(designeval.StoryTestsPath)))
+	assert.Equal(t, "M eval/design/design.go", runGit(t, wc.Dir(), "status", "--porcelain", "--untracked-files=all"))
 }
 
 // TestCheckJudgesTheWorkingCopy plays the test writer through a prepared copy:
@@ -326,9 +329,9 @@ func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
 
 // TestCheckWantsExactlyOneEvaluationSuite gives the copy's design two
 // suites, then none, each with a Story that requires tests and with one that
-// requires none: Check says the module must declare exactly one evaluation
-// suite and how many it declares, never a build error about a missing
-// package. A module whose acceptance package was deleted, and one whose path
+// requires none: the Story table Check writes says the module must declare
+// exactly one evaluation suite and how many it declares, never a build error
+// about a missing package. A module whose acceptance package was deleted, and one whose path
 // is outside Surla's test layout, get no generated program, and Check says
 // what makes a module a Surla test module.
 func TestCheckWantsExactlyOneEvaluationSuite(t *testing.T) {
@@ -362,8 +365,9 @@ var _ = Suite("second", func() {
 				require.NoError(t, err)
 				require.Len(t, v.Findings, 1, "%+v", v.Findings)
 				assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
-				assert.Contains(t, v.Findings[0].Message, "exactly one evaluation suite")
+				assert.Contains(t, v.Findings[0].Message, "the test module must declare exactly one evaluation suite")
 				assert.Contains(t, v.Findings[0].Message, tc.count)
+				assert.Contains(t, v.Findings[0].Message, "keep exactly one Suite(...) in design/")
 				assertNoAbsolutePath(t, v.Findings)
 			})
 		}

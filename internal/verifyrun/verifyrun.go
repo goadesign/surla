@@ -50,6 +50,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/internal/verify"
 )
@@ -212,10 +213,18 @@ func NewRunID() string {
 // Start accepts req under root and starts its supervisor, then returns the
 // supervisor's PID without waiting for the run. command is the argument list
 // that runs this program, such as the path of the surla executable; Start
-// appends "verify-run supervise <dir>". The run directory must not exist,
+// appends "verify-run supervise <dir>". The supervisor gets this process's
+// environment plus settings, the provider request settings the run's test
+// program may use; they pass to the executor only through the environment,
+// never an argument or request.json, so the run keeps this snapshot whatever
+// its caller holds later. The supervisor, which starts nothing but the
+// executor, thus holds the snapshot in its environment for the run's life.
+// So does the executor: it removes the families from its own process at
+// entry, so only the test program receives them, but its initial
+// environment block, which same-user processes can read, keeps them. The run directory must not exist,
 // req.Plan.WorkDir must name the run's work directory, and req.Plan.Tests
 // must name one of the declared test sources.
-func Start(root string, req Request, command []string) (int, error) {
+func Start(root string, req Request, command []string, settings []modelsettings.Settings) (int, error) {
 	if !runIDPattern.MatchString(req.RunID) {
 		return 0, fmt.Errorf("run ID %q is not 32 lowercase hex characters", req.RunID)
 	}
@@ -261,6 +270,10 @@ func Start(root string, req Request, command []string) (int, error) {
 	}
 	defer logFile.Close()
 	cmd := exec.Command(command[0], append(command[1:], "verify-run", "supervise", dir)...)
+	cmd.Env = os.Environ()
+	for _, s := range settings {
+		cmd.Env = append(cmd.Env, s.Environ()...)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.ExtraFiles = []*os.File{lock}
 	cmd.Stdout, cmd.Stderr = logFile, logFile
@@ -352,15 +365,26 @@ func Supervise(dir string, command []string) error {
 
 // Execute runs as `surla verify-run execute <dir>`, the leader of the run's
 // process group. It watches the control pipe on descriptor 3 and kills its
-// whole group when the supervisor dies; otherwise it runs the plan saved in
-// request.json with run, canceling it on SIGTERM, and writes the run's
-// Result as JSON to out. The full
-// error of a failed step goes to errLog, which stays with the evaluator.
-func Execute(dir string, run func(context.Context, verify.Plan) (verify.Report, error), out, errLog io.Writer) error {
+// whole group when the supervisor dies. It then takes every provider family
+// out of its own process (takeProviderFamilies), so the run's preparation
+// never sees one, and runs the plan saved in request.json with run, passing
+// the process environment plus what it took, from which only the test
+// program's environment is derived. It cancels the run on SIGTERM and
+// writes the run's Result as JSON to out. The full error of a failed step
+// goes to errLog, which stays with the evaluator.
+func Execute(
+	dir string,
+	run func(context.Context, verify.Plan, []string) (verify.Report, error),
+	out, errLog io.Writer,
+) error {
 	syscall.CloseOnExec(passedFD)
 	control := os.NewFile(passedFD, "control")
 	go watchSupervisor(control)
 
+	providers, err := takeProviderFamilies()
+	if err != nil {
+		return err
+	}
 	req, err := readRequest(dir)
 	if err != nil {
 		return err
@@ -369,7 +393,7 @@ func Execute(dir string, run func(context.Context, verify.Plan) (verify.Report, 
 	// can stop its candidates and remove its pinned binaries.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
-	report, err := run(ctx, req.Plan)
+	report, err := run(ctx, req.Plan, append(os.Environ(), providers...))
 	result := Result{Kind: ResultReport, ReportDigest: report.Digest}
 	if err != nil {
 		var stage *verify.StageError
@@ -654,6 +678,21 @@ func stopGroup(pgid int) {
 	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		fmt.Fprintf(os.Stderr, "cancel verification: kill process group %d: %v\n", pgid, err)
 	}
+}
+
+// takeProviderFamilies removes every provider family variable from this
+// process's environment and returns them as NAME=value entries. An executor
+// calls it at entry: what it received are the provider request settings its
+// caller handed it, which only its test program may get back.
+func takeProviderFamilies() ([]string, error) {
+	family, _ := modelsettings.Split(os.Environ())
+	for _, kv := range family {
+		name, _, _ := strings.Cut(kv, "=")
+		if err := os.Unsetenv(name); err != nil {
+			return nil, fmt.Errorf("remove provider settings from the executor's environment: %w", err)
+		}
+	}
+	return family, nil
 }
 
 // watchSupervisor reads the control pipe until the supervisor's end closes,

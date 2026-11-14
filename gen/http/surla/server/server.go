@@ -37,6 +37,7 @@ type Server struct {
 	Diff                      http.Handler
 	ConfigureModel            http.Handler
 	GetModelConnection        http.Handler
+	HandOverModelSettings     http.Handler
 	InitProject               http.Handler
 	GenerateCode              http.Handler
 	CheckProject              http.Handler
@@ -105,6 +106,7 @@ func New(
 			{"Diff", "POST", "/diff"},
 			{"ConfigureModel", "POST", "/cp1/model"},
 			{"GetModelConnection", "GET", "/cp1/model"},
+			{"HandOverModelSettings", "POST", "/cp1/model/settings"},
 			{"InitProject", "POST", "/workspace/init"},
 			{"GenerateCode", "POST", "/workspace/generate"},
 			{"CheckProject", "POST", "/workspace/check"},
@@ -145,6 +147,7 @@ func New(
 		Diff:                      NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
 		ConfigureModel:            NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
 		GetModelConnection:        NewGetModelConnectionHandler(e.GetModelConnection, mux, decoder, encoder, errhandler, formatter),
+		HandOverModelSettings:     NewHandOverModelSettingsHandler(e.HandOverModelSettings, mux, decoder, encoder, errhandler, formatter),
 		InitProject:               NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
 		GenerateCode:              NewGenerateCodeHandler(e.GenerateCode, mux, decoder, encoder, errhandler, formatter),
 		CheckProject:              NewCheckProjectHandler(e.CheckProject, mux, decoder, encoder, errhandler, formatter),
@@ -192,6 +195,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Diff = m(s.Diff)
 	s.ConfigureModel = m(s.ConfigureModel)
 	s.GetModelConnection = m(s.GetModelConnection)
+	s.HandOverModelSettings = m(s.HandOverModelSettings)
 	s.InitProject = m(s.InitProject)
 	s.GenerateCode = m(s.GenerateCode)
 	s.CheckProject = m(s.CheckProject)
@@ -238,6 +242,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountDiffHandler(mux, h.Diff)
 	MountConfigureModelHandler(mux, h.ConfigureModel)
 	MountGetModelConnectionHandler(mux, h.GetModelConnection)
+	MountHandOverModelSettingsHandler(mux, h.HandOverModelSettings)
 	MountInitProjectHandler(mux, h.InitProject)
 	MountGenerateCodeHandler(mux, h.GenerateCode)
 	MountCheckProjectHandler(mux, h.CheckProject)
@@ -1178,6 +1183,59 @@ func NewGetModelConnectionHandler(
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		var err error
 		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountHandOverModelSettingsHandler configures the mux to serve the "surla"
+// service "hand_over_model_settings" endpoint.
+func MountHandOverModelSettingsHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/cp1/model/settings", f)
+}
+
+// NewHandOverModelSettingsHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "hand_over_model_settings" endpoint.
+func NewHandOverModelSettingsHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeHandOverModelSettingsRequest(mux, decoder)
+		encodeResponse = EncodeHandOverModelSettingsResponse(encoder)
+		encodeError    = EncodeHandOverModelSettingsError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "hand_over_model_settings")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
 		if err != nil {
 			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
 				errhandler(ctx, w, err)

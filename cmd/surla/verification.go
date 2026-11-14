@@ -108,9 +108,11 @@ func runVerify(args []string) error {
 	}
 	defer os.RemoveAll(root)
 	runID := verifyrun.NewRunID()
+	// The operator's own shell environment reaches the run unchanged, so
+	// no handed-over settings are added.
 	supervisor, err := verifyrun.Start(root, verifyrun.Request{
 		RunID: runID, Owner: "cli", AcceptedAt: time.Now().UTC(), Timeout: timeout, Plan: plan,
-	}, self)
+	}, self, nil)
 	if err != nil {
 		return err
 	}

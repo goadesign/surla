@@ -90,14 +90,16 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 		},
 		Live: &controlplane.LiveConfig{
 			Command:      []string{surlaBin},
-			Env:          append(os.Environ(), "SURLA_LIVE_MODEL_GATEWAY="+gatewayAddr),
+			Env:          os.Environ(),
 			StartTimeout: 10 * time.Minute,
-			Model:        gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: gatewayAddr}),
 		},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	// Live targets plan through the scripted gateway the user chose.
+	_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gatewayAddr})
+	require.NoError(t, err)
 	card := confirmCard(t, cp, alice, "starter-live-prompt")
 
 	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})

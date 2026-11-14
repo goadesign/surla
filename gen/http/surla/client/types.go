@@ -162,6 +162,19 @@ type ConfigureModelRequestBody struct {
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
 }
 
+// HandOverModelSettingsRequestBody is the type of the "surla" service
+// "hand_over_model_settings" endpoint HTTP request body.
+type HandOverModelSettingsRequestBody struct {
+	// Request settings for anthropic, keyed by variable name, replacing everything
+	// held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute
+	// to keep what is held.
+	Anthropic map[string]string `form:"anthropic,omitempty" json:"anthropic,omitempty" xml:"anthropic,omitempty"`
+	// Request settings for openai, keyed by variable name, replacing everything
+	// held for openai. They must include OPENAI_API_KEY. Omit the attribute to
+	// keep what is held.
+	Openai map[string]string `form:"openai,omitempty" json:"openai,omitempty" xml:"openai,omitempty"`
+}
+
 // InitProjectRequestBody is the type of the "surla" service "init_project"
 // endpoint HTTP request body.
 type InitProjectRequestBody struct {
@@ -581,6 +594,11 @@ type VerifyChangeResponseBody struct {
 	// Change Card and usable build or stored evaluator. This observation does not
 	// establish the current candidate working tree, deployment or approval.
 	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -608,6 +626,11 @@ type GetVerificationResponseBody struct {
 	// Change Card and usable build or stored evaluator. This observation does not
 	// establish the current candidate working tree, deployment or approval.
 	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -712,6 +735,17 @@ type ConfigureModelResponseBody struct {
 // GetModelConnectionResponseBody is the type of the "surla" service
 // "get_model_connection" endpoint HTTP response body.
 type GetModelConnectionResponseBody struct {
+	// none when no model is chosen; direct with a provider and model name; gateway
+	// with a model gateway address.
+	Connection *ConnectionResponseBody `form:"connection,omitempty" json:"connection,omitempty" xml:"connection,omitempty"`
+}
+
+// HandOverModelSettingsResponseBody is the type of the "surla" service
+// "hand_over_model_settings" endpoint HTTP response body.
+type HandOverModelSettingsResponseBody struct {
+	// Names of the request settings held for each provider, sorted; a provider
+	// holds nothing until its settings are handed over.
+	Held map[string][]string `form:"held,omitempty" json:"held,omitempty" xml:"held,omitempty"`
 	// none when no model is chosen; direct with a provider and model name; gateway
 	// with a model gateway address.
 	Connection *ConnectionResponseBody `form:"connection,omitempty" json:"connection,omitempty" xml:"connection,omitempty"`
@@ -2050,25 +2084,6 @@ type ConfigureModelUnprocessableResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
-// ConfigureModelNotImplementedResponseBody is the type of the "surla" service
-// "configure_model" endpoint HTTP response body for the "not_implemented"
-// error.
-type ConfigureModelNotImplementedResponseBody struct {
-	// Name is the name of this class of errors.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
-	// Is the error temporary?
-	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
-	// Is the error a timeout?
-	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
-	// Is the error a server-side fault?
-	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
 // ConfigureModelForbiddenResponseBody is the type of the "surla" service
 // "configure_model" endpoint HTTP response body for the "forbidden" error.
 type ConfigureModelForbiddenResponseBody struct {
@@ -2090,6 +2105,44 @@ type ConfigureModelForbiddenResponseBody struct {
 // GetModelConnectionForbiddenResponseBody is the type of the "surla" service
 // "get_model_connection" endpoint HTTP response body for the "forbidden" error.
 type GetModelConnectionForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// HandOverModelSettingsUnprocessableResponseBody is the type of the "surla"
+// service "hand_over_model_settings" endpoint HTTP response body for the
+// "unprocessable" error.
+type HandOverModelSettingsUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// HandOverModelSettingsForbiddenResponseBody is the type of the "surla"
+// service "hand_over_model_settings" endpoint HTTP response body for the
+// "forbidden" error.
+type HandOverModelSettingsForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3747,6 +3800,11 @@ type VerificationStatusResultResponseBody struct {
 	// Change Card and usable build or stored evaluator. This observation does not
 	// establish the current candidate working tree, deployment or approval.
 	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `form:"candidate_binaries_dir,omitempty" json:"candidate_binaries_dir,omitempty" xml:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -3809,7 +3867,9 @@ type TeamRoleStateResponseBody struct {
 	Handle *string `form:"handle,omitempty" json:"handle,omitempty" xml:"handle,omitempty"`
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention *string `form:"attention,omitempty" json:"attention,omitempty" xml:"attention,omitempty"`
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -6685,6 +6745,29 @@ func NewConfigureModelRequestBody(p *surla.ConfigureModelPayload) *ConfigureMode
 	return body
 }
 
+// NewHandOverModelSettingsRequestBody builds the HTTP request body from the
+// payload of the "hand_over_model_settings" endpoint of the "surla" service.
+func NewHandOverModelSettingsRequestBody(p *surla.HandOverModelSettingsPayload) *HandOverModelSettingsRequestBody {
+	body := &HandOverModelSettingsRequestBody{}
+	if p.Anthropic != nil {
+		body.Anthropic = make(map[string]string, len(p.Anthropic))
+		for key, val := range p.Anthropic {
+			tk := key
+			tv := val
+			body.Anthropic[tk] = tv
+		}
+	}
+	if p.Openai != nil {
+		body.Openai = make(map[string]string, len(p.Openai))
+		for key, val := range p.Openai {
+			tk := key
+			tv := val
+			body.Openai[tk] = tv
+		}
+	}
+	return body
+}
+
 // NewInitProjectRequestBody builds the HTTP request body from the payload of
 // the "init_project" endpoint of the "surla" service.
 func NewInitProjectRequestBody(p *surla.InitProjectPayload) *InitProjectRequestBody {
@@ -7718,13 +7801,14 @@ func NewGetLiveTargetForbidden(body *GetLiveTargetForbiddenResponseBody) *goa.Se
 // "verify_change" endpoint result from a HTTP "OK" response.
 func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *surla.VerificationStatusResult {
 	v := &surla.VerificationStatusResult{
-		RunID:           *body.RunID,
-		ChangeID:        *body.ChangeID,
-		RequestRevision: *body.RequestRevision,
-		CandidateCommit: *body.CandidateCommit,
-		SuiteCommit:     *body.SuiteCommit,
-		AcceptedAt:      *body.AcceptedAt,
-		InputsCurrent:   *body.InputsCurrent,
+		RunID:                *body.RunID,
+		ChangeID:             *body.ChangeID,
+		RequestRevision:      *body.RequestRevision,
+		CandidateCommit:      *body.CandidateCommit,
+		SuiteCommit:          *body.SuiteCommit,
+		AcceptedAt:           *body.AcceptedAt,
+		InputsCurrent:        *body.InputsCurrent,
+		CandidateBinariesDir: body.CandidateBinariesDir,
 	}
 	switch string(body.TestSource.Kind()) {
 	case "evaluator":
@@ -7888,13 +7972,14 @@ func NewVerifyChangeForbidden(body *VerifyChangeForbiddenResponseBody) *goa.Serv
 // "get_verification" endpoint result from a HTTP "OK" response.
 func NewGetVerificationVerificationStatusResultOK(body *GetVerificationResponseBody) *surla.VerificationStatusResult {
 	v := &surla.VerificationStatusResult{
-		RunID:           *body.RunID,
-		ChangeID:        *body.ChangeID,
-		RequestRevision: *body.RequestRevision,
-		CandidateCommit: *body.CandidateCommit,
-		SuiteCommit:     *body.SuiteCommit,
-		AcceptedAt:      *body.AcceptedAt,
-		InputsCurrent:   *body.InputsCurrent,
+		RunID:                *body.RunID,
+		ChangeID:             *body.ChangeID,
+		RequestRevision:      *body.RequestRevision,
+		CandidateCommit:      *body.CandidateCommit,
+		SuiteCommit:          *body.SuiteCommit,
+		AcceptedAt:           *body.AcceptedAt,
+		InputsCurrent:        *body.InputsCurrent,
+		CandidateBinariesDir: body.CandidateBinariesDir,
 	}
 	switch string(body.TestSource.Kind()) {
 	case "evaluator":
@@ -8297,21 +8382,6 @@ func NewConfigureModelUnprocessable(body *ConfigureModelUnprocessableResponseBod
 	return v
 }
 
-// NewConfigureModelNotImplemented builds a surla service configure_model
-// endpoint not_implemented error.
-func NewConfigureModelNotImplemented(body *ConfigureModelNotImplementedResponseBody) *goa.ServiceError {
-	v := &goa.ServiceError{
-		Name:      *body.Name,
-		ID:        *body.ID,
-		Message:   *body.Message,
-		Temporary: *body.Temporary,
-		Timeout:   *body.Timeout,
-		Fault:     *body.Fault,
-	}
-
-	return v
-}
-
 // NewConfigureModelForbidden builds a surla service configure_model endpoint
 // forbidden error.
 func NewConfigureModelForbidden(body *ConfigureModelForbiddenResponseBody) *goa.ServiceError {
@@ -8367,6 +8437,86 @@ func NewGetModelConnectionModelConnectionOK(body *GetModelConnectionResponseBody
 // NewGetModelConnectionForbidden builds a surla service get_model_connection
 // endpoint forbidden error.
 func NewGetModelConnectionForbidden(body *GetModelConnectionForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewHandOverModelSettingsResultOK builds a "surla" service
+// "hand_over_model_settings" endpoint result from a HTTP "OK" response.
+func NewHandOverModelSettingsResultOK(body *HandOverModelSettingsResponseBody) *surla.ModelSettingsResult {
+	v := &surla.ModelSettingsResult{}
+	v.Held = make(map[string][]string, len(body.Held))
+	for key, val := range body.Held {
+		tk := key
+		if val == nil {
+			v.Held[tk] = nil
+			continue
+		}
+		tv := make([]string, len(val))
+		for i, val := range val {
+			tv[i] = val
+		}
+		v.Held[tk] = tv
+	}
+	switch string(body.Connection.Kind()) {
+	case "none":
+		actual, _ := body.Connection.AsNone()
+		var obj *surla.ModelNone
+		if actual != nil {
+			obj = unmarshalModelNoneResponseBodyToSurlaModelNone(actual)
+		}
+		u := v.Connection
+		u.SetNone((*surla.ModelNone)(obj))
+		v.Connection = u
+	case "direct":
+		actual, _ := body.Connection.AsDirect()
+		var obj *surla.ModelDirect
+		if actual != nil {
+			obj = unmarshalModelDirectResponseBodyToSurlaModelDirect(actual)
+		}
+		u := v.Connection
+		u.SetDirect((*surla.ModelDirect)(obj))
+		v.Connection = u
+	case "gateway":
+		actual, _ := body.Connection.AsGateway()
+		var obj *surla.ModelGateway
+		if actual != nil {
+			obj = unmarshalModelGatewayResponseBodyToSurlaModelGateway(actual)
+		}
+		u := v.Connection
+		u.SetGateway((*surla.ModelGateway)(obj))
+		v.Connection = u
+	}
+
+	return v
+}
+
+// NewHandOverModelSettingsUnprocessable builds a surla service
+// hand_over_model_settings endpoint unprocessable error.
+func NewHandOverModelSettingsUnprocessable(body *HandOverModelSettingsUnprocessableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewHandOverModelSettingsForbidden builds a surla service
+// hand_over_model_settings endpoint forbidden error.
+func NewHandOverModelSettingsForbidden(body *HandOverModelSettingsForbiddenResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -10387,6 +10537,11 @@ func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
 	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
+	}
 	if body.TestSource != nil {
 
 		if err2 := body.TestSource.Validate(); err2 != nil {
@@ -10470,6 +10625,11 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -10663,6 +10823,47 @@ func ValidateConfigureModelResponseBody(body *ConfigureModelResponseBody) (err e
 func ValidateGetModelConnectionResponseBody(body *GetModelConnectionResponseBody) (err error) {
 	if body.Connection == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("connection", "body"))
+	}
+	if body.Connection != nil {
+
+		if err2 := body.Connection.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.Connection.Kind()) {
+			case "direct":
+				actual, _ := body.Connection.AsDirect()
+				if actual != nil {
+					if err2 := validateModelDirectResponseBody(actual, "body.connection.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "gateway":
+				actual, _ := body.Connection.AsGateway()
+				if actual != nil {
+					if err2 := validateModelGatewayResponseBody(actual, "body.connection.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
+// ValidateHandOverModelSettingsResponseBody runs the validations defined on
+// HandOverModelSettingsResponseBody
+func ValidateHandOverModelSettingsResponseBody(body *HandOverModelSettingsResponseBody) (err error) {
+	if body.Held == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("held", "body"))
+	}
+	if body.Connection == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection", "body"))
+	}
+	for k, _ := range body.Held {
+		if !(k == "anthropic" || k == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.held.key", k, []any{"anthropic", "openai"}))
+		}
 	}
 	if body.Connection != nil {
 
@@ -12612,30 +12813,6 @@ func ValidateConfigureModelUnprocessableResponseBody(body *ConfigureModelUnproce
 	return
 }
 
-// ValidateConfigureModelNotImplementedResponseBody runs the validations
-// defined on ConfigureModelNotImplementedResponseBody
-func ValidateConfigureModelNotImplementedResponseBody(body *ConfigureModelNotImplementedResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.ID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
-	}
-	if body.Message == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
-	}
-	if body.Temporary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
-	}
-	if body.Timeout == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
-	}
-	if body.Fault == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
-	}
-	return
-}
-
 // ValidateConfigureModelForbiddenResponseBody runs the validations defined on
 // ConfigureModelForbiddenResponseBody
 func ValidateConfigureModelForbiddenResponseBody(body *ConfigureModelForbiddenResponseBody) (err error) {
@@ -12663,6 +12840,54 @@ func ValidateConfigureModelForbiddenResponseBody(body *ConfigureModelForbiddenRe
 // ValidateGetModelConnectionForbiddenResponseBody runs the validations defined
 // on GetModelConnectionForbiddenResponseBody
 func ValidateGetModelConnectionForbiddenResponseBody(body *GetModelConnectionForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateHandOverModelSettingsUnprocessableResponseBody runs the validations
+// defined on HandOverModelSettingsUnprocessableResponseBody
+func ValidateHandOverModelSettingsUnprocessableResponseBody(body *HandOverModelSettingsUnprocessableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateHandOverModelSettingsForbiddenResponseBody runs the validations
+// defined on HandOverModelSettingsForbiddenResponseBody
+func ValidateHandOverModelSettingsForbiddenResponseBody(body *HandOverModelSettingsForbiddenResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -15594,6 +15819,11 @@ func ValidateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
 	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
+	}
 	if body.TestSource != nil {
 
 		if err2 := body.TestSource.Validate(); err2 != nil {
@@ -15677,6 +15907,11 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -15930,8 +16165,8 @@ func ValidateTeamRoleStateResponseBody(body *TeamRoleStateResponseBody) (err err
 		}
 	}
 	if body.Attention != nil {
-		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "assignment" || *body.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if body.Watcher != nil {
@@ -15979,8 +16214,8 @@ func validateTeamRoleStateResponseBody(body *TeamRoleStateResponseBody, path str
 		}
 	}
 	if body.Attention != nil {
-		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "assignment" || *body.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if body.Watcher != nil {

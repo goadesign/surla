@@ -102,6 +102,12 @@ export function ApproveResultControl({
         <Alert id="surla-cp5-approve-error" variant="destructive" role="alert" tabIndex={-1}>
           <strong>Approval was not recorded. </strong>
           {error}
+          {run.candidate_binaries_dir !== undefined ? (
+            <p id="surla-cp5-binaries-dir">
+              <strong>Binaries built by this run: </strong>
+              <code>{run.candidate_binaries_dir}</code>
+            </p>
+          ) : null}
         </Alert>
       ) : null}
     </Card>

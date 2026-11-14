@@ -28,6 +28,7 @@ import (
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
 	"github.com/goadesign/surla/internal/goldenpath"
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/traceview"
 	"github.com/goadesign/surla/internal/verify"
@@ -138,10 +139,6 @@ type (
 		// `eval/go.mod` by init_project. When empty, init_project returns
 		// not_implemented.
 		SurlaVersion string
-		// LiveModelEnv returns the CP3 live-target environment for a model
-		// choice made with configure_model. Without it, configure_model returns
-		// not_implemented.
-		LiveModelEnv LiveModelEnv
 		// PromotionTarget optionally supplies CP5 verification reports and
 		// measured release binary digests. When nil and ResolvePromotionTarget
 		// resolves nil, approve_merge loads reports from the configured
@@ -260,20 +257,18 @@ type (
 		mu sync.RWMutex
 		// cards saves pending and confirmed CP1 Change Cards by change_id.
 		cards *cardStore
-		// modelMu guards liveModel and liveModelEnv, which change together.
+		// modelMu guards liveModel and heldSettings, which a hand-over can
+		// change together; a launch or an accepted verification snapshots
+		// them under it.
 		modelMu sync.Mutex
 		// liveModel is the model choice the next CP3 live target receives:
-		// Options.Live.Model, or none without Options.Live, until
+		// none until a hand-over brings a provider's default or
 		// configure_model replaces it. get_model_connection reports it.
 		liveModel gensurla.Connection
-		// liveModelEnv is the environment liveModel became, which the next
-		// CP3 live target starts with: Options.Live.Env until configure_model
-		// replaces it. It holds inherited provider keys and is never
-		// returned.
-		liveModelEnv []string
-		// liveModelEnvFor is Options.LiveModelEnv, or nil when runtime model
-		// reconfiguration is not configured.
-		liveModelEnvFor LiveModelEnv
+		// heldSettings maps each provider whose request settings the surla
+		// command handed over to those settings. It lives in memory only,
+		// never shrinks while the server runs, and is never returned.
+		heldSettings map[string]modelsettings.Settings
 		// promotionTarget supplies CP5 reports and current promotion inputs;
 		// nil when the project server bound none.
 		promotionTarget PromotionTarget
@@ -444,10 +439,6 @@ func New(opts Options) (*ControlPlane, error) {
 		}
 		return evalErr
 	}
-	if opts.Live != nil && opts.Live.Model.Kind() == "" {
-		err := errors.New("Options.Live.Model must name the model choice Options.Live.Env was derived from: none, direct or gateway")
-		return nil, errors.Join(err, cleanupFailedNew())
-	}
 	surlaVersion := strings.TrimSpace(opts.SurlaVersion)
 	if surlaVersion != "" && !scaffold.ValidVersion(surlaVersion) {
 		err := fmt.Errorf("surla version %q must be a canonical semantic version such as v0.1.0", opts.SurlaVersion)
@@ -489,18 +480,12 @@ func New(opts Options) (*ControlPlane, error) {
 			eval = designeval.NewEvaluator()
 		}
 	}
-	initialModel := gensurla.NewConnectionNone(&gensurla.ModelNone{})
-	var initialLiveEnv []string
-	if opts.Live != nil {
-		initialModel, initialLiveEnv = opts.Live.Model, opts.Live.Env
-	}
 	cp := &ControlPlane{
 		cards:                  cards,
 		traces:                 traces,
 		traceProvider:          opts.TracerProvider,
-		liveModel:              initialModel,
-		liveModelEnv:           initialLiveEnv,
-		liveModelEnvFor:        opts.LiveModelEnv,
+		liveModel:              gensurla.NewConnectionNone(&gensurla.ModelNone{}),
+		heldSettings:           map[string]modelsettings.Settings{},
 		promotionTarget:        opts.PromotionTarget,
 		resolvePromotionTarget: opts.ResolvePromotionTarget,
 		verifier:               verif,

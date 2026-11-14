@@ -124,7 +124,7 @@ func TestRunGivesWrittenTestsOnlyTheirRunsEnvironment(t *testing.T) {
 				WorkDir:         filepath.Join(work, "work"),
 				ReportDir:       filepath.Join(work, "reports"),
 				Tests:           tc.tests,
-			})
+			}, os.Environ())
 			require.NoError(t, err)
 			assert.Equal(t, tc.passed, report.Passed)
 			require.Len(t, report.Scenarios, 1)

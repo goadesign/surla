@@ -181,7 +181,9 @@ jobs:
             ./internal/designeval \
             ./internal/diff \
             ./internal/genpublish \
+            ./internal/gitenv \
             ./internal/goldenpath \
+            ./internal/modelsettings \
             ./internal/procgroup \
             ./internal/renameat \
             ./internal/scaffold \

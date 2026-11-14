@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/gitenv"
 	"github.com/goadesign/surla/verify/candidate"
 	"github.com/goadesign/surla/verify/suite"
 	"goa.design/goa-ai/eval"
@@ -209,18 +210,31 @@ func IsCommitID(commit string) bool {
 // caller must run it inside an owning group that it stops afterwards, as
 // `surla verify-run execute` does under its supervisor.
 //
+// Preparation runs with the process environment. environ is the
+// environment the test program's own is derived from (ProgramEnv): the
+// process environment plus the provider request settings the run was
+// given, which the caller removed from its own process so preparation
+// never sees them.
+//
 // Every error is a *StageError naming the step that failed and a summary
 // safe to show builders; its Err may quote command output and stays with the
 // evaluator. A suite that produces no decodable eval.Report is an error.
 // Otherwise the report keeps the suite's evidence and exit status: a suite
 // that ran and failed, or that exited abnormally after writing partial
 // results, yields a report that does not pass.
-func Run(ctx context.Context, p Plan) (Report, error) {
+func Run(ctx context.Context, p Plan, environ []string) (Report, error) {
 	prep, err := Prepare(ctx, p)
 	if err != nil {
 		return Report{}, err
 	}
-	return runPrepared(ctx, p, prep, os.Environ())
+	return runPrepared(ctx, p, prep, environ)
+}
+
+// CandidateBinariesDir names the output folder Prepare owns inside the run's
+// work directory. Run readers use the same location to identify the binaries
+// retained after verification; callers supply the recorded absolute WorkDir.
+func CandidateBinariesDir(workDir string) string {
+	return filepath.Join(workDir, "candidate-bin")
 }
 
 // Prepare runs the trusted preparation Run starts with: it checks the plan,
@@ -267,7 +281,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory %s must be missing or empty", p.WorkDir))
 	}
 	evidenceDir := filepath.Join(p.WorkDir, "evidence")
-	candidateBinDir := filepath.Join(p.WorkDir, "candidate-bin")
+	candidateBinDir := CandidateBinariesDir(p.WorkDir)
 	suiteBinDir := filepath.Join(p.WorkDir, "suite-bin")
 	tmpDir := filepath.Join(p.WorkDir, "tmp")
 	for _, dir := range []string{evidenceDir, candidateBinDir, suiteBinDir, tmpDir} {
@@ -442,17 +456,23 @@ func ValidateArtifactName(name string) error {
 }
 
 // checkout clones repo into dir and checks out commit, detached. The source
-// repository is only read; clone hooks and templates are disabled.
+// repository is only read; clone hooks and templates are disabled. Its git
+// commands run without the variables that point git at another repository
+// (gitenv.WithoutRedirects), so only repo and dir are ever used, whatever
+// repository the process's own environment names. Every other variable
+// stays, protocol, identity and credential settings among them, because a
+// plan's repository may be remote (surla verify -candidate-repo <url>).
 func (r *runner) checkout(ctx context.Context, label, repo, commit, dir string) error {
-	if err := r.run(ctx, "clone-"+label, "", nil, "git", "-c", "core.hooksPath=/dev/null",
+	env := gitenv.WithoutRedirects(os.Environ())
+	if err := r.run(ctx, "clone-"+label, "", env, "git", "-c", "core.hooksPath=/dev/null",
 		"clone", "--quiet", "--no-checkout", "--template=", repo, dir); err != nil {
 		return fmt.Errorf("check out %s: %w", label, err)
 	}
-	if err := r.run(ctx, "checkout-"+label, dir, nil, "git", "-c", "core.hooksPath=/dev/null",
+	if err := r.run(ctx, "checkout-"+label, dir, env, "git", "-c", "core.hooksPath=/dev/null",
 		"-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", commit+"^{commit}"); err != nil {
 		return fmt.Errorf("check out %s: %w", label, err)
 	}
-	if err := r.run(ctx, "head-"+label, dir, nil, "git", "rev-parse", "HEAD"); err != nil {
+	if err := r.run(ctx, "head-"+label, dir, env, "git", "rev-parse", "HEAD"); err != nil {
 		return fmt.Errorf("check out %s: %w", label, err)
 	}
 	head, err := os.ReadFile(filepath.Join(r.evidenceDir, "head-"+label+".stdout"))
@@ -569,12 +589,17 @@ func (r *runner) excerpt(label string) string {
 // label ("candidate" or "suite"). These steps fetch checksum-verified modules
 // and official toolchains and compile or execute no checked-out code; the
 // sandboxed build afterwards runs with no network. Evidence files and the
-// build home are named by label so the two builds never share them.
+// build home are named by label so the two builds never share them. Go runs
+// git to fetch a module straight from version control, so both commands run
+// without the variables that point git at another repository
+// (gitenv.WithoutRedirects); the user's module, proxy, protocol and
+// credential settings stay.
 func (r *runner) prepareBuild(ctx context.Context, label, moduleDir, workDir string) (buildToolchain, error) {
-	if err := r.run(ctx, "go-mod-download-"+label, moduleDir, nil, "go", "mod", "download"); err != nil {
+	env := gitenv.WithoutRedirects(os.Environ())
+	if err := r.run(ctx, "go-mod-download-"+label, moduleDir, env, "go", "mod", "download"); err != nil {
 		return buildToolchain{}, fmt.Errorf("download %s modules: %w", label, err)
 	}
-	if err := r.run(ctx, "go-env-"+label, moduleDir, nil, "go", "env", "GOROOT", "GOMODCACHE"); err != nil {
+	if err := r.run(ctx, "go-env-"+label, moduleDir, env, "go", "env", "GOROOT", "GOMODCACHE"); err != nil {
 		return buildToolchain{}, fmt.Errorf("resolve %s toolchain: %w", label, err)
 	}
 	out, err := os.ReadFile(filepath.Join(r.evidenceDir, "go-env-"+label+".stdout"))

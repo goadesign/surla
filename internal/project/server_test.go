@@ -207,7 +207,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 			// The views page's HTTP-only operations are not listed as tools.
 			httpOrResourceOnly := map[string]bool{
 				"golden_path": true, "wait_for_changes": true, "start_build": true, "get_model_connection": true, "get_test_findings": true,
-				"get_team": true, "show_team_pane": true, "start_team_agents": true,
+				"get_team": true, "show_team_pane": true, "start_team_agents": true, "hand_over_model_settings": true,
 			}
 			for _, name := range gensurla.MethodNames {
 				if !httpOrResourceOnly[name] {
@@ -268,6 +268,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 				require.NoError(t, denied.Body.Close())
 				assert.Equal(t, http.StatusForbidden, denied.StatusCode, request.operation+": "+string(failure))
 				assert.Contains(t, string(failure), "may not call "+request.operation)
+				assert.NotContains(t, string(failure), "refused-value", "a refusal never echoes a handed-over value")
 			}
 			guidance := testRequest(t, api.Client(), http.MethodGet, state.Origin()+"/golden-path", "", tc.token, tc.role == controlplane.CallerUser)
 			if tc.role == controlplane.CallerManagement {
@@ -459,6 +460,7 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 		{"approve_merge", "POST", "/changes/approve", fmt.Sprintf(`{"change_id":"change","request_revision":%q,"candidate_commit":%q,"report_digest":%q}`, revision, commit, strings.Repeat("b", 64))},
 		{"diff", "POST", "/diff", `{"old":{"files":{"go.mod":"module example.com/shop","go.sum":"","design/design.go":"package design"}},"new":{"files":{"go.mod":"module example.com/shop","go.sum":"","design/design.go":"package design"}}}`},
 		{"configure_model", "POST", "/cp1/model", `{"gateway_addr":"127.0.0.1:1234"}`},
+		{"hand_over_model_settings", "POST", "/cp1/model/settings", `{"anthropic":{"ANTHROPIC_API_KEY":"refused-value"}}`},
 		{"init_project", "POST", "/workspace/init", `{"module_path":"example.com/shop"}`},
 		{"generate_code", "POST", "/workspace/generate", `{}`},
 		{"check_project", "POST", "/workspace/check", ""},

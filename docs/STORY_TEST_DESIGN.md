@@ -111,7 +111,9 @@ check of a report confirms the required tests, not what the tests assert.
 
 One rule, `mapStoryFlows` in
 [`internal/designeval/eval.go`](../internal/designeval/eval.go), names each
-required test from its flow's key:
+required test from its flow's key, both in the Story table (below) and in
+`StoryScenarios`, which lists the required tests and the unfinished flows the
+table leaves out without generating anything:
 
 | Flow key | Scenario name (Goa `codegen.SnakeCase`) | Hook method (Goa `codegen.Goify`) |
 | --- | --- | --- |
@@ -126,11 +128,20 @@ cannot be generated either: in a starter project, a flow `prices-tea` would
 repeat the suite's own `prices_tea`, and generating the required tests fails
 naming the duplicate.
 
-The required tests are generated into the project's test module, the `eval/`
-module that `surla init` creates in the project folder.
-`Evaluator.GenerateWithStories` runs Goa's generator on that module in the
-sandbox and attaches one scenario per finished flow to the module's single
-evaluation suite before Goa validates it. It writes:
+The required tests are declared in the project's test module, the `eval/`
+module that `surla init` creates in the project folder, by its Story table:
+`eval/design/story_tests.go`, a source file of the module's own design.
+`StoryTests`, in
+[`internal/designeval/story_table.go`](../internal/designeval/story_table.go),
+renders the table from the saved Story. The table declares the package the
+module's other `design/*.go` files declare and registers a Goa evaluation
+root, `storyScenarioRoot` from `story_scenarios.go`, with one row per
+finished flow; every string in a row is a quoted Go literal. The table holds
+those rows, not the Story, so the module's design never imports the
+project's Story. The root runs after Goa-AI's evaluation suites root and
+attaches one scenario per row to the module's single evaluation suite before
+Goa validates it. Generating the module, which `Evaluator.Generate` runs in
+the sandbox, then writes:
 
 - `gen/evals/<suite>/suite.go`, whose `Hooks` interface gains one method per
   required test;
@@ -140,14 +151,24 @@ evaluation suite before Goa validates it. It writes:
 No stub is written. Until the test writer writes a method for every required
 test, the test program does not compile, and the compiler names each missing
 method. A design that declares no suite, or more than one, is refused with
-the fix. When a later revision drops or renames a flow, its method leaves
-`Hooks`, and an old hand-written method still compiles and is unused.
+the fix; a table with no finished flow registers no row and still requires
+exactly one suite. When a later revision drops or renames a flow, its method
+leaves `Hooks`, and an old hand-written method still compiles and is unused.
 
-Ordinary generation, `Evaluator.Generate`, never receives Stories. It is what
-`generate_code`, `surla gen` and `surla init` run, so running
-`generate_code` or `surla gen` on the test module drops the required tests.
-The test writer therefore never regenerates its module: Surla generates it
-when the build starts and again at each report.
+Because the required tests are part of the module's design, every generation
+of the module keeps them, whoever runs it and with any tool: a build's
+preparation and Surla's check of a report, `generate_code` with
+`target: "eval"`, `surla gen`, `surla init`, and `goa gen` run by hand. A
+module without a Story table declares no Story scenario. The test writer
+leaves the table as it is: when a build starts and again at each report,
+Surla generates the module with the table it renders from the build's saved
+Story in place of whatever the test writer left at that path, so the test
+writer's version never counts. The table is replaced by renaming a new file
+over it, so a symbolic link at its path is replaced, not followed.
+`surla init` writes the starter's table from the starter's own Story. A
+project whose operator stored verification settings for another suite keeps
+whatever table its test module last received, because no build writes it
+again, and the operator may delete it.
 
 ## The test writer's working copy
 
@@ -194,9 +215,13 @@ only when that is safe. The result names one of three outcomes:
 
 Then the start writes the required tests into the copy, after removing any
 `.surla-gen-*` staging folder that a write cut short by a server's death
-left in the test module. A problem the test writer can fix, such as a test
-module design that does not compile, makes the test writer's state
-`needs_changes` with that finding, at report number 0. A problem it cannot
+left in the test module. It generates the module with the Story table, then
+writes the table and the generated folder. A generation that fails writes
+neither, so the copy stays as it was and a later build can still bring it
+forward; only a symbolic link at the table's path is replaced by the table
+first. A problem the test writer can fix, such as a test module design
+that does not compile, makes the test writer's state `needs_changes` with
+that finding, at report number 0. A problem it cannot
 fix makes the state `could_not_run`, with a reason that says what failed:
 the start's time limit or a server stop, a download of the module's
 dependencies that fails outside the test writer's changes (decided as for a
@@ -222,8 +247,10 @@ author:
 3. It copies the copy's files, as a commit would hold them, into a private
    folder, and compares them with the copy's base: the commit where
    `surla/tests` and the project's branch last met.
-4. It writes the test module's generated folder again in that private copy,
-   so the author cannot change what is required.
+4. It generates the test module again in that private copy, with the Story
+   table rendered from the saved Story in place of whatever the author left
+   at that path, and writes the table and the generated folder there, so the
+   author cannot change what is required.
 5. It downloads the module's dependencies, builds the test program in the
    sandbox, and runs the program's `--describe` in the sandbox to list the
    scenarios it declares.
@@ -372,7 +399,7 @@ stores them, approval also checks the release binaries, as
 | --- | --- |
 | Story language | [`story/`](../story/README.md) |
 | Story evaluation and adoption | [`story_refresh.go`](../internal/controlplane/story_refresh.go), [`designeval/eval.go`](../internal/designeval/eval.go) (`Evaluator.Evaluate`) |
-| Naming and generating the required tests | [`designeval/eval.go`](../internal/designeval/eval.go) (`GenerateWithStories`, `mapStoryFlows`), [`story_names.go`](../internal/designeval/story_names.go) (`StoryScenarios`), [`story_scenarios.go`](../internal/designeval/story_scenarios.go), [`test_layout.go`](../internal/designeval/test_layout.go) |
+| Naming and generating the required tests | [`designeval/eval.go`](../internal/designeval/eval.go) (`Evaluator.Generate`, `mapStoryFlows`), [`story_table.go`](../internal/designeval/story_table.go) (`StoryTests`), [`story_names.go`](../internal/designeval/story_names.go) (`StoryScenarios`), [`story_scenarios.go`](../internal/designeval/story_scenarios.go), [`test_layout.go`](../internal/designeval/test_layout.go) |
 | Starting a build | [`build_start.go`](../internal/controlplane/build_start.go), [`build_start_copy.go`](../internal/controlplane/build_start_copy.go), [`builds.go`](../internal/controlplane/builds.go) |
 | The working copy, the check and the record | [`testwriter/copy.go`](../internal/testwriter/copy.go), [`testwriter/check.go`](../internal/testwriter/check.go), [`testwriter/git.go`](../internal/testwriter/git.go) |
 | Judging reports | [`report_check.go`](../internal/controlplane/report_check.go) |

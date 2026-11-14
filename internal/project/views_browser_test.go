@@ -630,7 +630,7 @@ func TestTeamAndBuildAtPhoneWidth(t *testing.T) {
 		}
 	}
 	now := time.Now()
-	o := &teamSupervisor{server: server, roles: map[string]*supervisedRole{}, started: now}
+	o := &teamSupervisor{server: server, roles: map[string]*supervisedRole{}}
 	o.syncSelection(server.teamSelection())
 	for _, role := range o.selection.Roles {
 		o.event(t.Context(), TeamEvent{Kind: "snapshot", Role: role.Role, Sequence: 1, Terminals: []TeamTerminal{{

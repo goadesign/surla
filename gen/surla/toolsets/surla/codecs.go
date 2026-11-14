@@ -2221,7 +2221,7 @@ var checkProjectResultFields = []tools.FieldMetadata{
 var configureModelPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Selects either a direct model provider and model name (using the API key already present in the project server's process environment) or a running goa-ai model gateway address.",
+		Description: "Selects either a direct model provider and model name (whose request settings the surla command handed to the project server) or a running goa-ai model gateway address.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("provider")},
@@ -5990,7 +5990,7 @@ var getTestWriterAssignmentPayloadFields = []tools.FieldMetadata{
 var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user's confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.",
+		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user's confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla writes eval/design/story_tests.go, which declares the required tests, from the agreed Story and generates the module when the build starts and again at each report; the test writer leaves that file as it is. After changing the module's design, the test writer reports to have it generated again or, from a shell that is not sandboxed, runs surla gen -dir eval in the working folder first; regenerating keeps the required tests. go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -6544,6 +6544,11 @@ var getVerificationResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
 		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_binaries_dir")},
+		JSONType:    "string",
+		Description: "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
@@ -7574,6 +7579,11 @@ var listVerificationsResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
 		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("candidate_binaries_dir")},
+		JSONType:    "string",
+		Description: "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source")},
@@ -10749,6 +10759,11 @@ var verifyChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
 		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_binaries_dir")},
+		JSONType:    "string",
+		Description: "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
@@ -16004,13 +16019,14 @@ func MarshalGetVerificationResult(v *GetVerificationResult) ([]byte, error) {
 	_ = in
 	var out *toolhttp.GetVerificationResultTransport
 	out = &toolhttp.GetVerificationResultTransport{
-		RunID:           &in.RunID,
-		ChangeID:        &in.ChangeID,
-		RequestRevision: &in.RequestRevision,
-		CandidateCommit: &in.CandidateCommit,
-		SuiteCommit:     &in.SuiteCommit,
-		AcceptedAt:      &in.AcceptedAt,
-		InputsCurrent:   &in.InputsCurrent,
+		RunID:                &in.RunID,
+		ChangeID:             &in.ChangeID,
+		RequestRevision:      &in.RequestRevision,
+		CandidateCommit:      &in.CandidateCommit,
+		SuiteCommit:          &in.SuiteCommit,
+		AcceptedAt:           &in.AcceptedAt,
+		InputsCurrent:        &in.InputsCurrent,
+		CandidateBinariesDir: in.CandidateBinariesDir,
 	}
 	var testSourceValue toolhttp.TestSource
 	switch string(in.TestSource.Kind()) {
@@ -16089,13 +16105,14 @@ func UnmarshalGetVerificationResult(data []byte) (*GetVerificationResult, error)
 	_ = in
 	var out *GetVerificationResult
 	out = &GetVerificationResult{
-		RunID:           *in.RunID,
-		ChangeID:        *in.ChangeID,
-		RequestRevision: *in.RequestRevision,
-		CandidateCommit: *in.CandidateCommit,
-		SuiteCommit:     *in.SuiteCommit,
-		AcceptedAt:      *in.AcceptedAt,
-		InputsCurrent:   *in.InputsCurrent,
+		RunID:                *in.RunID,
+		ChangeID:             *in.ChangeID,
+		RequestRevision:      *in.RequestRevision,
+		CandidateCommit:      *in.CandidateCommit,
+		SuiteCommit:          *in.SuiteCommit,
+		AcceptedAt:           *in.AcceptedAt,
+		InputsCurrent:        *in.InputsCurrent,
+		CandidateBinariesDir: in.CandidateBinariesDir,
 	}
 	switch string(in.TestSource.Kind()) {
 	case "evaluator":
@@ -17824,13 +17841,14 @@ func MarshalVerifyChangeResult(v *VerifyChangeResult) ([]byte, error) {
 	_ = in
 	var out *toolhttp.VerifyChangeResultTransport
 	out = &toolhttp.VerifyChangeResultTransport{
-		RunID:           &in.RunID,
-		ChangeID:        &in.ChangeID,
-		RequestRevision: &in.RequestRevision,
-		CandidateCommit: &in.CandidateCommit,
-		SuiteCommit:     &in.SuiteCommit,
-		AcceptedAt:      &in.AcceptedAt,
-		InputsCurrent:   &in.InputsCurrent,
+		RunID:                &in.RunID,
+		ChangeID:             &in.ChangeID,
+		RequestRevision:      &in.RequestRevision,
+		CandidateCommit:      &in.CandidateCommit,
+		SuiteCommit:          &in.SuiteCommit,
+		AcceptedAt:           &in.AcceptedAt,
+		InputsCurrent:        &in.InputsCurrent,
+		CandidateBinariesDir: in.CandidateBinariesDir,
 	}
 	var testSourceValue toolhttp.TestSource
 	switch string(in.TestSource.Kind()) {
@@ -17909,13 +17927,14 @@ func UnmarshalVerifyChangeResult(data []byte) (*VerifyChangeResult, error) {
 	_ = in
 	var out *VerifyChangeResult
 	out = &VerifyChangeResult{
-		RunID:           *in.RunID,
-		ChangeID:        *in.ChangeID,
-		RequestRevision: *in.RequestRevision,
-		CandidateCommit: *in.CandidateCommit,
-		SuiteCommit:     *in.SuiteCommit,
-		AcceptedAt:      *in.AcceptedAt,
-		InputsCurrent:   *in.InputsCurrent,
+		RunID:                *in.RunID,
+		ChangeID:             *in.ChangeID,
+		RequestRevision:      *in.RequestRevision,
+		CandidateCommit:      *in.CandidateCommit,
+		SuiteCommit:          *in.SuiteCommit,
+		AcceptedAt:           *in.AcceptedAt,
+		InputsCurrent:        *in.InputsCurrent,
+		CandidateBinariesDir: in.CandidateBinariesDir,
 	}
 	switch string(in.TestSource.Kind()) {
 	case "evaluator":
@@ -21721,6 +21740,13 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 			); err != nil {
 				return err
 			}
+		case "candidate_binaries_dir":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.",
+			); err != nil {
+				return err
+			}
 		case "candidate_commit":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -21780,6 +21806,7 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"accepted_at",
+				"candidate_binaries_dir",
 				"candidate_commit",
 				"change_id",
 				"inputs_current",
@@ -26173,13 +26200,14 @@ func encodeTraceSpanToTraceSpanTransport(v *TraceSpan) *toolhttp.TraceSpanTransp
 }
 func decodeVerificationStatusResultTransportToVerificationStatusResult(v *toolhttp.VerificationStatusResultTransport) *VerificationStatusResult {
 	res := &VerificationStatusResult{
-		RunID:           *v.RunID,
-		ChangeID:        *v.ChangeID,
-		RequestRevision: *v.RequestRevision,
-		CandidateCommit: *v.CandidateCommit,
-		SuiteCommit:     *v.SuiteCommit,
-		AcceptedAt:      *v.AcceptedAt,
-		InputsCurrent:   *v.InputsCurrent,
+		RunID:                *v.RunID,
+		ChangeID:             *v.ChangeID,
+		RequestRevision:      *v.RequestRevision,
+		CandidateCommit:      *v.CandidateCommit,
+		SuiteCommit:          *v.SuiteCommit,
+		AcceptedAt:           *v.AcceptedAt,
+		InputsCurrent:        *v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	switch string(v.TestSource.Kind()) {
 	case "evaluator":
@@ -26235,13 +26263,14 @@ func decodeVerificationStatusResultTransportToVerificationStatusResult(v *toolht
 }
 func encodeVerificationStatusResultToVerificationStatusResultTransport(v *VerificationStatusResult) *toolhttp.VerificationStatusResultTransport {
 	res := &toolhttp.VerificationStatusResultTransport{
-		RunID:           &v.RunID,
-		ChangeID:        &v.ChangeID,
-		RequestRevision: &v.RequestRevision,
-		CandidateCommit: &v.CandidateCommit,
-		SuiteCommit:     &v.SuiteCommit,
-		AcceptedAt:      &v.AcceptedAt,
-		InputsCurrent:   &v.InputsCurrent,
+		RunID:                &v.RunID,
+		ChangeID:             &v.ChangeID,
+		RequestRevision:      &v.RequestRevision,
+		CandidateCommit:      &v.CandidateCommit,
+		SuiteCommit:          &v.SuiteCommit,
+		AcceptedAt:           &v.AcceptedAt,
+		InputsCurrent:        &v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	var testSourceValue toolhttp.TestSource
 	switch string(v.TestSource.Kind()) {

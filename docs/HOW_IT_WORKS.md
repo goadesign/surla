@@ -313,11 +313,15 @@ answers, examples and preserved behaviors as you confirmed them, and one
 required test per finished flow. It may not read the change itself, so the
 assignment is how its tests learn what you agreed, and they must hold the
 service to it as well as to the Story's flows. It writes the tests inside the
-test module, `eval/` in its working copy, and changes nothing outside it. It
-never regenerates that module itself, because Surla writes the required
-tests into it at the start and again at each report. It checks its work
-with `go build ./...` in `eval/`, which fails naming any required method not
-yet written.
+test module, `eval/` in its working copy, and changes nothing outside it.
+Surla declares the required tests in that module's Story table,
+`eval/design/story_tests.go`, which it writes at the start and again at each
+report; the test writer leaves that file as it is, and regenerating the
+module keeps the required tests. After changing the module's design, the
+test writer reports to have it generated again or, from a shell that is not
+sandboxed, runs `surla gen -dir eval` in its working copy first. It checks
+its work with `go build ./...` in `eval/`, which fails naming any required
+method not yet written.
 Then it calls `report_tests_finished`. The report returns at once with the
 report's number; the build shows the test writer as **Reported**. In a
 starter project the test of the starter's own flow, the method `PricesCookie`
@@ -387,20 +391,38 @@ builder edits it into the prompt's source and commits it.
 In the Live target view you see the target's state and commit, the prompts it
 changed (never their text), and **Stop live target**. Under **Model
 connection** you choose the model that live targets started afterwards use: a
-provider and model name, whose key must be in the server's environment, or a
-running model gateway. The server runs in a Herdr terminal, which has the
-environment of the Herdr core rather than of the shell where you typed
-`surla`. See the [live target prompt contract](REFERENCE.md#live-target-prompt-contract).
+provider and model name, whose key and request settings `surla` handed to the
+server from the shell where you typed it, or a running model gateway. While no
+model is chosen, a hand-over picks the default model of the provider whose
+settings it holds, `anthropic` first when it holds both, in the order of the
+reference's [provider table](REFERENCE.md#hand_over_model_settings). The
+server runs in a Herdr terminal, which has the environment of the Herdr core
+rather than of your shell, so `surla` hands the settings over itself; see
+[model provider settings](REFERENCE.md#model-provider-settings) and the
+[live target prompt contract](REFERENCE.md#live-target-prompt-contract).
 
 ## Verifying the builder's commit
+
+In a project that builds with a test writer (without stored verification
+settings), the test module `eval/` (`eval/design/` included) belongs to the
+test writer: the builder leaves `eval/` untouched, `check_project` and
+`update_dependencies` leave `eval/` out and say so, and if the Story
+(`design/story.go`) or the test module's contract needs to change, the builder
+asks you so the guide can draft and you can confirm a revision.
 
 The builder commits its code and calls `verify_change` with the change, the
 revision from its assignment and its commit. Without stored verification
 settings, the server refuses before running anything when the revision has no
 build (`no_build`), when the build's tests are not accepted
-(`tests_not_accepted`, naming the test writer's state), or when a commit lacks
-the test layout (`no_test_layout`). Each refusal names who acts next; see
-[`verify_change`](REFERENCE.md#verify_change).
+(`tests_not_accepted`, naming the test writer's state), when a commit lacks
+the test layout (`no_test_layout`), when the candidate commit shares no
+history with the accepted tests' commit (`conflict`, naming the user's step:
+delete the test writer's working copy and branch, then build the change again),
+or when the candidate commit changes hand-written files in
+`eval/` (`conflict`, naming the changed files and the `git restore` / `git rm`
+step, and noting on `eval/go.mod` edits that renaming the service module is
+yours to do on your own branch between changes). Each refusal names who acts
+next; see [`verify_change`](REFERENCE.md#verify_change).
 
 An accepted call returns a run ID at once. The run happens in its own
 **run directory**: a folder the server keeps outside the project, holding the
@@ -491,8 +513,12 @@ Like verification settings, they apply when the server starts again.
 Approval then makes one more check: the files in the release folder must be
 the binaries the run built. When one is missing or differs, approval is
 refused, and the refusal ends with your step: "publish the binaries the run
-built into the release folder that the promotion settings name, in a folder
-named after the commit, or remove the promotion settings". See
+built, whose folder the run's Proof view shows, into the release folder that
+the promotion settings name, in a folder named after the commit, or remove
+the promotion settings". For a completed run, the Proof view shows you its
+actual binary folder under **Binaries built by this run**, as selectable
+code. Use that folder for the selected run; the approval error panel repeats
+it. Agents never receive this path. See
 [`surla promotion`](REFERENCE.md#surla-verification-and-surla-promotion) and
 [`approve_merge`](REFERENCE.md#approve_merge).
 
@@ -506,6 +532,13 @@ registered role's pane in Herdr and shows, on every view of the page, one line
 per role that waits for you, for example "Builder needs you: permission",
 with a **Show builder pane** action that brings that pane forward. You answer
 in the pane.
+
+When the builder or the test writer has an assignment it has not read, the
+server sends that agent one fixed Chorus direct message asking it to read its
+assignments; nothing is typed into its pane. An agent that stays idle with the
+assignment unread for 90 seconds needs you too, for example "Builder needs
+you: idle with an unread assignment. Show its pane and tell it to read its
+assignments and to keep its Chorus watcher running."
 
 The Team view shows each role's pane state (Not started, Starting, Working,
 Waiting, Needs you, Ended, Error or Status unknown), whether its Chorus

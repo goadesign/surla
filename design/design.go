@@ -157,7 +157,7 @@ var UpdateDependenciesResult = Type("UpdateDependenciesResult", func() {
 
 // ConfigureModelPayload is the input to the configure_model tool.
 var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
-	Description("Selects either a direct model provider and model name (using the API key already present in the project server's process environment) or a running goa-ai model gateway address.")
+	Description("Selects either a direct model provider and model name (whose request settings the surla command handed to the project server) or a running goa-ai model gateway address.")
 	Attribute("provider", String, "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.", func() {
 		Enum("anthropic", "openai")
 		Example("anthropic")
@@ -512,7 +512,7 @@ var ModelNone = Type("ModelNone", func() {
 
 // ModelDirect is a direct model provider and model name.
 var ModelDirect = Type("ModelDirect", func() {
-	Description("A direct model provider and model name. The provider's API key stays in the project server's environment and is never returned.")
+	Description("A direct model provider and model name. The provider's request settings stay in the project server's memory and are never returned.")
 	Attribute("provider", String, "Direct model provider.", func() {
 		Enum("anthropic", "openai")
 	})
@@ -678,6 +678,7 @@ var VerificationStatusResult = Type("VerificationStatusResult", func() {
 	Attribute("suite_commit", String, "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.")
 	Attribute("accepted_at", String, "When the run was accepted.", func() { Format(FormatDateTime) })
 	Attribute("inputs_current", Boolean, "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.")
+	Attribute("candidate_binaries_dir", String, "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.", func() { MinLength(1) })
 	OneOf("test_source", "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "source")
@@ -901,12 +902,12 @@ var _ = Service("surla", func() {
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, or the project folder was replaced after the server started; the message ends with the step.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, the project folder was replaced after the server started, or (without stored verification settings) the candidate commit shares no history with the accepted tests' commit or changes hand-written files in the test module; the message names any changed test-module files and ends with the restore or user step.")
 		Error("no_build", ErrorResult, "Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.")
 		Error("tests_not_accepted", ErrorResult, "Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.")
 		Error("no_test_layout", ErrorResult, "Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests' commit is no longer in the project's repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests: your build assignment says when they are.")
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests (your build assignment says when they are), and it refuses a candidate commit that changes hand-written files of the test module, naming them and the restore step.")
 		HTTP(func() {
 			POST("/changes/{change_id}/verifications")
 			Response(StatusOK)
@@ -984,26 +985,36 @@ var _ = Service("surla", func() {
 	})
 
 	Method("configure_model", func() {
-		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.")
+		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request settings.")
 		Payload(ConfigureModelPayload)
 		Result(ModelConfigResult)
-		Error("unprocessable", ErrorResult, "The model provider, model name, gateway address, or required environment credential is invalid.")
-		Error("not_implemented", ErrorResult, "Runtime model reconfiguration is not configured on this control plane.")
-		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in the project server's environment) or attach a running model gateway address, without restarting the project server. Live targets that start_live_target starts afterwards plan with this model.")
+		Error("unprocessable", ErrorResult, "The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider's key variable and how to hand it over.")
+		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, whose key the user exported in the shell that ran surla) or attach a running model gateway address, without restarting the project server. Live targets that start_live_target starts afterwards plan with this model.")
 		HTTP(func() {
 			POST("/cp1/model")
 			Response(StatusOK)
 			Response("unprocessable", StatusUnprocessableEntity)
-			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
 	Method("get_model_connection", func() {
-		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.")
+		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none. While no model is chosen, a hand_over_model_settings call that holds a provider's settings selects that provider's default model; every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.")
 		Result(ModelConnection)
 		HTTP(func() {
 			GET("/cp1/model")
 			Response(StatusOK)
+		})
+	})
+
+	Method("hand_over_model_settings", func() {
+		Description("The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target's test program, including a candidate commit's test module that agents wrote, receives the chosen provider's held settings; a verification with the operator's stored evaluator receives every held provider's settings; tests a separate agent wrote for a verification, and the check helper, receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.")
+		Payload(HandOverModelSettingsPayload)
+		Result(ModelSettingsResult)
+		Error("unprocessable", ErrorResult, "A provider's settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.")
+		HTTP(func() {
+			POST("/cp1/model/settings")
+			Response(StatusOK)
+			Response("unprocessable", StatusUnprocessableEntity)
 		})
 	})
 
@@ -1040,12 +1051,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("check_project", func() {
-		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
+		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so), each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
 		Result(CheckProjectResult)
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
+		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so). No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
 		HTTP(func() {
 			POST("/workspace/check")
 			Response(StatusOK)
@@ -1056,12 +1067,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("update_dependencies", func() {
-		Description("Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
+		Description("Run go mod tidy for every Go module of the active workspace (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so) in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
 		Result(UpdateDependenciesResult)
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
+		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy; without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
 		HTTP(func() {
 			POST("/workspace/dependencies")
 			Response(StatusOK)

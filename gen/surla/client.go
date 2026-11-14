@@ -33,6 +33,7 @@ type Client struct {
 	DiffEndpoint                      goa.Endpoint
 	ConfigureModelEndpoint            goa.Endpoint
 	GetModelConnectionEndpoint        goa.Endpoint
+	HandOverModelSettingsEndpoint     goa.Endpoint
 	InitProjectEndpoint               goa.Endpoint
 	GenerateCodeEndpoint              goa.Endpoint
 	CheckProjectEndpoint              goa.Endpoint
@@ -57,7 +58,7 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, getLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, getModelConnection, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, getTestFindings, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, getLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, getModelConnection, handOverModelSettings, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, getTestFindings, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
 	return &Client{
 		GoldenPathEndpoint:                goldenPath,
 		ProposeChangeEndpoint:             proposeChange,
@@ -77,6 +78,7 @@ func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange
 		DiffEndpoint:                      diff,
 		ConfigureModelEndpoint:            configureModel,
 		GetModelConnectionEndpoint:        getModelConnection,
+		HandOverModelSettingsEndpoint:     handOverModelSettings,
 		InitProjectEndpoint:               initProject,
 		GenerateCodeEndpoint:              generateCode,
 		CheckProjectEndpoint:              checkProject,
@@ -272,7 +274,7 @@ func (c *Client) GetLiveTarget(ctx context.Context) (res *LiveTargetStatus, err 
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.
 // VerifyChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, or the project folder was replaced after the server started; the message ends with the step.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, the project folder was replaced after the server started, or (without stored verification settings) the candidate commit shares no history with the accepted tests' commit or changes hand-written files in the test module; the message names any changed test-module files and ends with the restore or user step.
 //   - "no_build" (type *goa.ServiceError): Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.
 //   - "tests_not_accepted" (type *goa.ServiceError): Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.
 //   - "no_test_layout" (type *goa.ServiceError): Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests' commit is no longer in the project's repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.
@@ -353,8 +355,7 @@ func (c *Client) Diff(ctx context.Context, p *DiffPayload) (res *DiffResult, err
 
 // ConfigureModel calls the "configure_model" endpoint of the "surla" service.
 // ConfigureModel may return the following errors:
-//   - "unprocessable" (type *goa.ServiceError): The model provider, model name, gateway address, or required environment credential is invalid.
-//   - "not_implemented" (type *goa.ServiceError): Runtime model reconfiguration is not configured on this control plane.
+//   - "unprocessable" (type *goa.ServiceError): The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider's key variable and how to hand it over.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (res *ModelConfigResult, err error) {
@@ -378,6 +379,21 @@ func (c *Client) GetModelConnection(ctx context.Context) (res *ModelConnection, 
 		return
 	}
 	return ires.(*ModelConnection), nil
+}
+
+// HandOverModelSettings calls the "hand_over_model_settings" endpoint of the
+// "surla" service.
+// HandOverModelSettings may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): A provider's settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) HandOverModelSettings(ctx context.Context, p *HandOverModelSettingsPayload) (res *ModelSettingsResult, err error) {
+	var ires any
+	ires, err = c.HandOverModelSettingsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ModelSettingsResult), nil
 }
 
 // InitProject calls the "init_project" endpoint of the "surla" service.

@@ -27,8 +27,8 @@ var (
 	//go:embed quickstart.go
 	quickstartSource string
 
-	// storyScenariosSource is story_scenarios.go itself, compiled inside the
-	// generation program when complete Story flows are present.
+	// storyScenariosSource is story_scenarios.go itself, whose body
+	// StoryTests renders into each test module's Story table.
 	//
 	//go:embed story_scenarios.go
 	storyScenariosSource string

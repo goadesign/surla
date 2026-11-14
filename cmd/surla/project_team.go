@@ -14,28 +14,39 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/project"
 	"golang.org/x/mod/semver"
 )
 
 type (
 	// teamCommands keeps argv typed, closes stdin, and never returns external output in errors.
+	// Every command runs with an explicit environment: run and start receive it from the caller.
 	teamCommands struct {
 		core, app, chorus string
-		run               func(context.Context, string, ...string) ([]byte, error)
+		run               func(ctx context.Context, env []string, program string, args ...string) ([]byte, error)
 		// start detaches a GUI/service starter; readiness, never process ownership, bounds startup.
-		start func(string, ...string) (<-chan error, error)
+		start func(env []string, program string, args ...string) (<-chan error, error)
+		// herdrEnv is the environment of Herdr's own programs (herdr-app, herdr-core): the
+		// surla command's, or the server's original one, unchanged, because a Herdr core
+		// these programs start keeps it for every terminal, the agents' included.
+		herdrEnv []string
+		// chorusEnv is the environment of Chorus commands: the surla command's without any
+		// model provider family (withoutProviderFamilies).
+		chorusEnv []string
 	}
 )
 
 // minimumTeamChorus is the first release containing the roster and idle-shell launcher contracts.
 const minimumTeamChorus = "v0.11.0"
 
-// runTeamCommand bounds one external command; stderr is never echoed to the caller.
-func runTeamCommand(ctx context.Context, program string, args ...string) ([]byte, error) {
+// runTeamCommand bounds one external command run with env; stderr is never echoed to the caller.
+func runTeamCommand(ctx context.Context, env []string, program string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	raw, err := exec.CommandContext(ctx, program, args...).Output()
+	command := exec.CommandContext(ctx, program, args...)
+	command.Env = env
+	raw, err := command.Output()
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
@@ -52,7 +63,7 @@ func runTeamCommand(ctx context.Context, program string, args ...string) ([]byte
 // again would not change PATH.
 func resolveTeamCommands(
 	find func(string) (string, error),
-	run func(context.Context, string, ...string) ([]byte, error),
+	run func(context.Context, []string, string, ...string) ([]byte, error),
 	installed string,
 ) (teamCommands, error) {
 	programs := []struct{ name, install string }{
@@ -80,7 +91,7 @@ func resolveTeamCommands(
 func preflightTeam(commands teamCommands) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	raw, err := commands.run(ctx, commands.chorus, "version")
+	raw, err := commands.run(ctx, commands.chorusEnv, commands.chorus, "version")
 	if err != nil {
 		return errors.New("chorus version failed; update with: chorus update -yes")
 	}
@@ -95,18 +106,18 @@ func preflightTeam(commands teamCommands) error {
 func startTeamPrograms(ctx context.Context, commands teamCommands) error {
 	// Service and window readiness each own a full deadline; ensure_team gets its own later.
 	chorusCtx, stopChorus := context.WithTimeout(ctx, 35*time.Second)
-	err := startTeamProgram(chorusCtx, commands, commands.chorus, []string{"up"})
+	err := startTeamProgram(chorusCtx, commands, commands.chorus, commands.chorusEnv, []string{"up"})
 	stopChorus()
 	if err != nil {
 		return err
 	}
 	windowCtx, stopWindow := context.WithTimeout(ctx, 35*time.Second)
 	defer stopWindow()
-	return startTeamProgram(windowCtx, commands, commands.app, nil)
+	return startTeamProgram(windowCtx, commands, commands.app, commands.herdrEnv, nil)
 }
 
-// startTeamProgram starts one absent dependency without ever signaling its process.
-func startTeamProgram(ctx context.Context, commands teamCommands, program string, args []string) error {
+// startTeamProgram starts one absent dependency with env without ever signaling its process.
+func startTeamProgram(ctx context.Context, commands teamCommands, program string, env, args []string) error {
 	if teamProgramReady(ctx, commands, program) {
 		return nil
 	}
@@ -117,7 +128,7 @@ func startTeamProgram(ctx context.Context, commands teamCommands, program string
 	if program == commands.app {
 		commandName = "herdr-app"
 	}
-	exited, err := commands.start(program, args...)
+	exited, err := commands.start(env, program, args...)
 	if err != nil {
 		return fmt.Errorf("%s could not start; %s", commandName, teamProgramNextStep(commands, program))
 	}
@@ -156,7 +167,7 @@ func teamProgramReady(ctx context.Context, commands teamCommands, program string
 		_, err := commands.Overlays(ctx)
 		return err == nil
 	}
-	raw, err := commands.run(ctx, program, "status")
+	raw, err := commands.run(ctx, commands.chorusEnv, program, "status")
 	return err == nil && strings.Contains(string(raw), " is running")
 }
 
@@ -168,10 +179,11 @@ func teamProgramNextStep(commands teamCommands, program string) string {
 	return "run chorus up, then run surla again"
 }
 
-// startDetachedTeamProgram gives the window or service starter its own session and no pipes.
+// startDetachedTeamProgram gives the window or service starter its own session, env and no pipes.
 // Context deadlines apply only to status polling: Surla never signals these user processes.
-func startDetachedTeamProgram(program string, args ...string) (<-chan error, error) {
+func startDetachedTeamProgram(env []string, program string, args ...string) (<-chan error, error) {
 	command := exec.Command(program, args...)
+	command.Env = env
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := command.Start(); err != nil {
 		return nil, errors.New("program could not start")
@@ -186,10 +198,12 @@ func reapTeamProgram(command *exec.Cmd, exited chan<- error) { exited <- command
 
 // projectTeamDependencies binds the server login environment, never paths supplied by the CLI caller.
 // Its HERDR_APP_HOME (default ~/.config/herdr-app) may differ from the running window’s environment.
-func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, error) {
+// herdrEnv is the server's original environment, which serve kept before removing every model
+// provider family from its own process; only Herdr's own programs run with it, unchanged.
+func projectTeamDependencies(ctx context.Context, herdrEnv []string) (project.TeamDependencies, error) {
 	// Resolve only Herdr, when a team operation actually makes a command. Server startup
 	// and unrelated management operations remain available without these programs on login PATH.
-	commands := teamCommands{core: "herdr-core", app: "herdr-app", run: runServerTeamCommand}
+	commands := teamCommands{core: "herdr-core", app: "herdr-app", run: runServerTeamCommand, herdrEnv: herdrEnv}
 	home := os.Getenv("HERDR_APP_HOME")
 	if home == "" {
 		userHome, err := os.UserHomeDir()
@@ -198,12 +212,12 @@ func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, err
 		}
 		home = filepath.Join(userHome, ".config", "herdr-app")
 	}
-	return project.TeamDependencies{Lifetime: ctx, Host: commands, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL"), Observer: teamObservations{commands: commands, stream: runTeamStream, client: &http.Client{Timeout: 65 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, chorusURL: "http://127.0.0.1:9440"}, Sender: unboundTeamSender{}}, nil
+	return project.TeamDependencies{Lifetime: ctx, Host: commands, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL"), Observer: teamObservations{commands: commands, stream: runTeamStream, client: &http.Client{Timeout: 65 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, chorusURL: teamChorusURL}, Sender: newTeamChorusSender()}, nil
 }
 
 // json decodes command replies and checks JSON-level errors as well as process status.
 func (c teamCommands) json(ctx context.Context, program string, result any, args ...string) error {
-	raw, err := c.run(ctx, program, args...)
+	raw, err := c.run(ctx, c.herdrEnv, program, args...)
 	if err != nil {
 		return err
 	}
@@ -345,13 +359,38 @@ func (c teamCommands) OpenLauncher(ctx context.Context) error {
 	}{"chorus-launcher"}, &result)
 }
 
-// runServerTeamCommand resolves a required Herdr program at the external operation boundary.
-func runServerTeamCommand(ctx context.Context, program string, args ...string) ([]byte, error) {
+// runServerTeamCommand resolves a required Herdr program at the external operation boundary
+// and runs it with env.
+func runServerTeamCommand(ctx context.Context, env []string, program string, args ...string) ([]byte, error) {
 	resolved, err := exec.LookPath(program)
 	if err != nil {
 		return nil, errors.New("required Herdr program is unavailable on the server login PATH")
 	}
-	return runTeamCommand(ctx, resolved, args...)
+	return runTeamCommand(ctx, env, resolved, args...)
+}
+
+// withoutProviderFamilies returns environ without any model provider family variable. The
+// surla command gives it to the programs that must never receive the shell's provider
+// settings: Chorus and the browser opener. Herdr's programs keep the environment unchanged.
+func withoutProviderFamilies(environ []string) []string {
+	_, rest := modelsettings.Split(environ)
+	return rest
+}
+
+// takeProviderFamilies is serve's first step: it returns a copy of the server's original
+// environment, for Herdr's own programs only, and removes every model provider family from
+// this process, so no later read or child takes a provider setting from Herdr's environment.
+// Removal changes what children inherit, not the server's initial environment block.
+func takeProviderFamilies() ([]string, error) {
+	original := os.Environ()
+	family, _ := modelsettings.Split(original)
+	for _, kv := range family {
+		name, _, _ := strings.Cut(kv, "=")
+		if err := os.Unsetenv(name); err != nil {
+			return nil, fmt.Errorf("remove model provider settings from the project server's environment: %w", err)
+		}
+	}
+	return original, nil
 }
 
 // installerProgramFolder is the folder where the Herdr and Chorus installers place their

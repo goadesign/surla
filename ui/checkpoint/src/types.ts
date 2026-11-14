@@ -300,7 +300,7 @@ export interface StorySummaryItem {
 
 export interface TeamRoleState {
   assignment: "unread" | "nothing_owed" | "unknown";
-  attention: "none" | "permission" | "question" | "auth" | "silent" | "unknown";
+  attention: "none" | "permission" | "question" | "auth" | "silent" | "assignment" | "unknown";
   handle: string;
   role: "guide" | "builder" | "test_writer";
   state: "not_started" | "ended" | "starting" | "needs_you" | "working" | "waiting" | "error" | "unknown";
@@ -424,6 +424,7 @@ export interface VerificationScenario {
 
 export interface VerificationStatusResult {
   accepted_at: string;
+  candidate_binaries_dir?: string;
   candidate_commit: string;
   change_id: string;
   inputs_current: boolean;
@@ -2281,6 +2282,7 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
           "question",
           "auth",
           "silent",
+          "assignment",
           "unknown"
         ]
       },
@@ -2908,6 +2910,9 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "accepted_at": {
         "type": "string",
         "format": "date-time"
+      },
+      "candidate_binaries_dir": {
+        "type": "string"
       },
       "candidate_commit": {
         "type": "string"

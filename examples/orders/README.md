@@ -153,20 +153,19 @@ One change then goes like this:
    and accepts them only when their SHA-256 digests equal those of the
    binaries the run built. The run built them in the sandbox with its own
    build settings, so a build of your own need not match: publish the run's
-   binaries. Each run keeps them in its run directory, the folder Surla
-   keeps for one verification run, at
-   `<runs folder>/<run>/work/candidate-bin/`. The server's Herdr terminal
-   names the runs folder when it starts (`runs in <folder>`), and the
-   result's **Candidate and run details** on the views page show the run as
-   **Verification run**. Then press **Approve this result**.
+   binaries. In the Proof view, select that completed run and copy its
+   actual source folder from **Binaries built by this run**, shown as
+   selectable code. Publish `orders` and `orders-worker` from that folder.
+   Then press **Approve this result**.
    When approval refuses, the page shows **Approval was not recorded.** with
-   the error, and nothing is saved. A missing folder or file, or a file that
-   differs from the run's binary, is refused with the step "publish the
-   binaries the run built into the release folder that the promotion
-   settings name, in a folder named after the commit, or remove the
-   promotion settings". Publish them and press the button again, or remove
-   the promotion settings (`surla promotion remove`, then `surla stop` and
-   `surla`) to approve without that check.
+   the error and the selected run's binary folder, and nothing is saved. A
+   missing folder or file, or a file that differs from the run's binary, is
+   refused with the step "publish the binaries the run built, whose folder
+   the run's Proof view shows, into the release folder that the promotion
+   settings name, in a folder named after the commit, or remove the promotion
+   settings". Publish them and press the button again, or remove the promotion
+   settings (`surla promotion remove`, then `surla stop` and `surla`) to approve
+   without that check.
 
    The approval names the builder's commit and the tests commit, here the
    stored suite commit. There is nothing to merge: the builder committed in

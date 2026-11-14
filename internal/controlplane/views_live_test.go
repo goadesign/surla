@@ -7,7 +7,6 @@ package controlplane
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,7 +60,7 @@ func TestViewsPageLiveTargetFollowsAStartDraftsAndAnEnd(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-	cp := pageLiveControlPlane(t, "serve", Options{TracerProvider: provider}, noModel())
+	cp := pageLiveControlPlane(t, "serve", Options{TracerProvider: provider})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
@@ -116,7 +115,7 @@ page.close();
 // building: the commit, since when, that it cannot be stopped yet, no Stop
 // control, and an announcement.
 func TestViewsPageLiveTargetShowsAStartInProgress(t *testing.T) {
-	cp := pageLiveControlPlane(t, "prepare-hangs", Options{}, noModel())
+	cp := pageLiveControlPlane(t, "prepare-hangs", Options{})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
@@ -140,7 +139,7 @@ page.close();
 // "Stop it" sends exactly one stop request, shows the server's message, and
 // leaves the panel saying none is running.
 func TestViewsPageStopsTheLiveTargetAfterConfirming(t *testing.T) {
-	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	cp := pageLiveControlPlane(t, "serve", Options{})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
@@ -184,7 +183,7 @@ page.close();
 // with focus on the Stop control and no confirmation. Each time nothing is
 // sent and focus goes to the view's heading, not the page body.
 func TestViewsPageLiveTargetEndingClosesTheConfirmation(t *testing.T) {
-	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	cp := pageLiveControlPlane(t, "serve", Options{})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
@@ -214,7 +213,7 @@ page.close();
 // a stop, shows the refusal, keeps it while the target's state is the one
 // the refusal left, and clears it once the target ends.
 func TestViewsPageClearsARefusedStopWhenTheStateChanges(t *testing.T) {
-	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	cp := pageLiveControlPlane(t, "serve", Options{})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
@@ -263,7 +262,7 @@ func TestViewsPageLiveTargetNotConfirmedStopped(t *testing.T) {
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
 		Live: &LiveConfig{
 			Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
-			StartTimeout: time.Minute, Model: noModel(),
+			StartTimeout: time.Minute,
 		},
 	})
 	require.NoError(t, err)
@@ -305,7 +304,7 @@ page.close();
 // is a link. Long prompt identifiers, versions and a long server message are
 // set to wrap inside the card, so they cannot widen the page.
 func TestViewsPageLiveTargetLinksOnlyALocalAddressAndWrapsLongText(t *testing.T) {
-	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	cp := pageLiveControlPlane(t, "serve", Options{})
 	ps := startPageServer(t, cp)
 	longID := "orders.refund." + strings.Repeat("system", 40)
 	longVersion := "sha256:" + strings.Repeat("0123456789abcdef", 16)
@@ -355,29 +354,21 @@ for (const page of pages) {
 `)
 }
 
-// TestViewsPageModelConnectionForm shows the start-up choice with the form
-// open on its kind, only that kind's fields displayed and the shared field
-// styles, keeps typed text when the user leaves the view and comes back, has
-// a provider whose key is missing refused with the variable named and the
-// choice unchanged, applies a gateway and shows the new choice, opens a new
-// page on the gateway kind, and checks that no answer the page received,
-// nothing it shows and nothing in the diagnostics history holds the
-// provider key.
+// TestViewsPageModelConnectionForm shows the choice the hand-over of
+// anthropic's settings selected, with the form open on its kind, only that
+// kind's fields displayed and the shared field styles, keeps typed text when
+// the user leaves the view and comes back, has a provider whose settings are
+// not held refused verbatim with its key variable named and the choice
+// unchanged, applies a gateway and shows the new choice, opens a new page on
+// the gateway kind, and checks that no answer the page received, nothing it
+// shows and nothing in the diagnostics history holds the provider key.
 func TestViewsPageModelConnectionForm(t *testing.T) {
 	const secret = "sk-page-test-secret-value"
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-	cp := pageLiveControlPlane(t, "serve", Options{
-		TracerProvider: provider,
-		LiveModelEnv: func(choice gensurla.Connection) ([]string, error) {
-			if direct, ok := choice.AsDirect(); ok && direct.Provider == "openai" {
-				return nil, gensurla.MakeUnprocessable(errors.New(
-					"provider openai requires OPENAI_API_KEY in the project server's environment; set OPENAI_API_KEY and stop and start Surla"))
-			}
-			return modelEnv([]string{"ANTHROPIC_API_KEY=" + secret}, choice), nil
-		},
-	}, directModel("anthropic", "claude-sonnet-4-6"), "ANTHROPIC_API_KEY="+secret)
+	cp := pageLiveControlPlane(t, "serve", Options{TracerProvider: provider})
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": secret}})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, map[string]any{"secret": secret}, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
@@ -404,7 +395,7 @@ await until(() => page.$("#surla-model-name"), "the Live target view did not ope
 expect(page.$("#surla-model-name").value === "gpt-5.4-mini" && page.$("#surla-model-provider").value === "openai", "leaving the view lost the typed text: " + page.$("#surla-model-name").value + " / " + page.$("#surla-model-provider").value);
 page.$("#surla-model-apply").click();
 await until(() => page.$("#surla-model-outcome"), "the refusal was not shown");
-expect(page.text("#surla-model-outcome").includes("OPENAI_API_KEY"), "the refusal does not name the missing variable: " + page.text("#surla-model-outcome"));
+expect(page.text("#surla-model-outcome").includes("provider openai needs OPENAI_API_KEY: export it, with any OPENAI_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway."), "the refusal is not shown verbatim: " + page.text("#surla-model-outcome"));
 expect(page.$("#surla-model-outcome").getAttribute("role") === "alert", "the refusal is not an alert");
 expect(page.text("#surla-model-current").includes("anthropic / claude-sonnet-4-6"), "a refused change replaced the shown choice");
 
@@ -442,7 +433,7 @@ page.close();
 // server that the guide and the test writer are refused both reads, and
 // that the builder may read the live target but not the model connection.
 func TestViewsPageLiveAndModelReadsRefuseOtherRoles(t *testing.T) {
-	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	cp := pageLiveControlPlane(t, "serve", Options{})
 	ps := startPageServer(t, cp)
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 for (const [token, who] of [[input.guide, "the guide"], [input.testWriter, "the test writer"]]) {
@@ -459,19 +450,18 @@ expect(model.status === 403, "the builder was not refused the model connection: 
 }
 
 // pageLiveControlPlane returns a page control plane whose live targets are
-// the fake target started through the real `verify-run live` path in mode,
-// starting from the model choice and the extra environment env it became.
-// Its waiting read answers quickly.
-func pageLiveControlPlane(t *testing.T, mode string, opts Options, choice gensurla.Connection, env ...string) *ControlPlane {
+// the fake target started through the real `verify-run live` path in mode.
+// No model is chosen until a test hands over settings or configures one. Its
+// waiting read answers quickly.
+func pageLiveControlPlane(t *testing.T, mode string, opts Options) *ControlPlane {
 	t.Helper()
 	self, err := os.Executable()
 	require.NoError(t, err)
 	opts.Verification = &VerificationConfig{RunsDir: t.TempDir()}
 	opts.Live = &LiveConfig{
 		Command:      []string{self},
-		Env:          modelEnv(append(os.Environ(), append(env, liveTargetModeEnv+"="+mode)...), choice),
+		Env:          append(os.Environ(), liveTargetModeEnv+"="+mode),
 		StartTimeout: time.Minute,
-		Model:        choice,
 	}
 	return pageControlPlane(t, opts)
 }

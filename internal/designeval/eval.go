@@ -118,20 +118,6 @@ type (
 		Options []string `json:"options,omitempty"`
 	}
 
-	// StoryGeneration holds the generated file set and flow-to-scenario
-	// mapping returned by Evaluator.GenerateWithStories.
-	StoryGeneration struct {
-		// Files contains every generated path and its bytes, matching
-		// Evaluator.Generate's output format.
-		Files map[string][]byte
-		// Included lists the complete Story flows attached to the evaluation
-		// suite, in declaration order.
-		Included []StoryScenario
-		// Excluded lists the incomplete Story flows omitted from the
-		// evaluation suite, in declaration order.
-		Excluded []StoryDraft
-	}
-
 	// StoryScenario describes one complete Story flow mapped to an evaluation
 	// scenario and hook method.
 	StoryScenario struct {
@@ -300,7 +286,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, files map[string]string) (Resu
 // program inside the same sandbox as Evaluate, with the target module's own
 // dependency versions, and calls Goa's generator.CompleteSources, which fails
 // when a generated file would be changed after it is written, such as a gRPC
-// design's protobuf output.
+// design's protobuf output. A test module's Story table (StoryTestsPath) is a
+// source file of its design, so every caller generates the scenarios it
+// declares; no other input adds a scenario.
 //
 // The target must select a goa.design/goa/v3 that provides CompleteSources.
 // When the generation program does not compile, the error keeps the
@@ -312,30 +300,6 @@ func (e *Evaluator) Generate(ctx context.Context, files map[string]string) (map[
 	err := e.admitted(ctx, func(ctx context.Context, workDir string) error {
 		var err error
 		out, err = generate(ctx, files, workDir)
-		return err
-	})
-	return out, err
-}
-
-// GenerateWithStories runs Generate with complete flows from stories attached
-// to the target module's single Goa-AI evaluation suite. Incomplete flows are
-// recorded in Excluded and not added to the suite. When stories has no
-// complete flow, no suite-count rule is applied and Files matches Generate's
-// output for files.
-//
-// Each complete flow's key is mapped on the host to a scenario name via Goa's
-// codegen.SnakeCase and a hook method via codegen.Goify(scenario, true), with
-// the flow's title (or its key when the title is blank) as the scenario
-// description. Collisions between two complete flows are rejected before
-// compiling the harness, naming both source flows. Like Generate, it shares
-// the evaluator's workspace and fails at once after Close.
-func (e *Evaluator) GenerateWithStories(
-	ctx context.Context, files map[string]string, stories []StorySummary,
-) (StoryGeneration, error) {
-	var out StoryGeneration
-	err := e.admitted(ctx, func(ctx context.Context, workDir string) error {
-		var err error
-		out, err = generateWithStories(ctx, files, stories, workDir)
 		return err
 	})
 	return out, err
@@ -383,42 +347,14 @@ func (e *stuckBuildError) Unwrap() error {
 }
 
 // generate runs one generation in a temporary directory of its own, with
-// workDir as the build's shared TMPDIR and GOCACHE.
+// workDir as the build's shared TMPDIR and GOCACHE, and returns the generated
+// files keyed by module-relative path. The program learns from files whether
+// the module has an acceptance package.
 func generate(ctx context.Context, files map[string]string, workDir string) (map[string][]byte, error) {
-	return runGenerate(ctx, files, workDir, nil)
-}
-
-// generateWithStories maps stories into included scenarios and excluded drafts,
-// then runs one sandboxed generation with the included scenarios rendered into
-// the harness program.
-func generateWithStories(
-	ctx context.Context, files map[string]string, stories []StorySummary, workDir string,
-) (StoryGeneration, error) {
-	included, excluded, specs, err := mapStoryFlows(stories)
-	if err != nil {
-		return StoryGeneration{}, err
-	}
-	generated, err := runGenerate(ctx, files, workDir, specs)
-	if err != nil {
-		return StoryGeneration{}, err
-	}
-	return StoryGeneration{
-		Files:    generated,
-		Included: included,
-		Excluded: excluded,
-	}, nil
-}
-
-// runGenerate compiles and runs the generation program with specs attached,
-// returning the generated files keyed by module-relative path. The program
-// learns from files whether the module has an acceptance package.
-func runGenerate(
-	ctx context.Context, files map[string]string, workDir string, specs []storyScenarioSpec,
-) (map[string][]byte, error) {
 	var out map[string][]byte
 	goa, err := runSandboxed(ctx, files, workDir,
 		func(map[string]bool) map[string]string {
-			return generateProgramWithStories(specs, HasAcceptancePackage(files))
+			return generateProgram(HasAcceptancePackage(files))
 		},
 		func(stateDir string) []string {
 			// One literal argument, which Goa copies into generated headers.
@@ -444,7 +380,7 @@ func runGenerate(
 }
 
 // mapStoryFlows maps observed Story summaries into included scenarios,
-// excluded drafts, and harness scenario specs. It rejects any two complete
+// excluded drafts, and the Story table's rows. It rejects any two complete
 // flows whose keys map to the same scenario name or hook method, naming both
 // source flows.
 func mapStoryFlows(stories []StorySummary) ([]StoryScenario, []StoryDraft, []storyScenarioSpec, error) {

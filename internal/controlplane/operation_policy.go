@@ -26,14 +26,16 @@ const (
 	// CallerTestWriter writes the tests a build requires: it reads its own test
 	// assignments and reports them finished.
 	CallerTestWriter CallerKind = "test_writer"
-	// CallerManagement manages the server and credentials, never application decisions.
+	// CallerManagement manages the server and credentials and hands over the
+	// model provider request settings of the shell running surla, never
+	// application decisions.
 	CallerManagement CallerKind = "management"
 )
 
 // operationRoles is the only role-to-operation table. Missing operations are refused.
 var operationRoles = map[string][]CallerKind{
 	"ensure_team": {CallerManagement}, "identity": {CallerManagement}, "stop": {CallerManagement}, "browser_link": {CallerManagement},
-	"confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
+	"hand_over_model_settings": {CallerManagement}, "confirm_intent": {CallerUser}, "approve_merge": {CallerUser}, "configure_model": {CallerUser},
 	"propose_change": {CallerGuide}, "revise_change": {CallerGuide}, "refresh_story": {CallerGuide},
 	"get_story_refresh": {CallerUser, CallerGuide, CallerBuilder}, "init_project": {CallerGuide},
 	"generate_code": {CallerBuilder}, "check_project": {CallerBuilder}, "update_dependencies": {CallerBuilder},
@@ -116,6 +118,7 @@ func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	e.Diff = wrap("diff", e.Diff)
 	e.ConfigureModel = wrap("configure_model", e.ConfigureModel)
 	e.GetModelConnection = wrap("get_model_connection", e.GetModelConnection)
+	e.HandOverModelSettings = wrap("hand_over_model_settings", e.HandOverModelSettings)
 	e.InitProject = wrap("init_project", e.InitProject)
 	e.GenerateCode = wrap("generate_code", e.GenerateCode)
 	e.CheckProject = wrap("check_project", e.CheckProject)
