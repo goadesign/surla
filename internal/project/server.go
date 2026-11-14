@@ -231,7 +231,10 @@ func (s *Server) ExchangeBrowserLink(_ context.Context, p *genproject.ExchangeBr
 	}
 	delete(s.links, link)
 	s.sessions[token] = "user-" + id
-	return &genproject.ExchangeBrowserLinkResult{Session: token}, nil
+	return &genproject.ExchangeBrowserLinkResult{
+		Session:     token,
+		ProjectName: filepath.Base(s.state.Record.Directory),
+	}, nil
 }
 
 // managementOnly checks trusted caller purpose rather than naming conventions or payload claims.

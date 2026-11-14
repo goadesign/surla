@@ -153,6 +153,7 @@ export interface ExchangeBrowserLinkRequestBody {
 }
 
 export interface ExchangeBrowserLinkResponseBody {
+  project_name: string;
   session: string;
 }
 
@@ -1350,9 +1351,13 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
   "ExchangeBrowserLinkResponseBody": {
     "type": "object",
     "required": [
-      "session"
+      "session",
+      "project_name"
     ],
     "properties": {
+      "project_name": {
+        "type": "string"
+      },
       "session": {
         "type": "string"
       }

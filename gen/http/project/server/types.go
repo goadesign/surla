@@ -60,6 +60,9 @@ type BrowserLinkResponseBody struct {
 type ExchangeBrowserLinkResponseBody struct {
 	// User session kept only in the page's memory.
 	Session string `form:"session" json:"session" xml:"session"`
+	// Base name of the physical project folder, without its path, for this page
+	// session.
+	ProjectName string `form:"project_name" json:"project_name" xml:"project_name"`
 }
 
 // IdentityForbiddenResponseBody is the type of the "project" service
@@ -349,7 +352,8 @@ func NewBrowserLinkResponseBody(res *project.BrowserLinkResult) *BrowserLinkResp
 // result of the "exchange_browser_link" endpoint of the "project" service.
 func NewExchangeBrowserLinkResponseBody(res *project.ExchangeBrowserLinkResult) *ExchangeBrowserLinkResponseBody {
 	body := &ExchangeBrowserLinkResponseBody{
-		Session: res.Session,
+		Session:     res.Session,
+		ProjectName: res.ProjectName,
 	}
 	return body
 }

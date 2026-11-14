@@ -258,7 +258,7 @@ func (ps *pageServer) exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(map[string]string{"session": pageSession}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]string{"session": pageSession, "project_name": "Refunds café"}); err != nil {
 		ps.t.Logf("write exchange answer: %v", err)
 	}
 }

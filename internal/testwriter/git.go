@@ -15,16 +15,29 @@ import (
 	"strings"
 )
 
-// capBuffer keeps the first limit bytes written to it and counts the rest,
-// never failing a write, so a command's output is drained to the end.
-type capBuffer struct {
-	// buf holds the kept bytes.
-	buf bytes.Buffer
-	// limit is the most bytes buf keeps.
-	limit int
-	// dropped counts the bytes written past limit.
-	dropped int
-}
+type (
+	// capBuffer keeps the first limit bytes written to it and counts the
+	// rest, never failing a write, so a command's output is drained to the
+	// end.
+	capBuffer struct {
+		// buf holds the kept bytes.
+		buf bytes.Buffer
+		// limit is the most bytes buf keeps.
+		limit int
+		// dropped counts the bytes written past limit.
+		dropped int
+	}
+
+	// changedPath is one path a working copy's snapshot adds, changes or
+	// deletes compared with the copy's base.
+	changedPath struct {
+		// path is relative to the copy's root, slash-separated.
+		path string
+		// added reports that the base has no file at path, so undoing the
+		// change means deleting it; otherwise the base's file is restored.
+		added bool
+	}
+)
 
 const (
 	// maxGitStdout bounds the standard output git may print for one command;
@@ -127,21 +140,29 @@ func copyBase(ctx context.Context, wc WorkingCopy) (string, error) {
 
 // changedSince returns the paths, relative to the copy's root and in git's
 // order, that the snapshot recorded in the private index file index adds,
-// changes or deletes compared with the commit base.
-func changedSince(ctx context.Context, wc WorkingCopy, index, base string) ([]string, error) {
+// changes or deletes compared with the commit base, each with whether the
+// base lacks it. Renames are not detected, so a moved file is one path
+// deleted and one added.
+func changedSince(ctx context.Context, wc WorkingCopy, index, base string) ([]changedPath, error) {
 	tree, err := wc.git(ctx, wc.dir, []string{"GIT_INDEX_FILE=" + index}, "write-tree")
 	if err != nil {
 		return nil, fmt.Errorf("record the working copy's files: %w", err)
 	}
-	out, err := wc.git(ctx, wc.dir, nil, "diff-tree", "-r", "-z", "--name-only", "--no-renames", base, tree)
+	out, err := wc.git(ctx, wc.dir, nil, "diff-tree", "-r", "-z", "--name-status", "--no-renames", base, tree)
 	if err != nil {
 		return nil, fmt.Errorf("compare the working copy with its base: %w", err)
 	}
-	var paths []string
-	for _, p := range strings.Split(out, "\x00") {
-		if p != "" {
-			paths = append(paths, p)
-		}
+	if out == "" {
+		return nil, nil
+	}
+	// Each change is a status letter and a path, both ended by a NUL.
+	fields := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
+	if len(fields)%2 != 0 {
+		return nil, fmt.Errorf("compare the working copy with its base: git printed %d fields, not status and path pairs", len(fields))
+	}
+	paths := make([]changedPath, 0, len(fields)/2)
+	for i := 0; i < len(fields); i += 2 {
+		paths = append(paths, changedPath{path: fields[i+1], added: fields[i] == "A"})
 	}
 	return paths, nil
 }
