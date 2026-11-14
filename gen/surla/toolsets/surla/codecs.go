@@ -10702,7 +10702,7 @@ var updateDependenciesResultFields = []tools.FieldMetadata{
 var verifyChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.",
+		Description: "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which tests run come from the project, never from the caller: the candidate commit's programs and the tests Surla accepted for the user's build of the revision or, with stored verification settings, the programs and evaluator suite those settings name.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},

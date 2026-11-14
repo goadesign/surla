@@ -26,8 +26,8 @@ can run against it.
   `generate_code` MCP tool on the Surla project server (or you run `surla gen`
   in this directory from a shell that is not sandboxed): it runs Goa's generator for this module inside Surla's
   sandbox. Never edit `gen/`. Generation compiles the design only, so update the
-  hand-written code in `internal/` and `cmd/` to match it, then build and test
-  your uncommitted files with `check_project` as described in "Next steps".
+  hand-written code in `internal/` and `cmd/` to match it; the builder then builds and tests
+  the uncommitted files with `check_project`, as described in "Next steps".
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents; it names the same Surla tools
   as "Next steps" for generating, checking and verifying this project.

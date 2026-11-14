@@ -580,7 +580,7 @@ var DiffResult = Type("DiffResult", func() {
 
 // VerifyChangePayload starts Checkpoint 4 verification of one candidate commit.
 var VerifyChangePayload = Type("VerifyChangePayload", func() {
-	Description("Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.")
+	Description("Names the confirmed Change Card revision and the candidate commit to verify. What is built and which tests run come from the project, never from the caller: the candidate commit's programs and the tests Surla accepted for the user's build of the revision or, with stored verification settings, the programs and evaluator suite those settings name.")
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Current request_revision of the confirmed Change Card.")
 	Attribute("candidate_commit", String, "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).", func() {
@@ -1019,7 +1019,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("init_project", func() {
-		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.")
+		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.")
 		Payload(InitProjectPayload)
 		Result(InitProjectResult)
 		Error("conflict", ErrorResult, "The workspace or target directory is already initialized.")

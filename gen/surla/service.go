@@ -215,10 +215,9 @@ type Service interface {
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
 	// eval/ verification harness, creating the initial Git commit, and switching
-	// the server's active workspace and trusted evaluator suite commit to that
-	// project. When the request includes a progressToken, the tool sends MCP
-	// progress updates as starter generation/tests, initial commit creation, and
-	// publication start.
+	// the server's active workspace to that project. When the request includes a
+	// progressToken, the tool sends MCP progress updates as starter
+	// generation/tests, initial commit creation, and publication start.
 	InitProject(context.Context, *InitProjectPayload) (res *InitProjectResult, err error)
 	// Read the active workspace's application module, or its public local eval/
 	// module when target is eval, compile that module's edited Goa design in

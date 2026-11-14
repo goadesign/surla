@@ -58,9 +58,10 @@ type approveSummary struct {
 // usage is the text `surla help`, `surla -h` and `surla --help`
 // print. Each subcommand prints its own flags with `surla <subcommand> -h`.
 const usage = `Surla runs a team of coding agents on a Goa/Goa-AI service. You agree each
-change before code is written; one agent builds it and another writes its
-tests, which Surla checks and runs against the built service before you
-approve the result.
+change before code is written; one agent builds it and, unless verification
+settings name your own test suite, another writes its tests, which Surla
+checks. Surla runs the tests against the built service before you approve
+the result.
 
 Usage:
 
