@@ -22,7 +22,7 @@ import (
 type ProposeChangeRequestBody struct {
 	// Unique change identifier.
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
-	// Operator feature request.
+	// The user's feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this card adopts. When set, Surla reads
@@ -43,7 +43,7 @@ type ReviseChangeRequestBody struct {
 	// when the change shows one waiting (proposed_revision.request_revision),
 	// otherwise the change's own.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
-	// Revised operator feature request.
+	// The user's revised feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this revision adopts. When set, Surla
@@ -233,7 +233,7 @@ type ProposeChangeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -289,7 +289,7 @@ type ReviseChangeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -345,7 +345,7 @@ type ConfirmIntentResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -401,7 +401,7 @@ type GetChangeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -457,7 +457,7 @@ type DeclineRevisionResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -594,8 +594,9 @@ type VerifyChangeResponseBody struct {
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -626,8 +627,9 @@ type GetVerificationResponseBody struct {
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -657,7 +659,7 @@ type ApproveMergeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -911,10 +913,10 @@ type ListChangesResponseBody struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version string `form:"version" json:"version" xml:"version"`
-	// Whether approve_merge can record approvals on this server. It is true
-	// whenever Checkpoint 4 verification is configured and any stored promotion
-	// settings could be resolved; it is false when verification is not configured
-	// or when resolving the promotion target returns an error.
+	// Whether approve_merge can record approvals on this server: true when the
+	// server runs Checkpoint 4 verification, as every server surla starts does,
+	// and any stored promotion settings could be resolved; false when the server
+	// runs no verification or resolving the promotion target fails.
 	ApprovalAvailable bool `form:"approval_available" json:"approval_available" xml:"approval_available"`
 }
 
@@ -933,8 +935,8 @@ type StartBuildResponseBody struct {
 	Build *StartedBuildResponseBody `form:"build" json:"build" xml:"build"`
 	// The team's immediate outcome after the build was saved.
 	Team TeamResponseBody `form:"team" json:"team" xml:"team"`
-	// The test-writer working copy after this start's refresh; not_used with a
-	// stored evaluator.
+	// The test-writer working copy after this start's refresh; not_used with
+	// stored verification settings.
 	WorkingCopy WorkingCopyResponseBody `form:"working_copy" json:"working_copy" xml:"working_copy"`
 }
 
@@ -991,7 +993,7 @@ type GetBuilderAssignmentResponseBody struct {
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool `form:"read" json:"read" xml:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
-	// writer is used because the project verifies with its stored evaluator;
+	// writer is used because the project has stored verification settings;
 	// otherwise accepted, with the commit and time, when the build records
 	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests WrittenTestsResponseBody `form:"written_tests" json:"written_tests" xml:"written_tests"`
@@ -3466,7 +3468,7 @@ type ReportTestsFinishedForbiddenResponseBody struct {
 type AmbiguityQuestionResponseBody struct {
 	// Stable question identifier.
 	ID string `form:"id" json:"id" xml:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question string `form:"question" json:"question" xml:"question"`
 	// Concrete resolution choices.
 	Options []string `form:"options" json:"options" xml:"options"`
@@ -3579,8 +3581,8 @@ type ApprovalItemResponseBody struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID string `form:"suite_id" json:"suite_id" xml:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -3623,7 +3625,7 @@ type UnverifiedApprovalItemResponseBody struct {
 // ProposedRevisionItemResponseBody is used to define fields on response body
 // types.
 type ProposedRevisionItemResponseBody struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
@@ -3904,8 +3906,9 @@ type VerificationStatusResultResponseBody struct {
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -4029,9 +4032,9 @@ type LatestVerificationItemResponseBody struct {
 	// report.
 	State string `form:"state" json:"state" xml:"state"`
 	// Whether this run names the agreed request_revision and the tests selected
-	// now: the accepted test commit of the usable build in force, or the
-	// configured stored evaluator suite. It does not say whether the candidate
-	// working tree, deployment or approval is current.
+	// now: the accepted test commit of the usable build in force, or the evaluator
+	// suite in the stored verification settings. It does not say whether the
+	// candidate working tree, deployment or approval is current.
 	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 }
 
@@ -4066,8 +4069,8 @@ type BuilderProgressResponseBody struct {
 // TestWriterProgressResponseBody is used to define fields on response body
 // types.
 type TestWriterProgressResponseBody struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -4146,7 +4149,7 @@ type BuildTeamWindowBusyResponseBody struct {
 type BuildTeamAmbiguousSpaceResponseBody struct {
 	// Number of spaces matching this project.
 	Count int `form:"count" json:"count" xml:"count"`
-	// Choose the project's space, then start the team agents.
+	// Close the duplicate Herdr spaces, then start the agents.
 	Step string `form:"step" json:"step" xml:"step"`
 }
 
@@ -4203,7 +4206,7 @@ type BuilderAssignmentResponseBody struct {
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool `form:"read" json:"read" xml:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
-	// writer is used because the project verifies with its stored evaluator;
+	// writer is used because the project has stored verification settings;
 	// otherwise accepted, with the commit and time, when the build records
 	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests WrittenTestsResponseBody `form:"written_tests" json:"written_tests" xml:"written_tests"`

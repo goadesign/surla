@@ -9,7 +9,7 @@ import (
 
 var _ = API("surla", func() {
 	Title("Surla MCP Software Factory Control Plane")
-	Description("MCP-native control plane for creating, verifying, and evolving production Goa-AI agentic platforms.")
+	Description("The Surla project server: coding agents propose, build, test and verify changes to a Goa and Goa-AI service through its MCP tools, and the user agrees each change and approves its result on its views page.")
 	Version("1.0.0")
 })
 
@@ -17,7 +17,7 @@ var _ = API("surla", func() {
 var AmbiguityQuestion = Type("AmbiguityQuestion", func() {
 	Description("Domain ambiguity surfaced with concrete examples at Checkpoint 1.")
 	Attribute("id", String, "Stable question identifier.")
-	Attribute("question", String, "Plain-English question for the operator.")
+	Attribute("question", String, "Plain-English question for the user.")
 	Attribute("options", ArrayOf(String), "Concrete resolution choices.")
 	Required("id", "question", "options")
 })
@@ -37,9 +37,9 @@ var ExampleItem = Type("ExampleItem", func() {
 
 // ProposeChangePayload is the input to the CP1 propose_change tool.
 var ProposeChangePayload = Type("ProposeChangePayload", func() {
-	Description("Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.")
+	Description("The user's feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.")
 	Attribute("change_id", String, "Unique change identifier.")
-	Attribute("prompt", String, "Operator feature request.")
+	Attribute("prompt", String, "The user's feature request.")
 	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.")
 	Attribute("analysis", CP1Analysis, "Your analysis of prompt against the target's current design.")
 	Required("change_id", "prompt", "analysis")
@@ -47,10 +47,10 @@ var ProposeChangePayload = Type("ProposeChangePayload", func() {
 
 // ReviseChangePayload is the input to the CP1 revise_change tool.
 var ReviseChangePayload = Type("ReviseChangePayload", func() {
-	Description("Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.")
+	Description("The user's revised feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.")
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "request_revision of the latest revision you read: the proposed revision's when the change shows one waiting (proposed_revision.request_revision), otherwise the change's own.")
-	Attribute("prompt", String, "Revised operator feature request.")
+	Attribute("prompt", String, "The user's revised feature request.")
 	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and their design source are kept together.")
 	Attribute("analysis", CP1RevisionAnalysis, "Your analysis of the revised prompt against the current card and the target's current design.")
 	Required("change_id", "request_revision", "prompt", "analysis")
@@ -203,7 +203,7 @@ var ApprovalItem = Type("ApprovalItem", func() {
 	Attribute("report_digest", String, "SHA-256 digest of the approved CP4 verification report.")
 	Attribute("candidate_commit", String, "Candidate commit the report was checked against.")
 	Attribute("suite_id", String, "Suite identifier the tests at suite_commit declared in the report (shown, not compared).")
-	Attribute("suite_commit", String, "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.")
+	Attribute("suite_commit", String, "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.")
 	Attribute("environment", String, "Dependency profile the tests at suite_commit declared in the report, such as sim or scripted-model (shown, not compared).")
 	Attribute("artifacts", MapOf(String, String), "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name; empty when no promotion settings are configured.")
 	Attribute("scenario_count", Int, "Number of declared scenarios in the report, every one of which passed.")
@@ -230,7 +230,7 @@ var UnverifiedApprovalItem = Type("UnverifiedApprovalItem", func() {
 // Change Card, waiting for the user to adopt or decline it.
 var ProposedRevisionItem = Type("ProposedRevisionItem", func() {
 	Description("A revision the guide proposed with revise_change beside the confirmed revision in force. It waits until the user adopts it, by answering its questions and confirming its request_revision with confirm_intent, or declines it with decline_revision. Until then the confirmed revision stays in force with its answers, confirmation, approval, Stories and design source, and architecture preview, verification and approval keep working on it. A later revise_change naming this request_revision replaces it.")
-	Attribute("prompt", String, "Operator feature request for this revision.")
+	Attribute("prompt", String, "The user's feature request for this revision.")
 	Attribute("summary", String, "Plain-English summary of the proposed change.")
 	Attribute("ambiguities", ArrayOf(AmbiguityQuestion), "Domain questions the user answers when adopting this revision.")
 	Attribute("examples", ArrayOf(ExampleItem), "Concrete examples mapped to evaluator checks.")
@@ -250,7 +250,7 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 	Attribute("status", String, "Checkpoint status (needs_confirmation or confirmed).", func() {
 		Enum("needs_confirmation", "confirmed")
 	})
-	Attribute("prompt", String, "Operator feature request for this revision.")
+	Attribute("prompt", String, "The user's feature request for this revision.")
 	Attribute("summary", String, "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.")
 	Attribute("ambiguities", ArrayOf(AmbiguityQuestion), "Domain questions surfaced at CP1, retained for audit after confirmation.")
 	Attribute("answers", MapOf(String, String), "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.")
@@ -266,9 +266,9 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 	Required("change_id", "status", "prompt", "summary", "examples", "preserved_behaviors", "request_revision")
 })
 
-// ConfirmIntentPayload locks the operator's confirmed ambiguity answers and example table at CP1.
+// ConfirmIntentPayload locks the user's confirmed ambiguity answers and example table at CP1.
 var ConfirmIntentPayload = Type("ConfirmIntentPayload", func() {
-	Description("Operator confirmation of Checkpoint 1 ambiguity answers and concrete examples.")
+	Description("The user's confirmation of Checkpoint 1 ambiguity answers and concrete examples.")
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Reviewed CP1 request_revision digest being confirmed.")
 	Attribute("answers", MapOf(String, String), "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.")
@@ -520,7 +520,7 @@ var LiveTargetStatus = Type("LiveTargetStatus", func() {
 
 // ModelNone is the model connection when no model is chosen.
 var ModelNone = Type("ModelNone", func() {
-	Description("No model is chosen. A written-tests live target requires a model choice; a stored evaluator may start without one.")
+	Description("No model is chosen. A written-tests live target requires a model choice; a target using stored verification settings may start without one.")
 })
 
 // ModelDirect is a direct model provider and model name.
@@ -593,7 +593,7 @@ var DiffResult = Type("DiffResult", func() {
 
 // VerifyChangePayload starts Checkpoint 4 verification of one candidate commit.
 var VerifyChangePayload = Type("VerifyChangePayload", func() {
-	Description("Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.")
+	Description("Names the confirmed Change Card revision and the candidate commit to verify. What is built and which tests run come from the project, never from the caller: the candidate commit's programs and the tests Surla accepted for the user's build of the revision or, with stored verification settings, the programs and evaluator suite those settings name.")
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Current request_revision of the confirmed Change Card.")
 	Attribute("candidate_commit", String, "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).", func() {
@@ -690,7 +690,7 @@ var VerificationStatusResult = Type("VerificationStatusResult", func() {
 	Attribute("candidate_commit", String, "Candidate commit the run builds and verifies.")
 	Attribute("suite_commit", String, "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.")
 	Attribute("accepted_at", String, "When the run was accepted.", func() { Format(FormatDateTime) })
-	Attribute("inputs_current", Boolean, "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.")
+	Attribute("inputs_current", Boolean, "Whether this run's agreed revision and selected tests match the current Change Card and the usable build or the stored verification settings. This observation does not establish the current candidate working tree, deployment or approval.")
 	Attribute("candidate_binaries_dir", String, "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.", func() { MinLength(1) })
 	OneOf("test_source", "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.", func() {
 		Meta("oneof:json:flatten")
@@ -1008,7 +1008,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("configure_model", func() {
-		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. With written tests, a direct provider is served by the executor's loopback model gateway and the accepted test program receives only that gateway, never provider settings. The executor-owned gateway has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. A stored evaluator receives the choice and its chosen provider's settings. A configured gateway is passed through unchanged.")
+		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. With written tests, a direct provider is served by the executor's loopback model gateway and the accepted test program receives only that gateway, never provider settings. The executor-owned gateway has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. With stored verification settings, the evaluator receives the choice and its chosen provider's settings. A configured gateway is passed through unchanged.")
 		Payload(ConfigureModelPayload)
 		Result(ModelConfigResult)
 		Error("unprocessable", ErrorResult, "The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider's key variable and how to hand it over.")
@@ -1030,7 +1030,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("hand_over_model_settings", func() {
-		Description("The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target with the operator's stored evaluator receives the chosen provider's held settings; a verification with that evaluator receives every held provider's settings. Accepted written tests receive no provider settings in verification or live targets: for a direct live model the executor serves an executor-owned loopback model gateway. It has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. The check helper receives none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.")
+		Description("The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target using stored verification settings receives the chosen provider's held settings; a verification with that evaluator receives every held provider's settings. Accepted written tests receive no provider settings in verification or live targets: for a direct live model the executor serves an executor-owned loopback model gateway. It has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. The check helper receives none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.")
 		Payload(HandOverModelSettingsPayload)
 		Result(ModelSettingsResult)
 		Error("unprocessable", ErrorResult, "A provider's settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.")
@@ -1042,7 +1042,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("init_project", func() {
-		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.")
+		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.")
 		Payload(InitProjectPayload)
 		Result(InitProjectResult)
 		Error("conflict", ErrorResult, "The workspace or target directory is already initialized.")
@@ -1064,7 +1064,7 @@ var _ = Service("surla", func() {
 		Result(GenerateCodeResult)
 		Error("unprocessable", ErrorResult, "The selected local module is absent, replaced, or invalid; correct its local files and call again.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
-		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module. Return sorted module-relative files_written and warnings. This compiles the design only; run check_project to build and test the application before verification. Fix a rejected design and call again on the same server.")
+		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module outside a build that runs with a test writer: during such a build (without stored verification settings) eval/, eval/design/ included, belongs to the test writer, and Surla regenerates eval/gen/ at build start and on each report. Return sorted module-relative files_written and warnings. This compiles the design only; run check_project to build and test the application before verification. Fix a rejected design and call again on the same server.")
 		HTTP(func() {
 			POST("/workspace/generate")
 			Response(StatusOK)

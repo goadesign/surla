@@ -200,7 +200,9 @@ func TestTeamUserStartPreservesSpaceConflict(t *testing.T) {
 }
 
 // TestUserTeamErrorBoundary preserves the original typed error, including its
-// wrapping, while keeping peer-authored details out of other user failures.
+// wrapping, while keeping peer-authored details out of other user failures. A
+// typed team failure stays the cause of its user failure, without the peer
+// text wrapped around it, so a build start can read its cause.
 func TestUserTeamErrorBoundary(t *testing.T) {
 	conflict := &genproject.TeamSpaceConflict{Name: "ambiguous_space", Count: 2}
 	wrapped := fmt.Errorf("private peer output: %w", conflict)
@@ -212,6 +214,7 @@ func TestUserTeamErrorBoundary(t *testing.T) {
 	}{
 		{"window_busy", genproject.MakeWindowBusy(errors.New("private peer output"))},
 		{"team_unavailable", &genproject.TeamUnavailable{Name: "team_unavailable", Cause: "herdr"}},
+		{"team_unavailable", fmt.Errorf("private peer output: %w", &genproject.TeamUnavailable{Name: "team_unavailable", Cause: "herdr"})},
 		{"team_unavailable", errors.New("private peer output")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -220,6 +223,10 @@ func TestUserTeamErrorBoundary(t *testing.T) {
 			assert.Equal(t, tc.name, failure.Name)
 			assert.NotContains(t, failure.Message, "private peer output")
 			assert.NotContains(t, failure.Message, "check Herdr")
+			var typed *genproject.TeamUnavailable
+			if errors.As(tc.err, &typed) {
+				assert.Same(t, typed, errors.Unwrap(failure), "only the typed failure is kept")
+			}
 		})
 	}
 }
@@ -309,6 +316,9 @@ func TestTeamFailureNamesItsCause(t *testing.T) {
 			require.ErrorAs(t, userTeamError(err), &page)
 			assert.Contains(t, page.Message, tc.page)
 			assert.NotContains(t, page.Message, "check Herdr")
+			var kept *genproject.TeamUnavailable
+			require.ErrorAs(t, page, &kept, "a build start reads the cause from the page's error")
+			assert.Equal(t, tc.cause, kept.Cause)
 		})
 	}
 }

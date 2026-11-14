@@ -126,7 +126,7 @@ and prints the command that installs it, or the folder to add to your
    role in the open Chorus dialog in Herdr.` If the team cannot be prepared,
    `surla` still opens the page, because confirming and approving need no
    agent, and then prints `the project team is not ready:` with what failed
-   and the step that repairs it; **Start agents** on the page tries again.
+   and the step that repairs it. When Chorus or the Herdr app could not be started, that step is `run chorus up, then run surla again` or `open Herdr, then run surla again`; otherwise **Start agents** on the page tries again.
 3. **The page opens.** `surla` opens the page in your browser through a
    single-use link and prints `Surla is running for <folder> at <address>`.
    To open the page again later, run `surla` again in the same folder.
@@ -388,7 +388,7 @@ The test program runs on this computer outside the sandbox, with your access
 to files and the network; the application it starts runs inside the sandbox.
 The test writer's accepted program receives no provider settings. When you
 choose a direct provider, Surla serves that model to it through a loopback
-gateway in the live executor process. The operator's stored evaluator still
+gateway in the live executor process. The evaluator in the stored verification settings still
 receives the chosen provider's settings. Running as you, these programs can
 still read keys your other programs hold.
 

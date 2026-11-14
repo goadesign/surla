@@ -14,7 +14,7 @@ var LatestVerificationItem = Type("LatestVerificationItem", func() {
 	Attribute("state", String, "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.", func() {
 		Enum("running", "passed", "failed", "not_completed")
 	})
-	Attribute("inputs_current", Boolean, "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.")
+	Attribute("inputs_current", Boolean, "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the evaluator suite in the stored verification settings. It does not say whether the candidate working tree, deployment or approval is current.")
 	Required("run_id", "state", "inputs_current")
 })
 
@@ -40,7 +40,7 @@ var ChangeList = Type("ChangeList", func() {
 	Description("The project's saved Change Cards, most recently saved first (tie-broken by change_id).")
 	Attribute("changes", ArrayOf(ChangeListItem), "Saved Change Cards, most recently saved first.")
 	Attribute("version", String, "Opaque value for change detection. Compare it only for equality; the returned fields contain the facts this operation makes readable.")
-	Attribute("approval_available", Boolean, "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.")
+	Attribute("approval_available", Boolean, "Whether approve_merge can record approvals on this server: true when the server runs Checkpoint 4 verification, as every server surla starts does, and any stored promotion settings could be resolved; false when the server runs no verification or resolving the promotion target fails.")
 	Required("changes", "version", "approval_available")
 })
 

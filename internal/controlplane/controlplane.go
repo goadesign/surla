@@ -224,7 +224,7 @@ type (
 		Owner string `json:"owner"`
 		// Status is the Change Card status.
 		Status string `json:"status"`
-		// Prompt is the original operator feature request.
+		// Prompt is the user's original feature request.
 		Prompt string `json:"prompt"`
 		// DesignSource is the Goa design source inspected at CP1.
 		DesignSource string `json:"design_source"`

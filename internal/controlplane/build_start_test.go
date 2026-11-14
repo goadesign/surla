@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -100,6 +101,39 @@ func TestBuildTeamOutcomeUsesTypedConditions(t *testing.T) {
 				assert.True(t, boundedText(string(step), maxCheckStep))
 				assert.NotContains(t, string(step), private)
 			}
+		})
+	}
+}
+
+// TestBuildTeamOutcomeGivesEachCauseItsStep gives start_build the team failure
+// the project owner returns, a team_unavailable error whose cause is the typed
+// failure, and checks that each cause gets its own repair before the step to
+// start the team agents for the saved build, not one Herdr check for all. An
+// error without a typed cause names surla, which prints the cause's step.
+func TestBuildTeamOutcomeGivesEachCauseItsStep(t *testing.T) {
+	for _, tc := range []struct{ name, cause, repair string }{
+		{name: "stopping", cause: "stopping", repair: "Run surla in the project folder to start it again"},
+		{name: "herdr", cause: "herdr", repair: "Open the Herdr app"},
+		{name: "roster folder", cause: "roster_folder", repair: "Make data/chorus-launcher/rosters"},
+		{name: "project state", cause: "project_state", repair: "Run surla in the project folder to see which folder to repair"},
+		{name: "role folder", cause: "role_folder", repair: "Make sure this account can open the project folder and its build working folders"},
+		{name: "no typed cause", repair: "Run surla in the project folder to see the step"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := error(gensurla.MakeTeamUnavailable(errors.New("private external reply")))
+			if tc.cause != "" {
+				failure := gensurla.MakeTeamUnavailable(&genproject.TeamUnavailable{Name: "team_unavailable", Cause: tc.cause})
+				failure.Message = "the views page's step"
+				err = failure
+			}
+			unavailable, ok := buildTeamOutcome(nil, err).AsUnavailable()
+			require.True(t, ok)
+			step := string(unavailable.Step)
+			assert.Contains(t, step, tc.repair)
+			assert.True(t, strings.HasSuffix(step, "the team agents for this saved build."), step)
+			assert.NotContains(t, step, "Check that Herdr is available")
+			assert.NotContains(t, step, "private external reply")
+			assert.True(t, boundedText(step, maxCheckStep), "the step fits the contract")
 		})
 	}
 }

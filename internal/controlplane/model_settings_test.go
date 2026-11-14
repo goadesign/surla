@@ -197,12 +197,12 @@ func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 		promises   []string
 	}{
 		{name: "OpenAPI", text: openAPI, promises: []string{
-			"a live target with the operator's stored evaluator receives the chosen provider's held settings",
+			"a live target using stored verification settings receives the chosen provider's held settings",
 			"accepted written tests receive no provider settings in verification or live targets",
 			"the check helper receives none",
 		}},
 		{name: "REFERENCE.md", text: reference, promises: []string{
-			"a stored evaluator's live target receives the chosen provider's held settings",
+			"a live target using stored verification settings receives the chosen provider's held settings",
 			"the test writer's accepted program receives none, in verification or a live target",
 			"the check helper also receives none",
 		}},

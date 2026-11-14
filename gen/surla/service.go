@@ -191,8 +191,9 @@ type Service interface {
 	// and the accepted test program receives only that gateway, never provider
 	// settings. The executor-owned gateway has no authentication: any local
 	// process, including another user's, can use it while the target runs without
-	// receiving the provider key. A stored evaluator receives the choice and its
-	// chosen provider's settings. A configured gateway is passed through unchanged.
+	// receiving the provider key. With stored verification settings, the evaluator
+	// receives the choice and its chosen provider's settings. A configured gateway
+	// is passed through unchanged.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Report the model choice live targets started afterwards receive: none, a
 	// direct provider and model name, or a model gateway address. It starts as
@@ -206,8 +207,8 @@ type Service interface {
 	// over the request settings of each model provider whose key is set in the
 	// shell it runs in: the key and the listed settings that route and
 	// authenticate the provider's requests. The project server holds them in
-	// memory only and forgets them when it stops. A live target with the
-	// operator's stored evaluator receives the chosen provider's held settings; a
+	// memory only and forgets them when it stops. A live target using stored
+	// verification settings receives the chosen provider's held settings; a
 	// verification with that evaluator receives every held provider's settings.
 	// Accepted written tests receive no provider settings in verification or live
 	// targets: for a direct live model the executor serves an executor-owned
@@ -227,10 +228,9 @@ type Service interface {
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
 	// eval/ verification harness, creating the initial Git commit, and switching
-	// the server's active workspace and trusted evaluator suite commit to that
-	// project. When the request includes a progressToken, the tool sends MCP
-	// progress updates as starter generation/tests, initial commit creation, and
-	// publication start.
+	// the server's active workspace to that project. When the request includes a
+	// progressToken, the tool sends MCP progress updates as starter
+	// generation/tests, initial commit creation, and publication start.
 	InitProject(context.Context, *InitProjectPayload) (res *InitProjectResult, err error)
 	// Read the active workspace's application module, or its public local eval/
 	// module when target is eval, compile that module's edited Goa design in
@@ -264,16 +264,15 @@ type Service interface {
 	// owner and read the same history. Return bounded safe summaries newest first,
 	// without reading the entire file. Older pages and later refreshes work on the
 	// same running server and after restart. Recording is automatic in the project
-	// server; an embedded host must provide Options.TracerProvider when
-	// constructing its control plane. Authenticated HTTP/MCP domain calls have a
-	// surla.request.<operation> boundary span, with child domain operations
-	// recorded separately. Reads by the user's views page that succeed or are
-	// refused (sent with GET, such as the reads the page repeats whenever the
-	// project changes) are exported but not added to this private history; such a
-	// read that ends with an error status or a panic is added. Waiting reads are
-	// never added, whoever sends them; every other agent call and every operation
-	// that changes something is added. Requests rejected before authentication or
-	// decoding and separate verification processes are absent.
+	// server. Authenticated HTTP/MCP domain calls have a surla.request.<operation>
+	// boundary span, with child domain operations recorded separately. Reads by
+	// the user's views page that succeed or are refused (sent with GET, such as
+	// the reads the page repeats whenever the project changes) are exported but
+	// not added to this private history; such a read that ends with an error
+	// status or a panic is added. Waiting reads are never added, whoever sends
+	// them; every other agent call and every operation that changes something is
+	// added. Requests rejected before authentication or decoding and separate
+	// verification processes are absent.
 	ListTraces(context.Context, *ListTracesPayload) (res *TraceList, err error)
 	// Read the bound workspace's Go module snapshot, compute its canonical
 	// snapshot_digest, and start or reuse the project owner's in-memory Story
@@ -385,8 +384,8 @@ type Service interface {
 	// at once. Surla then checks the tests in the working folder against the
 	// build's Story; its verdict, needs_changes, accepted or could_not_run,
 	// replaces reported in the test writer's assignment, which then counts as
-	// unread. A report for another revision, or in a project that verifies with
-	// its stored evaluator, where no test writer is used, is refused and changes
+	// unread. A report for another revision, or in a project with stored
+	// verification settings, where no test writer is used, is refused and changes
 	// nothing.
 	ReportTestsFinished(context.Context, *ReportTestsFinishedPayload) (res *TestWriterAssignmentItem, err error)
 }
@@ -441,7 +440,7 @@ type AgentWrittenTests struct {
 type AmbiguityQuestion struct {
 	// Stable question identifier.
 	ID string
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question string
 	// Concrete resolution choices.
 	Options []string
@@ -475,8 +474,8 @@ type ApprovalItem struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID string
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit string
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -553,8 +552,8 @@ type BuildCopyNotContained struct {
 	Step BuildStartStep
 }
 
-// This project uses its stored evaluator, so this start uses no test-writer
-// working copy.
+// This project has stored verification settings, so this start uses no
+// test-writer working copy.
 type BuildCopyNotUsed struct {
 }
 
@@ -569,7 +568,7 @@ type BuildStartStep string
 type BuildTeamAmbiguousSpace struct {
 	// Number of spaces matching this project.
 	Count int
-	// Choose the project's space, then start the team agents.
+	// Close the duplicate Herdr spaces, then start the agents.
 	Step BuildStartStep
 }
 
@@ -599,7 +598,7 @@ type BuilderAssignment struct {
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool
 	// Where the test writer's tests for this build stand: not_used when no test
-	// writer is used because the project verifies with its stored evaluator;
+	// writer is used because the project has stored verification settings;
 	// otherwise accepted, with the commit and time, when the build records
 	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests WrittenTests
@@ -796,7 +795,7 @@ type ChangeCardResult struct {
 	ChangeID string
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -852,10 +851,10 @@ type ChangeList struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version string
-	// Whether approve_merge can record approvals on this server. It is true
-	// whenever Checkpoint 4 verification is configured and any stored promotion
-	// settings could be resolved; it is false when verification is not configured
-	// or when resolving the promotion target returns an error.
+	// Whether approve_merge can record approvals on this server: true when the
+	// server runs Checkpoint 4 verification, as every server surla starts does,
+	// and any stored promotion settings could be resolved; false when the server
+	// runs no verification or resolving the promotion target fails.
 	ApprovalAvailable bool
 }
 
@@ -1155,9 +1154,9 @@ type LatestVerificationItem struct {
 	// report.
 	State string
 	// Whether this run names the agreed request_revision and the tests selected
-	// now: the accepted test commit of the usable build in force, or the
-	// configured stored evaluator suite. It does not say whether the candidate
-	// working tree, deployment or approval is current.
+	// now: the accepted test commit of the usable build in force, or the evaluator
+	// suite in the stored verification settings. It does not say whether the
+	// candidate working tree, deployment or approval is current.
 	InputsCurrent bool
 }
 
@@ -1291,7 +1290,7 @@ type ModelGateway struct {
 }
 
 // No model is chosen. A written-tests live target requires a model choice; a
-// stored evaluator may start without one.
+// target using stored verification settings may start without one.
 type ModelNone struct {
 }
 
@@ -1348,7 +1347,7 @@ type ProjectTeamRole struct {
 type ProposeChangePayload struct {
 	// Unique change identifier.
 	ChangeID string
-	// Operator feature request.
+	// The user's feature request.
 	Prompt string
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this card adopts. When set, Surla reads
@@ -1368,7 +1367,7 @@ type ProposeChangePayload struct {
 // source, and architecture preview, verification and approval keep working on
 // it. A later revise_change naming this request_revision replaces it.
 type ProposedRevisionItem struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt string
 	// Plain-English summary of the proposed change.
 	Summary string
@@ -1436,7 +1435,7 @@ type ReviseChangePayload struct {
 	// when the change shows one waiting (proposed_revision.request_revision),
 	// otherwise the change's own.
 	RequestRevision string
-	// Revised operator feature request.
+	// The user's revised feature request.
 	Prompt string
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this revision adopts. When set, Surla
@@ -1486,8 +1485,8 @@ type StartBuildResult struct {
 	Build *StartedBuild
 	// The team's immediate outcome after the build was saved.
 	Team Team
-	// The test-writer working copy after this start's refresh; not_used with a
-	// stored evaluator.
+	// The test-writer working copy after this start's refresh; not_used with
+	// stored verification settings.
 	WorkingCopy WorkingCopy
 }
 
@@ -1746,8 +1745,8 @@ type TestWriterAssignmentList struct {
 
 // Where the test writer's assignment for one build stands.
 type TestWriterProgress struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -2034,8 +2033,9 @@ type VerificationStatusResult struct {
 	// When the run was accepted.
 	AcceptedAt string
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent bool
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -2412,7 +2412,7 @@ func validatejsonAgentWrittenTestsTransport(value *jsonAgentWrittenTestsTranspor
 type jsonAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -2446,8 +2446,8 @@ type jsonApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -2757,7 +2757,7 @@ func validatejsonBuildStartStepTransport(value jsonBuildStartStepTransport) (err
 type jsonBuildTeamAmbiguousSpaceTransport struct {
 	// Number of spaces matching this project.
 	Count *buildTeamAmbiguousSpaceIntTransport `json:"count"`
-	// Choose the project's space, then start the team agents.
+	// Close the duplicate Herdr spaces, then start the agents.
 	Step *jsonBuildStartStepTransport `json:"step"`
 }
 
@@ -2878,7 +2878,7 @@ type jsonBuilderAssignmentTransport struct {
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `json:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
-	// writer is used because the project verifies with its stored evaluator;
+	// writer is used because the project has stored verification settings;
 	// otherwise accepted, with the commit and time, when the build records
 	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *jsonWrittenTestsTransport `json:"written_tests"`
@@ -3424,7 +3424,7 @@ type jsonChangeCardResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -3612,10 +3612,10 @@ type jsonChangeListTransport struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version *string `json:"version"`
-	// Whether approve_merge can record approvals on this server. It is true
-	// whenever Checkpoint 4 verification is configured and any stored promotion
-	// settings could be resolved; it is false when verification is not configured
-	// or when resolving the promotion target returns an error.
+	// Whether approve_merge can record approvals on this server: true when the
+	// server runs Checkpoint 4 verification, as every server surla starts does,
+	// and any stored promotion settings could be resolved; false when the server
+	// runs no verification or resolving the promotion target fails.
 	ApprovalAvailable *bool `json:"approval_available"`
 }
 
@@ -4257,9 +4257,9 @@ type jsonLatestVerificationItemTransport struct {
 	// report.
 	State *string `json:"state"`
 	// Whether this run names the agreed request_revision and the tests selected
-	// now: the accepted test commit of the usable build in force, or the
-	// configured stored evaluator suite. It does not say whether the candidate
-	// working tree, deployment or approval is current.
+	// now: the accepted test commit of the usable build in force, or the evaluator
+	// suite in the stored verification settings. It does not say whether the
+	// candidate working tree, deployment or approval is current.
 	InputsCurrent *bool `json:"inputs_current"`
 }
 
@@ -4884,7 +4884,7 @@ func validatejsonProjectTeamTransport(value *jsonProjectTeamTransport) (err erro
 type jsonProposeChangePayloadTransport struct {
 	// Unique change identifier.
 	ChangeID *string `json:"change_id"`
-	// Operator feature request.
+	// The user's feature request.
 	Prompt *string `json:"prompt"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this card adopts. When set, Surla reads
@@ -4920,7 +4920,7 @@ func validatejsonProposeChangePayloadTransport(value *jsonProposeChangePayloadTr
 
 // jsonProposedRevisionItemTransport stores JSON fields until they have been validated.
 type jsonProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -5059,7 +5059,7 @@ type jsonReviseChangePayloadTransport struct {
 	// when the change shows one waiting (proposed_revision.request_revision),
 	// otherwise the change's own.
 	RequestRevision *string `json:"request_revision"`
-	// Revised operator feature request.
+	// The user's revised feature request.
 	Prompt *string `json:"prompt"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this revision adopts. When set, Surla
@@ -5147,8 +5147,8 @@ type jsonStartBuildResultTransport struct {
 	Build *jsonStartedBuildTransport `json:"build"`
 	// The team's immediate outcome after the build was saved.
 	Team *jsonTeamTransport `json:"team"`
-	// The test-writer working copy after this start's refresh; not_used with a
-	// stored evaluator.
+	// The test-writer working copy after this start's refresh; not_used with
+	// stored verification settings.
 	WorkingCopy *jsonWorkingCopyTransport `json:"working_copy"`
 }
 
@@ -5962,8 +5962,8 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 
 // jsonTestWriterProgressTransport stores JSON fields until they have been validated.
 type jsonTestWriterProgressTransport struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -6728,8 +6728,9 @@ type jsonVerificationStatusResultTransport struct {
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent *bool `json:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -25534,7 +25535,7 @@ func validateAmbiguityQuestionJSONValue(path string, value any, description stri
 		case "question":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Plain-English question for the operator.",
+				typed[key], "Plain-English question for the user.",
 			); err != nil {
 				return err
 			}
@@ -25638,7 +25639,7 @@ func validateApprovalItemJSONValue(path string, value any, description string) e
 		case "suite_commit":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+				typed[key], "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 			); err != nil {
 				return err
 			}
@@ -26582,7 +26583,7 @@ func validateBuildTeamAmbiguousSpaceJSONValue(path string, value any, descriptio
 		case "step":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Choose the project's space, then start the team agents.",
+				typed[key], "Close the duplicate Herdr spaces, then start the agents.",
 			); err != nil {
 				return err
 			}
@@ -26719,7 +26720,7 @@ func validateBuilderAssignmentJSONValue(path string, value any, description stri
 		case "written_tests":
 			if err := validateBuilderAssignmentJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
+				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project has stored verification settings; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 			); err != nil {
 				return err
 			}
@@ -27976,7 +27977,7 @@ func validateChangeBuildJSONValue4(path string, value any, description string) e
 		case "tests":
 			if err := validateChangeBuildJSONValue5(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+				typed[key], "The tests' state: not_used when the project has stored verification settings; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -28254,7 +28255,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator feature request for this revision.",
+				typed[key], "The user's feature request for this revision.",
 			); err != nil {
 				return err
 			}
@@ -28556,7 +28557,7 @@ func validateChangeCardResultJSONValue23(path string, value any, description str
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator feature request for this revision.",
+				typed[key], "The user's feature request for this revision.",
 			); err != nil {
 				return err
 			}
@@ -29355,7 +29356,7 @@ func validateChangeListJSONValue(path string, value any, description string) err
 		case "approval_available":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.",
+				typed[key], "Whether approve_merge can record approvals on this server: true when the server runs Checkpoint 4 verification, as every server surla starts does, and any stored promotion settings could be resolved; false when the server runs no verification or resolving the promotion target fails.",
 			); err != nil {
 				return err
 			}
@@ -29518,7 +29519,7 @@ func validateChangeListJSONValue4(path string, value any, description string) er
 		case "inputs_current":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the evaluator suite in the stored verification settings. It does not say whether the candidate working tree, deployment or approval is current.",
 			); err != nil {
 				return err
 			}
@@ -31869,7 +31870,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator feature request.",
+				typed[key], "The user's feature request.",
 			); err != nil {
 				return err
 			}
@@ -32033,7 +32034,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Revised operator feature request.",
+				typed[key], "The user's revised feature request.",
 			); err != nil {
 				return err
 			}
@@ -32101,7 +32102,7 @@ func validateStartBuildResultJSONValue(path string, value any, description strin
 		case "working_copy":
 			if err := validateStartBuildResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The test-writer working copy after this start's refresh; not_used with a stored evaluator.",
+				typed[key], "The test-writer working copy after this start's refresh; not_used with stored verification settings.",
 			); err != nil {
 				return err
 			}
@@ -33505,7 +33506,7 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 		case "inputs_current":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+				typed[key], "Whether this run's agreed revision and selected tests match the current Change Card and the usable build or the stored verification settings. This observation does not establish the current candidate working tree, deployment or approval.",
 			); err != nil {
 				return err
 			}

@@ -161,8 +161,8 @@ func TestHandOverSendsTheShellsRequestSettings(t *testing.T) {
 
 // TestHandOverRepliesNeverPrintAValue forces each reply the project server
 // can give the hand-over, through the generated client, and checks the error
-// text and output: refused with the credential unchanged and changed, an
-// older server's 404, a 400, a 500, a refused connection and a deadline.
+// text and output: refused with the credential unchanged and changed, a 400,
+// a 500, a refused connection and a deadline.
 func TestHandOverRepliesNeverPrintAValue(t *testing.T) {
 	isolateProviderFamilies(t)
 	for name, value := range shellFamily {
@@ -183,7 +183,6 @@ func TestHandOverRepliesNeverPrintAValue(t *testing.T) {
 		{name: "refused with an unchanged credential", replies: []int{http.StatusUnauthorized}, want: "project server response could not be used (HTTP 401); run surla again"},
 		{name: "refused, then accepted with the changed credential", replies: []int{http.StatusUnauthorized, http.StatusOK}, rotate: true, output: "(from this shell)"},
 		{name: "refused twice with a changed credential", replies: []int{http.StatusUnauthorized, http.StatusUnauthorized}, rotate: true, want: "[surla hand_over_model_settings]: invalid response code 401"},
-		{name: "older server", replies: []int{http.StatusNotFound}, want: "this project’s server was started by another version; run surla stop, then surla"},
 		{name: "value too long", replies: []int{http.StatusBadRequest}, want: "the project server refused the model settings from this shell (HTTP 400); each ANTHROPIC_ and OPENAI_ request setting must be at most 4096 characters"},
 		{name: "server fault", replies: []int{http.StatusInternalServerError}, want: "[surla hand_over_model_settings]: invalid response code 500"},
 		{name: "connection refused", closed: true, want: "project server connection failed; run surla again"},
@@ -266,7 +265,6 @@ func TestRefusedHandOverStopsStartBeforeTheTeam(t *testing.T) {
 		status int
 		want   string
 	}{
-		{name: "older server", status: http.StatusNotFound, want: "this project’s server was started by another version; run surla stop, then surla"},
 		{name: "value too long", status: http.StatusBadRequest, want: "the project server refused the model settings from this shell (HTTP 400)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -86,7 +86,7 @@ func ValidateApproveMergeResultAgentWrittenTestsTransport(value *ApproveMergeRes
 type ApproveMergeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -120,8 +120,8 @@ type ApproveMergeResultApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -247,7 +247,7 @@ func ValidateApproveMergeResultOperatorEvaluatorTestsTransport(value *ApproveMer
 
 // ApproveMergeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -534,7 +534,7 @@ type ApproveMergeResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -925,7 +925,7 @@ func ValidateConfirmIntentResultAgentWrittenTestsTransport(value *ConfirmIntentR
 type ConfirmIntentResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -959,8 +959,8 @@ type ConfirmIntentResultApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -1086,7 +1086,7 @@ func ValidateConfirmIntentResultOperatorEvaluatorTestsTransport(value *ConfirmIn
 
 // ConfirmIntentResultProposedRevisionItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -1373,7 +1373,7 @@ type ConfirmIntentResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -1608,7 +1608,7 @@ func ValidateDeclineRevisionResultAgentWrittenTestsTransport(value *DeclineRevis
 type DeclineRevisionResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -1642,8 +1642,8 @@ type DeclineRevisionResultApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -1769,7 +1769,7 @@ func ValidateDeclineRevisionResultOperatorEvaluatorTestsTransport(value *Decline
 
 // DeclineRevisionResultProposedRevisionItemTransport stores JSON fields until they have been validated.
 type DeclineRevisionResultProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -2056,7 +2056,7 @@ type DeclineRevisionResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -2559,8 +2559,8 @@ func ValidateGetBuildResultStartedBuildTransport(value *GetBuildResultStartedBui
 
 // GetBuildResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type GetBuildResultTestWriterProgressTransport struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -2922,7 +2922,7 @@ type GetBuilderAssignmentResultTransport struct {
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `json:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
-	// writer is used because the project verifies with its stored evaluator;
+	// writer is used because the project has stored verification settings;
 	// otherwise accepted, with the commit and time, when the build records
 	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *GetBuilderAssignmentResultwrittenTestsTransport `json:"written_tests"`
@@ -3012,7 +3012,7 @@ func ValidateGetChangeResultAgentWrittenTestsTransport(value *GetChangeResultAge
 type GetChangeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -3046,8 +3046,8 @@ type GetChangeResultApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -3173,7 +3173,7 @@ func ValidateGetChangeResultOperatorEvaluatorTestsTransport(value *GetChangeResu
 
 // GetChangeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
 type GetChangeResultProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -3460,7 +3460,7 @@ type GetChangeResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -4449,8 +4449,8 @@ func ValidateGetTestWriterAssignmentResultStorySummaryItemTransport(value *GetTe
 
 // GetTestWriterAssignmentResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type GetTestWriterAssignmentResultTestWriterProgressTransport struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -4911,8 +4911,9 @@ type GetVerificationResultTransport struct {
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent *bool `json:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -5284,7 +5285,7 @@ type ListBuilderAssignmentsResultBuilderAssignmentTransport struct {
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `json:"read"`
 	// Where the test writer's tests for this build stand: not_used when no test
-	// writer is used because the project verifies with its stored evaluator;
+	// writer is used because the project has stored verification settings;
 	// otherwise accepted, with the commit and time, when the build records
 	// accepted tests, and not_yet_accepted when it records none.
 	WrittenTests *ListBuilderAssignmentsResultwrittenTestsTransport `json:"written_tests"`
@@ -5486,9 +5487,9 @@ type ListChangesResultLatestVerificationItemTransport struct {
 	// report.
 	State *string `json:"state"`
 	// Whether this run names the agreed request_revision and the tests selected
-	// now: the accepted test commit of the usable build in force, or the
-	// configured stored evaluator suite. It does not say whether the candidate
-	// working tree, deployment or approval is current.
+	// now: the accepted test commit of the usable build in force, or the evaluator
+	// suite in the stored verification settings. It does not say whether the
+	// candidate working tree, deployment or approval is current.
 	InputsCurrent *bool `json:"inputs_current"`
 }
 
@@ -5521,10 +5522,10 @@ type ListChangesResultTransport struct {
 	// Opaque value for change detection. Compare it only for equality; the
 	// returned fields contain the facts this operation makes readable.
 	Version *string `json:"version"`
-	// Whether approve_merge can record approvals on this server. It is true
-	// whenever Checkpoint 4 verification is configured and any stored promotion
-	// settings could be resolved; it is false when verification is not configured
-	// or when resolving the promotion target returns an error.
+	// Whether approve_merge can record approvals on this server: true when the
+	// server runs Checkpoint 4 verification, as every server surla starts does,
+	// and any stored promotion settings could be resolved; false when the server
+	// runs no verification or resolving the promotion target fails.
 	ApprovalAvailable *bool `json:"approval_available"`
 }
 
@@ -5595,8 +5596,8 @@ func ValidateListTestWriterAssignmentsResultTestWriterAssignmentItemTransport(va
 
 // ListTestWriterAssignmentsResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type ListTestWriterAssignmentsResultTestWriterProgressTransport struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -6350,8 +6351,9 @@ type ListVerificationsResultVerificationStatusResultTransport struct {
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent *bool `json:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
@@ -6954,7 +6956,7 @@ func ValidateProposeChangePayloadCP1AnalysisTransport(value *ProposeChangePayloa
 type ProposeChangePayloadTransport struct {
 	// Unique change identifier.
 	ChangeID *string `json:"change_id"`
-	// Operator feature request.
+	// The user's feature request.
 	Prompt *string `json:"prompt"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this card adopts. When set, Surla reads
@@ -7015,7 +7017,7 @@ func ValidateProposeChangeResultAgentWrittenTestsTransport(value *ProposeChangeR
 type ProposeChangeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -7049,8 +7051,8 @@ type ProposeChangeResultApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -7176,7 +7178,7 @@ func ValidateProposeChangeResultOperatorEvaluatorTestsTransport(value *ProposeCh
 
 // ProposeChangeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -7463,7 +7465,7 @@ type ProposeChangeResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -7975,8 +7977,8 @@ func ValidateReportTestsFinishedPayloadTransport(value *ReportTestsFinishedPaylo
 
 // ReportTestsFinishedResultTestWriterProgressTransport stores JSON fields until they have been validated.
 type ReportTestsFinishedResultTestWriterProgressTransport struct {
-	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// The tests' state: not_used when the project has stored verification
+	// settings; otherwise assigned, reported, needs_changes with the number of
 	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 	// with the reason and the user's step. Each verdict carries the time Surla
 	// reached it.
@@ -8438,7 +8440,7 @@ type ReviseChangePayloadTransport struct {
 	// when the change shows one waiting (proposed_revision.request_revision),
 	// otherwise the change's own.
 	RequestRevision *string `json:"request_revision"`
-	// Revised operator feature request.
+	// The user's revised feature request.
 	Prompt *string `json:"prompt"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
 	// workspace whose evaluated Stories this revision adopts. When set, Surla
@@ -8504,7 +8506,7 @@ func ValidateReviseChangeResultAgentWrittenTestsTransport(value *ReviseChangeRes
 type ReviseChangeResultAmbiguityQuestionTransport struct {
 	// Stable question identifier.
 	ID *string `json:"id"`
-	// Plain-English question for the operator.
+	// Plain-English question for the user.
 	Question *string `json:"question"`
 	// Concrete resolution choices.
 	Options []string `json:"options"`
@@ -8538,8 +8540,8 @@ type ReviseChangeResultApprovalItemTransport struct {
 	// Suite identifier the tests at suite_commit declared in the report (shown,
 	// not compared).
 	SuiteID *string `json:"suite_id"`
-	// Commit of the tests the report ran: the operator's stored evaluator, or the
-	// tests Surla accepted for the change's build.
+	// Commit of the tests the report ran: the evaluator suite commit in the stored
+	// verification settings, or the tests Surla accepted for the change's build.
 	SuiteCommit *string `json:"suite_commit"`
 	// Dependency profile the tests at suite_commit declared in the report, such as
 	// sim or scripted-model (shown, not compared).
@@ -8665,7 +8667,7 @@ func ValidateReviseChangeResultOperatorEvaluatorTestsTransport(value *ReviseChan
 
 // ReviseChangeResultProposedRevisionItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultProposedRevisionItemTransport struct {
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change.
 	Summary *string `json:"summary"`
@@ -8952,7 +8954,7 @@ type ReviseChangeResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Operator feature request for this revision.
+	// The user's feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of the proposed change from propose_change or
 	// revise_change. confirm_intent does not rewrite this text; when status is
@@ -9373,8 +9375,9 @@ type VerifyChangeResultTransport struct {
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
 	// Whether this run's agreed revision and selected tests match the current
-	// Change Card and usable build or stored evaluator. This observation does not
-	// establish the current candidate working tree, deployment or approval.
+	// Change Card and the usable build or the stored verification settings. This
+	// observation does not establish the current candidate working tree,
+	// deployment or approval.
 	InputsCurrent *bool `json:"inputs_current"`
 	// Absolute folder containing the binaries built by this completed run.
 	// Returned only to the user when promotion settings are configured, so the
