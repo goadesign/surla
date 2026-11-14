@@ -2,9 +2,10 @@
 // argument names one action; the probe attempts it and prints one JSON object
 // per line reporting whether the operating system allowed it.
 //
-// Actions: read:<path>, write:<path>, env:<name>, connect:<host:port>,
-// listen:<host:port>, stat:<path>, spawn, stderr:<text> (prints text on
-// standard error), exit:<code> (exits with code at once).
+// Actions: read:<path>, readdir:<path>, write:<path>, env:<name>,
+// connect:<host:port>, listen:<host:port>, stat:<path>, spawn,
+// stderr:<text> (prints text on standard error), exit:<code> (exits with code
+// at once).
 package main
 
 import (
@@ -51,6 +52,9 @@ func attempt(kind, target string, r *result) error {
 	case "read":
 		b, err := os.ReadFile(target)
 		r.Detail = string(b)
+		return err
+	case "readdir":
+		_, err := os.ReadDir(target)
 		return err
 	case "write":
 		return os.WriteFile(target, []byte("probe"), 0o600)

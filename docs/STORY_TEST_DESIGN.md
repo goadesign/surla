@@ -25,7 +25,7 @@ of [each tool](REFERENCE.md#mcp-tools) and of
 | Required test | The evaluation scenario Surla generates for one finished flow, with the hook method the test writer implements for it. |
 | Holdout | The scenario tag that hides a scenario's details from the builder. Tests the builder can read are never hidden, so Surla refuses the tag in written tests. |
 | Run directory | The folder in which one verification run keeps its request, its lock, its result and its logs. |
-| The sandbox | The operating-system sandbox (macOS `sandbox-exec`) in which the server evaluates Stories, builds programs and runs the candidate's programs. |
+| The sandbox | The operating-system sandbox (macOS `sandbox-exec` or Linux Landlock and Seccomp-BPF) in which the server evaluates Stories, builds programs and runs the candidate's programs. |
 | Stored verification settings | A settings file stored for the project with `surla verification set`. It names one evaluator suite at one commit, and every run uses that suite instead of written tests. |
 | Tests commit | The commit of the tests a run uses: the commit of the accepted tests on `surla/tests`, or the suite commit the stored verification settings name. |
 
@@ -180,7 +180,7 @@ Before saving the build, a start refuses, and saves nothing, when:
 | `git_identity_missing` | Git has no name and address to commit accepted tests with. | Configure Git's name and address. |
 | `copy_folder_in_use` | `.surla-tests` exists and is not Surla's working copy. | Move it out of the project. |
 | `tests_branch_in_use` | Another working copy holds `surla/tests`. | The message names that folder and the step that frees the branch. |
-| `sandbox_unavailable` | The system has no candidate sandbox. | Start the project on a system with Surla's sandbox (macOS). |
+| `sandbox_unavailable` | The system has no candidate sandbox. | Start the project on a system with Surla's sandbox (macOS or Linux with Landlock ABI v4+). |
 | `working_copy_busy` | Another start or a report check holds the project's working-copy turn. | Build again when it has ended. |
 
 The start then brings the copy forward to the project's current commit, but

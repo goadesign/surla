@@ -128,7 +128,10 @@ machine and are not isolated from the builder.
 
 Surla needs:
 
-- **macOS.** Surla's sandbox uses macOS `sandbox-exec`. On another system,
+- **macOS or Linux (Landlock ABI v4+, Linux 6.7+).** Surla's candidate sandbox
+  uses macOS `sandbox-exec` or Linux Landlock and Seccomp-BPF (when running
+  `surla` itself inside a Linux container, pass `--cap-add SYS_PTRACE` or
+  `--security-opt seccomp=unconfined`). Where the sandbox is unavailable,
   every step that compiles or runs code in that sandbox is refused, such as
   `surla preview`, `surla gen`, starting a build with a test writer and
   verification.
@@ -218,7 +221,7 @@ These commands need no server, no team and no model key. `surla init`,
 `surla preview` and `surla gen` run Goa inside Surla's sandbox with the
 module's own versions, so no separately installed `goa` is needed. Run them
 from an ordinary terminal, not from inside a coding agent's sandboxed shell:
-macOS cannot start Surla's sandbox inside another one.
+an outer sandbox can prevent Surla's sandbox from starting.
 
 ```bash
 # Scaffold a starter service and its test module:
