@@ -336,6 +336,51 @@ page.close();
 `)
 }
 
+// TestViewsPageExplicitCardReadFailureRequiresRecoveryBeforeApproval starts
+// without a background-read error. A manual card refresh must latch its own
+// failure so the retained positive run cannot become approvable on completion.
+func TestViewsPageExplicitCardReadFailureRequiresRecoveryBeforeApproval(t *testing.T) {
+	cp, card, runsDir := selectedInputsFixture(t)
+	runID := strings.Repeat("1", 32)
+	writeListedRun(t, runsDir, pageOwner, card, runID,
+		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), true)
+	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, map[string]any{"run": runID}, `
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-build-review-check") && !page.$("#surla-build-review-check").disabled, "the initial current result did not load");
+page.$("#surla-refine-agreement").open = true;
+const draft = page.$('textarea[data-field="expected_outcome"]');
+page.type(draft, "Keep this draft while the manual read recovers");
+await control(origin, "reply", { key: "POST /changes/confirm", status: 409, body: { name: "conflict", message: "Inspect the saved agreement before refining." } });
+page.$("#surla-confirm-submit").click();
+await until(() => page.$("#surla-load-latest-card") && !page.$("#surla-load-latest-card").disabled, "the refused refinement did not offer a manual read");
+page.$("#surla-nav-cp4").click();
+await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.$("#surla-cp5-approve") && !page.$("#surla-cp5-approve").disabled, "the saved proof did not become eligible before the explicit read");
+expect(!page.$("#surla-cp4-card-error"), "the test started with a card-read failure already latched");
+const approve = page.$("#surla-cp5-approve");
+const verdict = page.text("#surla-cp4-title");
+const preserved = () => page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title") === verdict && page.$('textarea[data-field="expected_outcome"]') === draft && draft.value === "Keep this draft while the manual read recovers";
+const cardPath = "/changes/chg-selected-inputs";
+await control(origin, "reply", { key: "GET " + cardPath, status: 503, body: { name: "internal", message: "The current agreement is unreadable." } });
+await control(origin, "hold", { key: "GET " + cardPath });
+const before = page.sent("GET", cardPath).length;
+page.$("#surla-load-latest-card").click();
+await until(() => page.sent("GET", cardPath).length > before && approve.disabled, "the pending explicit read left approval enabled");
+expect(preserved(), "the manual read discarded the report or draft");
+await control(origin, "release", { key: "GET " + cardPath });
+await until(() => page.$("#surla-cp4-card-error") && page.$("#surla-cp4-retry-card") && !page.$("#surla-cp4-retry-card").disabled, "the failed explicit read did not latch its own recovery state");
+expect(page.text("#surla-cp4-card-error").includes("HTTP 503") && approve.disabled && preserved(), "the failed explicit read restored approval or discarded work");
+approve.click();
+expect(page.sent("POST", "/changes/approve").length === 0, "the failed manual card refresh submitted approval");
+page.$("#surla-cp4-retry-card").click();
+await until(() => !page.$("#surla-cp4-card-error") && !approve.disabled, "a successful explicit retry did not restore eligibility");
+expect(preserved(), "successful recovery replaced the saved report or draft");
+expect(page.sent("POST", "/changes/approve").length === 0 && page.sent("POST", "/changes/confirm").length === 1, "recovery submitted approval or resubmitted the draft");
+page.close();
+`)
+}
+
 // TestViewsPageBuildRetryInvalidatesProofBeforeTheVersionNotification makes
 // an explicit build read discover changed tests before the held wait channel
 // can announce them. A cached positive run observation cannot survive that

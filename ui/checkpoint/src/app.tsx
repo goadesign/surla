@@ -3159,7 +3159,11 @@ export function bootstrapViewsPage() {
         const prior = nextPriorCard(activeEditor, latestCard);
         mountChangeCard(latestCard, preserved, prior);
       },
-      (message) => showFormError("Could not load the current card and approval: " + message)
+      (message) => {
+        const error = "Could not load the current card and approval: " + message;
+        cardLoadErrors.set(changeId, error);
+        showFormError(error);
+      }
     );
   }
 
