@@ -47,9 +47,13 @@ can run against it.
   the gateway holds the model provider and its API keys.
 - `eval/` is a separate Go module: the starter evaluator suite. It runs the
   `[[.Name]]` binary in Surla's sandbox and serves a scripted model (not an
-  LLM) through its own model gateway. Its three scenarios are:
+  LLM) through its own model gateway. Its four scenarios are:
   - `prices_tea`: asks "How much is tea?" and checks that the agent called
     `lookup_price` and answered from that call's result;
+  - `prices_cookie`: asks "How much is cookie?" and checks the same for
+    cookie. It is the test the Story's finished flow `prices-cookie`
+    requires: the Story table `eval/design/story_tests.go` declares it, and
+    `PricesCookie` in `eval/acceptance` implements it;
   - `unknown_item`: asks "How much is coffee?", which the
     catalog does not price, and checks that the agent calls `lookup_price`
     and reports that it found no price;
@@ -62,7 +66,8 @@ can run against it.
   from `eval/design/` and calls `eval/acceptance`, the package you write: its
   `Name`, `Hooks`, `New`, `Live` and `LiveThroughGateway`. After changing
   `eval/design/`, regenerate its code with
-  `surla gen -dir eval` (or call `generate_code` with `target: "eval"`).
+  `surla gen -dir eval`; the builder can instead call `generate_code` with
+  `target: "eval"`, and the test writer can report to have Surla generate it.
   `eval/design/story_tests.go` lists the tests the Story requires, one
   scenario per finished flow, such as `prices_cookie`. `surla init` wrote it
   from `design/story.go`, and Surla writes it again from the agreed Story when

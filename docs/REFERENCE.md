@@ -1240,7 +1240,8 @@ the table it renders in place of whatever the test writer left at that path;
 the test writer leaves that file as it is. Because the required tests are
 part of the module's design, regenerating the module keeps them. A
 generation that fails writes neither the table nor the generated code, so the
-copy stays as it was. When the start cannot write them, a cause the test
+copy stays as it was; only a symbolic link at the table's path is replaced by
+the table first. When the start cannot write them, a cause the test
 writer can fix, such as a test module design that does not compile, sets the
 tests to `needs_changes` with that finding, at report 0. Any other cause sets
 `could_not_run`, with a reason that says what failed (the start's time

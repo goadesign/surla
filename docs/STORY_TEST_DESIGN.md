@@ -216,9 +216,10 @@ only when that is safe. The result names one of three outcomes:
 Then the start writes the required tests into the copy, after removing any
 `.surla-gen-*` staging folder that a write cut short by a server's death
 left in the test module. It generates the module with the Story table, then
-writes the table beside the generated folder; a generation that fails writes
+writes the table and the generated folder. A generation that fails writes
 neither, so the copy stays as it was and a later build can still bring it
-forward. A problem the test writer can fix, such as a test module design
+forward; only a symbolic link at the table's path is replaced by the table
+first. A problem the test writer can fix, such as a test module design
 that does not compile, makes the test writer's state `needs_changes` with
 that finding, at report number 0. A problem it cannot
 fix makes the state `could_not_run`, with a reason that says what failed:
