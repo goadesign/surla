@@ -200,7 +200,7 @@ func TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits(t *t
 		SuiteCommand:    "./cmd/suite",
 		WorkDir:         workDir,
 		Tests:           TestsEvaluator,
-	})
+	}, os.Environ())
 	var stage *StageError
 	require.ErrorAs(t, err, &stage)
 	assert.Equal(t, "The candidate commit does not contain the configured module.", stage.Summary,
@@ -279,7 +279,7 @@ func TestRunClonesARemoteRepositoryThroughTheUsersGitSettings(t *testing.T) {
 		SuiteCommand:    "./cmd/suite",
 		WorkDir:         t.TempDir(),
 		Tests:           TestsEvaluator,
-	})
+	}, os.Environ())
 	var stage *StageError
 	require.ErrorAs(t, err, &stage)
 	assert.Equal(t, "The candidate commit does not contain the configured module.", stage.Summary,
