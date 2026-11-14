@@ -200,10 +200,33 @@ func TestTeamReminderResponseBound(t *testing.T) {
 			}
 		})
 	}
-	t.Run("reading stops at the bound", func(t *testing.T) {
+	// A response whose first bytes up to the bound are already a complete result
+	// is still longer than the bound when anything follows: it fails as response.
+	for _, tc := range []struct {
+		name  string
+		size  int
+		error bool
+	}{
+		{"complete result padded to just under the bound", teamPostResponseMaxBytes - 1, false},
+		{"complete result padded to the bound", teamPostResponseMaxBytes, false},
+		{"complete result padded past the bound", teamPostResponseMaxBytes + 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := `{"jsonrpc":"2.0","id":1,"result":{"content":[]}}`
+			body := result + strings.Repeat(" ", tc.size-len(result))
+			require.Len(t, body, tc.size)
+			kind := readTeamToolResponse(strings.NewReader(body))
+			if tc.error {
+				assert.Equal(t, "response", kind)
+			} else {
+				assert.Empty(t, kind)
+			}
+		})
+	}
+	t.Run("reading stops one byte past the bound", func(t *testing.T) {
 		endless := &countingReader{}
 		assert.Equal(t, "response", readTeamToolResponse(endless))
-		assert.Equal(t, teamPostResponseMaxBytes, endless.read)
+		assert.Equal(t, teamPostResponseMaxBytes+1, endless.read)
 	})
 }
 

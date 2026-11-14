@@ -160,13 +160,17 @@ func (s teamChorusSender) post(ctx context.Context, tool string, arguments any) 
 	return nil
 }
 
-// readTeamToolResponse reads at most teamPostResponseMaxBytes and returns ""
-// for a successful tool result, or the failure kind. A longer body is cut at
-// the bound and so cannot be decoded: it is a response failure.
+// readTeamToolResponse reads at most one byte past teamPostResponseMaxBytes and
+// returns "" for a successful tool result, or the failure kind. A body longer
+// than the bound is a response failure, even when the bytes up to the bound
+// would decode on their own.
 func readTeamToolResponse(body io.Reader) string {
-	raw, err := io.ReadAll(io.LimitReader(body, teamPostResponseMaxBytes))
+	raw, err := io.ReadAll(io.LimitReader(body, teamPostResponseMaxBytes+1))
 	if err != nil {
 		return teamPostErrorKind(err)
+	}
+	if len(raw) > teamPostResponseMaxBytes {
+		return "response"
 	}
 	var decoded teamToolResponse
 	if err := json.Unmarshal(raw, &decoded); err != nil {
