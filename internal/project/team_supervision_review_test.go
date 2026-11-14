@@ -147,16 +147,17 @@ func TestTeamReminderFailureTelemetry(t *testing.T) {
 	}
 }
 
-// stoppingSender calls stop during the post, before failing it as the fixture
-// does, as a server stop ends the supervisor's context while a post runs.
-type stoppingSender struct {
+// actingSender runs act with the post's context during the post, before
+// failing it as the fixture does: a server stop ending the supervisor's
+// context, or a post's own child context ending, while a post runs.
+type actingSender struct {
 	*supervisionFixture
-	stop func()
+	act func(context.Context)
 }
 
-// Send calls stop, then records and fails the reminder through the fixture.
-func (s stoppingSender) Send(ctx context.Context, reminder TeamReminder) error {
-	s.stop()
+// Send runs act with ctx, then records and fails the reminder through the fixture.
+func (s actingSender) Send(ctx context.Context, reminder TeamReminder) error {
+	s.act(ctx)
 	return s.supervisionFixture.Send(ctx, reminder)
 }
 
@@ -179,11 +180,11 @@ func TestTeamReminderStopRecordsNoAttempt(t *testing.T) {
 			f.sendErr = TeamSendFailure{Post: "who", Kind: "connection"}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			stop := func() {}
+			act := func(context.Context) {}
 			if tc.stopping {
-				stop = cancel
+				act = func(context.Context) { cancel() }
 			}
-			o.server.team.dependencies.Sender = stoppingSender{supervisionFixture: f, stop: stop}
+			o.server.team.dependencies.Sender = actingSender{supervisionFixture: f, act: act}
 			exporter.Reset()
 			o.remind(ctx, now)
 			assert.Len(t, f.sends, 1)
@@ -192,9 +193,51 @@ func TestTeamReminderStopRecordsNoAttempt(t *testing.T) {
 	}
 }
 
+// TestTeamReminderChildContextEndingIsAChorusFailure proves that a post whose
+// own child context times out or is cancelled while the supervisor's context
+// is live is still a failed attempt, with error status, post and kind: only
+// the supervisor's own context ending records nothing.
+func TestTeamReminderChildContextEndingIsAChorusFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		act  func(ctx context.Context)
+		kind string
+	}{
+		{"child deadline", func(ctx context.Context) {
+			child, cancel := context.WithTimeout(ctx, time.Millisecond)
+			defer cancel()
+			<-child.Done()
+		}, "timeout"},
+		{"child cancelled", func(ctx context.Context) {
+			child, cancel := context.WithCancel(ctx)
+			cancel()
+			<-child.Done()
+		}, "connection"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter, _ := recordSpans(t)
+			o, f, now := newSupervisionFixture(t)
+			listed(o, now.Add(-teamJoinSettle), true, "builder-example")
+			f.sendErr = TeamSendFailure{Post: "who", Kind: tc.kind}
+			o.server.team.dependencies.Sender = actingSender{supervisionFixture: f, act: tc.act}
+			exporter.Reset()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			o.remind(ctx, now)
+			spans := reminderSpans(exporter)
+			require.Len(t, spans, 1)
+			assert.Equal(t, codes.Error, spans[0].Status.Code)
+			assert.Equal(t, tc.kind, spanAttribute(spans[0], "team.failure"))
+			assert.Equal(t, "who", spanAttribute(spans[0], "team.post"))
+			assert.Equal(t, "failed", spanAttribute(spans[0], "team.outcome"))
+		})
+	}
+}
+
 // TestTeamReminderStopLeavesRemainingRolesUntried proves that once a post fails
-// because the supervisor's context ended, remind stops: the other eligible
-// role gets no post and its generation stays unattempted.
+// because the supervisor's context ended, remind stops: no span is recorded,
+// the other eligible role gets no post, the tried role's generation stays
+// latched and the untried role's does not.
 func TestTeamReminderStopLeavesRemainingRolesUntried(t *testing.T) {
 	exporter, _ := recordSpans(t)
 	o, f, now := newSupervisionFixture(t)
@@ -202,20 +245,25 @@ func TestTeamReminderStopLeavesRemainingRolesUntried(t *testing.T) {
 	require.NoError(t, err)
 	o.syncSelection(o.server.teamSelection())
 	listed(o, now.Add(-teamJoinSettle), true, "builder-example", "writer-example")
-	setOwed(t, o, map[string][]string{"builder": {"one"}, "test_writer": {"one"}})
+	setOwed(t, o, map[string][]string{"builder": {"one"}, "test_writer": {"two"}})
 	f.sendErr = TeamSendFailure{Post: "who", Kind: "connection"}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	o.server.team.dependencies.Sender = stoppingSender{supervisionFixture: f, stop: cancel}
+	o.server.team.dependencies.Sender = actingSender{supervisionFixture: f, act: func(context.Context) { cancel() }}
 	exporter.Reset()
 	o.remind(ctx, now)
 	require.Len(t, f.sends, 1, "no role after the stopped post is tried")
 	assert.Empty(t, reminderSpans(exporter))
-	untried := "test_writer"
-	if f.sends[0].To == "writer-example" {
-		untried = "builder"
+	tried := map[string]string{"builder-example": "builder", "writer-example": "test_writer"}[f.sends[0].To]
+	other := map[string]string{"builder": "test_writer", "test_writer": "builder"}[tried]
+	require.NotEmpty(t, o.roles[tried].owed)
+	require.NotEmpty(t, o.roles[other].owed)
+	for generation, latched := range o.roles[tried].owed {
+		assert.True(t, latched, "tried %s %s", tried, generation)
 	}
-	assert.False(t, o.roles[untried].owed["one"], "the untried role's generation stays unattempted")
+	for generation, latched := range o.roles[other].owed {
+		assert.False(t, latched, "untried %s %s", other, generation)
+	}
 }
 
 // TestTeamStreamStallBoundary makes one stale role invalidate a healthy peer,

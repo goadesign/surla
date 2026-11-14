@@ -235,8 +235,10 @@ func (c *ControlPlane) verificationPlan(
 //   - With written-test runs, the change's build (read through ownedBuild, so
 //     an unusable build is no build) must be at revision and its tests must be
 //     accepted; it returns that accepted commit and verify.TestsWritten, or
-//     refuses with no_build, or returns testsNotAccepted, which each caller
-//     words for its reader.
+//     refuses with no_build, or returns testsNotAccepted. verificationPlan
+//     and ApproveMerge word that refusal for their readers; ApproveMerge's
+//     second check under the lock and the saved approval's read only test
+//     for an error.
 //   - Without verification configured, it refuses with not_implemented.
 func (c *ControlPlane) testsChoice(
 	principal Principal,

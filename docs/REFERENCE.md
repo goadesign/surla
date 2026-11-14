@@ -1538,13 +1538,13 @@ app, then click Start agents on the views page`.
 
 **Reminders.** Each version of an assignment that a role has not read is a
 generation: a new build gives each of its roles one, every verdict gives the
-test writer one, and an acceptance also gives the builder one. For each
-generation the server sends the role one fixed Chorus direct message, for
-example `Surla: you have an unread assignment. Use list_builder_assignments
-and get_builder_assignment to read it. Surla reads no replies.` It first
-registers its own handle, `surla-` followed by the first 12 characters of the
-project ID, in the team's swarm with the role `Surla server. Sends reminders
-only. Reads no replies.`
+test writer one, and an acceptance also gives the builder one. The server
+sends the role one fixed Chorus direct message for all its generations not yet
+tried, so at most one per generation, for example `Surla: you have an unread
+assignment. Use list_builder_assignments and get_builder_assignment to read
+it. Surla reads no replies.` It first registers its own handle, `surla-`
+followed by the first 12 characters of the project ID, in the team's swarm
+with the role `Surla server. Sends reminders only. Reads no replies.`
 
 A message is sent only after a complete assignment read, and only when the
 last read of Chorus's agent list succeeded and has listed the role's handle
@@ -1553,16 +1553,17 @@ first message. Neither the watcher fact nor the terminal state gates a
 message: Chorus keeps it until the role's next watcher, `read` or `send`. The
 message names nothing about the work and never changes what is owed.
 
-Each post is bounded at 5 seconds and 2 MiB read, and no byte of a response
-is kept. Every attempt records one `surla.team.reminder` span with outcome
-`sent` or `failed`. A failed one has error status, `team.post` (`who` or
-`send`) and `team.failure` (`connection`, `timeout`, `http_status`,
-`rpc_error`, `tool_error` or `response`); no caller sees an error. A post
-that fails because the server is stopping is not a Chorus failure and records
-nothing. A generation is never tried twice, whatever the outcome. Nothing about
-reminders is saved, so after a restart a role that still has an unread
-assignment gets one message again 60 seconds after its handle is listed. A
-`sent` outcome means Chorus accepted the message, not that the agent read it.
+Each post is bounded at 5 seconds, a response longer than 2 MiB fails, and no
+byte of a response is kept. Every attempt records one `surla.team.reminder`
+span with outcome `sent` or `failed`. A failed one has error status,
+`team.post` (`who` or `send`) and `team.failure` (`connection`, `timeout`,
+`http_status`, `rpc_error`, `tool_error` or `response`); no caller sees an
+error. The one exception is an attempt cut short because the server is
+stopping: it is not a Chorus failure and records nothing. A generation is
+never tried twice, whatever the outcome. Nothing about reminders is saved, so
+after a restart a role that still has an unread assignment gets one message
+again 60 seconds after its handle is listed. A `sent` outcome means Chorus
+accepted the message, not that the agent read it.
 
 When the agent stays idle with the assignment unread for 90 seconds, the role
 reads `needs_you` with attention `assignment`, and the views page asks the
