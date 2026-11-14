@@ -77,8 +77,9 @@ type (
 		// testsCommit is the commit Surla recorded the test writer's first
 		// accepted tests at, T1.
 		testsCommit string
-		// runID is the verification run of the builder's commit against T1.
-		runID string
+		// passed is the verification run of the builder's commit against T1,
+		// as it finished with its passed report.
+		passed *gensurla.VerificationStatusResult
 	}
 
 	// journeyRoster is the part of the launcher roster that Chorus turns into
@@ -161,6 +162,10 @@ func (h *Hooks) PricesScone(ctx context.Context) (eval.Result, error) {
 	// sandboxed build and listing have their own 10-minute and 60-second
 	// limits but take seconds here.
 	journeyStepWait = 6 * time.Minute
+	// journeyWrittenTestsNotice is the fixed notice every run of written tests,
+	// and every approval of one, carries.
+	journeyWrittenTestsNotice = "These tests were written by a separate agent on this machine " +
+		"and are not isolated from the builder."
 )
 
 var (
@@ -188,12 +193,14 @@ var (
 // writer and the user can read; a report without the hook the new flow
 // requires is sent back with the compiler's finding naming it; the report
 // with the hook is accepted and recorded on the tests branch, and the
-// builder's assignment names that commit; the
-// builder's commit passes those tests in a sandboxed run that says where the
-// tests came from and that the test writer may read, and the change list
-// shows it as current; and a later acceptance of changed tests leaves that
-// run the change's latest, passed, but no longer current. Each step stops the
-// journey when it fails, because every later step builds on it.
+// builder's assignment names that commit; the builder's commit passes those
+// tests in a sandboxed run that says where the tests came from and that the
+// test writer may read, and the change list shows it as current; the user
+// approves that run on the page without promotion settings, and the approval
+// names the builder's commit and the tests' commit; and a later acceptance of
+// changed tests leaves that run the change's latest, passed, but no longer
+// current, hides its approval, and refuses approving it again. Each step
+// stops the journey when it fails, because every later step builds on it.
 func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 	if err := candidate.CheckSandbox(); err != nil {
 		t.Skipf("the journey builds the starter and its tests in the candidate sandbox: %v", err)
@@ -214,7 +221,9 @@ func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 		{"tests without the required hook are sent back with the compiler's finding", j.sendBackMissingHook},
 		{"the fixed tests are accepted and recorded on the tests branch", j.acceptTests},
 		{"the builder's commit passes the accepted tests", j.verifyAcceptedTests},
-		{"a later acceptance leaves the earlier run passed but no longer current", j.acceptLaterTests},
+		{"the user approves the passing run on the page", j.approvePassedRun},
+		{"a later acceptance leaves the run passed but not current and its approval not shown",
+			j.acceptLaterTests},
 	} {
 		if !t.Run(step.name, step.run) {
 			return
@@ -398,6 +407,8 @@ func (j *wholeJourney) serveProject(t *testing.T) {
 		GetBuildEndpoint:        transport.GetBuild(),
 		GetTestFindingsEndpoint: transport.GetTestFindings(),
 		ListChangesEndpoint:     transport.ListChanges(),
+		GetChangeEndpoint:       transport.GetChange(),
+		ApproveMergeEndpoint:    transport.ApproveMerge(),
 	}
 	seen, err := j.user.GetTeam(ctx)
 	require.NoError(t, err, "the user's session reads the team")
@@ -747,8 +758,7 @@ func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
 	written, ok := run.TestSource.AsWrittenTests()
 	require.True(t, ok, "the run's tests are the written ones: %s", run.TestSource.Kind())
 	assert.Equal(t, j.testsCommit, written.Commit)
-	assert.Equal(t, "These tests were written by a separate agent on this machine "+
-		"and are not isolated from the builder.", written.Notice)
+	assert.Equal(t, journeyWrittenTestsNotice, written.Notice)
 
 	read, err := gensurla.DecodeVerificationStatusResult(
 		trustedSuiteCall(t, ctx, j.testWriter, "get_verification", args))
@@ -771,15 +781,55 @@ func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
 		assert.Equal(t, &gensurla.LatestVerificationItem{RunID: run.RunID, State: "passed", InputsCurrent: true},
 			latest, "the %s sees the run passed, for the revision and tests selected now", who)
 	}
-	j.runID = run.RunID
+	j.passed = run
+}
+
+// approvePassedRun has the user approve the passing run on the page, with the
+// call the page's Approve control makes. The project has no promotion
+// settings, so the page offers approval and the approval records no binary
+// digests; it names the builder's commit, the accepted tests' commit, the
+// suite and environment the run's report declared, and where the tests came
+// from. The user's next read of the change returns the same approval.
+func (j *wholeJourney) approvePassedRun(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	list, err := j.user.ListChanges(ctx)
+	require.NoError(t, err)
+	assert.True(t, list.ApprovalAvailable, "the page offers approval without promotion settings")
+
+	approved, err := j.user.ApproveMerge(ctx, j.approvePayload(t))
+	require.NoError(t, err)
+	completed, ok := j.passed.State.AsCompleted()
+	require.True(t, ok)
+	want := &gensurla.ApprovalItem{
+		ApprovedBy:      j.state.Record.Owner,
+		ReportDigest:    completed.Report.ReportDigest,
+		CandidateCommit: j.passed.CandidateCommit,
+		SuiteID:         completed.SuiteID,
+		SuiteCommit:     j.testsCommit,
+		Environment:     completed.Environment,
+		Artifacts:       map[string]string{},
+		ScenarioCount:   len(journeyScenarios),
+		TestSource: gensurla.NewApprovalTestSourceWrittenTests(&gensurla.AgentWrittenTests{
+			Commit: j.testsCommit, Notice: journeyWrittenTestsNotice,
+		}),
+	}
+	assert.Equal(t, j.confirmed, approved.RequestRevision, "approval does not change the revision")
+	assert.Equal(t, want, approved.Approval)
+	read, err := j.user.GetChange(ctx, &gensurla.GetChangePayload{ChangeID: journeyChangeID})
+	require.NoError(t, err)
+	assert.Equal(t, want, read.Approval, "the user's next read of the change returns the approval")
+	assert.Nil(t, read.UnverifiedApproval)
 }
 
 // acceptLaterTests has the test writer change a comment in its test module
-// after the passing run and report again. Surla accepts and records the
-// changed tests at a new commit, and the builder's assignment names it; the
-// earlier run, which ran the earlier tests, stays the change's latest
-// verification, still passed, and the builder and the user's page see that
-// its inputs are no longer current.
+// after the passing run was approved and report again. Surla accepts and
+// records the changed tests at a new commit, and the builder's assignment
+// names it; the earlier run, which ran the earlier tests, stays the change's
+// latest verification, still passed, and the builder and the user's page see
+// that its inputs are no longer current. The user's read of the change no
+// longer shows the approval of the earlier tests, and approving that run
+// again is refused with the builder's step.
 func (j *wholeJourney) acceptLaterTests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
@@ -805,7 +855,7 @@ func (j *wholeJourney) acceptLaterTests(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, accepted.Commit, shown.Commit, "the builder sees the new tests")
 
-	args, err := gensurla.EncodeGetVerificationPayload(&gensurla.GetVerificationPayload{RunID: j.runID})
+	args, err := gensurla.EncodeGetVerificationPayload(&gensurla.GetVerificationPayload{RunID: j.passed.RunID})
 	require.NoError(t, err)
 	earlier, err := gensurla.DecodeVerificationStatusResult(
 		trustedSuiteCall(t, ctx, j.builder, "get_verification", args))
@@ -814,9 +864,36 @@ func (j *wholeJourney) acceptLaterTests(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, completed.Report.Passed, "the earlier run still reads passed")
 	assert.Equal(t, j.testsCommit, earlier.SuiteCommit, "it ran the earlier tests")
+	notCurrent := &gensurla.LatestVerificationItem{RunID: j.passed.RunID, State: "passed", InputsCurrent: false}
 	for who, latest := range j.latestVerifications(t, ctx) {
-		assert.Equal(t, &gensurla.LatestVerificationItem{RunID: j.runID, State: "passed", InputsCurrent: false},
-			latest, "the %s sees the earlier run passed, for tests no longer selected", who)
+		assert.Equal(t, notCurrent, latest, "the %s sees the earlier run passed, for tests no longer selected", who)
+	}
+
+	read, err := j.user.GetChange(ctx, &gensurla.GetChangePayload{ChangeID: journeyChangeID})
+	require.NoError(t, err)
+	assert.Nil(t, read.Approval, "the approval of the earlier tests is no longer shown")
+	assert.Nil(t, read.UnverifiedApproval)
+	_, err = j.user.ApproveMerge(ctx, j.approvePayload(t))
+	var refused *goa.ServiceError
+	require.ErrorAs(t, err, &refused, "approving the run of the earlier tests is refused")
+	assert.Equal(t, "unprocessable", refused.Name)
+	assert.Contains(t, refused.Message, "the report ran the tests at "+j.testsCommit)
+	assert.Contains(t, refused.Message, accepted.Commit, "the refusal names the accepted tests")
+	assert.Contains(t, refused.Message, "the builder verifies the candidate again")
+}
+
+// approvePayload returns what the page's Approve control sends for the
+// passing run: the change and its agreed revision, and the run's candidate
+// commit and report digest.
+func (j *wholeJourney) approvePayload(t *testing.T) *gensurla.ApproveMergePayload {
+	t.Helper()
+	completed, ok := j.passed.State.AsCompleted()
+	require.True(t, ok, "only a finished run is approved")
+	return &gensurla.ApproveMergePayload{
+		ChangeID:        journeyChangeID,
+		RequestRevision: j.confirmed,
+		CandidateCommit: j.passed.CandidateCommit,
+		ReportDigest:    completed.Report.ReportDigest,
 	}
 }
 
