@@ -300,6 +300,21 @@ func TestStartBuildRefusalsReachTheHTTPConsumer(t *testing.T) {
 			if name == "tests_branch_in_use" {
 				assert.Equal(t, branchMessage, refusal.Message, "the library's recovery text is propagated unchanged")
 			}
+			if name == "sandbox_unavailable" {
+				cp.buildSandboxCheck = func() error {
+					return fmt.Errorf(
+						"%w: pidfd_getfd(child) failed (operation not permitted): if running inside a container, pass --cap-add SYS_PTRACE or --security-opt seccomp=unconfined",
+						candidate.ErrIsolationUnavailable,
+					)
+				}
+				statusDetail, bodyDetail := httpCall(t, server.URL, "fixture", http.MethodPost, "/changes/chg/build", `{"request_revision":"`+card.RequestRevision+`"}`)
+				assert.Equal(t, http.StatusNotImplemented, statusDetail, bodyDetail)
+				var refusalDetail struct{ Name, Message string }
+				require.NoError(t, json.Unmarshal([]byte(bodyDetail), &refusalDetail))
+				assert.Equal(t, "sandbox_unavailable", refusalDetail.Name)
+				assert.Contains(t, refusalDetail.Message, "pidfd_getfd(child) failed (operation not permitted): if running inside a container, pass --cap-add SYS_PTRACE or --security-opt seccomp=unconfined")
+				assert.True(t, strings.HasSuffix(refusalDetail.Message, step), refusalDetail.Message)
+			}
 			assertNoBuildSaved(t, cp, "chg")
 			assert.Empty(t, cp.team.Service.(*teamServiceFixture).calls)
 		})

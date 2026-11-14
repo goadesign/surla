@@ -293,7 +293,7 @@ func goEnv() []string {
 		"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"),
 		"CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local", "GOFLAGS=",
 	}
-	for _, name := range []string{"GOMODCACHE", "GOCACHE", "GOPROXY", "GOSUMDB", "GOPRIVATE", "GONOPROXY", "GONOSUMDB"} {
+	for _, name := range []string{"GOPATH", "GOMODCACHE", "GOCACHE", "GOPROXY", "GOSUMDB", "GOPRIVATE", "GONOPROXY", "GONOSUMDB"} {
 		if v, ok := os.LookupEnv(name); ok {
 			env = append(env, name+"="+v)
 		}

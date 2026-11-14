@@ -265,13 +265,13 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 			name: "candidate modifies hand-written file in test module", build: accepted, tests: repo.tests, candidate: repo.modifiedTestFile,
 			refusal: "conflict",
 			reason:  "candidate commit " + repo.modifiedTestFile + " changes hand-written files in the test module services/shop/eval since base commit " + repo.tests + " (services/shop/eval/acceptance/hooks.go); tests in services/shop/eval belong to the test writer, not the builder",
-			step:    "restore services/shop/eval to base commit " + repo.tests + " (git restore --source=" + repo.tests + " --staged --worktree -- ':(top,literal)services/shop/eval/acceptance/hooks.go'), commit, and call verify_change again",
+			step:    "restore services/shop/eval to base commit " + repo.tests + " (git restore --source=" + repo.tests + " --staged --worktree -- ':(top,literal)services/shop/eval/acceptance/hooks.go'), commit, and call verify_change or start_live_target again",
 		},
 		{
 			name: "candidate adds hand-written file in test module", build: accepted, tests: repo.tests, candidate: repo.addedTestFile,
 			refusal: "conflict",
 			reason:  "candidate commit " + repo.addedTestFile + " changes hand-written files in the test module services/shop/eval since base commit " + repo.tests + " (services/shop/eval/acceptance/helper.go); tests in services/shop/eval belong to the test writer, not the builder",
-			step:    "restore services/shop/eval to base commit " + repo.tests + " (git rm -f -- ':(top,literal)services/shop/eval/acceptance/helper.go'), commit, and call verify_change again",
+			step:    "restore services/shop/eval to base commit " + repo.tests + " (git rm -f -- ':(top,literal)services/shop/eval/acceptance/helper.go'), commit, and call verify_change or start_live_target again",
 		},
 		{
 			name: "candidate shares no history with accepted tests", build: accepted, tests: repo.tests, candidate: repo.orphanCandidate,
@@ -544,8 +544,8 @@ func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 
 // TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange verifies
 // the test-module guard across the builder's full workflow:
-//   - start_live_target and stored verification are not guarded when the
-//     candidate modifies hand-written files in <testModule>;
+//   - stored verification does not apply this guard; written-test live starts
+//     share verification's guard, covered by the refusal table above;
 //   - regenerating <testModule>/gen/... and <testModule>/AGENTS_QUICKSTART.md
 //     is allowed, whereas a sibling path starting with "gen" outside gen/
 //     (<testModule>/genx/notgen.go) is refused;
@@ -712,7 +712,7 @@ func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *test
 		"candidate commit "+badCommit+" changes hand-written files in the test module services/shop/eval since base commit "+m1+
 			" (services/shop/eval/acceptance/helper.go, services/shop/eval/acceptance/hooks.go, services/shop/eval/acceptance/story_test.go);"+
 			" tests in services/shop/eval belong to the test writer, not the builder:"+
-			" restore services/shop/eval to base commit "+m1+" ("+wantCmd+"), commit, and call verify_change again")
+			" restore services/shop/eval to base commit "+m1+" ("+wantCmd+"), commit, and call verify_change or start_live_target again")
 
 	// Execute the refusal message's exact recovery command from repo.workspace
 	// (the nested project folder services/shop), commit, and verify again.
@@ -741,7 +741,7 @@ func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *test
 	})
 	wantRestoreDeleted := "git restore --source=" + m1 + " --staged --worktree -- ':(top,literal)services/shop/eval/acceptance/hooks.go'"
 	assertRefusalSays(t, err, "conflict",
-		"restore services/shop/eval to base commit "+m1+" ("+wantRestoreDeleted+"), commit, and call verify_change again")
+		"restore services/shop/eval to base commit "+m1+" ("+wantRestoreDeleted+"), commit, and call verify_change or start_live_target again")
 	cmd = exec.Command("sh", "-c", wantRestoreDeleted)
 	cmd.Dir = repo.workspace
 	out, runErr = cmd.CombinedOutput()
@@ -822,7 +822,7 @@ func TestVerifyChangeTestModuleFileLimitBelowAtAndAbove(t *testing.T) {
 				idx := strings.Index(msg, marker)
 				require.NotEqual(t, -1, idx, msg)
 				rest := msg[idx+len(marker):]
-				end := strings.Index(rest, "), commit, and call verify_change again")
+				end := strings.Index(rest, "), commit, and call verify_change or start_live_target again")
 				require.NotEqual(t, -1, end, msg)
 				return rest[:end]
 			}

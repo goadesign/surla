@@ -3033,8 +3033,8 @@ export function bootstrapViewsPage() {
 
   // handleApprove asks the server to record approval of run's passed report
   // for the exact card revision shown. A stale revision uses the editor's
-  // recovery; a project without promotion settings shows approval as
-  // unavailable with the server's reason.
+  // recovery. Approval can be recorded without promotion settings; a configured
+  // promotion target also checks its release inputs before approval.
   function handleApprove(run: VerificationStatusResult) {
     const current = runsById.get(run.run_id);
     const card = activeEditor?.card;
