@@ -43,7 +43,7 @@ an operation, who may call it, what it returns and how it refuses.
 
 | Need | Why | How to get it |
 | --- | --- | --- |
-| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
+| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with every request setting the server holds for the chosen provider (see [`hand_over_model_settings`](#hand_over_model_settings)), its key, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
 | **Go 1.27.3 or later** | `surla` is a Go program, and the project's checks use Go. Surla runs Goa inside its sandbox with each module's own versions, so no `goa` binary is needed. | [go.dev/dl](https://go.dev/dl/) |
 | **Surla** | The command itself. | `go install github.com/goadesign/surla/cmd/surla@latest` |
 | **Herdr core** (`herdr-core` and `hc`) | The server and every agent run in Herdr terminals. | `curl -fsSL https://releases.herdr.dev/core/install.sh \| sh` ([herdr.dev/core](https://herdr.dev/core/)) |
@@ -118,7 +118,9 @@ be prepared, `surla` prints no team lines but still opens the views page,
 because confirming and approving there need no agent, prints the last line,
 and then fails with `surla: the project team is not ready: ` followed by
 what failed and the step that repairs it (see
-[`ensure_team`](#ensure_team-management)); **Start agents** on the views
+[`ensure_team`](#ensure_team-management)). When Chorus or the Herdr app
+could not be started, that step is `run chorus up, then run surla again` or
+`open Herdr, then run surla again`; otherwise **Start agents** on the views
 page tries again.
 
 <a id="model-provider-settings"></a>
@@ -682,10 +684,10 @@ Lists the project's Change Cards, most recently saved first (ties by
 (`needs_confirmation` or `confirmed`), the `request_revision` in force,
 `proposed_revision` while a proposed revision waits, `saved_at`, and
 `latest_verification`, absent when no run was started. `approval_available` is
-`false` when the server runs no verification and has no promotion target, the
-release check that stored promotion settings configure. It is also `false`
-when resolving that target fails: the list still answers, and the error is
-recorded on the read's span
+`false` when the server runs no verification, even with a promotion target
+(the release check that stored promotion settings configure). It is also
+`false` when resolving that target fails: the list still answers, and the
+error is recorded on the read's span
 (`surla.controlplane.list_changes`, or `surla.controlplane.wait_for_changes`
 on each of its polls). A server started by `surla` always runs verification,
 with or without promotion settings, so there it is `true`.
@@ -1148,10 +1150,11 @@ the Herdr core holds reaches a live target, a verification or a check; only
 Herdr's own programs, which the server runs with the environment it started
 with, still receive them. A live target's test program, including a candidate
 commit's test module that agents wrote, receives the chosen provider's held
-settings. A verification with an operator's stored evaluator receives every
-held provider's settings, as held when it is accepted. Tests a separate agent
-wrote for a verification, and the check helper, receive none. A live target
-or verification already running keeps the settings it started with.
+settings. A verification with the evaluator in stored verification settings
+receives every held provider's settings, as held when it is accepted. Tests a
+separate agent wrote for a verification, and the check helper, receive none.
+A live target or verification already running keeps the settings it started
+with.
 
 | Refusal | When |
 | --- | --- |
@@ -1521,13 +1524,13 @@ starts, so a revision proposed or adopted later does not change them. The
 test writer may not read the change with `get_change`, so these fields are
 how its tests learn what the user agreed: the tests must hold the service to
 them as well as to the Story's flows. For example, when the user answered
-"Without tax" to "Does the $50 limit include tax?", a test checks that an
-order of $50.00 before tax is refunded at once. Surla's check of a report
-confirms the required tests, not what they assert. Reading the assignment of
-a build that holds no example, such as one saved by a `surla` without these
-fields, fails with `the build of change "<change_id>" holds none of the
-agreed answers, examples and preserved behaviors; the user builds this change
-again on the views page`.
+"Without tax" to "Does the $50 limit include tax?" and the limit itself
+includes $50.00, a test checks that an order of $50.00 before tax is refunded
+at once. Surla's check of a report confirms the required tests, not what they
+assert. Reading the assignment of a build that holds no example, such as one
+saved by a `surla` without these fields, fails with `the build of change
+"<change_id>" holds none of the agreed answers, examples and preserved
+behaviors; the user builds this change again on the views page`.
 
 The test writer aligns the service interface in its copy with the agreed
 design, writes the tests in `eval/` of `working_folder`, checks them with
@@ -1629,7 +1632,7 @@ which opens anyway:
 
 A team request from `surla` that runs out of time prints `project team
 request did not finish because Herdr did not answer in time; open the Herdr
-app, then click Start agents on the views page`.
+app, then click Start agents on the views page: context deadline exceeded`.
 
 **Reminders.** Each version of an assignment that a role has not read is a
 generation: a new build gives each of its roles one, every verdict gives the

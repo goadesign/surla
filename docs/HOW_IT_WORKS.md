@@ -126,7 +126,9 @@ and prints the command that installs it, or the folder to add to your
    role in the open Chorus dialog in Herdr.` If the team cannot be prepared,
    `surla` still opens the page, because confirming and approving need no
    agent, and then prints `the project team is not ready:` with what failed
-   and the step that repairs it; **Start agents** on the page tries again.
+   and the step that repairs it. When Chorus or the Herdr app could not be
+   started, that step is `run chorus up, then run surla again` or `open Herdr,
+   then run surla again`; otherwise **Start agents** on the page tries again.
 3. **The page opens.** `surla` opens the page in your browser through a
    single-use link and prints `Surla is running for <folder> at <address>`.
    To open the page again later, run `surla` again in the same folder.
