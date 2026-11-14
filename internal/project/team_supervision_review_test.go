@@ -192,6 +192,32 @@ func TestTeamReminderStopRecordsNoAttempt(t *testing.T) {
 	}
 }
 
+// TestTeamReminderStopLeavesRemainingRolesUntried proves that once a post fails
+// because the supervisor's context ended, remind stops: the other eligible
+// role gets no post and its generation stays unattempted.
+func TestTeamReminderStopLeavesRemainingRolesUntried(t *testing.T) {
+	exporter, _ := recordSpans(t)
+	o, f, now := newSupervisionFixture(t)
+	_, err := registerTestAgent(o.server, "writer-example", "test_writer", o.server.state.Record.Directory)
+	require.NoError(t, err)
+	o.syncSelection(o.server.teamSelection())
+	listed(o, now.Add(-teamJoinSettle), true, "builder-example", "writer-example")
+	setOwed(t, o, map[string][]string{"builder": {"one"}, "test_writer": {"one"}})
+	f.sendErr = TeamSendFailure{Post: "who", Kind: "connection"}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	o.server.team.dependencies.Sender = stoppingSender{supervisionFixture: f, stop: cancel}
+	exporter.Reset()
+	o.remind(ctx, now)
+	require.Len(t, f.sends, 1, "no role after the stopped post is tried")
+	assert.Empty(t, reminderSpans(exporter))
+	untried := "test_writer"
+	if f.sends[0].To == "writer-example" {
+		untried = "builder"
+	}
+	assert.False(t, o.roles[untried].owed["one"], "the untried role's generation stays unattempted")
+}
+
 // TestTeamStreamStallBoundary makes one stale role invalidate a healthy peer,
 // then proves heartbeats cannot recover either role without fresh snapshots.
 func TestTeamStreamStallBoundary(t *testing.T) {
