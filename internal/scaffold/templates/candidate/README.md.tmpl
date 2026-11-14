@@ -63,6 +63,13 @@ can run against it.
   `Name`, `Hooks`, `New`, `Live` and `LiveThroughGateway`. After changing
   `eval/design/`, regenerate its code with
   `surla gen -dir eval` (or call `generate_code` with `target: "eval"`).
+  `eval/design/story_tests.go` lists the tests the Story requires, one
+  scenario per finished flow, such as `prices_cookie`. `surla init` wrote it
+  from `design/story.go`, and Surla writes it again from the agreed Story when
+  a build starts and at each report of the test writer; leave it as it is.
+  Regenerating `eval/` keeps those tests. If you store verification settings
+  for another suite, no build writes it again, and it is yours to keep or
+  delete.
 
 The evaluator suite lives in this repository, so anyone who can read the code
 can read its scenarios; none of them is hidden. Keep scenarios that must stay

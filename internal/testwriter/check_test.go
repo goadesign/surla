@@ -326,9 +326,9 @@ func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
 
 // TestCheckWantsExactlyOneEvaluationSuite gives the copy's design two
 // suites, then none, each with a Story that requires tests and with one that
-// requires none: Check says the module must declare exactly one evaluation
-// suite and how many it declares, never a build error about a missing
-// package. A module whose acceptance package was deleted, and one whose path
+// requires none: the Story table Check writes says the module must declare
+// exactly one evaluation suite and how many it declares, never a build error
+// about a missing package. A module whose acceptance package was deleted, and one whose path
 // is outside Surla's test layout, get no generated program, and Check says
 // what makes a module a Surla test module.
 func TestCheckWantsExactlyOneEvaluationSuite(t *testing.T) {
@@ -362,8 +362,9 @@ var _ = Suite("second", func() {
 				require.NoError(t, err)
 				require.Len(t, v.Findings, 1, "%+v", v.Findings)
 				assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
-				assert.Contains(t, v.Findings[0].Message, "exactly one evaluation suite")
+				assert.Contains(t, v.Findings[0].Message, "the test module must declare exactly one evaluation suite")
 				assert.Contains(t, v.Findings[0].Message, tc.count)
+				assert.Contains(t, v.Findings[0].Message, "keep exactly one Suite(...) in design/")
 				assertNoAbsolutePath(t, v.Findings)
 			})
 		}

@@ -9,6 +9,13 @@ change. The program builds the evaluation suite `{{ .Suite }}` from the generate
 tests in `gen/evals/{{ .Suite }}` and from your package `acceptance`. Write only
 that package; a `main` package of your own is never built. Every run declares the
 environment `{{ .Environment }}`.
+{{- if .StoryTests }}
+
+This module's `design/story_tests.go` declares one scenario per finished flow of
+the project's Story, each run by the `Hooks` method of the same name.
+Regenerating this module keeps those scenarios. The file is generated from the
+Story: do not edit it by hand.
+{{- end }}
 
 The program calls exactly these names in `acceptance`:
 
