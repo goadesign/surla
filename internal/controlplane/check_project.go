@@ -1,9 +1,11 @@
 // This file implements check_project: copy the active workspace's live grant
-// into a per-operation directory and run go test ./... for every workspace
-// module in Linux containers, after downloading dependencies against a
-// read-only copy. surla serve binds the workspace and creates and locks the
-// operation's directory; the check helper process (check_helper.go) then
-// owns that directory, its containers and its output until it exits.
+// into a per-operation directory and run go test ./... for every builder-owned
+// workspace module in Linux containers (leaving out the starter test module
+// eval when the project's tests belong to the test writer), after downloading
+// dependencies against a read-only copy. surla serve binds the workspace and
+// creates and locks the operation's directory; the check helper process
+// (check_helper.go) then owns that directory, its containers and its output
+// until it exits.
 package controlplane
 
 import (
@@ -73,6 +75,10 @@ type (
 		// goProxyEnv is the operator's module proxy settings for download
 		// containers.
 		goProxyEnv []string
+		// storedEvaluator is true when the project verifies with stored
+		// verification settings, so check_project and update_dependencies
+		// include eval/.
+		storedEvaluator bool
 		// engine is the operation's resolved local Docker engine.
 		engine *candidate.Engine
 		// out captures every container's output.
@@ -113,9 +119,11 @@ const (
 
 // CheckProject copies the active workspace's live files into a protected
 // per-operation copy and runs go test ./... for every Go module in it in
-// Linux containers, never changing the workspace. The work runs in a check
-// helper process that finishes and cleans up the operation even if this
-// server dies. It requires an authenticated principal.
+// Linux containers (except the starter test module eval when the project has no
+// stored verification settings, because those tests belong to the test writer),
+// never changing the workspace. The work runs in a check helper process that
+// finishes and cleans up the operation even if this server dies. It requires an
+// authenticated principal.
 func (c *ControlPlane) CheckProject(ctx context.Context) (res *gensurla.CheckProjectResult, retErr error) {
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -270,12 +278,18 @@ func (c *ControlPlane) recoverCheckOperation(span trace.Span, id string) error {
 }
 
 // checkProject runs check_project's operation inside the check helper: it
-// prepares the operation, runs go list -deps -test ./... then go test ./...
-// for every module, and finishes the operation directory. Errors are the
-// caller-facing errors, already joined with the output ID by finish.
+// prepares the operation, leaves out the starter test module eval when the
+// project's tests belong to the test writer, runs go list -deps -test ./...
+// then go test ./... for every remaining module, and finishes the operation
+// directory. Errors are the caller-facing errors, already joined with the
+// output ID by finish.
 func (op *checkOperation) checkProject(ctx context.Context) (*gensurla.CheckProjectResult, error) {
 	if err := op.start(ctx); err != nil {
 		return nil, err
+	}
+	leftOutTestModule := op.leaveOutStarterTestModule()
+	if leftOutTestModule {
+		fmt.Fprintf(op.out, "note: %s\n", skippedTestModuleNote)
 	}
 	var failures []moduleOutcome
 	for _, mod := range op.copy.modules {
@@ -298,7 +312,7 @@ func (op *checkOperation) checkProject(ctx context.Context) (*gensurla.CheckProj
 	return &gensurla.CheckProjectResult{
 		OpID:    op.id,
 		Passed:  len(failures) == 0,
-		Message: op.message(failures),
+		Message: op.message(failures, leftOutTestModule),
 	}, nil
 }
 
@@ -519,16 +533,22 @@ func (op *checkOperation) finish(cause error) error {
 	return withOutput
 }
 
-// message is the result message: the modules tested, then the first
-// failure and the end of its output, bounded as a whole.
-func (op *checkOperation) message(failures []moduleOutcome) string {
+// message is the result message: the modules tested, whether the starter test
+// module was left out, then the first failure and the end of its output,
+// bounded as a whole.
+func (op *checkOperation) message(failures []moduleOutcome, leftOutTestModule bool) string {
 	head := fmt.Sprintf("tested %d module(s): ", len(op.copy.modules))
 	list := strings.Join(op.copy.modules, ", ")
+	note := ""
+	if leftOutTestModule {
+		note = ". " + skippedTestModuleNote
+	}
 	if len(failures) == 0 {
-		return op.boundedMessage(head, list, ". All passed.", nil)
+		return op.boundedMessage(head, list, note+". All passed.", nil)
 	}
 	f := failures[0]
 	var b strings.Builder
+	b.WriteString(note)
 	switch f.step {
 	case "download":
 		fmt.Fprintf(&b, ". Dependencies for %s could not be prepared (go list exited %d). If Go reports a missing go.sum or go.work.sum entry, or a go.mod update, call update_dependencies and check again.", f.dir, f.exitCode)

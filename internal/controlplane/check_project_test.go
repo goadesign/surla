@@ -820,17 +820,18 @@ func TestResultMessagesAreBoundedAsAWhole(t *testing.T) {
 	t.Run("check passes with many modules", func(t *testing.T) {
 		op := newOp(t, "", 0)
 		op.copy.modules = manyModules
-		msg := op.message(nil)
+		msg := op.message(nil, true)
 		assert.LessOrEqual(t, len(msg), maxCheckMessageBytes)
 		assert.True(t, strings.HasPrefix(msg, "tested 3000 module(s): services/module-0000"))
 		assert.Contains(t, msg, "read_check_output(op_id) has the full list")
+		assert.Contains(t, msg, skippedTestModuleNote)
 		assert.True(t, strings.HasSuffix(msg, ". All passed."))
 	})
 	t.Run("check fails with many modules and long output", func(t *testing.T) {
 		op := newOp(t, output, 7)
 		op.copy.modules = manyModules
 		f := moduleOutcome{dir: "services/module-2999", step: "test", exitCode: 1, start: 0, end: int64(len(output))}
-		msg := op.message([]moduleOutcome{f, f})
+		msg := op.message([]moduleOutcome{f, f}, false)
 		assert.LessOrEqual(t, len(msg), maxCheckMessageBytes)
 		assert.Contains(t, msg, "services/module-2999 failed: go test exited 1. 1 other module step(s) also failed.")
 		assert.Contains(t, msg, "--- FAIL: TestLast")
@@ -841,7 +842,7 @@ func TestResultMessagesAreBoundedAsAWhole(t *testing.T) {
 		op := newOp(t, raw, 0)
 		op.copy.modules = []string{"."}
 		f := moduleOutcome{dir: ".", step: "test", exitCode: 2, start: 0, end: int64(len(raw))}
-		msg := op.message([]moduleOutcome{f})
+		msg := op.message([]moduleOutcome{f}, false)
 		assert.True(t, utf8.ValidString(msg))
 		assert.LessOrEqual(t, len(msg), maxCheckMessageBytes, "the replacement characters fit the budget")
 		assert.Contains(t, msg, "\ufffd")

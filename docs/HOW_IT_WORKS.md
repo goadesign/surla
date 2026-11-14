@@ -405,13 +405,26 @@ rather than of your shell, so `surla` hands the settings over itself; see
 
 ## Verifying the builder's commit
 
+In a project that builds with a test writer (without stored verification
+settings), the test module `eval/` (`eval/design/` included) belongs to the
+test writer: the builder leaves `eval/` untouched, `check_project` and
+`update_dependencies` leave `eval/` out and say so, and if the Story
+(`design/story.go`) or the test module's contract needs to change, the builder
+asks you so the guide can draft and you can confirm a revision.
+
 The builder commits its code and calls `verify_change` with the change, the
 revision from its assignment and its commit. Without stored verification
 settings, the server refuses before running anything when the revision has no
 build (`no_build`), when the build's tests are not accepted
-(`tests_not_accepted`, naming the test writer's state), or when a commit lacks
-the test layout (`no_test_layout`). Each refusal names who acts next; see
-[`verify_change`](REFERENCE.md#verify_change).
+(`tests_not_accepted`, naming the test writer's state), when a commit lacks
+the test layout (`no_test_layout`), when the candidate commit shares no
+history with the accepted tests' commit (`conflict`, naming the user's step:
+delete the test writer's working copy and branch, then build the change again),
+or when the candidate commit changes hand-written files in
+`eval/` (`conflict`, naming the changed files and the `git restore` / `git rm`
+step, and noting on `eval/go.mod` edits that renaming the service module is
+yours to do on your own branch between changes). Each refusal names who acts
+next; see [`verify_change`](REFERENCE.md#verify_change).
 
 An accepted call returns a run ID at once. The run happens in its own
 **run directory**: a folder the server keeps outside the project, holding the

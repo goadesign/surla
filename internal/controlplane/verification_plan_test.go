@@ -65,18 +65,45 @@ func TestStarterPlanReadsTheCommittedLayout(t *testing.T) {
 		repo := realTempDir(t)
 		gitForLayoutTest(t, repo, "init", "-q")
 		writeStarterAt(t, repo, "example.com/orders")
+		require.NoError(t, os.RemoveAll(filepath.Join(repo, "cmd")))
+		tests := commitAllForLayoutTest(t, repo)
+		writeTree(t, repo, map[string]string{
+			"cmd/orders/main.go":   "package main\n",
+			"cmd/orders/refund.go": "package main\n",
+		})
+		require.NoError(t, os.RemoveAll(filepath.Join(repo, "eval", "gen")))
+		candidate := commitAllForLayoutTest(t, repo)
+
+		plan, err := planServer(t, repo).starterPlanAt(t.Context(), candidate, tests, testWriterActs)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{"orders": "./cmd/orders"}, plan.Binaries, "the tests' commit has no cmd/orders")
+		assert.Equal(t, "./gen/cmd/orders-evals", plan.SuiteCommand, "the candidate commit has no eval/gen")
+		assert.Equal(t, candidate, plan.CandidateCommit)
+		assert.Equal(t, tests, plan.SuiteCommit)
+	})
+
+	t.Run("candidate module rename is refused because it changes eval/go.mod", func(t *testing.T) {
+		repo := realTempDir(t)
+		gitForLayoutTest(t, repo, "init", "-q")
+		writeStarterAt(t, repo, "example.com/orders")
 		tests := commitAllForLayoutTest(t, repo)
 		require.NoError(t, os.RemoveAll(filepath.Join(repo, "cmd")))
 		require.NoError(t, os.RemoveAll(filepath.Join(repo, "eval")))
 		writeStarterAt(t, repo, "example.com/shop")
 		candidate := commitAllForLayoutTest(t, repo)
 
-		plan, err := planServer(t, repo).starterPlanAt(t.Context(), candidate, tests, testWriterActs)
-		require.NoError(t, err)
-		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, plan.Binaries, "the tests' commit declares orders")
-		assert.Equal(t, "./gen/cmd/orders-evals", plan.SuiteCommand, "the tests' own entry point")
-		assert.Equal(t, candidate, plan.CandidateCommit)
-		assert.Equal(t, tests, plan.SuiteCommit)
+		_, err := planServer(t, repo).starterPlanAt(t.Context(), candidate, tests, testWriterActs)
+		var refusal *layoutRefusal
+		require.ErrorAs(t, err, &refusal)
+		assert.Equal(t, refusedTestModuleChanged, refusal.reason)
+		assert.Equal(t, tests, refusal.baseCommit)
+		assert.Equal(t, "eval", refusal.testModule)
+		assert.Equal(t, []changedGitFile{{path: "eval/go.mod"}}, refusal.changed)
+		assert.ErrorContains(t, err,
+			"candidate commit "+candidate+" changes hand-written files in the test module eval since base commit "+tests+" (eval/go.mod);"+
+				" tests in eval belong to the test writer, not the builder;"+
+				" renaming the service module is the user's to do on their own branch between changes, not during a build:"+
+				" restore eval to base commit "+tests+" (git restore --source="+tests+" --staged --worktree -- ':(top,literal)eval/go.mod'), commit, and call verify_change again")
 	})
 
 	t.Run("committed layout wins over working files", func(t *testing.T) {

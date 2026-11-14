@@ -63,11 +63,15 @@ can run against it.
   `[[.Name]]` for the Surla project server's `start_live_target`, planning with the model
   the Surla project server was started with. Its program,
   `eval/gen/cmd/[[.Name]]-evals`, is generated with the rest of `eval/gen/`
-  from `eval/design/` and calls `eval/acceptance`, the package you write: its
-  `Name`, `Hooks`, `New`, `Live` and `LiveThroughGateway`. After changing
-  `eval/design/`, regenerate its code with
-  `surla gen -dir eval`; the builder can instead call `generate_code` with
-  `target: "eval"`, and the test writer can report to have Surla generate it.
+  from `eval/design/` and calls `eval/acceptance`: its `Name`, `Hooks`,
+  `New`, `Live` and `LiveThroughGateway`. When a build runs with a test
+  writer (without stored verification settings), `eval/` (`eval/design/`
+  included) belongs to the test writer, and Surla regenerates `eval/gen/` at
+  build start and on each report; after changing `eval/design/`, the test
+  writer reports to have Surla generate it again or runs `surla gen -dir eval`
+  from a shell that is not sandboxed. If you edit `eval/design/` yourself
+  outside a build, regenerate its code with `surla gen -dir eval` (or have the
+  builder call `generate_code` with `target: "eval"`).
   `eval/design/story_tests.go` lists the tests the Story requires, one
   scenario per finished flow, such as `prices_cookie`. `surla init` wrote it
   from `design/story.go`, and Surla writes it again from the agreed Story when
@@ -104,15 +108,22 @@ For each change:
 1. The guide describes the change with `propose_change`, and with
    `revise_change` when it changes. You confirm it on the views page, which
    also shows its architecture preview (`preview_architecture`).
-2. The builder edits the code. When it edits `design/`, it first calls
-   `generate_code` (with `target: "eval"` when it edits `eval/design/`), then
-   updates the hand-written code to match.
-3. The builder calls `check_project` to build and test its uncommitted files,
-   this module and `eval/`, in Linux containers (Docker required). When it
-   cannot download dependencies and its output shows a missing `go.sum` or
-   `go.work.sum` entry or a `go.mod` update, it calls `update_dependencies` and
-   checks again. `read_check_output` returns the captured output, page by
-   page, for the `op_id` in either result.
+2. The builder edits the service code in this module. In a project that
+   builds with a test writer (without stored verification settings), the test
+   module `eval/` (`eval/design/` included) belongs to the test writer: the
+   builder leaves `eval/` untouched, and if the Story (`design/story.go`) or
+   the test module's contract needs a change, asks you so the guide can draft
+   and you can confirm a revised change. When the builder edits `design/`, it
+   first calls `generate_code`, then updates the hand-written code to match.
+3. The builder calls `check_project` to build and test its uncommitted files
+   in Linux containers (Docker required), leaving `eval/` out when the project
+   has no stored verification settings (or testing both modules when stored
+   verification settings are configured). When it cannot download dependencies
+   and its output shows a missing `go.sum` or `go.work.sum` entry or a `go.mod`
+   update, it calls `update_dependencies` (which likewise leaves `eval/` out
+   when the project has no stored verification settings) and checks again.
+   `read_check_output` returns the captured output, page by page, for the
+   `op_id` in either result.
 4. The builder commits, then passes the new commit ID as `candidate_commit` to
    `start_live_target` and `verify_change`.
 

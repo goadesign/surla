@@ -40,6 +40,7 @@ import (
 
 	"github.com/goadesign/surla"
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/gitenv"
 	"github.com/goadesign/surla/internal/procgroup"
 )
 
@@ -611,39 +612,19 @@ func commitScaffold(ctx context.Context, staging, logs string, run Runner) (stri
 	return commit, nil
 }
 
-// commandEnv returns os.Environ() with repository-, worktree-, index-, object-,
-// template-, and attribute-redirecting Git variables removed and isolated
-// Go/Git non-interactive settings appended, while preserving the operator's
-// Git identity and commit signing configuration.
+// commandEnv returns os.Environ() without the variables that would make git
+// act on another repository, work tree, index, object store or reference
+// store (gitenv.WithoutRedirects) and with isolated Go/Git non-interactive
+// settings appended, while preserving the operator's Git identity and commit
+// signing configuration. Beyond the redirects it drops GIT_TEMPLATE_DIR as a
+// second guard: the first commit's git init already passes --template=, which
+// ignores an inherited template folder. It also drops the five variables it
+// sets again below, so each holds only its isolated value.
 func commandEnv(logDir string) []string {
-	base := os.Environ()
-	env := make([]string, 0, len(base)+5)
-	for _, kv := range base {
-		key, _, _ := strings.Cut(kv, "=")
-		switch key {
-		case "GIT_DIR",
-			"GIT_WORK_TREE",
-			"GIT_INDEX_FILE",
-			"GIT_OBJECT_DIRECTORY",
-			"GIT_ALTERNATE_OBJECT_DIRECTORIES",
-			"GIT_COMMON_DIR",
-			"GIT_REPLACE_REF_BASE",
-			"GIT_TEMPLATE_DIR",
-			"GIT_NAMESPACE",
-			"GIT_CEILING_DIRECTORIES",
-			"GIT_DISCOVERY_ACROSS_FILESYSTEM",
-			"GIT_PREFIX",
-			"GIT_SUPER_PREFIX",
-			"GIT_SHALLOW_FILE",
-			"GIT_ATTR_NOSYSTEM",
-			"GIT_TERMINAL_PROMPT",
-			"GOWORK",
-			"TMPDIR",
-			"GOTMPDIR":
-			continue
-		}
-		env = append(env, kv)
-	}
+	env := gitenv.WithoutRedirects(os.Environ(),
+		"GIT_TEMPLATE_DIR",
+		"GIT_ATTR_NOSYSTEM", "GIT_TERMINAL_PROMPT", "GOWORK", "TMPDIR", "GOTMPDIR",
+	)
 	return append(env,
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_ATTR_NOSYSTEM=1",
