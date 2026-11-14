@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
 
@@ -28,13 +29,18 @@ type (
 		overflow bool
 	}
 
+	// changedGitFile is a committed path under the test module that a
+	// candidate commit added, changed or deleted since its base commit.
+	changedGitFile struct {
+		// path is the slash-separated path from the repository root.
+		path string
+		// added reports that the base commit does not have path.
+		added bool
+	}
+
 	// gitEntryKind is what a committed path is.
 	gitEntryKind int
 )
-
-// errNoRepository is resolveStarterRepo's error for a folder outside any git
-// repository.
-var errNoRepository = errors.New("not inside a git repository")
 
 const (
 	// layoutReadTimeout bounds all the git queries one verification plan or
@@ -57,6 +63,10 @@ const (
 	// gitOther is anything else at the path: a link, a submodule.
 	gitOther
 )
+
+// errNoRepository is resolveStarterRepo's error for a folder outside any git
+// repository.
+var errNoRepository = errors.New("not inside a git repository")
 
 // Write appends p, or records the overflow and fails when p would take the
 // stream past limit, so the git command stops instead of producing output
@@ -114,6 +124,64 @@ func commitExists(ctx context.Context, repoRoot, commit string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// mergeBaseCommit returns a best common ancestor of a and b in repoRoot.
+// git merge-base exits 1, printing nothing, only when the commits share no
+// common ancestor; any other failure is an error.
+func mergeBaseCommit(ctx context.Context, repoRoot, a, b string) (base string, found bool, err error) {
+	out, err := runGitRead(ctx, repoRoot, "merge-base", a, b)
+	if err == nil {
+		base = strings.TrimSpace(string(out))
+		return base, base != "", nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return "", false, nil
+	}
+	return "", false, err
+}
+
+// changedTestModuleFiles returns the hand-written paths under testModule
+// (such as "eval" or "services/shop/eval") that differ between baseCommit and
+// candidateCommit in repoRoot, in git diff-tree's lexical order. Generated
+// files under <testModule>/gen/ and <testModule>/AGENTS_QUICKSTART.md are
+// excluded because generate_code(target: "eval") rewrites them from the design.
+func changedTestModuleFiles(
+	ctx context.Context, repoRoot, baseCommit, candidateCommit, testModule string,
+) ([]changedGitFile, error) {
+	out, err := runGitRead(
+		ctx, repoRoot,
+		"diff-tree", "-r", "-z", "--name-status", "--no-renames",
+		baseCommit, candidateCommit, "--", testModule,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compare %s between %s and %s: %w", testModule, baseCommit, candidateCommit, err)
+	}
+	fields := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	if len(fields) == 1 && fields[0] == "" {
+		return nil, nil
+	}
+	if len(fields)%2 != 0 {
+		return nil, fmt.Errorf("git diff-tree printed an odd number of fields (%d)", len(fields))
+	}
+	var changed []changedGitFile
+	for i := 0; i < len(fields); i += 2 {
+		status, p := fields[i], fields[i+1]
+		if isGeneratedTestModuleFile(testModule, p) {
+			continue
+		}
+		changed = append(changed, changedGitFile{path: p, added: status == "A"})
+	}
+	return changed, nil
+}
+
+// isGeneratedTestModuleFile reports whether p is a file under testModule that
+// generate_code(target: "eval") owns (<testModule>/AGENTS_QUICKSTART.md or
+// anything under <testModule>/gen/).
+func isGeneratedTestModuleFile(testModule, p string) bool {
+	return p == path.Join(testModule, "AGENTS_QUICKSTART.md") ||
+		strings.HasPrefix(p, testModule+"/gen/")
 }
 
 // readGitBlob reads the committed regular file at <commit>:<treePath> in

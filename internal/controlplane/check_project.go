@@ -73,6 +73,9 @@ type (
 		// goProxyEnv is the operator's module proxy settings for download
 		// containers.
 		goProxyEnv []string
+		// storedEvaluator is true when the project verifies with stored
+		// verification settings, so update_dependencies includes eval/.
+		storedEvaluator bool
 		// engine is the operation's resolved local Docker engine.
 		engine *candidate.Engine
 		// out captures every container's output.

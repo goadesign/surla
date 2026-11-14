@@ -923,7 +923,10 @@ output with [`read_check_output`](#read_check_output). When the message says
 
 Runs `go mod tidy` for every module in the same kind of private copy and
 containers, with network, then writes back only the `go.mod`, `go.sum` and
-`go.work.sum` files whose bytes changed. A file that is a symlink, or that
+`go.work.sum` files whose bytes changed. Without stored verification settings,
+when the project has the starter test layout (`go.mod` and `eval/go.mod` for
+`<module>/eval`), `eval` is left out (`Left test module eval out (tests belong
+to the test writer)`). A file that is a symlink, or that
 someone edited during the call, is not written, and `message` says why.
 Modules and files are written one at a time, so a stopped call can leave a
 module with its updated `go.mod` and its earlier `go.sum`; `message` lists
@@ -1105,7 +1108,7 @@ verification settings runs with the server's environment.
 | `no_build` | The user has not built the agreed revision, the build is of another revision (named), or the build was started without a test writer while verification settings were stored, and they have since been removed. The user builds again. |
 | `tests_not_accepted` | Surla has not accepted the build's tests. The message names their state (assigned, reported, needs changes, could not run) and who acts next. |
 | `no_test_layout` | A commit lacks the layout, naming what is missing: the builder fixes its commit, or the test writer reports again for the tests commit. Also an accepted tests commit the repository does not hold (the test writer reports again, or the user builds again), and a project folder in no Git repository (make it one and commit). |
-| `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); or the project folder was replaced after the server started (stop and start Surla). |
+| `conflict` | The card is not confirmed or `request_revision` is stale; `candidate_commit` is not in the repository (commit it and try again); without stored verification settings, `candidate_commit` changes hand-written files of the test module since the last commit it shares with the accepted tests commit (`eval/gen/...` and `eval/AGENTS_QUICKSTART.md` excluded; the message names up to 20 files and the `git restore` or `git rm -f` command to restore or remove them and commit again) or shares no commit with the accepted tests commit (build again after repairing the repository history); or the project folder was replaced after the server started (stop and start Surla). |
 
 `not_found` (`404`) means no card has this `change_id`.
 

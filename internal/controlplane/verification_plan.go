@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/scaffold"
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/internal/verify"
 )
 
@@ -68,14 +70,16 @@ type (
 	layoutActor string
 
 	// refusalReason is why starterPlanAt refuses: refusedReplacedFolder,
-	// refusedNoRepository, refusedUnknownCommit, refusedMissingTests or
-	// refusedNoLayout.
+	// refusedNoRepository, refusedUnknownCommit, refusedMissingTests,
+	// refusedNoLayout, refusedTestModuleChanged or refusedNoCommonBase.
 	refusalReason int
 
 	// layoutRefusal is starterPlanAt's refusal: the project folder was
 	// replaced or is not in a git repository, the repository does not hold
-	// the candidate commit or the accepted tests' commit, or a commit lacks
-	// the test layout. Each caller maps it to its own declared error.
+	// the candidate commit or the accepted tests' commit, a commit lacks
+	// the test layout, the candidate commit has no common history with the
+	// accepted tests' commit, or the candidate commit changed hand-written
+	// files in the test module. Each caller maps it to its own declared error.
 	layoutRefusal struct {
 		// reason is why starterPlanAt refused.
 		reason refusalReason
@@ -83,8 +87,20 @@ type (
 		// refusedNoRepository.
 		folder string
 		// commit is the commit refused, for refusedUnknownCommit,
-		// refusedMissingTests and refusedNoLayout.
+		// refusedMissingTests, refusedNoLayout, refusedTestModuleChanged and
+		// refusedNoCommonBase.
 		commit string
+		// testsCommit is the accepted tests' commit, for refusedNoCommonBase.
+		testsCommit string
+		// baseCommit is the common ancestor of the accepted tests' commit and
+		// the candidate commit, for refusedTestModuleChanged.
+		baseCommit string
+		// testModule is the repository-relative test module folder, for
+		// refusedTestModuleChanged.
+		testModule string
+		// changed lists the hand-written files under testModule that differ
+		// between baseCommit and commit, for refusedTestModuleChanged.
+		changed []changedGitFile
 		// actor is who changes that commit, for refusedMissingTests and
 		// refusedNoLayout.
 		actor layoutActor
@@ -98,6 +114,9 @@ const (
 	builderActs layoutActor = "builder"
 	// testWriterActs refuses an accepted tests' commit without the layout.
 	testWriterActs layoutActor = "test writer"
+	// maxChangedTestFiles bounds how many changed test-module paths one
+	// refusal message names in full.
+	maxChangedTestFiles = 20
 )
 
 const (
@@ -116,6 +135,13 @@ const (
 	// refusedNoLayout is a commit without the test layout `surla init`
 	// makes.
 	refusedNoLayout
+	// refusedTestModuleChanged is a candidate commit that changed
+	// hand-written files in the test module since its common ancestor with
+	// the accepted tests' commit.
+	refusedTestModuleChanged
+	// refusedNoCommonBase is a candidate commit that shares no common
+	// ancestor with the accepted tests' commit.
+	refusedNoCommonBase
 )
 
 // Error says what is refused, why and who acts.
@@ -132,6 +158,37 @@ func (r *layoutRefusal) Error() string {
 			" make the project folder a git repository and commit it", r.folder)
 	case refusedUnknownCommit:
 		return fmt.Sprintf("the candidate commit %s is not in the project's repository; commit it and try again", r.commit)
+	case refusedNoCommonBase:
+		return fmt.Sprintf("candidate commit %s shares no history with the accepted tests' commit %s:"+
+			" commit the candidate on the project branch that the build started from, then verify again", r.commit, r.testsCommit)
+	case refusedTestModuleChanged:
+		shown := r.changed[:min(len(r.changed), maxChangedTestFiles)]
+		names := make([]string, len(shown))
+		var restore, remove []string
+		for i, c := range shown {
+			names[i] = c.path
+			spec := shquote.Quote(":(top,literal)" + c.path)
+			if c.added {
+				remove = append(remove, spec)
+			} else {
+				restore = append(restore, spec)
+			}
+		}
+		list := strings.Join(names, ", ")
+		if rest := len(r.changed) - len(shown); rest > 0 {
+			list = fmt.Sprintf("%s (and %d more)", list, rest)
+		}
+		var cmds []string
+		if len(restore) > 0 {
+			cmds = append(cmds, fmt.Sprintf("git restore --source=%s --staged --worktree -- %s", r.baseCommit, strings.Join(restore, " ")))
+		}
+		if len(remove) > 0 {
+			cmds = append(cmds, fmt.Sprintf("git rm -f -- %s", strings.Join(remove, " ")))
+		}
+		return fmt.Sprintf("candidate commit %s changes hand-written files in the test module %s since base commit %s (%s);"+
+			" tests in %s belong to the test writer, not the builder:"+
+			" restore %s to base commit %s (%s), commit, and call verify_change again",
+			r.commit, r.testModule, r.baseCommit, list, r.testModule, r.testModule, r.baseCommit, strings.Join(cmds, " && "))
 	}
 	step := "the builder commits the layout surla init makes and verifies again"
 	if r.actor == testWriterActs {
@@ -179,7 +236,10 @@ func (c *ControlPlane) verificationPlan(
 		plan, err := c.starterPlanAt(ctx, candidateCommit, testsCommit, testWriterActs)
 		var refusal *layoutRefusal
 		switch {
-		case errors.As(err, &refusal) && (refusal.reason == refusedUnknownCommit || refusal.reason == refusedReplacedFolder):
+		case errors.As(err, &refusal) && (refusal.reason == refusedUnknownCommit ||
+			refusal.reason == refusedReplacedFolder ||
+			refusal.reason == refusedTestModuleChanged ||
+			refusal.reason == refusedNoCommonBase):
 			return VerificationConfig{}, gensurla.MakeConflict(refusal)
 		case errors.As(err, &refusal):
 			return VerificationConfig{}, refuseNoTestLayout(refusal)
@@ -304,6 +364,32 @@ func (c *ControlPlane) starterPlanAt(ctx context.Context, candidateCommit, tests
 	entry := tests.GeneratedSuiteCommand()
 	if err := requireLayoutTree(ctx, repoRoot, testsCommit, path.Join(testModule, entry), testsActor); err != nil {
 		return verify.Plan{}, err
+	}
+	if testsCommit != candidateCommit {
+		base, hasBase, err := mergeBaseCommit(ctx, repoRoot, testsCommit, candidateCommit)
+		if err != nil {
+			return verify.Plan{}, err
+		}
+		if !hasBase {
+			return verify.Plan{}, &layoutRefusal{
+				reason:      refusedNoCommonBase,
+				commit:      candidateCommit,
+				testsCommit: testsCommit,
+			}
+		}
+		changed, err := changedTestModuleFiles(ctx, repoRoot, base, candidateCommit, testModule)
+		if err != nil {
+			return verify.Plan{}, err
+		}
+		if len(changed) > 0 {
+			return verify.Plan{}, &layoutRefusal{
+				reason:     refusedTestModuleChanged,
+				commit:     candidateCommit,
+				baseCommit: base,
+				testModule: testModule,
+				changed:    changed,
+			}
+		}
 	}
 	return verify.Plan{
 		CandidateRepo:   repoRoot,

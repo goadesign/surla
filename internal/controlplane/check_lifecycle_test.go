@@ -339,6 +339,7 @@ func TestUpdateDependenciesLifecycle(t *testing.T) {
 		})
 		clients := newCheckTestServer(t, Options{
 			WorkspaceDir: workspace,
+			Verification: &VerificationConfig{RunsDir: realTempDir(t)},
 			GoProxyEnv:   []string{"GOPROXY=https://proxy.example.test"},
 		})
 		daemon.setOnStart(func(c *recordedContainer) (string, string, int) {
@@ -370,6 +371,49 @@ func TestUpdateDependenciesLifecycle(t *testing.T) {
 		assert.Contains(t, res.Message, "go tidy failed for broken (exit 1); its files were not written.")
 		assertFileContent(t, filepath.Join(workspace, "go.sum"), "new-root-sum\n")
 		assertFileContent(t, filepath.Join(workspace, "eval", "go.sum"), "created-eval-sum\n")
+		assertFileContent(t, filepath.Join(workspace, "broken", "go.sum"), "keep-broken-sum\n")
+	})
+
+	t.Run("written_test_verification_leaves_starter_test_module_untouched", func(t *testing.T) {
+		workspace := newShopModule(t, map[string]string{
+			"go.sum":        "old-root-sum\n",
+			"eval/go.mod":   "module example.com/shop/eval\n\ngo 1.24\n",
+			"eval/go.sum":   "keep-eval-sum\n",
+			"broken/go.mod": "module example.com/shop/broken\n\ngo 1.24\n",
+			"broken/go.sum": "keep-broken-sum\n",
+		})
+		clients := newCheckTestServer(t, Options{
+			WorkspaceDir:    workspace,
+			RunsDir:         realTempDir(t),
+			WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Timeout: time.Minute},
+			GoProxyEnv:      []string{"GOPROXY=https://proxy.example.test"},
+		})
+		daemon.setOnStart(func(c *recordedContainer) (string, string, int) {
+			srcMount := findMount(t, c, workspace)
+			rel, err := filepath.Rel(workspace, c.WorkDir)
+			assert.NoError(t, err)
+			assert.NotEqual(t, "eval", filepath.ToSlash(rel), "go mod tidy must not run in eval")
+			stagedSum := filepath.Join(srcMount.Source, rel, "go.sum")
+			switch filepath.ToSlash(rel) {
+			case ".":
+				assert.NoError(t, os.WriteFile(stagedSum, []byte("new-root-sum\n"), 0o644))
+				// Even if a container mutated eval/go.sum in the copy,
+				// publishManifests must leave eval/ out.
+				assert.NoError(t, os.WriteFile(filepath.Join(srcMount.Source, "eval", "go.sum"), []byte("mutated-eval-sum\n"), 0o644))
+				return "tidied root\n", "", 0
+			default:
+				assert.NoError(t, os.WriteFile(stagedSum, []byte("corrupted-by-failed-tidy\n"), 0o644))
+				return "", "example.com/shop/broken: missing package\n", 1
+			}
+		})
+
+		res := callMCPTool(t, clients.mcpClient, "update_dependencies", `{}`, gensurla.DecodeUpdateDependenciesResult)
+		assert.Equal(t, []string{"go.sum"}, res.FilesWritten)
+		assert.Contains(t, res.Message, "Wrote 1 file(s): go.sum. Left test module eval out (tests belong to the test writer).")
+		assert.Contains(t, res.Message, "go tidy failed for broken (exit 1); its files were not written.")
+		assertFileContent(t, filepath.Join(workspace, "go.sum"), "new-root-sum\n")
+		assertFileContent(t, filepath.Join(workspace, "eval", "go.mod"), "module example.com/shop/eval\n\ngo 1.24\n")
+		assertFileContent(t, filepath.Join(workspace, "eval", "go.sum"), "keep-eval-sum\n")
 		assertFileContent(t, filepath.Join(workspace, "broken", "go.sum"), "keep-broken-sum\n")
 	})
 

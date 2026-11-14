@@ -1,7 +1,8 @@
 // This file implements update_dependencies: run go mod tidy for every
-// workspace module in a protected copy inside Linux containers, then write
-// only the changed go.mod, go.sum and go.work.sum files back to the live
-// workspace through descriptors that never follow a link.
+// builder-owned workspace module in a protected copy inside Linux containers
+// (leaving out the starter test module eval when the project's tests belong to
+// the test writer), then write only the changed go.mod, go.sum and go.work.sum
+// files back to the live workspace through descriptors that never follow a link.
 package controlplane
 
 import (
@@ -22,11 +23,17 @@ import (
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/renameat"
+	"github.com/goadesign/surla/internal/scaffold"
 )
 
-// maxCleanupWarningBytes bounds the post-write failure text in an
-// update_dependencies message, so it never displaces the written paths.
-const maxCleanupWarningBytes = 2 << 10
+const (
+	// maxCleanupWarningBytes bounds the post-write failure text in an
+	// update_dependencies message, so it never displaces the written paths.
+	maxCleanupWarningBytes = 2 << 10
+	// skippedTestModuleNote explains in update_dependencies' result and
+	// output why the starter test module eval was left untouched.
+	skippedTestModuleNote = "Left test module eval out (tests belong to the test writer)"
+)
 
 var (
 	// errManifestConflict reports that a live manifest cannot be updated
@@ -42,13 +49,14 @@ var (
 )
 
 // UpdateDependencies runs go mod tidy for every Go module of the active
-// workspace in a protected copy, populates go.work.sum when the copy has a
-// go.work, and publishes only the changed manifests. The work runs in a
-// check helper process that finishes and cleans up the operation even if
-// this server dies. Modules are published one at a time with Go's normal
-// partial semantics. Once a manifest is replaced, later failures are
-// reported next to the written paths, never instead of them. It requires an
-// authenticated principal.
+// workspace in a protected copy (except the starter test module eval when the
+// project has no stored verification settings, because those tests belong to
+// the test writer), populates go.work.sum when the copy has a go.work, and
+// publishes only the changed manifests. The work runs in a check helper
+// process that finishes and cleans up the operation even if this server dies.
+// Modules are published one at a time with Go's normal partial semantics. Once
+// a manifest is replaced, later failures are reported next to the written
+// paths, never instead of them. It requires an authenticated principal.
 func (c *ControlPlane) UpdateDependencies(ctx context.Context) (res *gensurla.UpdateDependenciesResult, retErr error) {
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -83,6 +91,10 @@ func (op *checkOperation) updateDependencies(ctx context.Context) (*gensurla.Upd
 	if err := op.start(ctx); err != nil {
 		return nil, err
 	}
+	leftOutTestModule := op.leaveOutStarterTestModule()
+	if leftOutTestModule {
+		fmt.Fprintf(op.out, "note: %s\n", skippedTestModuleNote)
+	}
 	var failures []moduleOutcome
 	for _, mod := range op.copy.modules {
 		if f, ok, err := op.runGo(ctx, mod, "tidy", "bridge", false, op.goProxyEnv, "mod", "tidy"); err != nil {
@@ -104,6 +116,9 @@ func (op *checkOperation) updateDependencies(ctx context.Context) (*gensurla.Upd
 	if canceled && len(written) == 0 {
 		return nil, op.finish(fmt.Errorf("check exceeded check timeout (%s) or was canceled before writing the dependency files; nothing was written: %w", op.checkTimeout, ctx.Err()))
 	}
+	if leftOutTestModule {
+		notes = append([]string{skippedTestModuleNote}, notes...)
+	}
 	warning := ""
 	if err := op.finish(nil); err != nil {
 		if len(written) == 0 {
@@ -117,6 +132,29 @@ func (op *checkOperation) updateDependencies(ctx context.Context) (*gensurla.Upd
 		FilesWritten: written,
 		Message:      op.updateMessage(written, notes, warning, failures),
 	}, nil
+}
+
+// leaveOutStarterTestModule removes the starter test module (eval) from
+// op.copy.modules when the project has no stored verification settings and
+// the workspace holds a starter test layout (go.mod and eval/go.mod accepted
+// by scaffold.StarterLayout). Tests in eval then belong to the test writer,
+// so update_dependencies neither tidies nor writes eval/go.mod or eval/go.sum.
+func (op *checkOperation) leaveOutStarterTestModule() bool {
+	if op.storedEvaluator || !slices.Contains(op.copy.modules, ".") || !slices.Contains(op.copy.modules, scaffold.SuiteDir) {
+		return false
+	}
+	rootMod, rootOK := op.copy.manifests[path.Join(op.moduleGrantRel("."), "go.mod")]
+	evalMod, evalOK := op.copy.manifests[path.Join(op.moduleGrantRel(scaffold.SuiteDir), "go.mod")]
+	if !rootOK || !evalOK || len(rootMod) > maxLayoutFileBytes || len(evalMod) > maxLayoutFileBytes {
+		return false
+	}
+	if _, err := scaffold.StarterLayout(rootMod, evalMod); err != nil {
+		return false
+	}
+	op.copy.modules = slices.DeleteFunc(op.copy.modules, func(mod string) bool {
+		return mod == scaffold.SuiteDir
+	})
+	return true
 }
 
 // hasGoWork reports whether the copy holds a go.work file.
