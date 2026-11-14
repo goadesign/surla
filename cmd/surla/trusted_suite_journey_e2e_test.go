@@ -183,11 +183,12 @@ func writeStarterPromotion(t *testing.T, workspace, service string) promotionFil
 	return promotion
 }
 
-// assertTrustedSuiteJourney starts and stops a real live candidate, then walks
-// the Change Card journey a coding agent follows through MCP on a server with
-// no model provider key: propose_change with the agent's own analysis (one
-// open question), confirm_intent with the answer, preview_architecture of the
-// workspace design, verify_change of the candidate, and approve_merge of the
+// assertTrustedSuiteJourney walks the Change Card journey a coding agent
+// follows through MCP on a server with no model provider key: propose_change
+// with the agent's own analysis (one open question), confirm_intent with the
+// answer, start and stop a real live candidate for that confirmed change,
+// preview_architecture of the workspace design, verify_change of the
+// candidate, and approve_merge of the
 // passed report against the operator's promotion configuration. It checks the
 // saved plan and full report retain the operator's suite commit and the
 // confirmed revision. The operator stages the binaries that verification
@@ -199,35 +200,9 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	cardsDir, runsDir, candidateCommit, suiteCommit, changeID string, promotion promotionFile,
 ) {
 	t.Helper()
-	liveCtx, cancelLive := context.WithTimeout(t.Context(), journeyOwnerWait)
-	defer cancelLive()
-	args, err := gensurla.EncodeStartLiveTargetPayload(&gensurla.StartLiveTargetPayload{CandidateCommit: candidateCommit})
-	require.NoError(t, err)
-	started, err := gensurla.DecodeLiveTargetResult(trustedSuiteCall(t, liveCtx, client, "start_live_target", args))
-	require.NoError(t, err)
-	assert.Equal(t, candidateCommit, started.CandidateCommit)
-	assert.NotEmpty(t, started.URL)
-	liveDirs, err := verifyrun.LeftoverLiveDirs(filepath.Join(cardsDir, "live"))
-	require.NoError(t, err)
-	require.Len(t, liveDirs, 1)
-	planJSON, err := os.ReadFile(filepath.Join(liveDirs[0], "live.json"))
-	require.NoError(t, err)
-	var live verifyrun.LiveRequest
-	require.NoError(t, json.Unmarshal(planJSON, &live))
-	assert.Equal(t, candidateCommit, live.Plan.CandidateCommit)
-	assert.Equal(t, suiteCommit, live.Plan.SuiteCommit)
-	stopCtx, cancelStop := context.WithTimeout(t.Context(), 45*time.Second)
-	defer cancelStop()
-	stopped, err := gensurla.DecodeStopLiveTargetResult(trustedSuiteCall(t, stopCtx, client, "stop_live_target", []byte(`{}`)))
-	require.NoError(t, err)
-	assert.True(t, stopped.Stopped)
-	liveDirs, err = verifyrun.LeftoverLiveDirs(filepath.Join(cardsDir, "live"))
-	require.NoError(t, err)
-	assert.Empty(t, liveDirs, "stopping the live target removes its processes and directory")
-
 	phase, cancel := context.WithTimeout(t.Context(), journeyOwnerWait)
 	defer cancel()
-	args, err = gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
+	args, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
 		ChangeID: changeID, Prompt: "Keep answering price questions.",
 		Analysis: &gensurla.CP1Analysis{
 			Summary: "The helper keeps answering price questions through the price API.",
@@ -258,6 +233,35 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	card, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "confirm_intent", args))
 	require.NoError(t, err)
 	require.Equal(t, controlplane.StatusConfirmed, card.Status)
+
+	liveCtx, cancelLive := context.WithTimeout(t.Context(), journeyOwnerWait)
+	defer cancelLive()
+	args, err = gensurla.EncodeStartLiveTargetPayload(&gensurla.StartLiveTargetPayload{
+		ChangeID: card.ChangeID, CandidateCommit: candidateCommit,
+	})
+	require.NoError(t, err)
+	started, err := gensurla.DecodeLiveTargetResult(trustedSuiteCall(t, liveCtx, client, "start_live_target", args))
+	require.NoError(t, err)
+	assert.Equal(t, candidateCommit, started.CandidateCommit)
+	assert.NotEmpty(t, started.URL)
+	liveDirs, err := verifyrun.LeftoverLiveDirs(filepath.Join(cardsDir, "live"))
+	require.NoError(t, err)
+	require.Len(t, liveDirs, 1)
+	planJSON, err := os.ReadFile(filepath.Join(liveDirs[0], "live.json"))
+	require.NoError(t, err)
+	var live verifyrun.LiveRequest
+	require.NoError(t, json.Unmarshal(planJSON, &live))
+	assert.Equal(t, candidateCommit, live.Plan.CandidateCommit)
+	assert.Equal(t, suiteCommit, live.Plan.SuiteCommit)
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancelStop()
+	stopped, err := gensurla.DecodeStopLiveTargetResult(trustedSuiteCall(t, stopCtx, client, "stop_live_target", []byte(`{}`)))
+	require.NoError(t, err)
+	assert.True(t, stopped.Stopped)
+	liveDirs, err = verifyrun.LeftoverLiveDirs(filepath.Join(cardsDir, "live"))
+	require.NoError(t, err)
+	assert.Empty(t, liveDirs, "stopping the live target removes its processes and directory")
+
 	args, err = gensurla.EncodePreviewArchitecturePayload(&gensurla.PreviewArchitecturePayload{
 		ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
 	})
