@@ -98,7 +98,8 @@ var _ = Service("project", func() {
 		})
 		Result(func() {
 			Attribute("session", String, "User session kept only in the page's memory.")
-			Required("session")
+			Attribute("project_name", String, "Base name of the physical project folder, without its path, for this page session.", func() { MinLength(1) })
+			Required("session", "project_name")
 		})
 		HTTP(func() { POST("/browser-session"); Response(StatusCreated) })
 	})

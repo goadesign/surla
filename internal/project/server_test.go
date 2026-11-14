@@ -96,6 +96,8 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	exchange := testClient(state, api.Client(), "", true)
 	session, err := exchange.ExchangeBrowserLink(t.Context(), &genproject.ExchangeBrowserLinkPayload{Link: strings.TrimPrefix(u.Fragment, "link=")})
 	require.NoError(t, err)
+	assert.Equal(t, filepath.Base(state.Record.Directory), session.ProjectName)
+	assert.NotEqual(t, state.Record.Directory, session.ProjectName)
 	_, err = exchange.ExchangeBrowserLink(t.Context(), &genproject.ExchangeBrowserLinkPayload{Link: strings.TrimPrefix(u.Fragment, "link=")})
 	assert.Error(t, err)
 	// The same owner can see a guide draft, but caller attribution records the user's session.

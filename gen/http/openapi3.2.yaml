@@ -13327,6 +13327,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ExchangeBrowserLinkResponseBody'
                             example:
+                                project_name: t5
                                 session: Consectetur est quis cum vel quasi.
                 "403":
                     description: 'forbidden: The trusted credential cannot perform this operation.'
@@ -20140,14 +20141,21 @@ components:
         ExchangeBrowserLinkResponseBody:
             type: object
             properties:
+                project_name:
+                    type: string
+                    description: Base name of the physical project folder, without its path, for this page session.
+                    example: t5
+                    minLength: 1
                 session:
                     type: string
                     description: User session kept only in the page's memory.
                     example: Consectetur est quis cum vel quasi.
             example:
+                project_name: t5
                 session: Consectetur est quis cum vel quasi.
             required:
                 - session
+                - project_name
         GenerateCodePayload:
             type: object
             properties:

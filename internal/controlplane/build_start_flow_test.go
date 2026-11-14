@@ -14,6 +14,7 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"unicode/utf8"
 
 	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -24,6 +25,9 @@ import (
 	"github.com/goadesign/surla/verify/candidate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // TestStartBuildOrdersItsOwners observes the saved record at role registration,
@@ -133,11 +137,100 @@ func TestStartBuildKeepsPostSaveOutcomes(t *testing.T) {
 				require.True(t, ok)
 				assert.NotEmpty(t, failure.CheckedAt)
 				assert.NotContains(t, failure.Reason, "private setup failure")
+				assert.NotContains(t, failure.Reason, "Code generation failed", "no generator failed")
 				assert.Equal(t, "Build this change again on the views page.", failure.Step)
 			case "reported during generation":
 				assert.Equal(t, gensurla.TestsKindReported, saved.TestWriter.Tests.Kind())
 				assert.Equal(t, 1, saved.TestWriter.Report)
 			}
+		})
+	}
+}
+
+// TestAPreparationThatCouldNotRunSaysWhatFailed makes the preparation of a
+// saved build fail for causes the test writer cannot fix. Only a failure of
+// the generator is worded as one. A generated folder that could not be
+// written says so, with the cause and a step that clears it; a failure no
+// case names gives no private text, and its cause is on the start's span.
+// Each reason holds no absolute path and each step fits the contract.
+func TestAPreparationThatCouldNotRunSaysWhatFailed(t *testing.T) {
+	const buildAgain = "Build this change again on the views page."
+	cases := []struct {
+		name string
+		// prepareErr is what the preparation returns.
+		prepareErr error
+		// wantReason and notReason are fragments the saved reason holds and
+		// does not hold.
+		wantReason, notReason []string
+		wantStep              string
+	}{
+		{
+			name: "the generated folder cannot be written",
+			prepareErr: fmt.Errorf("%w: create staging directory: mkdirat /Users/someone/shop/.surla-tests/eval/.surla-gen-abc: no space left on device",
+				testwriter.ErrWriteGenerated),
+			wantReason: []string{"could not write them into the test writer's working copy", "create staging directory", "no space left on device"},
+			notReason:  []string{"Code generation failed", "/Users/someone"},
+			wantStep:   stepWriteCopy + ", then build this change again on the views page.",
+		},
+		{
+			name: "the dependencies cannot be downloaded where Surla runs",
+			prepareErr: fmt.Errorf("%w, and its go.mod and go.sum are those of the project's commit %s, so the cause is not in the test writer's changes",
+				testwriter.ErrDependencies, strings.Repeat("b", 40)),
+			wantReason: []string{"could not prepare the required tests", "dependencies could not be downloaded where Surla runs", "commit " + strings.Repeat("b", 40)},
+			notReason:  []string{"Code generation failed"},
+			wantStep:   stepDependencies + ", then build this change again on the views page.",
+		},
+		{
+			name:       "the generator fails before it reaches the module",
+			prepareErr: fmt.Errorf("%w: create design evaluator workspace: mkdir /private/var/surla: permission denied", testwriter.ErrGeneration),
+			wantReason: []string{"Code generation failed while starting the design compiler."},
+			notReason:  []string{"/private/var"},
+			wantStep:   buildAgain,
+		},
+		{
+			name:       "a failure no case names",
+			prepareErr: errors.New("private setup failure in /Users/someone/shop"),
+			wantReason: []string{"could not prepare the required tests", "server trace"},
+			notReason:  []string{"Code generation failed", "private setup failure", "/Users/someone"},
+			wantStep:   buildAgain,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := tracetest.NewInMemoryExporter()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+			cp := newBuildControlPlane(t, Options{TracerProvider: provider})
+			card := confirmedChange(t, cp, "chg")
+			copy := &buildCopyFixture{folder: t.TempDir()}
+			cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return copy, nil }
+			copy.prepare = func(context.Context, []designeval.StorySummary) error { return tc.prepareErr }
+
+			result, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+			require.NoError(t, err, "a failed preparation never refuses the saved build")
+			failure, ok := result.Build.TestWriter.Tests.AsCouldNotRun()
+			require.True(t, ok)
+			for _, want := range tc.wantReason {
+				assert.Contains(t, failure.Reason, want)
+			}
+			for _, not := range tc.notReason {
+				assert.NotContains(t, failure.Reason, not)
+			}
+			assert.LessOrEqual(t, utf8.RuneCountInString(failure.Reason), maxCheckReason)
+			assert.Equal(t, tc.wantStep, failure.Step)
+			assert.True(t, boundedText(failure.Step, maxCheckStep), "the step fits the contract")
+			span := waitForSpan(t, exporter, "surla.controlplane.start_build")
+			assert.Equal(t, codes.Error, span.Status.Code, "the failure is an error on the start's span")
+			require.NotEmpty(t, span.Events)
+			var recorded string
+			for _, event := range span.Events {
+				for _, attr := range event.Attributes {
+					if attr.Key == "exception.message" {
+						recorded = attr.Value.AsString()
+					}
+				}
+			}
+			assert.Equal(t, tc.prepareErr.Error(), recorded, "the trace keeps the cause as it was")
 		})
 	}
 }

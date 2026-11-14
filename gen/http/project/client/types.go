@@ -65,6 +65,9 @@ type BrowserLinkResponseBody struct {
 type ExchangeBrowserLinkResponseBody struct {
 	// User session kept only in the page's memory.
 	Session *string `form:"session,omitempty" json:"session,omitempty" xml:"session,omitempty"`
+	// Base name of the physical project folder, without its path, for this page
+	// session.
+	ProjectName *string `form:"project_name,omitempty" json:"project_name,omitempty" xml:"project_name,omitempty"`
 }
 
 // IdentityForbiddenResponseBody is the type of the "project" service
@@ -514,7 +517,8 @@ func NewBrowserLinkUnprocessable(body *BrowserLinkUnprocessableResponseBody) *go
 // "exchange_browser_link" endpoint result from a HTTP "Created" response.
 func NewExchangeBrowserLinkResultCreated(body *ExchangeBrowserLinkResponseBody) *project.ExchangeBrowserLinkResult {
 	v := &project.ExchangeBrowserLinkResult{
-		Session: *body.Session,
+		Session:     *body.Session,
+		ProjectName: *body.ProjectName,
 	}
 
 	return v
@@ -632,6 +636,14 @@ func ValidateBrowserLinkResponseBody(body *BrowserLinkResponseBody) (err error) 
 func ValidateExchangeBrowserLinkResponseBody(body *ExchangeBrowserLinkResponseBody) (err error) {
 	if body.Session == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("session", "body"))
+	}
+	if body.ProjectName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("project_name", "body"))
+	}
+	if body.ProjectName != nil {
+		if utf8.RuneCountInString(*body.ProjectName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.project_name", *body.ProjectName, utf8.RuneCountInString(*body.ProjectName), 1, true))
+		}
 	}
 	return
 }

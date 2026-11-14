@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/goadesign/surla/internal/shquote"
 )
 
 // TestWithinLimitIsInclusiveAtTheDeadline runs a stand-in that sleeps just
@@ -151,6 +155,67 @@ func TestCheckNamesFilesChangedOutsideTheTestModule(t *testing.T) {
 		require.Len(t, v.Findings, maxOutsideFindings+1)
 		assert.Contains(t, v.Findings[maxOutsideFindings].Message, "5 more files outside the test module eval")
 	})
+}
+
+// TestTheOutsideModuleFindingNamesTheCommitToRestoreTo changes files outside
+// the test module in each way the test writer can, some of them committed in
+// the copy, where restoring a file from the copy's own HEAD brings back the
+// committed change. Each finding names the copy's base commit and the step
+// that undoes its change: the command to run for a file the base has, and to
+// delete one it does not have. Following each step, from the project's
+// folder inside the copy, leaves no change outside the module.
+func TestTheOutsideModuleFindingNamesTheCommitToRestoreTo(t *testing.T) {
+	t.Parallel()
+	suite := Suite{Module: "eval", Command: "./gen/cmd/shop-evals"}
+	repo, _ := newProject(t, map[string]string{
+		"README.md": "shop\n", "services/shop/docs/a.md": "a\n", "services/shop/docs/b [c]*.md": "b\n",
+		"services/shop/eval/go.mod": "module example.com/shop/eval\n",
+	})
+	base := runGit(t, repo, "rev-parse", "HEAD")
+	wc, err := OpenWorkingCopy(t.Context(), filepath.Join(repo, "services", "shop"))
+	require.NoError(t, err)
+	writeFiles(t, wc.Dir(), map[string]string{
+		"services/shop/docs/b [c]*.md": "committed by the author\n", "go.work": "go 1.24\n",
+	})
+	runGit(t, wc.Dir(), "add", "--all")
+	runGit(t, wc.Dir(), "commit", "--quiet", "-m", "The author's own commit")
+	writeFiles(t, wc.Dir(), map[string]string{"README.md": "edited\n", "notes.txt": "added\n"})
+	require.NoError(t, os.Remove(filepath.Join(wc.Dir(), "services", "shop", "docs", "a.md")))
+
+	v, err := testChecker.Check(t.Context(), wc, suite, nil)
+	require.NoError(t, err)
+	// restored maps each changed file to whether the base has it.
+	restored := map[string]bool{
+		"README.md": true, "services/shop/docs/a.md": true, "services/shop/docs/b [c]*.md": true,
+		"go.work": false, "notes.txt": false,
+	}
+	require.Len(t, v.Findings, len(restored), "%+v", v.Findings)
+	assertNoAbsolutePath(t, v.Findings)
+	for _, f := range v.Findings {
+		assert.Equal(t, FindingOutsideModule, f.Kind)
+		assert.Contains(t, f.Message, "commit "+base, "the finding names the base commit")
+		name, _, found := strings.Cut(f.Message, " is changed outside the test module services/shop/eval")
+		require.True(t, found, f.Message)
+		inBase, known := restored[name]
+		require.True(t, known, f.Message)
+		if !inBase {
+			assert.Contains(t, f.Message, "does not have this file: delete it")
+			require.NoError(t, os.Remove(filepath.Join(wc.Dir(), filepath.FromSlash(name))))
+			continue
+		}
+		command := "git restore --source=" + base + " --staged --worktree -- " + shquote.Quote(":(top,literal)"+name)
+		assert.Contains(t, f.Message, command, "the finding gives the command that restores the file")
+		step := exec.CommandContext(t.Context(), "sh", "-c", command)
+		step.Dir = wc.Project()
+		out, err := step.CombinedOutput()
+		require.NoError(t, err, "%s: %s", command, out)
+	}
+
+	again, err := testChecker.Check(t.Context(), wc, suite, nil)
+	require.NoError(t, err)
+	for _, f := range again.Findings {
+		assert.NotEqual(t, FindingOutsideModule, f.Kind, "following the steps left a change outside: %s", f.Message)
+	}
 }
 
 // TestCheckStopsWhenTheHistoryIsReplaced replaces the project's history with
