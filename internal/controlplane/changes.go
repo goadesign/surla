@@ -177,13 +177,14 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		items = append(items, item)
 	}
 	c.mu.RUnlock()
-	target, err := c.resolvePromotion(ctx)
+	_, err = c.resolvePromotion(ctx)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve promotion target")
 	}
+	// approve_merge refuses without verification, promotion target or not.
 	_, noVerif := c.verifier.(noVerification)
-	approvalAvailable := err == nil && (!noVerif || target != nil)
+	approvalAvailable := err == nil && !noVerif
 	var team *gensurla.TeamSnapshot
 	if c.team != nil && c.team.Owner == owner {
 		team, err = c.team.Service.ReadTeam(ctx)

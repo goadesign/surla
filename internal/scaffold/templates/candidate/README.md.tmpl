@@ -22,12 +22,12 @@ can run against it.
   `design/model.go` declares the C4 architecture model. `design/story.go`
   declares the Story: who uses the service and the flows their requests take
   (see "Change checkpoints" below).
-- `gen/` is generated from `design/`. After changing `design/`, call the
-  `generate_code` MCP tool when connected to the Surla project server (or run `surla gen`
-  in this directory): it runs Goa's generator for this module inside Surla's
+- `gen/` is generated from `design/`. After changing `design/`, the builder calls the
+  `generate_code` MCP tool on the Surla project server (or you run `surla gen`
+  in this directory from a shell that is not sandboxed): it runs Goa's generator for this module inside Surla's
   sandbox. Never edit `gen/`. Generation compiles the design only, so update the
-  hand-written code in `internal/` and `cmd/` to match it, then build and test
-  your uncommitted files with `check_project` as described in "Next steps".
+  hand-written code in `internal/` and `cmd/` to match it; the builder then builds and tests
+  the uncommitted files with `check_project`, as described in "Next steps".
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents; it names the same Surla tools
   as "Next steps" for generating, checking and verifying this project.
@@ -100,14 +100,16 @@ surla
 running, and opens the project's views page in your browser. If the guide
 created this project with `init_project`, the Surla project server has already
 initialized the Git repository, created the initial commit (`commit` in
-`init_project`'s result), bound itself to this directory (`dir`), and pinned
-the evaluator suite to that initial commit.
+`init_project`'s result) and bound itself to this directory (`dir`).
 
 For each change:
 
 1. The guide describes the change with `propose_change`, and with
    `revise_change` when it changes. You confirm it on the views page, which
-   also shows its architecture preview (`preview_architecture`).
+   also shows its architecture preview (`preview_architecture`). Then you start
+   its build there: Surla gives the builder its assignment and, without stored
+   verification settings, adds a test writer, which writes the tests the
+   change's Story requires and reports them for Surla to check and accept.
 2. The builder edits the service code in this module. In a project that
    builds with a test writer (without stored verification settings), the test
    module `eval/` (`eval/design/` included) belongs to the test writer: the
@@ -126,6 +128,10 @@ For each change:
    `op_id` in either result.
 4. The builder commits, then passes the new commit ID as `candidate_commit` to
    `start_live_target` and `verify_change`.
+5. Without stored verification settings, `verify_change` is refused until
+   Surla has accepted the test writer's tests. When a verification passes, you
+   review its result and approve it on the views page; Surla merges and
+   deploys nothing.
 
 See the
 [MCP tools reference](https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#mcp-tools)

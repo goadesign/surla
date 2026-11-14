@@ -289,7 +289,7 @@ func (c *ControlPlane) GetTestWriterAssignment(
 ) (*gensurla.TestWriterAssignment, error) {
 	held, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) (bool, error) {
 		if saved.Roles != buildRolesBuilderAndTestWriter {
-			return false, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it uses the stored evaluator"))
+			return false, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it was started with stored verification settings"))
 		}
 		// Every confirmed revision has an example, so a build without one was
 		// saved without the agreed terms the tests are owed.
@@ -369,10 +369,10 @@ func (c *ControlPlane) ReportTestsFinished(
 	}
 	saved := &held.file
 	if saved.Roles != buildRolesBuilderAndTestWriter {
-		return nil, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it uses the stored evaluator"))
+		return nil, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it was started with stored verification settings"))
 	}
 	if held.storedEvaluator {
-		return nil, gensurla.MakeConflict(errors.New("no test writer is used: this project verifies with its stored evaluator"))
+		return nil, gensurla.MakeConflict(errors.New("no test writer is used: this project has stored verification settings"))
 	}
 	if saved.RequestRevision != p.RequestRevision {
 		return nil, gensurla.MakeConflict(fmt.Errorf(

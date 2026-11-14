@@ -98,11 +98,12 @@ const (
 	// freed by the user, clear without judging in a tight loop.
 	retryAfterFailure = time.Minute
 	// maxRetriesAfterFailure bounds those retries, for one report's last
-	// step and for reads: after the third failure in a row the checker stops
-	// waking itself, and the build waits, still reported, for the next
-	// report or the next server start, both of which judge every reported
-	// build. A judgment takes minutes, so three cover a passing cause
-	// without repeating a lasting one forever.
+	// step and for reads: the checker retries after each of the first three
+	// failures in a row, and after the fourth it stops waking itself, and the
+	// build waits, still reported, for the next report or the next server
+	// start, both of which judge every reported build. A judgment takes
+	// minutes, so three retries cover a passing cause without repeating a
+	// lasting one forever.
 	maxRetriesAfterFailure = 3
 
 	// stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit and stepFailure

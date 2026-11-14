@@ -98,7 +98,7 @@ func (c *ControlPlane) InitProject(
 	if !scaffold.ValidVersion(c.surlaVersion) {
 		recordInitRefused(span, "surla_version_unavailable")
 		return nil, gensurla.MakeNotImplemented(errors.New(
-			"this server has no exact github.com/goadesign/surla module version configured for starter generation; build or install surla from a tagged or pseudo-versioned module release, pass -surla-version to surla init on the CLI, or set controlplane.Options.SurlaVersion in an embedding host",
+			"this server has no exact github.com/goadesign/surla module version configured for starter generation; build or install surla from a tagged or pseudo-versioned module release, or pass -surla-version to surla init on the CLI",
 		))
 	}
 

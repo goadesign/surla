@@ -118,7 +118,7 @@ be prepared, `surla` prints no team lines but still opens the views page,
 because confirming and approving there need no agent, prints the last line,
 and then fails with `surla: the project team is not ready: ` followed by
 what failed and the step that repairs it (see
-[`ensure_team`](#ensure_team-management)); **Start agents** on the views
+[`ensure_team`](#ensure_team-management)). When Chorus or the Herdr app could not be started, that step is `run chorus up, then run surla again` or `open Herdr, then run surla again`; otherwise **Start agents** on the views
 page tries again.
 
 <a id="model-provider-settings"></a>
@@ -682,7 +682,7 @@ Lists the project's Change Cards, most recently saved first (ties by
 (`needs_confirmation` or `confirmed`), the `request_revision` in force,
 `proposed_revision` while a proposed revision waits, `saved_at`, and
 `latest_verification`, absent when no run was started. `approval_available` is
-`false` when the server runs no verification and has no promotion target, the
+`false` when the server runs no verification, even with a promotion target, the
 release check that stored promotion settings configure. It is also `false`
 when resolving that target fails: the list still answers, and the error is
 recorded on the read's span
@@ -922,7 +922,7 @@ MCP `progressToken`, it reports each phase.
 `warnings`).
 
 The builder's generation: compiles the edited design of the application, or
-of `eval/` with `{"target":"eval"}`, in the sandbox and replaces that
+of `eval/` with `{"target":"eval"}` outside a build that runs with a test writer (during such a build, without stored verification settings, `eval/`, `eval/design/` included, belongs to the test writer, and Surla regenerates `eval/gen/` at build start and on each report), in the sandbox and replaces that
 module's `gen/` exactly as [`surla gen`](#surla-gen) does. It compiles only;
 call [`check_project`](#check_project) to build and test before committing.
 An error means `gen/` was not replaced; a warning means it was.
@@ -1527,7 +1527,7 @@ starts, so a revision proposed or adopted later does not change them. The
 test writer may not read the change with `get_change`, so these fields are
 how its tests learn what the user agreed: the tests must hold the service to
 them as well as to the Story's flows. For example, when the user answered
-"Without tax" to "Does the $50 limit include tax?", a test checks that an
+"Without tax" to "Does the $50 limit include tax?" and the limit includes $50.00 itself, a test checks that an
 order of $50.00 before tax is refunded at once. Surla's check of a report
 confirms the required tests, not what they assert. Reading the assignment of
 a build that holds no example, such as one saved by a `surla` without these
@@ -1635,7 +1635,7 @@ which opens anyway:
 
 A team request from `surla` that runs out of time prints `project team
 request did not finish because Herdr did not answer in time; open the Herdr
-app, then click Start agents on the views page`.
+app, then click Start agents on the views page: context deadline exceeded`.
 
 **Reminders.** Each version of an assignment that a role has not read is a
 generation: a new build gives each of its roles one, every verdict gives the

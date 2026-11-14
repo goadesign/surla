@@ -15,10 +15,11 @@ var BuildTeamWindowBusy = Type("BuildTeamWindowBusy", func() {
 	Required("step")
 })
 
-// BuildTeamAmbiguousSpace leaves the saved build intact while the user selects a space.
+// BuildTeamAmbiguousSpace leaves the saved build intact while the user closes
+// the duplicate spaces.
 var BuildTeamAmbiguousSpace = Type("BuildTeamAmbiguousSpace", func() {
 	Attribute("count", Int, "Number of spaces matching this project.", func() { Minimum(2) })
-	Attribute("step", BuildStartStep, "Choose the project's space, then start the team agents.")
+	Attribute("step", BuildStartStep, "Close the duplicate Herdr spaces, then start the agents.")
 	Required("count", "step")
 })
 
@@ -28,9 +29,10 @@ var BuildTeamUnavailable = Type("BuildTeamUnavailable", func() {
 	Required("step")
 })
 
-// BuildCopyNotUsed says the stored evaluator needs no test-writer working copy.
+// BuildCopyNotUsed says stored verification settings need no test-writer
+// working copy.
 var BuildCopyNotUsed = Type("BuildCopyNotUsed", func() {
-	Description("This project uses its stored evaluator, so this start uses no test-writer working copy.")
+	Description("This project has stored verification settings, so this start uses no test-writer working copy.")
 })
 
 // BuildCopyAtProjectCommit reports the copy's postcondition without claiming a ref moved.
@@ -67,7 +69,7 @@ var StartBuildResult = Type("StartBuildResult", func() {
 		Attribute("ambiguous_space", BuildTeamAmbiguousSpace)
 		Attribute("unavailable", BuildTeamUnavailable)
 	})
-	OneOf("working_copy", "The test-writer working copy after this start's refresh; not_used with a stored evaluator.", func() {
+	OneOf("working_copy", "The test-writer working copy after this start's refresh; not_used with stored verification settings.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
 		Attribute("not_used", BuildCopyNotUsed)

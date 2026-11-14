@@ -62,7 +62,9 @@ const (
 	operatorPrivateDirValue = "dir-v1"
 	// storedPromotionSettingsStep tells the operator how to inspect, replace or
 	// remove stored promotion settings when the project server cannot load them.
-	storedPromotionSettingsStep = "see them with surla promotion show, store them again with surla promotion set <file>, or remove them with surla promotion remove if this project needs no approvals; then run surla"
+	// Approval needs no promotion settings: removing them drops only approval's
+	// check of the release binaries.
+	storedPromotionSettingsStep = "see them with surla promotion show, store them again with surla promotion set <file>, or remove them with surla promotion remove, which keeps approvals and drops only their check of the release binaries; then run surla"
 	// storedVerificationSettingsStep tells the operator how to inspect, replace or
 	// remove stored verification settings when the project server cannot load them.
 	storedVerificationSettingsStep = "see them with surla verification show, store them again with surla verification set <file>, or remove them with surla verification remove if this project uses the tests written for each change; then run surla"

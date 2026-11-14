@@ -117,9 +117,10 @@ func TestListChangesRecordsWhyARunCouldNotBeRead(t *testing.T) {
 
 // TestListChangesSaysWhetherApprovalIsAvailable lists the same empty project
 // across verification and promotion configurations: approval is available
-// whenever verification or a promotion target is configured and the resolver
-// does not fail, the fact is part of the version, and a failing resolver
-// keeps the list working while its span records why.
+// whenever verification is configured and the resolver does not fail, a
+// promotion target without verification leaves it unavailable, as
+// approve_merge refuses then, the fact is part of the version, and a failing
+// resolver keeps the list working while its span records why.
 func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
 	ws := t.TempDir()
 	bound := &pageTarget{artifacts: map[string]string{"orders": strings.Repeat("a", 64)}}
@@ -154,9 +155,16 @@ func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
 			available: true,
 		},
 		{
-			name: "bound promotion target",
+			name: "promotion target without verification",
 			opts: func(*testing.T) Options {
 				return Options{WorkspaceDir: ws, ResolvePromotionTarget: bound.resolve}
+			},
+			available: false,
+		},
+		{
+			name: "stored verification with promotion target",
+			opts: func(t *testing.T) Options {
+				return Options{WorkspaceDir: ws, Verification: verificationConfig(t), ResolvePromotionTarget: bound.resolve}
 			},
 			available: true,
 		},
@@ -380,16 +388,17 @@ func TestWaitForChangesIsTracedButNotSaved(t *testing.T) {
 }
 
 // TestChangeListOperationsFollowTheRoleTable checks the two operations over
-// HTTP: every agent role the table names may list changes and sees whether
-// approval is available, with no promotion setting or path in the answer,
-// and only the user's browser session may wait for them.
+// HTTP on a server that verifies and has a promotion target: every agent
+// role the table names may list changes and sees whether approval is
+// available, with no promotion setting or path in the answer, and only the
+// user's browser session may wait for them.
 func TestChangeListOperationsFollowTheRoleTable(t *testing.T) {
 	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
 	}
 	target := &pageTarget{artifacts: spec.Artifacts}
-	cp := newControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
+	cp := newControlPlane(t, Options{Verification: verificationConfig(t), ResolvePromotionTarget: target.resolve})
 	cp.changesWait = 20 * time.Millisecond
 	auth := fixtureCredentials(map[string]Principal{
 		"user":    {ID: "alice@example.com", CallerID: "user-1", Kind: CallerUser},

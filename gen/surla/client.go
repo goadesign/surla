@@ -479,7 +479,7 @@ func (c *Client) ReadCheckOutput(ctx context.Context, p *ReadCheckOutputPayload)
 // ListTraces calls the "list_traces" endpoint of the "surla" service.
 // ListTraces may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): The cursor is invalid; omit it to refresh the history.
-//   - "not_implemented" (type *goa.ServiceError): Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use the project server for automatic recording.
+//   - "not_implemented" (type *goa.ServiceError): This server does not record operations; a project server started with surla always does.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ListTraces(ctx context.Context, p *ListTracesPayload) (res *TraceList, err error) {
@@ -708,7 +708,7 @@ func (c *Client) GetTestWriterAssignment(ctx context.Context, p *GetTestWriterAs
 // "surla" service.
 // ReportTestsFinished may return the following errors:
 //   - "not_found" (type *goa.ServiceError): You have no test assignment for this change_id.
-//   - "conflict" (type *goa.ServiceError): request_revision is not the revision of your test assignment (read it again with get_test_writer_assignment), or no test writer is used because the project verifies with its stored evaluator. Nothing changed.
+//   - "conflict" (type *goa.ServiceError): request_revision is not the revision of your test assignment (read it again with get_test_writer_assignment), or no test writer is used because the project has stored verification settings. Nothing changed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ReportTestsFinished(ctx context.Context, p *ReportTestsFinishedPayload) (res *TestWriterAssignmentItem, err error) {

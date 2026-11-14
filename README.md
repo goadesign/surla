@@ -219,7 +219,7 @@ down. After you install another build of `surla`, run `surla stop`, then
 `surla`: `surla` does not use a server that another build started. If the
 server stops while starting, `surla` shows its last lines, including its
 error. If the team cannot be prepared, `surla` still opens the page, then
-names what failed and the step that repairs it; **Start agents** on the page
+names what failed and the step that repairs it. When Chorus or the Herdr app could not be started, that step is to start it and run `surla` again; otherwise **Start agents** on the page
 tries again. See [`surla` and `surla stop`](docs/REFERENCE.md#surla-serve)
 for the project's state, settings and recovery.
 

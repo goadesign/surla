@@ -190,6 +190,8 @@ func (s *Server) teamSelection() TeamSelection {
 
 // userTeamError preserves the owner's typed space conflict and sanitizes other
 // management failures before the control plane chooses its user-facing transport.
+// A typed team failure becomes the page's step for its cause and stays its
+// error's cause, so a build start can give its own step for the same cause.
 func userTeamError(err error) error {
 	var conflict *genproject.TeamSpaceConflict
 	if errors.As(err, &conflict) {
@@ -203,7 +205,10 @@ func userTeamError(err error) error {
 	if !errors.As(err, &unavailable) {
 		return gensurla.MakeTeamUnavailable(errors.New("project team could not be prepared; run surla in the project folder to see the step"))
 	}
-	return gensurla.MakeTeamUnavailable(errors.New(userTeamStep(unavailable.Cause)))
+	// Wrapping only the typed failure keeps any peer text around it out.
+	failure := gensurla.MakeTeamUnavailable(unavailable)
+	failure.Message = userTeamStep(unavailable.Cause)
+	return failure
 }
 
 // userTeamStep gives the page's fixed sentence for one team failure cause. It names

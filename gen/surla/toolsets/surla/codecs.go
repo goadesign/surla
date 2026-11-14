@@ -1370,7 +1370,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -1395,7 +1395,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -1695,7 +1695,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
@@ -1807,7 +1807,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
@@ -1899,7 +1899,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
@@ -1924,7 +1924,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -2263,7 +2263,7 @@ var configureModelResultFields = []tools.FieldMetadata{
 var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Operator confirmation of Checkpoint 1 ambiguity answers and concrete examples.",
+		Description: "The user's confirmation of Checkpoint 1 ambiguity answers and concrete examples.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -2339,7 +2339,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -2364,7 +2364,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -2664,7 +2664,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
@@ -2776,7 +2776,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
@@ -2868,7 +2868,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
@@ -2893,7 +2893,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -3195,7 +3195,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -3220,7 +3220,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -3520,7 +3520,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
@@ -3632,7 +3632,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
@@ -3724,7 +3724,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
@@ -3749,7 +3749,7 @@ var declineRevisionResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -4322,7 +4322,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project has stored verification settings; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4630,7 +4630,7 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
+		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project has stored verification settings; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -4737,7 +4737,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -4762,7 +4762,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -5062,7 +5062,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
@@ -5174,7 +5174,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
@@ -5266,7 +5266,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
@@ -5291,7 +5291,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -6015,7 +6015,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project has stored verification settings; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6543,7 +6543,7 @@ var getVerificationResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
-		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+		Description: "Whether this run's agreed revision and selected tests match the current Change Card and the usable build or the stored verification settings. This observation does not establish the current candidate working tree, deployment or approval.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_binaries_dir")},
@@ -7026,7 +7026,7 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
 		JSONType:    "object",
-		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
+		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project has stored verification settings; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -7162,7 +7162,7 @@ var listChangesResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("latest_verification"), tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
-		Description: "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+		Description: "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the evaluator suite in the stored verification settings. It does not say whether the candidate working tree, deployment or approval is current.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("proposed_revision")},
@@ -7182,7 +7182,7 @@ var listChangesResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval_available")},
 		JSONType:    "boolean",
-		Description: "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.",
+		Description: "Whether approve_merge can record approvals on this server: true when the server runs Checkpoint 4 verification, as every server surla starts does, and any stored promotion settings could be resolved; false when the server runs no verification or resolving the promotion target fails.",
 	},
 }
 var listTestWriterAssignmentsPayloadFields = []tools.FieldMetadata{
@@ -7228,7 +7228,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project has stored verification settings; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -7578,7 +7578,7 @@ var listVerificationsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
-		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+		Description: "Whether this run's agreed revision and selected tests match the current Change Card and the usable build or the stored verification settings. This observation does not establish the current candidate working tree, deployment or approval.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("candidate_binaries_dir")},
@@ -8236,7 +8236,7 @@ var previewArchitectureResultFields = []tools.FieldMetadata{
 var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.",
+		Description: "The user's feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -8246,7 +8246,7 @@ var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request.",
+		Description: "The user's feature request.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("story_refresh_op_id")},
@@ -8352,7 +8352,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -8377,7 +8377,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -8677,7 +8677,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
@@ -8789,7 +8789,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
@@ -8881,7 +8881,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
@@ -8906,7 +8906,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -9475,7 +9475,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project has stored verification settings; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -9657,7 +9657,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.",
+		Description: "The user's revised feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -9672,7 +9672,7 @@ var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Revised operator feature request.",
+		Description: "The user's revised feature request.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("story_refresh_op_id")},
@@ -9793,7 +9793,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -9818,7 +9818,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -10118,7 +10118,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
@@ -10230,7 +10230,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
 		JSONType:    "string",
-		Description: "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+		Description: "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
@@ -10322,7 +10322,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Operator feature request for this revision.",
+		Description: "The user's feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("summary")},
@@ -10347,7 +10347,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
 		JSONType:    "string",
-		Description: "Plain-English question for the operator.",
+		Description: "Plain-English question for the user.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("proposed_revision"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
@@ -10702,7 +10702,7 @@ var updateDependenciesResultFields = []tools.FieldMetadata{
 var verifyChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.",
+		Description: "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which tests run come from the project, never from the caller: the candidate commit's programs and the tests Surla accepted for the user's build of the revision or, with stored verification settings, the programs and evaluator suite those settings name.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -10758,7 +10758,7 @@ var verifyChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("inputs_current")},
 		JSONType:    "boolean",
-		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+		Description: "Whether this run's agreed revision and selected tests match the current Change Card and the usable build or the stored verification settings. This observation does not establish the current candidate working tree, deployment or approval.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_binaries_dir")},
@@ -18607,7 +18607,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "prompt":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator feature request.",
+				typed[key], "The user's feature request.",
 			); err != nil {
 				return err
 			}
@@ -18962,7 +18962,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "prompt":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator feature request for this revision.",
+				typed[key], "The user's feature request for this revision.",
 			); err != nil {
 				return err
 			}
@@ -19099,7 +19099,7 @@ func validateProposeChangeResultAmbiguityQuestionTransportJSONValue(path string,
 		case "question":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Plain-English question for the operator.",
+				typed[key], "Plain-English question for the user.",
 			); err != nil {
 				return err
 			}
@@ -19208,7 +19208,7 @@ func validateProposeChangeResultApprovalItemTransportJSONValue(path string, valu
 		case "suite_commit":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Commit of the tests the report ran: the operator's stored evaluator, or the tests Surla accepted for the change's build.",
+				typed[key], "Commit of the tests the report ran: the evaluator suite commit in the stored verification settings, or the tests Surla accepted for the change's build.",
 			); err != nil {
 				return err
 			}
@@ -19510,7 +19510,7 @@ func validateProposeChangeResultProposedRevisionItemTransportJSONValue(path stri
 		case "prompt":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator feature request for this revision.",
+				typed[key], "The user's feature request for this revision.",
 			); err != nil {
 				return err
 			}
@@ -20144,7 +20144,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "prompt":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Revised operator feature request.",
+				typed[key], "The user's revised feature request.",
 			); err != nil {
 				return err
 			}
@@ -21764,7 +21764,7 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 		case "inputs_current":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+				typed[key], "Whether this run's agreed revision and selected tests match the current Change Card and the usable build or the stored verification settings. This observation does not establish the current candidate working tree, deployment or approval.",
 			); err != nil {
 				return err
 			}
@@ -23518,7 +23518,7 @@ func validateListChangesResultJSONValue(path string, value any, description stri
 		case "approval_available":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether approve_merge can record approvals on this server. It is true whenever Checkpoint 4 verification is configured and any stored promotion settings could be resolved; it is false when verification is not configured or when resolving the promotion target returns an error.",
+				typed[key], "Whether approve_merge can record approvals on this server: true when the server runs Checkpoint 4 verification, as every server surla starts does, and any stored promotion settings could be resolved; false when the server runs no verification or resolving the promotion target fails.",
 			); err != nil {
 				return err
 			}
@@ -23678,7 +23678,7 @@ func validateListChangesResultLatestVerificationItemTransportJSONValue(path stri
 		case "inputs_current":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the evaluator suite in the stored verification settings. It does not say whether the candidate working tree, deployment or approval is current.",
 			); err != nil {
 				return err
 			}
@@ -23934,7 +23934,7 @@ func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, val
 		case "tests":
 			if err := validateGetBuildResultTestWriterProgressTransportTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+				typed[key], "The tests' state: not_used when the project has stored verification settings; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -24250,7 +24250,7 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 		case "written_tests":
 			if err := validateListBuilderAssignmentsResultBuilderAssignmentTransportWrittenTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
+				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project has stored verification settings; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.",
 			); err != nil {
 				return err
 			}
