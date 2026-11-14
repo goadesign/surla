@@ -184,6 +184,38 @@ func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
 	}
 }
 
+// TestSettingsTextsPromiseOnlyWhatTheCodeDoes reads the published contract
+// and the reference. Both say a live target's test program, even one agents
+// wrote, receives the chosen provider's settings, and that only tests
+// written for a verification and the check helper receive none, as
+// TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment and
+// TestWrittenTestRunsReceiveNoProviderSettings prove. The reference says the
+// exported log protects exact occurrences and edge pieces only, as
+// TestProtectExcerptDropsPiecesAtItsEdges proves, and that other forms of a
+// value are exported as printed.
+func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
+	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
+	require.NoError(t, err)
+	reference, err := os.ReadFile("../../docs/REFERENCE.md")
+	require.NoError(t, err)
+	// Sentences are compared without case: one starts a sentence where the
+	// other does not.
+	for name, text := range map[string]string{"OpenAPI": string(openAPI), "REFERENCE.md": string(reference)} {
+		lower := strings.ToLower(text)
+		assert.True(t, strings.Contains(lower, "including a candidate commit's test module that agents wrote, receives the chosen provider's held settings"), name)
+		assert.True(t, strings.Contains(lower, "tests a separate agent wrote for a verification, and the check helper, receive none"), name)
+		assert.False(t, strings.Contains(lower, "tests agents wrote and the check helper receive none"), name)
+	}
+	for _, promise := range []string{
+		"every exact occurrence of a key, token or header value the target was given is replaced by `[redacted]`",
+		"a piece of such a value at either edge of the excerpt",
+		"is not recognized and is exported as printed",
+	} {
+		assert.True(t, strings.Contains(string(reference), promise), promise)
+	}
+	assert.False(t, strings.Contains(string(reference), "with every key, token and header value the target was given replaced by"))
+}
+
 // TestHandOverModelSettingsRefusesWithNamesOnly sends each refused request,
 // carrying sentinels, as the management caller over HTTP: the 400 and 422
 // bodies, the spans and the diagnostics history hold no value, a 422 names

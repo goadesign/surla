@@ -188,18 +188,20 @@ type Service interface {
 	// over the request settings of each model provider whose key is set in the
 	// shell it runs in: the key and the listed settings that route and
 	// authenticate the provider's requests. The project server holds them in
-	// memory only and forgets them when it stops. A live target's evaluator suite
-	// receives the chosen provider's held settings, the operator's stored
-	// evaluator receives every held provider's settings, and tests agents wrote
-	// and the check helper receive none. An absent provider attribute keeps what
-	// is held for that provider. A present one replaces everything held for it and
-	// must include the provider's key variable; an empty one is refused, because
-	// it is neither a way to keep nor a way to forget. A request with neither
-	// attribute changes nothing and reports what is held. When no model is chosen
-	// and a provider is now held, live targets use that provider's default model,
-	// anthropic before openai; any other choice stays. The result names the held
-	// variables and the model choice, never a value. Only the surla command's
-	// management credential may call this operation; it is never an MCP tool.
+	// memory only and forgets them when it stops. A live target's test program,
+	// including a candidate commit's test module that agents wrote, receives the
+	// chosen provider's held settings; a verification with the operator's stored
+	// evaluator receives every held provider's settings; tests a separate agent
+	// wrote for a verification, and the check helper, receive none. An absent
+	// provider attribute keeps what is held for that provider. A present one
+	// replaces everything held for it and must include the provider's key
+	// variable; an empty one is refused, because it is neither a way to keep nor a
+	// way to forget. A request with neither attribute changes nothing and reports
+	// what is held. When no model is chosen and a provider is now held, live
+	// targets use that provider's default model, anthropic before openai; any
+	// other choice stays. The result names the held variables and the model
+	// choice, never a value. Only the surla command's management credential may
+	// call this operation; it is never an MCP tool.
 	HandOverModelSettings(context.Context, *HandOverModelSettingsPayload) (res *ModelSettingsResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
