@@ -98,18 +98,19 @@ For each change:
 2. The builder edits the service code in this module. In a project that
    builds with a test writer (without stored verification settings), the test
    module `eval/` (`eval/design/` included) belongs to the test writer: the
-   builder leaves `eval/` untouched, and if the Story or public contract in
-   `eval/design/` needs a change, asks you so the guide can draft and you can
-   confirm a revised change. When the builder edits `design/`, it first calls
-   `generate_code`, then updates the hand-written code to match.
+   builder leaves `eval/` untouched, and if the Story (`design/story.go`) or
+   the test module's contract needs a change, asks you so the guide can draft
+   and you can confirm a revised change. When the builder edits `design/`, it
+   first calls `generate_code`, then updates the hand-written code to match.
 3. The builder calls `check_project` to build and test its uncommitted files
-   in Linux containers (Docker required), leaving `eval/` out in a
-   written-tests project (or testing both modules when stored verification
-   settings are configured). When it cannot download dependencies and its
-   output shows a missing `go.sum` or `go.work.sum` entry or a `go.mod`
+   in Linux containers (Docker required), leaving `eval/` out when the project
+   has no stored verification settings (or testing both modules when stored
+   verification settings are configured). When it cannot download dependencies
+   and its output shows a missing `go.sum` or `go.work.sum` entry or a `go.mod`
    update, it calls `update_dependencies` (which likewise leaves `eval/` out
-   in a written-tests project) and checks again. `read_check_output` returns
-   the captured output, page by page, for the `op_id` in either result.
+   when the project has no stored verification settings) and checks again.
+   `read_check_output` returns the captured output, page by page, for the
+   `op_id` in either result.
 4. The builder commits, then passes the new commit ID as `candidate_commit` to
    `start_live_target` and `verify_change`.
 

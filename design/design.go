@@ -1040,12 +1040,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("check_project", func() {
-		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it (leaving the starter test module out in a written-tests project and saying so), each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
+		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so), each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
 		Result(CheckProjectResult)
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container, leaving the starter test module out in a written-tests project and saying so. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
+		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so). No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
 		HTTP(func() {
 			POST("/workspace/check")
 			Response(StatusOK)
@@ -1056,12 +1056,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("update_dependencies", func() {
-		Description("Run go mod tidy for every Go module of the active workspace (leaving the starter test module out in a written-tests project and saying so) in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
+		Description("Run go mod tidy for every Go module of the active workspace (without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so) in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
 		Result(UpdateDependenciesResult)
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy, leaving the starter test module out in a written-tests project and saying so) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
+		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy; without stored verification settings, leaving out the starter test module whose tests the test writer writes, and saying so) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
 		HTTP(func() {
 			POST("/workspace/dependencies")
 			Response(StatusOK)

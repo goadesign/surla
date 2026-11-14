@@ -208,17 +208,17 @@ type Service interface {
 	GenerateCode(context.Context, *GenerateCodePayload) (res *GenerateCodeResult, err error)
 	// Copy the active workspace's live files (uncommitted edits included) into a
 	// protected per-operation copy and run go test ./... for every Go module in it
-	// (leaving the starter test module out in a written-tests project and saying
-	// so), each in a Linux container with no network. Nothing in the workspace
-	// changes. Returns passed and a bounded message; read the full output with
-	// read_check_output.
+	// (without stored verification settings, leaving out the starter test module
+	// whose tests the test writer writes, and saying so), each in a Linux
+	// container with no network. Nothing in the workspace changes. Returns passed
+	// and a bounded message; read the full output with read_check_output.
 	CheckProject(context.Context) (res *CheckProjectResult, err error)
-	// Run go mod tidy for every Go module of the active workspace (leaving the
-	// starter test module out in a written-tests project and saying so) in a
-	// protected copy inside Linux containers, then write only the changed go.mod,
-	// go.sum and go.work.sum files back to the workspace through verified handles.
-	// A symlinked manifest or one edited during the call is refused for that
-	// module.
+	// Run go mod tidy for every Go module of the active workspace (without stored
+	// verification settings, leaving out the starter test module whose tests the
+	// test writer writes, and saying so) in a protected copy inside Linux
+	// containers, then write only the changed go.mod, go.sum and go.work.sum files
+	// back to the workspace through verified handles. A symlinked manifest or one
+	// edited during the call is refused for that module.
 	UpdateDependencies(context.Context) (res *UpdateDependenciesResult, err error)
 	// Return one page of at most 16 KiB of the full output a check_project or
 	// update_dependencies operation captured, with a cursor for the next page and
