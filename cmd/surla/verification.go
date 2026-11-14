@@ -67,7 +67,7 @@ func runVerifyRun(args []string) error {
 	case "execute":
 		return verifyrun.Execute(dir, verify.Run, os.Stdout, os.Stderr)
 	case "live":
-		return verifyrun.Live(dir, verify.Prepare, os.Stdout, os.Stderr)
+		return verifyrun.Live(dir, verify.Prepare, newLiveProvider, os.Stdout, os.Stderr)
 	default:
 		return fmt.Errorf("unknown verify-run role %q", role)
 	}

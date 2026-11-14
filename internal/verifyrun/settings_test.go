@@ -1,5 +1,5 @@
 // This file proves how provider request settings travel through the
-// verification and live executors: only the test program receives them,
+// verification and live executors: only operator test programs receive them,
 // preparation and argument lists never do, and the start detail the server
 // exports protects them.
 package verifyrun
@@ -29,8 +29,8 @@ var reportedSettings = []string{
 // with handed-over settings from an environment that also inherited family
 // values. Preparation, in the executor's process, sees no provider
 // variable; the test program sees exactly the handed-over settings, for the
-// operator's evaluator and for written tests alike; no argument list holds a
-// value.
+// operator's evaluator. Written tests receive no setting, and their executor
+// receives settings only on stdin; no argument list holds a value.
 func TestLiveExecutorGivesSettingsOnlyToTheTestProgram(t *testing.T) {
 	isolateProviderFamilies(t)
 	for _, tests := range []verify.TestsSource{verify.TestsEvaluator, verify.TestsWritten} {
@@ -53,8 +53,11 @@ func TestLiveExecutorGivesSettingsOnlyToTheTestProgram(t *testing.T) {
 			require.NoError(t, errors.Join(prepErr, suiteErr, rawErr))
 			assert.Equal(t, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nARGS_HOLD_SENTINEL=no\n",
 				string(prepared), "preparation sees no provider variable")
-			assert.Equal(t, "ANTHROPIC_API_KEY=handed\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=set\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nARGS_HOLD_SENTINEL=no\n",
-				string(suite), "the test program sees only the handed-over settings")
+			expected := "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nARGS_HOLD_SENTINEL=no\n"
+			if tests == verify.TestsEvaluator {
+				expected = "ANTHROPIC_API_KEY=handed\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=set\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nARGS_HOLD_SENTINEL=no\n"
+			}
+			assert.Equal(t, expected, string(suite), "only an operator's evaluator receives settings")
 			assert.NotContains(t, string(raw), "sentinel", "live.json holds no setting")
 		})
 	}
@@ -187,7 +190,11 @@ func TestStartErrorReplacesValuesTheTailCuts(t *testing.T) {
 			// into the value.
 			after := "\n" + strings.Repeat("y", maxLiveDetail-(len(tc.value)-tc.cut)-1)
 			detail := startErrorDetail(t, before+tc.value+after, anthropic)
-			assert.Equal(t, tc.replacement+after, detail, "the cut value is replaced once and the text after it kept")
+			expected := tc.replacement + after
+			if len(expected) > maxLiveDetail {
+				expected = expected[len(expected)-maxLiveDetail:]
+			}
+			assert.Equal(t, expected, detail, "the cut value is protected before the exported tail is bounded")
 			assertNoPiece(t, detail, key, token, credential)
 		})
 	}
@@ -230,7 +237,7 @@ func TestStartErrorReplacesValuesThatFillTheTail(t *testing.T) {
 	require.NoError(t, err)
 	before := strings.Repeat("p", 99) + "\n"
 	after := "\n" + strings.Repeat("y", maxLiveDetail-utf8.UTFMax-1)
-	assert.Equal(t, modelsettings.Redacted+after, startErrorDetail(t, before+longest+after, edge), "the value's last character begins the tail")
+	assert.Equal(t, (modelsettings.Redacted + after)[len(modelsettings.Redacted+after)-maxLiveDetail:], startErrorDetail(t, before+longest+after, edge), "the value is protected before bounding the exported tail")
 	after = "\n" + strings.Repeat("y", maxLiveDetail-2)
 	assert.Equal(t, after, startErrorDetail(t, before+longest+after, edge), "the value's last byte begins the tail")
 	after += "y"

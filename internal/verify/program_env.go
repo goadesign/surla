@@ -1,14 +1,14 @@
 // This file names the environment a test program starts with. A program the
 // operator wrote keeps its caller's environment. A program agents on this
 // machine wrote gets only the names below, each with its reason: it runs
-// outside the sandbox, so what it is not given it cannot read or send.
+// outside the sandbox; these names prevent Surla from handing it settings.
+// Its operating-system user can still read other same-user programs.
 package verify
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/verify/suite"
 )
 
@@ -18,8 +18,7 @@ const (
 	// verify`'s command line. It keeps the environment its caller has.
 	TestsEvaluator TestsSource = "evaluator"
 	// TestsWritten marks a test program agents on this machine wrote: the
-	// tests accepted for a change, or the builder's own test module that a
-	// live copy runs. It gets only the names ProgramEnv and LiveProgramEnv
+	// tests accepted for a change. It gets only the names ProgramEnv and LiveProgramEnv
 	// list.
 	TestsWritten TestsSource = "written_tests"
 
@@ -31,8 +30,8 @@ const (
 	// the program writes lands in a folder another run or the server uses.
 	tmpEnv = "TMPDIR"
 	// LiveModelProviderEnv and LiveModelNameEnv name the direct model
-	// provider and model the user chose for live copies; a live copy's test
-	// program reads them to plan with that model.
+	// provider and model the user chose. For written tests only the executor
+	// reads them; an operator's evaluator may still plan with them.
 	LiveModelProviderEnv = "SURLA_LIVE_MODEL_PROVIDER"
 	LiveModelNameEnv     = "SURLA_LIVE_MODEL_NAME"
 	// LiveModelGatewayEnv names the model gateway the user chose for live
@@ -55,27 +54,15 @@ func ProgramEnv(p Plan, environ []string, tmpDir string) []string {
 	return append(env, tmpEnv+"="+tmpDir)
 }
 
-// LiveProgramEnv returns the environment p's test program starts with in a
-// live copy, from environ, the live copy's executor's environment, which
-// already holds the live copy's TMPDIR, its key, the model connection the
-// user chose and that provider's handed-over request settings. The
-// operator's evaluator (TestsEvaluator) gets environ unchanged. A program
-// agents wrote (TestsWritten) gets only PATH, TMPDIR, the live copy's key
-// (suite.LiveKeyEnv, which it hands to the candidate), the model connection
-// (LiveModelProviderEnv and LiveModelNameEnv, or LiveModelGatewayEnv) and
-// the chosen provider's request settings (modelsettings), no other
-// provider's.
+// LiveProgramEnv returns the environment of a live target's test program.
+// An operator's evaluator keeps environ unchanged. Accepted written tests get
+// only their helpers' PATH, private TMPDIR, live key and the chosen gateway:
+// Surla serves a direct model in the executor, never in the test program.
 func LiveProgramEnv(p Plan, environ []string) []string {
 	if p.Tests == TestsEvaluator {
 		return environ
 	}
-	names := []string{pathEnv, tmpEnv, suite.LiveKeyEnv, LiveModelProviderEnv, LiveModelNameEnv, LiveModelGatewayEnv}
-	if name, ok := lookup(environ, LiveModelProviderEnv); ok {
-		if provider, ok := modelsettings.Lookup(name); ok {
-			names = append(names, provider.Settings()...)
-		}
-	}
-	return pick(environ, names...)
+	return pick(environ, pathEnv, tmpEnv, suite.LiveKeyEnv, LiveModelGatewayEnv)
 }
 
 // Check returns an error unless s is TestsEvaluator or TestsWritten, the only
@@ -101,17 +88,4 @@ func pick(environ []string, names ...string) []string {
 		}
 	}
 	return env
-}
-
-// lookup returns the value of the last entry of environ named name, as the
-// program would see it.
-func lookup(environ []string, name string) (string, bool) {
-	var value string
-	var found bool
-	for _, kv := range environ {
-		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
-			value, found = v, true
-		}
-	}
-	return value, found
 }

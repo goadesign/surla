@@ -19,8 +19,8 @@ import (
 // LiveProgramEnv for each test source, from an environment holding a
 // variable of the server's own, both providers' keys, a request setting and
 // an unlisted family member, and the live copy's settings. A live copy of
-// written tests gets the chosen provider's request settings, no unlisted
-// member and no other provider's.
+// written tests gets only the gateway, with no provider setting or direct
+// model selection; the executor owns the direct provider.
 func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 	server := []string{
 		"PATH=/usr/bin:/bin",
@@ -71,8 +71,7 @@ func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 			name: "live copy of written tests with a direct provider",
 			got:  LiveProgramEnv(written, live(LiveModelProviderEnv+"=anthropic", LiveModelNameEnv+"=claude")),
 			want: []string{
-				"PATH=/usr/bin:/bin", "ANTHROPIC_API_KEY=ant-k", "ANTHROPIC_BASE_URL=https://gateway.invalid", "TMPDIR=/runs/live/tmp", suite.LiveKeyEnv + "=live-key",
-				LiveModelProviderEnv + "=anthropic", LiveModelNameEnv + "=claude",
+				"PATH=/usr/bin:/bin", "TMPDIR=/runs/live/tmp", suite.LiveKeyEnv + "=live-key",
 			},
 		},
 		{
@@ -83,7 +82,7 @@ func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 		{
 			name: "live copy of written tests with a provider live copies cannot use",
 			got:  LiveProgramEnv(written, live(LiveModelProviderEnv+"=other")),
-			want: []string{"PATH=/usr/bin:/bin", "TMPDIR=/runs/live/tmp", suite.LiveKeyEnv + "=live-key", LiveModelProviderEnv + "=other"},
+			want: []string{"PATH=/usr/bin:/bin", "TMPDIR=/runs/live/tmp", suite.LiveKeyEnv + "=live-key"},
 		},
 	}
 	for _, tc := range cases {

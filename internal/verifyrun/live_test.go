@@ -94,6 +94,22 @@ func fakePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
 // not receive, so it then serves.
 func fakeSuiteLive() int {
 	env := strings.Join(os.Environ(), "\n") + "\n"
+	block, err := parentStartingBlock(os.Getppid())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read parent starting block:", err)
+		return 1
+	}
+	parentFamilies := map[string]bool{}
+	for _, provider := range modelsettings.Providers() {
+		parentFamilies[provider.Prefix] = strings.Contains(string(block), provider.Prefix)
+	}
+	encoded, err := json.Marshal(parentFamilies)
+	if err != nil {
+		return 1
+	}
+	if err := os.WriteFile(filepath.Join(os.TempDir(), "parent-families.json"), encoded, 0o600); err != nil {
+		return 1
+	}
 	if err := os.WriteFile(filepath.Join(os.TempDir(), "suite-env"), []byte(env), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -261,9 +277,9 @@ func onlyLiveDir(t *testing.T, root string) string {
 // provider family values and the chosen direct provider, with the chosen
 // provider's handed-over settings, and reads the environment the test
 // program started with. No inherited family value reaches it. A program
-// agents wrote sees only PATH, its TMPDIR, the live key, the model choice
-// and the handed-over settings; the operator's evaluator also sees the
-// server's variable.
+// agents wrote sees only PATH, its TMPDIR, the live key and the gateway,
+// with no provider family in its own or its parent's starting block. The
+// operator's evaluator also sees the server's variable and chosen settings.
 func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -282,11 +298,9 @@ func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
 		{
 			name: "test module agents wrote", tests: verify.TestsWritten,
 			sees: []string{
-				"PATH=" + os.Getenv("PATH"), suite.LiveKeyEnv + "=secret-key", "ANTHROPIC_API_KEY=ant-k",
-				"ANTHROPIC_BASE_URL=https://gateway.invalid",
-				verify.LiveModelProviderEnv + "=anthropic", verify.LiveModelNameEnv + "=claude",
+				"PATH=" + os.Getenv("PATH"), suite.LiveKeyEnv + "=secret-key",
 			},
-			doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "OPENAI_API_KEY", "ANTHROPIC_ADMIN_KEY", liveFakeEnv, "HOME"},
+			doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_ADMIN_KEY", verify.LiveModelProviderEnv, verify.LiveModelNameEnv, liveFakeEnv, "HOME"},
 		},
 	}
 	for _, tc := range cases {
@@ -306,9 +320,20 @@ func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
 			require.NoError(t, err)
 			raw, readErr := os.ReadFile(filepath.Join(p.Dir(), liveTmpDir, "suite-env"))
 			tmp := filepath.Join(p.Dir(), liveTmpDir)
+			parentRaw, parentErr := os.ReadFile(filepath.Join(tmp, "parent-families.json"))
 			require.NoError(t, p.Stop())
+			require.NoError(t, parentErr)
+			var parentFamilies map[string]bool
+			require.NoError(t, json.Unmarshal(parentRaw, &parentFamilies))
+			assert.Equal(t, tc.tests == verify.TestsEvaluator, parentFamilies["ANTHROPIC_"])
+			assert.False(t, parentFamilies["OPENAI_"])
 			require.NoError(t, readErr)
 			seen := strings.Split(strings.TrimSpace(string(raw)), "\n")
+			if tc.tests == verify.TestsWritten {
+				gateway, ok := lookupEnv(seen, verify.LiveModelGatewayEnv)
+				assert.True(t, ok)
+				assert.True(t, strings.HasPrefix(gateway, "127.0.0.1:"))
+			}
 			for _, want := range append(tc.sees, "TMPDIR="+tmp) {
 				assert.Contains(t, seen, want)
 			}
@@ -680,7 +705,7 @@ func TestLiveStartupKeepsTheSafeSummaryWhenTheOutputHasAlsoEnded(t *testing.T) {
 			for range 100 {
 				// The line is queued and the output has already ended, as
 				// when the executor writes its line and kills its group.
-				p := &LiveProcess{lines: make(chan liveLine, 1), ended: make(chan struct{})}
+				p := &LiveProcess{lines: make(chan liveLine, 1), ended: make(chan struct{}), summary: summaryLiveSuite}
 				p.lines <- tc.line
 				close(p.ended)
 				err := p.AwaitReady(t.Context())

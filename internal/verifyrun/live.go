@@ -2,6 +2,7 @@ package verifyrun
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
+
+	"goa.design/goa-ai/runtime/agent/model"
 
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/modelsettings"
@@ -75,8 +79,8 @@ type (
 		// its exit error.
 		exited  chan struct{}
 		waitErr error
-		// ended is closed when the executor's output ends, which happens
-		// only when its group has been killed.
+		// ended is closed when executor output ends. Its descendants may
+		// still exist until the owner calls Stop and confirms group cleanup.
 		ended chan struct{}
 		// lines delivers the executor's first line to AwaitReady.
 		lines chan liveLine
@@ -86,6 +90,8 @@ type (
 		// settings are the provider request settings the target was given;
 		// startError protects the log excerpt it returns against them.
 		settings []modelsettings.Settings
+		// summary is the fixed startup guidance for this target's test source.
+		summary string
 		// stopOnce makes Stop idempotent; stopErr is its result.
 		stopOnce sync.Once
 		stopErr  error
@@ -135,10 +141,9 @@ var ErrLiveEnded = errors.New("live target ended")
 type LiveStartError struct {
 	// Summary describes the failure in one sentence.
 	Summary string
-	// Detail is the last maxLiveDetail bytes of executor.log with the
-	// settings the target was given replaced (modelsettings.ProtectExcerpt),
-	// so a replacement can make it longer, as valid UTF-8 for the span
-	// exporter: a character the tail cuts is left out.
+	// Detail is the protected tail of executor.log, bounded to maxLiveDetail
+	// bytes after modelsettings.ProtectExcerpt replaces held settings. A
+	// character cut at either edge is left out, so exporters receive UTF-8.
 	Detail string
 	// Err is the underlying cause, or nil.
 	Err error
@@ -172,10 +177,11 @@ func LeftoverLiveDirs(root string) ([]string, error) {
 // reaches the executor and the suite only through the environment
 // (suite.LiveKeyEnv), and the suite passes it to the candidate. env is the
 // executor's environment; LaunchLive replaces its TMPDIR and key and drops
-// every provider family from it, then adds settings, the provider request
-// settings the target may use, which are thus their one source. Settings
-// reach the executor only through its environment, never an argument or
-// live.json. command is the argument list that runs this program. When
+// every provider family from it. For written tests settings reach only
+// the executor's standard input as NUL-terminated NAME=value entries; the
+// executor serves that model through a private gateway. An operator's
+// evaluator keeps the environment delivery of its settings. Neither path
+// writes settings in arguments or live.json. command runs this program. When
 // LaunchLive fails, no process was started and the directory it created is
 // removed. The allocated directory and child TMPDIR are absolute and
 // symlink-free, so preparation and suite processes can change directories
@@ -230,8 +236,19 @@ func LaunchLive(
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.ExtraFiles = []*os.File{control}
 	cmd.Env = append(liveEnv(env), "TMPDIR="+tmp, suite.LiveKeyEnv+"="+key)
-	for _, s := range settings {
-		cmd.Env = append(cmd.Env, s.Environ()...)
+	if plan.Tests == verify.TestsWritten {
+		var input bytes.Buffer
+		for _, held := range settings {
+			for _, entry := range held.Environ() {
+				input.WriteString(entry)
+				input.WriteByte(0)
+			}
+		}
+		cmd.Stdin = &input
+	} else {
+		for _, held := range settings {
+			cmd.Env = append(cmd.Env, held.Environ()...)
+		}
 	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = logFile
@@ -244,7 +261,7 @@ func LaunchLive(
 	p := &LiveProcess{
 		dir: dir, pgid: cmd.Process.Pid, control: keep, exited: make(chan struct{}),
 		ended: make(chan struct{}), lines: make(chan liveLine, 1), readerDone: make(chan struct{}),
-		settings: settings,
+		settings: settings, summary: liveSuiteSummary(plan),
 	}
 	go p.readOutput(stdout)
 	go func() {
@@ -254,22 +271,30 @@ func LaunchLive(
 	return p, nil
 }
 
-// Live runs as `surla verify-run live <dir>`, the leader of the target's
-// process group. Its first action watches the control pipe on descriptor 3,
-// so the whole group dies with the process that started it at any stage. It
-// then takes every provider family out of its own process
-// (takeProviderFamilies), so preparation never sees one, prepares the plan
-// saved in live.json with prepare, starts the suite in --live mode in the
-// same group with what it took added back to the suite's environment only,
-// relays the suite's ready line to out and waits for the suite to exit. A
-// failure prints a builder-safe summary as the line and the full error to
-// errLog. Live returns an error whenever the target is not running, so its
-// exit status is never 0 after a start.
-func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepared, error), out, errLog io.Writer) error {
+// Live runs as `surla verify-run live <dir>`, the target's process-group
+// leader. It starts watching its parent's control pipe before reading stdin,
+// then removes provider families so preparation receives no held setting.
+// Written tests receive a gateway: after preparation the executor applies
+// stdin's settings to itself and calls newProvider, supplied by the command
+// composition root. An operator's evaluator keeps the held starting settings
+// in its environment and needs no constructor. The suite's --live mode and
+// gateway live only as long as this executor; every terminal event ends the
+// whole group. Only its owner removes the directory after confirmed cleanup.
+// out gets one builder-safe ready/failure line; errLog keeps private details.
+func Live(
+	dir string,
+	prepare func(context.Context, verify.Plan) (verify.Prepared, error),
+	newProvider func(string, string, []modelsettings.Settings) (model.Provider, error),
+	out, errLog io.Writer,
+) error {
 	syscall.CloseOnExec(passedFD)
 	control := os.NewFile(passedFD, "control")
 	go watchSupervisor(control)
 
+	input, err := readLiveSettings(os.Stdin)
+	if err != nil {
+		return reportLive(out, errLog, "The live target's model settings could not be read; restart Surla.", err)
+	}
 	providers, err := takeProviderFamilies()
 	if err != nil {
 		return reportLive(out, errLog, summaryLiveSuite, err)
@@ -287,21 +312,46 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		if errors.As(err, &stage) {
 			summary = stage.Summary
 		}
+		if req.Plan.Tests == verify.TestsWritten {
+			summary = writtenLivePreparationSummary(stage)
+		}
 		return reportLive(out, errLog, summary, err)
+	}
+	programEnv := append(os.Environ(), providers...)
+	if req.Plan.Tests == verify.TestsWritten {
+		if provider := os.Getenv(verify.LiveModelProviderEnv); provider != "" {
+			for _, held := range input {
+				for _, entry := range held.Environ() {
+					name, value, _ := strings.Cut(entry, "=")
+					if err := os.Setenv(name, value); err != nil {
+						return reportLive(out, errLog, liveSettingsSummary(provider), err)
+					}
+				}
+			}
+			p, err := newProvider(provider, os.Getenv(verify.LiveModelNameEnv), input)
+			if err != nil {
+				return reportLive(out, errLog, liveSettingsSummary(provider), err)
+			}
+			address, err := serveLiveModel(p, provider)
+			if err != nil {
+				return reportLive(out, errLog, liveSettingsSummary(provider), err)
+			}
+			programEnv = append(programEnv, verify.LiveModelGatewayEnv+"="+address)
+		}
 	}
 	suiteOut, suiteOutW, err := os.Pipe()
 	if err != nil {
-		return reportLive(out, errLog, summaryLiveSuite, err)
+		return reportLive(out, errLog, liveSuiteSummary(req.Plan), err)
 	}
 	cmd := exec.CommandContext(ctx, prep.SuiteBin, append([]string{"--live"}, prep.ArtifactFlags...)...)
-	cmd.Env = verify.LiveProgramEnv(req.Plan, append(os.Environ(), providers...))
+	cmd.Env = verify.LiveProgramEnv(req.Plan, programEnv)
 	cmd.Stdout = suiteOutW
 	cmd.Stderr = errLog
 	// The suite and everything it starts stay in this process group, which
 	// the starting process kills to stop the target.
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	if err := cmd.Start(); err != nil {
-		return errors.Join(reportLive(out, errLog, summaryLiveSuite, err), suiteOutW.Close(), suiteOut.Close())
+		return errors.Join(reportLive(out, errLog, liveSuiteSummary(req.Plan), err), suiteOutW.Close(), suiteOut.Close())
 	}
 	suiteOutW.Close()
 	first := make(chan liveLine, 1)
@@ -317,7 +367,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	select {
 	case line := <-first:
 		if line.URL == "" {
-			return reportLive(out, errLog, summaryLiveSuite, errors.New("suite printed no valid ready line"))
+			return reportLive(out, errLog, liveSuiteSummary(req.Plan), errors.New("suite printed no valid ready line"))
 		}
 		if err := json.NewEncoder(out).Encode(liveLine{URL: line.URL}); err != nil {
 			fmt.Fprintln(errLog, err)
@@ -326,7 +376,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		fmt.Fprintln(errLog, "suite exited:", <-exited)
 		return endGroup()
 	case err := <-exited:
-		return reportLive(out, errLog, summaryLiveSuite, fmt.Errorf("suite exited before it was ready: %v", err))
+		return reportLive(out, errLog, liveSuiteSummary(req.Plan), fmt.Errorf("suite exited before it was ready: %v", err))
 	}
 }
 
@@ -344,12 +394,12 @@ func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 		case line.Error != "":
 			return p.startError(line.Error, nil)
 		case line.URL == "":
-			return p.startError(summaryLiveSuite, fmt.Errorf("%w before it was ready", ErrLiveEnded))
+			return p.startError(p.summary, fmt.Errorf("%w before it was ready", ErrLiveEnded))
 		}
 		p.URL = line.URL
 		return nil
 	case <-ctx.Done():
-		return p.startError(summaryLiveSuite, ctx.Err())
+		return p.startError(p.summary, ctx.Err())
 	}
 }
 
@@ -361,7 +411,15 @@ func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 // written.
 func (p *LiveProcess) startError(summary string, cause error) *LiveStartError {
 	text, start := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail, modelsettings.ExcerptContext)
-	return &LiveStartError{Summary: summary, Detail: modelsettings.ProtectExcerpt(text, start, p.settings...), Err: cause}
+	detail := modelsettings.ProtectExcerpt(text, start, p.settings...)
+	if len(detail) > maxLiveDetail {
+		start := len(detail) - maxLiveDetail
+		for start < len(detail) && !utf8.RuneStart(detail[start]) {
+			start++
+		}
+		detail = detail[start:]
+	}
+	return &LiveStartError{Summary: summary, Detail: detail, Err: cause}
 }
 
 // Dir returns the live directory, which Stop removes.
