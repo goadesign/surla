@@ -240,6 +240,10 @@ func TestPrepareBuildFetchesModulesWhateverGitEnvironmentItInherits(t *testing.T
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "url.file://"+dep+".insteadOf")
 	t.Setenv("GIT_CONFIG_VALUE_0", "https://example.invalid/dep")
+	// The fetch must not depend on the developer's own protocol settings: Go
+	// checks the module's https scheme against GIT_ALLOW_PROTOCOL, and git
+	// the file:// stand-in it rewrites to.
+	t.Setenv("GIT_ALLOW_PROTOCOL", "https:file")
 	pointGitAt(t, decoy)
 
 	r := &runner{evidenceDir: t.TempDir()}
