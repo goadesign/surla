@@ -157,9 +157,10 @@ func (h *Hooks) PricesScone(ctx context.Context) (eval.Result, error) {
 	journeyCookiePrice = `	"cookie": 125,
 `
 	// journeyStepWait bounds a Story evaluation or a build start. The control
-	// plane gives each 5 minutes of its own work (the build start's copy and
-	// generation), and a build start then 45 seconds for the team's window
-	// phase; one more minute lets the server report its own limit first.
+	// plane gives a Story evaluation 5 minutes, and a build start 5 minutes for
+	// its copy and generation and then 45 seconds for the team's window phase,
+	// so this wait outlasts each by 60 and 15 seconds: the server reports its
+	// own limit first.
 	journeyStepWait = 6 * time.Minute
 	// journeyCheckWait bounds one check of the test writer's report, from the
 	// report to the verdict. The control plane gives the whole check 15
@@ -378,6 +379,7 @@ func (j *wholeJourney) commitStarter(t *testing.T) {
 	defer cancel()
 	shell := exec.CommandContext(ctx, "/bin/sh", "-c", strings.Join(commands[:len(commands)-1], " && "))
 	shell.Dir = j.workspace
+	shell.Env = testGitEnv()
 	out, err := shell.CombinedOutput()
 	require.NoError(t, err, "the printed commands %q: %s", commands, out)
 	commit := strings.TrimSpace(runTestGit(t, dir, "rev-parse", "HEAD"))

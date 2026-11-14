@@ -280,9 +280,11 @@ jobs:
             # One change through the project server, its team, a sandboxed
             # verification run and approval: about 2.5 to 4 minutes on a
             # developer machine with -race, several times that on this runner.
+            # Its package alarm outlasts the test's own 32-minute wait for a
+            # verification run, so a hung run ends with the test's message.
             args: -tags=e2e -run '^TestWholeJourneyThroughTheProjectServer$' ./cmd/surla
-            test_timeout: 30m
-            job_timeout: 40
+            test_timeout: 40m
+            job_timeout: 50
           - suite: starter
             module: .
             args: -tags=scaffold ./internal/scaffold
