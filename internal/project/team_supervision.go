@@ -463,7 +463,8 @@ func (role *supervisedRole) idleUnread(value gensurla.TeamRoleState, now time.Ti
 // time. Herdr state and the watcher fact change nothing: the message waits in
 // Chorus for the role's next read. An unmet condition is an expected negative
 // and records nothing. Both outcomes of an attempt, sent and failed, latch every
-// generation the attempt covered, so no generation is ever tried twice.
+// generation the attempt covered, so no generation is ever tried twice. A post
+// that fails after ctx ended, as when the server stops, records nothing either.
 func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
 	sender := o.server.team.dependencies.Sender
 	if sender == nil {
@@ -485,6 +486,11 @@ func (o *teamSupervisor) remind(ctx context.Context, now time.Time) {
 			role.owed[generation] = true
 		}
 		err := sender.Send(ctx, TeamReminder{Team: o.selection.Team, From: o.server.teamSurlaHandle(), To: role.role.Handle, Text: text})
+		if err != nil && ctx.Err() != nil {
+			// The supervisor's context ended, as when the server stops: Surla cut
+			// the post short, so it is no Chorus failure and records no attempt.
+			return
+		}
 		outcome := "sent"
 		if err != nil {
 			outcome = "failed"

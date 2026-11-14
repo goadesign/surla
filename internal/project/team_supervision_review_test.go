@@ -147,6 +147,51 @@ func TestTeamReminderFailureTelemetry(t *testing.T) {
 	}
 }
 
+// stoppingSender calls stop during the post, before failing it as the fixture
+// does, as a server stop ends the supervisor's context while a post runs.
+type stoppingSender struct {
+	*supervisionFixture
+	stop func()
+}
+
+// Send calls stop, then records and fails the reminder through the fixture.
+func (s stoppingSender) Send(ctx context.Context, reminder TeamReminder) error {
+	s.stop()
+	return s.supervisionFixture.Send(ctx, reminder)
+}
+
+// TestTeamReminderStopRecordsNoAttempt proves that a post cut short because the
+// supervisor's context ended is not a Chorus failure: it records no reminder
+// span, while the same failure with the context live records one.
+func TestTeamReminderStopRecordsNoAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		stopping bool
+		spans    int
+	}{
+		{"context live", false, 1},
+		{"server stopping", true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter, _ := recordSpans(t)
+			o, f, now := newSupervisionFixture(t)
+			listed(o, now.Add(-teamJoinSettle), true, "builder-example")
+			f.sendErr = TeamSendFailure{Post: "who", Kind: "connection"}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			stop := func() {}
+			if tc.stopping {
+				stop = cancel
+			}
+			o.server.team.dependencies.Sender = stoppingSender{supervisionFixture: f, stop: stop}
+			exporter.Reset()
+			o.remind(ctx, now)
+			assert.Len(t, f.sends, 1)
+			assert.Len(t, reminderSpans(exporter), tc.spans)
+		})
+	}
+}
+
 // TestTeamStreamStallBoundary makes one stale role invalidate a healthy peer,
 // then proves heartbeats cannot recover either role without fresh snapshots.
 func TestTeamStreamStallBoundary(t *testing.T) {
