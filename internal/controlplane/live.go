@@ -209,9 +209,6 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if !c.liveConfigured {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
-	if c.serverCtx.Err() != nil {
-		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("the server is shutting down, so it starts no live target"))
-	}
 	ctx, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
 		trace.WithAttributes(attribute.String("candidate_commit", p.CandidateCommit)))
 	defer span.End()
@@ -324,6 +321,10 @@ func (c *ControlPlane) livePlan(
 	changeID, candidateCommit string,
 ) (VerificationConfig, error) {
 	c.mu.RLock()
+	if c.serverCtx.Err() != nil {
+		c.mu.RUnlock()
+		return VerificationConfig{}, gensurla.MakeLiveTargetUnavailable(errors.New("the server is shutting down, so it starts no live target"))
+	}
 	record, err := c.confirmedCard(principal, changeID)
 	if err != nil {
 		c.mu.RUnlock()
