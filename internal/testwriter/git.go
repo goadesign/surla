@@ -11,8 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
+
+	"github.com/goadesign/surla/internal/gitenv"
 )
 
 type (
@@ -55,17 +56,6 @@ const (
 // stand for another one, and a base compared with the copy could show the
 // author's own changes as already there.
 var gitFlags = []string{"--no-replace-objects", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"}
-
-// gitRedirects are environment variables that would make git act on another
-// repository, work tree, index or object store than the one named on its
-// command line. gitEnv drops them; the user's identity and configuration-file
-// settings stay, though commitTree never signs.
-var gitRedirects = []string{
-	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE",
-	"GIT_REPLACE_REF_BASE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-	"GIT_PREFIX", "GIT_SHALLOW_FILE", "GIT_QUARANTINE_PATH", "GIT_TERMINAL_PROMPT",
-}
 
 // Write keeps what fits in the limit and counts the rest.
 func (c *capBuffer) Write(p []byte) (int, error) {
@@ -225,17 +215,14 @@ func commitTree(ctx context.Context, wc WorkingCopy, tree, message string) (stri
 	return commit, nil
 }
 
-// gitEnv is the server's environment without gitRedirects, with terminal
-// prompts off.
+// gitEnv is the server's environment without the variables that would make
+// git act on another repository, work tree, index or object store than the
+// one named on its command line (gitenv.WithoutRedirects), and with terminal
+// prompts off: the inherited GIT_TERMINAL_PROMPT is dropped and replaced. The
+// user's identity and configuration-file settings stay, though commitTree
+// never signs.
 func gitEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		key, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(gitRedirects, key) {
-			env = append(env, kv)
-		}
-	}
-	return append(env, "GIT_TERMINAL_PROMPT=0")
+	return append(gitenv.WithoutRedirects(os.Environ(), "GIT_TERMINAL_PROMPT"), "GIT_TERMINAL_PROMPT=0")
 }
 
 // git runs one git command on the working copy's repository, with worktree
