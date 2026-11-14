@@ -1115,8 +1115,8 @@ verification settings runs with the server's environment.
 
 Reads one run, whatever happened to the card since. It returns
 `change_id`, `request_revision`, `candidate_commit`, `suite_commit`,
-`accepted_at`, `test_source`, `inputs_current`, and `state`, whose `type` names the outcome and
-whose `value` holds its fields:
+`accepted_at`, `test_source`, `inputs_current`, and `state`. The state's
+`type` names the outcome and its `value` holds these fields:
 
 | `state.type` | Fields of `state.value` |
 | --- | --- |
@@ -1622,7 +1622,7 @@ holds it beside them (**Switch to Incoming Card**).
 | **Team** | Each registered role's state, its Chorus watcher, and whether its assignment is read, with a **Show … pane** action per role, such as **Show guide pane**, and **Start agents**, which says what it returned and when. With no role: `No agents are registered. Start agents prepares the guide; building adds the required roles.` Nothing runs on a refresh. |
 | **Story** | The Story saved with the shown revision, one row of step cards per flow: a finished flow is marked **will be tested end to end**, others **draft: not tested** with the reasons. Below it, the current Story evaluation ([`get_story_refresh`](#get_story_refresh)): none, running, failed, or succeeded, and how it differs from the change's Story; a draft is not part of the change until the guide revises the change with it and the user confirms. |
 | **Live target** | Whether a live target is starting, running or not confirmed stopped, its commit, address and accepted prompt versions (never the text), and **Stop live target**, which asks first. Below it, the model live targets started afterwards use and a form whose **Apply** sends [`configure_model`](#configure_model); a refusal names a missing key's variable. |
-| **Decisions & Approval** | The Change Card: questions to answer, examples, preserved behaviors, and **Confirm Intent & Lock Examples** (on an agreed card, **Refine Confirmed Answers & Examples**). A proposed revision appears above the agreed one with everything adopting it would confirm (changed request and summary, questions and examples marked **New**, **Edited**, **Kept** or **Removed**, Story and design changes), **Adopt this revision** and **Decline**. A stale submission offers **Load Latest Card**. On a confirmed card the **Build** section comes first, with the saved agreement in **Agreed decision** below it. Its details remain available for review and refinement; an active edit stays open. After approval, the recorded approval names the builder's commit and the tests commit. |
+| **Decisions & Approval** | The Change Card: questions to answer, examples, preserved behaviors, and **Confirm Intent & Lock Examples** (on an agreed card, **Refine Confirmed Answers & Examples**). A proposed revision appears above the agreed one with everything adopting it would confirm (changed request and summary, questions and examples marked **New**, **Edited**, **Kept** or **Removed**, Story and design changes), **Adopt this revision** and **Decline**. A stale submission offers **Load Latest Card**. On a confirmed card the **Build** section comes first, with the saved agreement below it under **Agreed:** and the request. **Agreement details** and **Refine agreed answers and examples** remain available for review and refinement; an active edit stays open. After approval, the recorded approval names the builder's commit and the tests commit. |
 | **Architecture** | [`preview_architecture`](#preview_architecture) for the revision shown. |
 | **Proof** | The change's verification runs and each report's scenario outcomes, hidden scenarios anonymous, with **Approve this result** for a matching passed run. **Check started** shows the request's start time in local time, not a completion time; the exact recorded timestamp stays in details. A single saved run needs no selector. A run of written tests shows the `notice` of its `test_source`. **Candidate and run details** shows the run's candidate commit and its tests commit, labeled **Accepted tests commit** for written tests and **Evaluator commit** for an evaluator named in stored verification settings. |
 | **Traces** | A drawer listing recorded errors, with **All statuses** and **Without error status**, older pages, and **Retry from newest** after a failed read. |
@@ -1633,10 +1633,11 @@ revision has no build, it offers one start button: **Build this change**
 before any build, **Build current agreed revision** when the saved build is of
 an earlier revision, and **Build agreed revision** in either case while a
 proposed revision waits. Once the agreed revision is built, it offers **Build
-again…** instead, which asks first. Next to each control that sends a start it
-says: `Building starts a builder and, unless this project has stored
-verification settings, a test writer whose tests Surla runs on this machine
-outside the sandbox to check the builder’s work.` It refuses to start from an
+again…** instead, which asks first. Next to each control that sends a start,
+it explains which agents start: the builder and, unless the project uses
+configured tests, a test writer. It also says that Surla runs the tests on
+this machine with your permissions and asks you to read them before
+approving. It refuses to start from an
 unconfirmed change (`Confirm the change before building it.`) or an older
 revision, and builds the agreed revision even while the editor holds unsaved
 edits. It shows when the build started, the required test count, whether
