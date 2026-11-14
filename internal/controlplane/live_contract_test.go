@@ -290,7 +290,14 @@ func TestGatewayAddressValidationPreservesThePreviousChoice(t *testing.T) {
 // TestEndedLiveTargetRetainsOnlyItsPublicObservation covers read/reload,
 // refusal preservation, successful Stop and server restart lifetimes.
 func TestEndedLiveTargetRetainsOnlyItsPublicObservation(t *testing.T) {
-	cp, root := newLiveControlPlane(t, "serve")
+	cp, root := newLiveControlPlane(t, "serve-settings")
+	const header = "X-Test-Secret: sentinel-ended-header-a71b"
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{
+		"ANTHROPIC_API_KEY":        sentinelKey,
+		"ANTHROPIC_AUTH_TOKEN":     sentinelToken,
+		"ANTHROPIC_BASE_URL":       sentinelURL,
+		"ANTHROPIC_CUSTOM_HEADERS": header,
+	}})
 	builder := asCaller("alice@example.com", CallerBuilder)
 	commit := strings.Repeat("a", 40)
 	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{
@@ -302,6 +309,11 @@ func TestEndedLiveTargetRetainsOnlyItsPublicObservation(t *testing.T) {
 	running := readRunning(t, cp)
 	target := boundTargetForTest(cp)
 	key := target.key
+	log, err := os.ReadFile(filepath.Join(target.proc.Dir(), "executor.log"))
+	require.NoError(t, err)
+	for _, held := range []string{sentinelKey, sentinelToken, sentinelURLCred, header} {
+		assert.Contains(t, string(log), held, "the stored evaluator actually printed each held setting")
+	}
 	if response, err := http.Post(started.URL+"/exit", "text/plain", nil); err == nil {
 		require.NoError(t, response.Body.Close())
 	}
@@ -346,7 +358,7 @@ func TestEndedLiveTargetRetainsOnlyItsPublicObservation(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(body), &result))
 		assert.Len(t, result.LiveTarget, 5, "state plus exactly the four public observation fields")
 		assert.Equal(t, "ended", result.LiveTarget["state"])
-		for _, private := range []string{started.URL, key, "A private prompt draft.", fakePromptID} {
+		for _, private := range []string{started.URL, key, "A private prompt draft.", fakePromptID, sentinelKey, sentinelToken, sentinelURL, sentinelURLCred, header, "sentinel-ended-header-a71b"} {
 			assert.NotContains(t, body, private)
 		}
 	}

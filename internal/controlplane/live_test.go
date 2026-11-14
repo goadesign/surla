@@ -42,7 +42,8 @@ const (
 	// liveTestChangeID is the confirmed change used by stored-evaluator live fixtures.
 	liveTestChangeID = "chg-live"
 	// liveTargetModeEnv selects what the fake live target does: "serve"
-	// serves the prompt operation; "drop" closes every update's connection
+	// serves the prompt operation; "serve-settings" also prints its stored
+	// evaluator settings to the private log; "drop" closes every update's connection
 	// without answering; "leaky" rejects templates with a message quoting a
 	// path, a key and a URL; "version" accepts with the version in
 	// liveTargetVersionEnv; "other-prompt" accepts but answers for another
@@ -144,6 +145,14 @@ func serveFakeTarget() int {
 	case "fail":
 		fmt.Fprintln(os.Stderr, "no provider key")
 		return 2
+	case "serve-settings":
+		// A stored evaluator may print what it receives. A later ended
+		// observation must not copy this private log into a served result.
+		for _, entry := range os.Environ() {
+			if name, _, _ := strings.Cut(entry, "="); modelsettings.InFamily(name) {
+				fmt.Fprintln(os.Stderr, "stored evaluator setting:", entry)
+			}
+		}
 	case "leak":
 		// A suite that prints its provider configuration, then a first line
 		// whose unknown field is its key, which the executor quotes.
