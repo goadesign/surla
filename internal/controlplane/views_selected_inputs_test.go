@@ -396,7 +396,7 @@ func TestViewsPageReviewFailedCheckFocusesItsSavedResult(t *testing.T) {
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-build-review-check") && !page.$("#surla-build-review-check").disabled, "the failed saved check did not reach Build");
 page.$("#surla-build-review-check").click();
-await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title").includes("failed"), "review did not open the exact failed result");
+await until(() => page.$("#surla-result-view").dataset.runId === input.run && page.text("#surla-cp4-title").includes("did not pass"), "review did not open the exact failed result");
 expect(page.doc.activeElement === page.$("#surla-cp4-title"), "reviewing a failed check did not focus its report");
 expect(!page.$("#surla-cp5-approve"), "a failed result offered approval");
 page.close();
