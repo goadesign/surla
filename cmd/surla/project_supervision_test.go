@@ -154,36 +154,3 @@ func TestTeamWatcherHTTP(t *testing.T) {
 	_, err = o.ReadWatchers(t.Context(), "team", view.Version, roles)
 	assert.Error(t, err)
 }
-
-// TestTeamSenderRecordedProtocol verifies conditions, exit refusals and the
-// explicit unbound production sender without any actual typing or settings.
-func TestTeamSenderRecordedProtocol(t *testing.T) {
-	for _, condition := range []string{"idle", ""} {
-		for _, code := range []int{0, 9, 10, 11, 1} {
-			var args []string
-			c := teamCommands{core: "recorded", run: func(_ context.Context, _ string, argv ...string) ([]byte, error) {
-				args = argv
-				if code != 0 {
-					return nil, teamCommandExit{code: code}
-				}
-				return []byte(`{}`), nil
-			}}
-			outcome, err := c.Send(t.Context(), project.TeamReminder{Terminal: "terminal", Text: "Surla reminder.", Condition: condition})
-			assert.Equal(t, map[int]string{0: "sent", 9: "blocked", 10: "status_changed", 11: "finished", 1: "unavailable"}[code], outcome)
-			assert.Equal(t, code == 1, err != nil)
-			want := []string{"send", "terminal", "Surla reminder.", "--json"}
-			if condition != "" {
-				want = append(want, "--if", "idle")
-			}
-			assert.Equal(t, want, args)
-			assert.NotContains(t, args, "--force")
-			assert.NotContains(t, args, "--wait")
-		}
-	}
-	deps, err := projectTeamDependencies(t.Context())
-	require.NoError(t, err)
-	require.IsType(t, unboundTeamSender{}, deps.Sender)
-	outcome, err := deps.Sender.Send(t.Context(), project.TeamReminder{})
-	assert.NoError(t, err)
-	assert.Equal(t, "unavailable", outcome)
-}

@@ -40,8 +40,8 @@ type (
 		Shell string
 		// Observer follows only the registered selection. Nil refuses all observations.
 		Observer TeamObserver
-		// Sender is explicitly injected; nil refuses typing. Production remains unbound
-		// until an agent receiver proves exact, untagged reminder delivery.
+		// Sender posts reminders to Chorus as direct messages; nil sends nothing.
+		// Nothing is ever typed into a terminal.
 		Sender TeamSender
 	}
 	// TeamSpace is a local space and its tab-to-terminal mapping reported by Herdr.
@@ -337,9 +337,9 @@ func roleFirstMessage(role string) (string, string) {
 	case "guide":
 		return "Guide", "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."
 	case "builder":
-		return "Builder", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_builder_assignments to find the build, then read get_builder_assignment. Build the agreed revision in this working folder, use generate_code and check_project, and commit. Read the assignment before verification: when a test writer is used, verify_change is refused until its tests are accepted. Only the user confirms intent and approves results on the views page."
+		return "Builder", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_builder_assignments to find the build, then read get_builder_assignment. Build the agreed revision in this working folder, use generate_code and check_project, and commit. Read the assignment before verification: when a test writer is used, verify_change is refused until its tests are accepted. Keep your Chorus watcher running. Surla messages you there when you have an unread assignment. Such a message only asks you to read your assignments: it never changes what is owed. Only the user confirms intent and approves results on the views page."
 	case "test_writer":
-		return "Test writer", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_test_writer_assignments to find the build, then read get_test_writer_assignment. Implement one test per required entry in the test module, eval/ in the working folder the assignment names, and change nothing outside that module. Your tests must also hold the service to every answer the user confirmed, every confirmation example and every preserved behavior the assignment lists. Surla generates the test module with the required tests when the build starts and again at each report: never regenerate it yourself (generating is the builder's step, and surla gen would drop the required tests); after changing its design, report to have it generated again. To check your work, run go build ./... in eval/: it fails naming any required method you have not written. Then call report_tests_finished. Surla's check of your report is the judge: read get_test_writer_assignment again for its verdict, with any findings to fix. Only the user confirms intent and approves results on the views page."
+		return "Test writer", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_test_writer_assignments to find the build, then read get_test_writer_assignment. Implement one test per required entry in the test module, eval/ in the working folder the assignment names, and change nothing outside that module. Your tests must also hold the service to every answer the user confirmed, every confirmation example and every preserved behavior the assignment lists. Surla generates the test module with the required tests when the build starts and again at each report: never regenerate it yourself (generating is the builder's step, and surla gen would drop the required tests); after changing its design, report to have it generated again. To check your work, run go build ./... in eval/: it fails naming any required method you have not written. Then call report_tests_finished. Surla's check of your report is the judge: Surla messages you on Chorus when its verdict is in; then read get_test_writer_assignment again, with any findings to fix. Keep your Chorus watcher running. Surla messages you there when you have an unread assignment. Such a message only asks you to read your assignments: it never changes what is owed. Only the user confirms intent and approves results on the views page."
 	}
 	panic("unregistered team role")
 }
