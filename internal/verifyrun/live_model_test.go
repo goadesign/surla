@@ -362,3 +362,52 @@ func TestLiveNativeCounterUsesTheSameProtectedBoundary(t *testing.T) {
 	assert.Equal(t, "count-request", provider.RequestID())
 	assert.NotContains(t, err.Error(), "key-sentinel")
 }
+
+// TestLiveModelFailureWordingUsesItsTypedEvidence distinguishes an unreachable
+// provider from a local/unclassified failure without discarding classification,
+// HTTP status, request identity or the invocation's reported token usage.
+func TestLiveModelFailureWordingUsesItsTypedEvidence(t *testing.T) {
+	usage := model.TokenUsage{InputTokens: 4, OutputTokens: 2}
+	for _, status := range []int{0, 400, 200} {
+		t.Run(fmt.Sprintf("HTTP status %d", status), func(t *testing.T) {
+			kind := model.ProviderErrorKindInvalidRequest
+			if status == 0 {
+				kind = model.ProviderErrorKindUnknown
+			}
+			original := model.NewProviderError("anthropic", "complete", status, kind,
+				"", "unsafe-key-sentinel", "request-123", false, errors.New("unsafe-path-sentinel"))
+			err := liveModelError("anthropic", model.RetainIncompleteUsage(original, usage))
+			var provider *model.ProviderError
+			require.ErrorAs(t, err, &provider)
+			assert.Equal(t, original.Provider(), provider.Provider())
+			assert.Equal(t, original.Operation(), provider.Operation())
+			assert.Equal(t, original.HTTPStatus(), provider.HTTPStatus())
+			assert.Equal(t, original.Kind(), provider.Kind())
+			assert.Equal(t, original.Code(), provider.Code())
+			assert.Equal(t, original.RequestID(), provider.RequestID())
+			assert.Equal(t, original.Retryable(), provider.Retryable())
+			assert.Equal(t, &usage, model.UsageFromError(err))
+			assert.True(t, model.UsageIncompleteFromError(err))
+			assert.Nil(t, provider.Unwrap())
+			if status == 0 {
+				assert.Equal(t, "model provider anthropic could not be reached", provider.Message())
+				assert.NotContains(t, err.Error(), "HTTP 0")
+				assert.NotContains(t, err.Error(), "refused the request")
+			} else {
+				assert.Equal(t, fmt.Sprintf("model provider anthropic refused the request: invalid_request, HTTP %d", status), provider.Message())
+				assert.NotContains(t, err.Error(), "could not be reached")
+			}
+			assert.NotContains(t, err.Error(), "sentinel")
+		})
+	}
+	t.Run("unclassified local failure", func(t *testing.T) {
+		original := errors.New("unsafe-key-sentinel: invalid local request")
+		err := liveModelError("openai", model.RetainUsage(original, usage))
+		assert.EqualError(t, err, "model provider openai could not complete the request")
+		assert.NotContains(t, err.Error(), "could not be reached")
+		assert.NotContains(t, err.Error(), "refused the request")
+		assert.NotErrorIs(t, err, original)
+		assert.Equal(t, &usage, model.UsageFromError(err))
+		assert.False(t, model.UsageIncompleteFromError(err))
+	})
+}

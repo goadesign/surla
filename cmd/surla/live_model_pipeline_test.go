@@ -601,6 +601,15 @@ func assertPipelineResults(t *testing.T, family string, results []pipelineResult
 	}
 	require.NotNil(t, observed["complete/caseclosed"].Provider)
 	assert.Empty(t, observed["complete/caseclosed"].Provider.Code, "the transport failure exercises an empty crossing code too")
+	closedMessage := strings.Join(byCase["caseclosed"].Failure.Causes, "\n")
+	assert.Contains(t, closedMessage, "model provider "+family+" could not be reached")
+	assert.NotContains(t, closedMessage, "refused the request")
+	assert.NotContains(t, closedMessage, "HTTP 0")
+	assert.Contains(t, strings.Join(byCase["case400"].Failure.Causes, "\n"), "HTTP 400")
+	if byCase["casebroken"].Failure.Provider.Status == http.StatusOK {
+		assert.Contains(t, strings.Join(byCase["casebroken"].Failure.Causes, "\n"), "HTTP 200")
+		assert.NotContains(t, strings.Join(byCase["casebroken"].Failure.Causes, "\n"), "could not be reached")
+	}
 	assert.True(t, byCase["case429"].Failure.RateLimited)
 	assert.Equal(t, observed["complete/case429"].Usage, byCase["case429"].Failure.Usage)
 	rawRejection := observed["complete/caseinvalid"].Rejected

@@ -217,12 +217,14 @@ func liveModelFailure(name string, err error) error {
 		}
 	}
 	if provider, ok := model.AsProviderError(err); ok {
+		message := fmt.Sprintf("model provider %s refused the request: %s, HTTP %d", name, provider.Kind(), provider.HTTPStatus())
+		if provider.HTTPStatus() == 0 {
+			message = fmt.Sprintf("model provider %s could not be reached", name)
+		}
 		return model.NewProviderError(provider.Provider(), provider.Operation(), provider.HTTPStatus(),
-			provider.Kind(), provider.Code(),
-			fmt.Sprintf("model provider %s refused the request: %s, HTTP %d", name, provider.Kind(), provider.HTTPStatus()),
-			provider.RequestID(), provider.Retryable(), nil)
+			provider.Kind(), provider.Code(), message, provider.RequestID(), provider.Retryable(), nil)
 	}
-	return fmt.Errorf("model provider %s could not be reached", name)
+	return fmt.Errorf("model provider %s could not complete the request", name)
 }
 
 // liveSettingsSummary names the user action without quoting a setting value.
