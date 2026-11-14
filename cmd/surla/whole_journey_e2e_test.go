@@ -185,8 +185,10 @@ var (
 // revision is refused; the builder's verification before any tests are
 // accepted is refused with the test writer's step; a report that changed a
 // file outside the test module is sent back with findings only the test
-// writer and the user can read; the fixed report is accepted and recorded on
-// the tests branch, and the builder's assignment names that commit; the
+// writer and the user can read; a report without the hook the new flow
+// requires is sent back with the compiler's finding naming it; the report
+// with the hook is accepted and recorded on the tests branch, and the
+// builder's assignment names that commit; the
 // builder's commit passes those tests in a sandboxed run that says where the
 // tests came from and that the test writer may read, and the change list
 // shows it as current; and a later acceptance of changed tests leaves that
@@ -209,6 +211,7 @@ func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 		{"verification before accepted tests is refused with the test writer's step",
 			j.refuseUnacceptedVerification},
 		{"a change outside the test module is sent back to the test writer", j.sendBackOutsideChange},
+		{"tests without the required hook are sent back with the compiler's finding", j.sendBackMissingHook},
 		{"the fixed tests are accepted and recorded on the tests branch", j.acceptTests},
 		{"the builder's commit passes the accepted tests", j.verifyAcceptedTests},
 		{"a later acceptance leaves the earlier run passed but no longer current", j.acceptLaterTests},
@@ -635,18 +638,42 @@ func (j *wholeJourney) sendBackOutsideChange(t *testing.T) {
 	assert.Equal(t, j.projectCommit, j.testsBranch(t), "a report sent back records nothing")
 }
 
-// acceptTests has the test writer restore the README, write the hook the
-// new flow requires and report again. Surla accepts the tests and records
-// them on the tests branch, and the builder's assignment, unread again, names
-// that commit.
-func (j *wholeJourney) acceptTests(t *testing.T) {
+// sendBackMissingHook has the test writer restore the README and report
+// again before it wrote the hook the new flow requires. Surla's check builds
+// the test program, which does not compile without that hook, and sends the
+// report back with the compiler's finding naming it, for the test writer and
+// the user; the tests branch stays where the build started it.
+func (j *wholeJourney) sendBackMissingHook(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
 	runTestGit(t, j.testsFolder, "checkout", "--", "README.md")
+
+	build := j.reportTests(t, ctx, 2)
+	needs, ok := build.TestWriter.Tests.AsNeedsChanges()
+	require.True(t, ok, "a test program without the hook is sent back: %s", build.TestWriter.Tests.Kind())
+	assert.Equal(t, 1, needs.FindingCount, "the build is the one step that failed")
+	findings, err := j.user.GetTestFindings(ctx, &gensurla.GetTestFindingsPayload{ChangeID: journeyChangeID})
+	require.NoError(t, err)
+	assert.Equal(t, 2, findings.Report)
+	require.Len(t, findings.Findings, 1)
+	assert.True(t, strings.HasPrefix(findings.Findings[0], "The suite command does not compile:"),
+		"the finding is the compiler's: %s", findings.Findings[0])
+	assert.Contains(t, findings.Findings[0], "PricesScone", "the compiler names the missing hook")
+	assignment := j.readTestWriterAssignment(t, ctx)
+	assert.Equal(t, findings.Findings, assignment.Findings, "the test writer reads the compiler's finding")
+	assert.Equal(t, j.projectCommit, j.testsBranch(t), "a report sent back records nothing")
+}
+
+// acceptTests has the test writer write the hook the new flow requires and
+// report again. Surla accepts the tests and records them on the tests branch,
+// and the builder's assignment, unread again, names that commit.
+func (j *wholeJourney) acceptTests(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	defer cancel()
 	replaceOnce(t, filepath.Join(j.testsFolder, "eval", "acceptance", "acceptance.go"),
 		journeyCookieHook, journeyCookieHook+journeySconeHook)
 
-	build := j.reportTests(t, ctx, 2)
+	build := j.reportTests(t, ctx, 3)
 	accepted, ok := build.TestWriter.Tests.AsAccepted()
 	require.True(t, ok, "the tests are accepted: %s", build.TestWriter.Tests.Kind())
 	require.Regexp(t, "^[0-9a-f]{40}$", accepted.Commit)
@@ -761,7 +788,7 @@ func (j *wholeJourney) acceptLaterTests(t *testing.T) {
 		"// PricesScone is the test the Story's finished flow prices-scone requires:\n"+
 			"// the helper answers a scone's price from the catalog.\n")
 
-	build := j.reportTests(t, ctx, 3)
+	build := j.reportTests(t, ctx, 4)
 	accepted, ok := build.TestWriter.Tests.AsAccepted()
 	require.True(t, ok, "the changed tests are accepted: %s", build.TestWriter.Tests.Kind())
 	assert.NotEqual(t, j.testsCommit, accepted.Commit, "Surla records the changed tests anew")
