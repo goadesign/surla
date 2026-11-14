@@ -43,7 +43,7 @@ an operation, who may call it, what it returns and how it refuses.
 
 | Need | Why | How to get it |
 | --- | --- | --- |
-| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Two kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)), and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
+| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
 | **Go 1.27.3 or later** | `surla` is a Go program, and the project's checks use Go. Surla runs Goa inside its sandbox with each module's own versions, so no `goa` binary is needed. | [go.dev/dl](https://go.dev/dl/) |
 | **Surla** | The command itself. | `go install github.com/goadesign/surla/cmd/surla@latest` |
 | **Herdr core** (`herdr-core` and `hc`) | The server and every agent run in Herdr terminals. | `curl -fsSL https://releases.herdr.dev/core/install.sh \| sh` ([herdr.dev/core](https://herdr.dev/core/)) |
@@ -121,6 +121,34 @@ what failed and the step that repairs it (see
 [`ensure_team`](#ensure_team-management)); **Start agents** on the views
 page tries again.
 
+<a id="model-provider-settings"></a>
+
+**Model provider settings.** Once the server answers for the project, and
+before the team step, `surla` hands it the request settings of each model
+provider whose key is set in the shell where `surla` runs
+([`hand_over_model_settings`](#hand_over_model_settings)), and, before the
+team lines, prints one line naming them, never a value, for example:
+
+```text
+Model settings held by the project server: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL (from this shell); not sent: ANTHROPIC_ADMIN_KEY. Live targets use anthropic/claude-sonnet-4-6; change it on the views page. surla stop makes the project server forget them.
+```
+
+A shell without a key sends nothing and keeps what an earlier `surla` handed
+over, marked `(from an earlier surla)`. A family variable without its key is
+named as not sent, such as `ANTHROPIC_BASE_URL (ANTHROPIC_API_KEY is not
+set)`. With nothing held and nothing left unsent, no line prints. A refused
+hand-over stops `surla` before the team step; a value longer than 4,096
+characters is refused with that limit named.
+
+`surla` leaves its own environment unchanged and gives it unchanged to
+Herdr's programs (`hc`, `herdr-app`). When `surla` is what starts the Herdr
+core, the core keeps that shell's environment, provider variables included,
+for as long as it runs, and every terminal it opens inherits it, the agents'
+included, exactly as if you had started Herdr in that shell; `surla stop` does
+not change that. Chorus and the browser opener receive the environment
+without any `ANTHROPIC_` or `OPENAI_` variable. Programs you started from that
+shell keep what they inherited.
+
 **The team.** Once the server answers, `surla` starts the Chorus service
 (`chorus up`) and then the Herdr app when either is not running. The server
 owns the team: its stable Chorus name, each role's handle and credential, the
@@ -169,8 +197,11 @@ identity, address, token or storage path.
 `surla` finds that folder from the shell where it runs and starts the server
 with it. The server never looks the folder up itself, because Herdr starts it
 with the environment of the Herdr core, not the environment of your shell.
-For the same reason, a variable the server reads, such as a model provider's
-key or a Docker setting, must be in the Herdr core's environment. The server
+For the same reason, a variable the server reads, such as a Docker setting,
+must be in the Herdr core's environment. A model provider's settings are the
+exception: `surla` hands them over from your shell (see
+[Model provider settings](#model-provider-settings)), and the server removes
+every `ANTHROPIC_` and `OPENAI_` variable it inherits from the Herdr core. The server
 refuses a state folder that is not private to your account, holds no project,
 belongs to another project folder, lies inside the project folder, or is not
 named by its physical path.
@@ -241,7 +272,8 @@ credential in memory and publishes it in its private running record after
 binding its port; `surla` and `surla stop` read it there for each request,
 use the literal local address without a proxy, refuse redirects, and never
 print it. Management can check the project's identity, prepare the team,
-stop the server and mint a browser link; it cannot confirm, build or approve.
+stop the server, mint a browser link and hand over the shell's model provider
+settings; it cannot confirm, build or approve.
 Agent credentials survive restarts and are removed with their agent; agent
 connection settings and rosters name only their own credential files.
 
@@ -572,6 +604,7 @@ all act for that owner.
 | [`draft_override`](#draft_override) | | | ✓ | | | MCP tool and HTTP |
 | [`configure_model`](#configure_model) | ✓ | | | | | MCP tool and HTTP |
 | [`get_model_connection`](#get_model_connection) | ✓ | | | | | HTTP |
+| [`hand_over_model_settings`](#hand_over_model_settings) | | | | | ✓ | HTTP |
 | [`verify_change`](#verify_change) | | | ✓ | | | MCP tool and HTTP |
 | [`get_verification`](#get_verification) | ✓ | ✓ | ✓ | ✓ | | MCP tool and HTTP |
 | [`list_verifications`](#list_verifications) | ✓ | ✓ | ✓ | ✓ | | MCP tool and HTTP |
@@ -1061,25 +1094,70 @@ answers `applied_in_store: false` and `requires_rebuild: true`, with a
 
 The user's **Apply** in the Live target view. It chooses, without a restart,
 the model that live targets started afterwards receive: a direct provider,
-whose key the target reads from the server's environment (`ANTHROPIC_API_KEY`
-or `OPENAI_API_KEY`), or a plaintext gRPC `goa-ai` model gateway. A running
-target keeps its model. Keys never travel in a request. The choice lasts
-until the server stops; verification does not use it.
+whose request settings `surla` handed to the server from the shell where it
+ran ([`hand_over_model_settings`](#hand_over_model_settings)), or a plaintext
+gRPC `goa-ai` model gateway. A running target keeps its model. Keys never
+travel in this request or through MCP. The choice and the held settings last
+until the server stops; after a restart no model is chosen, so the next
+`surla` that hands settings over selects that provider's default model again.
+Verification does not use the choice.
 
 | Refusal | When |
 | --- | --- |
 | `400` | An unknown provider or another schema violation. |
-| `unprocessable` (`422`) | An invalid combination, or the provider's key is missing from the server's environment (the message names the variable). |
+| `unprocessable` (`422`) | An invalid combination, or the server holds no request settings for the chosen provider: `provider anthropic needs ANTHROPIC_API_KEY: export it, with any ANTHROPIC_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway.` |
 
 #### `get_model_connection`
 
 `GET /cp1/model`. **Output:** `ModelConnection`, one of `none`, `direct`
 (`provider`, `model_name`) or `gateway` (`gateway_addr`).
 
-The choice live targets started afterwards receive. At start the server
-picks `anthropic` with `claude-sonnet-4-6` when `ANTHROPIC_API_KEY` is set,
-otherwise `openai` with `gpt-5.4-mini` when `OPENAI_API_KEY` is set, otherwise
-none. It never returns a key or any other environment value.
+The choice live targets started afterwards receive. It starts as `none`.
+While no model is chosen, a hand-over that holds a provider's settings selects
+that provider's default model; every accepted `configure_model` replaces the
+choice. It never returns a key or any other setting value.
+
+#### `hand_over_model_settings`
+
+`POST /cp1/model/settings`, the management credential only, never an MCP
+tool. **Input:** `anthropic`, `openai`, each optional, each a map from
+variable name to value. **Output:** `ModelSettingsResult` (`held`: each
+provider's held variable names, sorted; `connection`: the choice, as
+`get_model_connection` reports it). It never returns a value.
+
+`surla` calls it after the server answers for the project, with the request
+settings of each provider whose key is set in its own environment. A
+provider's request settings are the variables of its family (every name
+starting with its prefix) that cross; any other family variable, such as
+`ANTHROPIC_ADMIN_KEY`, is never sent:
+
+| Provider | Key | Request settings that cross | Default model |
+| --- | --- | --- | --- |
+| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` | `claude-sonnet-4-6` |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `OPENAI_CUSTOM_HEADERS` | `gpt-5.4-mini` |
+
+An absent provider keeps what the server holds for it. A present one replaces
+everything held for it and must include its key, so an empty map is refused.
+While no model is chosen, live targets then use the default model of the
+first provider held, `anthropic` before `openai`; any other choice stays.
+
+The server holds the settings in memory only and forgets them when it stops.
+They are its one source of provider settings: it removes every `ANTHROPIC_`
+and `OPENAI_` variable from its own environment when it starts, so none that
+the Herdr core holds reaches a live target, a verification or a check; only
+Herdr's own programs, which the server runs with the environment it started
+with, still receive them. A live target's test program, including a candidate
+commit's test module that agents wrote, receives the chosen provider's held
+settings. A verification with an operator's stored evaluator receives every
+held provider's settings, as held when it is accepted. Tests a separate agent
+wrote for a verification, and the check helper, receive none. A live target
+or verification already running keeps the settings it started with.
+
+| Refusal | When |
+| --- | --- |
+| `400` | An unknown provider or field, a variable that does not cross, or a value longer than 4,096 characters. |
+| `unprocessable` (`422`) | Settings without their key, or a value containing a NUL character. The message names the provider and the variable, never a value; nothing held changed. |
+| `forbidden` (`403`) | Any caller but the management credential. |
 
 ### Verification and approval
 
@@ -1106,7 +1184,8 @@ Tests a separate agent wrote run outside Surla's sandbox, which isolates only
 the application's builds and processes. Their program therefore starts with
 only `PATH` and `TMPDIR` (a folder inside the run directory): no model key
 and no other variable of the server. An evaluator named in stored
-verification settings runs with the server's environment.
+verification settings runs with the server's environment, plus every held
+provider's settings.
 
 | Refusal (all `409`) | When and the step |
 | --- | --- |
@@ -1609,13 +1688,39 @@ the target declares the same method in its own Goa design and implements it:
   `SURLA_LIVE_TARGET_KEY`, and the program's `Live` function passes it to the
   application through `candidate.Spec.Env`.
 - The model choice reaches the program as `SURLA_LIVE_MODEL_PROVIDER` and
-  `SURLA_LIVE_MODEL_NAME` for a direct provider, with that provider's key in
-  its usual variable, or as `SURLA_LIVE_MODEL_GATEWAY`. Nothing is set when
-  the choice is none.
+  `SURLA_LIVE_MODEL_NAME` for a direct provider, with that provider's
+  handed-over request settings in their own variables, such as
+  `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`, or as
+  `SURLA_LIVE_MODEL_GATEWAY`. Nothing is set when the choice is none.
 - A test module from the commit, which agents wrote, receives only `PATH`,
   `TMPDIR`, `SURLA_LIVE_TARGET_KEY`, the model variables and the chosen
-  provider's key. An evaluator named in stored verification settings
-  receives the server's environment with these variables set.
+  provider's request settings, no other provider's. An evaluator named in
+  stored verification settings receives the server's environment, which holds
+  no inherited `ANTHROPIC_` or `OPENAI_` variable, with these variables and
+  settings set. The target's build and preparation run without any provider
+  setting.
+- The target's `executor.log`, in its folder under `<cards>/live/`, is the
+  program's own output: whatever it prints, a setting included, stays there
+  until the folder is removed. Stopping the target removes the folder once its
+  processes are gone; a folder left after a failed stop or a server crash is
+  named at the next start and kept until you remove it. When a start fails,
+  the server exports the last 8 KiB of that log only to its diagnostics span.
+  It reads up to 16 KiB before that excerpt as well, finds every exact
+  occurrence of a key, token, custom-headers or base URL value the target was
+  given, overlapping ones and ones the excerpt's start cuts included, and the
+  end of the log when it stops partway through such a value. It exports each
+  run of those bytes that reaches the excerpt once, as `[redacted]`, or, when
+  the run is exactly one occurrence of the base URL, as the URL's scheme and
+  host (`[redacted]` when none can be read), and every other byte as printed,
+  apart from what keeps the excerpt valid UTF-8, as the span exporter
+  requires: a character the excerpt's start cuts, or one left unfinished at
+  the end of the log, is left out, and any other invalid UTF-8 is exported as
+  U+FFFD. So, apart from a base URL's scheme and host, no byte of an exact
+  occurrence of a setting the target was given, or of one whose writing
+  stopped at the end of the log, is exported. The same value printed in
+  another form, such as quoted, escaped, or rewritten by a URL parser or an
+  SDK, is not recognized and is exported as printed; a custom-headers value
+  is recognized only as a whole, not header by header.
 - The starter's test module implements this contract: `override_prompt`
   replaces `<name>.helper.system`, and its `Live` function serves a direct
   provider through its own loopback model gateway so the key stays out of the

@@ -82,7 +82,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	provider := &scriptedModelProvider{}
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
-	opts, err := serveOptions(func(string) string { return "" }, os.Environ(), workspace)
+	opts, err := serveOptions(os.Environ(), workspace)
 	require.NoError(t, err)
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
@@ -192,7 +192,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	}
 	srv.Close()
 	require.NoError(t, cp.Close())
-	opts, err = serveOptions(func(string) string { return "" }, os.Environ(), dir)
+	opts, err = serveOptions(os.Environ(), dir)
 	require.NoError(t, err)
 	assert.Equal(t, state.CardsDir(), opts.CardsDir)
 	opts.SurlaVersion = starterSurlaVersion

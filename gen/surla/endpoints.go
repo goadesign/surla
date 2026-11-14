@@ -33,6 +33,7 @@ type Endpoints struct {
 	Diff                      goa.Endpoint
 	ConfigureModel            goa.Endpoint
 	GetModelConnection        goa.Endpoint
+	HandOverModelSettings     goa.Endpoint
 	InitProject               goa.Endpoint
 	GenerateCode              goa.Endpoint
 	CheckProject              goa.Endpoint
@@ -77,6 +78,7 @@ func NewEndpoints(s Service) *Endpoints {
 		Diff:                      NewDiffEndpoint(s),
 		ConfigureModel:            NewConfigureModelEndpoint(s),
 		GetModelConnection:        NewGetModelConnectionEndpoint(s),
+		HandOverModelSettings:     NewHandOverModelSettingsEndpoint(s),
 		InitProject:               NewInitProjectEndpoint(s),
 		GenerateCode:              NewGenerateCodeEndpoint(s),
 		CheckProject:              NewCheckProjectEndpoint(s),
@@ -121,6 +123,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Diff = m(e.Diff)
 	e.ConfigureModel = m(e.ConfigureModel)
 	e.GetModelConnection = m(e.GetModelConnection)
+	e.HandOverModelSettings = m(e.HandOverModelSettings)
 	e.InitProject = m(e.InitProject)
 	e.GenerateCode = m(e.GenerateCode)
 	e.CheckProject = m(e.CheckProject)
@@ -299,6 +302,15 @@ func NewConfigureModelEndpoint(s Service) goa.Endpoint {
 func NewGetModelConnectionEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		return s.GetModelConnection(ctx)
+	}
+}
+
+// NewHandOverModelSettingsEndpoint returns an endpoint function that calls the
+// method "hand_over_model_settings" of service "surla".
+func NewHandOverModelSettingsEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*HandOverModelSettingsPayload)
+		return s.HandOverModelSettings(ctx, p)
 	}
 }
 

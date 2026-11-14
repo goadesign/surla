@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/verify/suite"
 )
 
@@ -39,28 +40,13 @@ const (
 	LiveModelGatewayEnv = "SURLA_LIVE_MODEL_GATEWAY"
 )
 
-// liveModelKeyEnvs names, for each direct provider a live copy may use, the
-// one variable holding its key. A live copy's test program gets the chosen
-// provider's key and no other.
-var liveModelKeyEnvs = map[string]string{
-	"anthropic": "ANTHROPIC_API_KEY",
-	"openai":    "OPENAI_API_KEY",
-}
-
-// LiveModelKeyEnv returns the variable holding the key of the direct model
-// provider named provider, and false for a provider live copies cannot use.
-// configure_model checks that the server's environment holds it.
-func LiveModelKeyEnv(provider string) (string, bool) {
-	name, ok := liveModelKeyEnvs[provider]
-	return name, ok
-}
-
 // ProgramEnv returns the environment p's test program starts with in a
-// verification run, from environ, the caller's environment. The operator's
-// evaluator (TestsEvaluator) gets environ unchanged. A program agents wrote
+// verification run, from environ, the caller's environment, which holds the
+// provider request settings the run was given. The operator's evaluator
+// (TestsEvaluator) gets environ unchanged. A program agents wrote
 // (TestsWritten) gets only PATH from environ and TMPDIR set to tmpDir, a
-// folder inside the run's own folder: no model key, because Surla's own test
-// layout plans with a scripted model in verification.
+// folder inside the run's own folder: no provider setting, because Surla's
+// own test layout plans with a scripted model in verification.
 func ProgramEnv(p Plan, environ []string, tmpDir string) []string {
 	if p.Tests == TestsEvaluator {
 		return environ
@@ -71,20 +57,22 @@ func ProgramEnv(p Plan, environ []string, tmpDir string) []string {
 
 // LiveProgramEnv returns the environment p's test program starts with in a
 // live copy, from environ, the live copy's executor's environment, which
-// already holds the live copy's TMPDIR, its key and the model connection the
-// user chose. The operator's evaluator (TestsEvaluator) gets environ
-// unchanged. A program agents wrote (TestsWritten) gets only PATH, TMPDIR,
-// the live copy's key (suite.LiveKeyEnv, which it hands to the candidate),
-// the model connection (LiveModelProviderEnv and LiveModelNameEnv, or
-// LiveModelGatewayEnv) and the chosen provider's key.
+// already holds the live copy's TMPDIR, its key, the model connection the
+// user chose and that provider's handed-over request settings. The
+// operator's evaluator (TestsEvaluator) gets environ unchanged. A program
+// agents wrote (TestsWritten) gets only PATH, TMPDIR, the live copy's key
+// (suite.LiveKeyEnv, which it hands to the candidate), the model connection
+// (LiveModelProviderEnv and LiveModelNameEnv, or LiveModelGatewayEnv) and
+// the chosen provider's request settings (modelsettings), no other
+// provider's.
 func LiveProgramEnv(p Plan, environ []string) []string {
 	if p.Tests == TestsEvaluator {
 		return environ
 	}
 	names := []string{pathEnv, tmpEnv, suite.LiveKeyEnv, LiveModelProviderEnv, LiveModelNameEnv, LiveModelGatewayEnv}
-	if provider, ok := lookup(environ, LiveModelProviderEnv); ok {
-		if key, ok := LiveModelKeyEnv(provider); ok {
-			names = append(names, key)
+	if name, ok := lookup(environ, LiveModelProviderEnv); ok {
+		if provider, ok := modelsettings.Lookup(name); ok {
+			names = append(names, provider.Settings()...)
 		}
 	}
 	return pick(environ, names...)

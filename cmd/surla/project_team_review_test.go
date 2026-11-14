@@ -76,16 +76,16 @@ func TestDetachedTeamStartersSurvivePollingDeadline(t *testing.T) {
 			t.Setenv("SURLA_TEST_STARTER_STDOUT_PIPE", stdoutPipe)
 			t.Setenv("SURLA_TEST_STARTER_STDERR_PIPE", stderrPipe)
 			exits := make(chan (<-chan error), 1)
-			commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(context.Context, string, ...string) ([]byte, error) { return nil, assert.AnError }, start: func(name string, args ...string) (<-chan error, error) {
+			commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(context.Context, []string, string, ...string) ([]byte, error) { return nil, assert.AnError }, start: func(env []string, name string, args ...string) (<-chan error, error) {
 				assert.Equal(t, dependency, name)
-				exited, err := startDetachedTeamProgram(program, args...)
+				exited, err := startDetachedTeamProgram(env, program, args...)
 				if exited != nil {
 					exits <- exited
 				}
 				return exited, err
 			}}
 			if dependency == "herdr-app" {
-				commands.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+				commands.run = func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
 					if name == "chorus" {
 						return []byte("Chorus v0.11.0 is running"), nil
 					}
@@ -214,7 +214,7 @@ func TestChorusReadinessMatchesLauncher(t *testing.T) {
 		err    error
 		ready  bool
 	}{{"Chorus v0.11.0 is running", nil, true}, {"ready", nil, false}, {"Chorus is running", assert.AnError, false}} {
-		commands := teamCommands{app: "herdr-app", chorus: "chorus", run: func(context.Context, string, ...string) ([]byte, error) { return []byte(tc.output), tc.err }}
+		commands := teamCommands{app: "herdr-app", chorus: "chorus", run: func(context.Context, []string, string, ...string) ([]byte, error) { return []byte(tc.output), tc.err }}
 		assert.Equal(t, tc.ready, teamProgramReady(t.Context(), commands, "chorus"))
 	}
 }
@@ -222,7 +222,7 @@ func TestChorusReadinessMatchesLauncher(t *testing.T) {
 // TestTeamStartupHasIndependentDeadlines prevents machine readiness from consuming ensure_team's timeout.
 func TestTeamStartupHasIndependentDeadlines(t *testing.T) {
 	var chorusCtx, windowCtx context.Context
-	commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(ctx context.Context, _ []string, name string, args ...string) ([]byte, error) {
 		if name == "chorus" {
 			chorusCtx = ctx
 			return []byte("Chorus is running"), nil
@@ -245,7 +245,7 @@ func TestServerTeamDependenciesResolveOnOperation(t *testing.T) {
 	t.Setenv("HERDR_APP_HOME", t.TempDir())
 	state, err := fixtureProjectState(t.TempDir())
 	require.NoError(t, err)
-	deps, err := projectTeamDependencies(t.Context())
+	deps, err := projectTeamDependencies(t.Context(), os.Environ())
 	require.NoError(t, err, "server construction must not resolve Herdr or Chorus")
 	server, err := project.NewServer(state, func() {}, deps)
 	require.NoError(t, err)
@@ -391,6 +391,7 @@ func TestStopAcceptsServerOfAnyBuild(t *testing.T) {
 // TestCLIAlreadyOpenAndCredentialNonleak runs the actual CLI with generated management transport and recorded commands.
 func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 	isolateServeWorkspace(t)
+	isolateProviderFamilies(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
@@ -399,7 +400,7 @@ func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 	var calls []string
 	var space *project.TeamSpace
 	var overlays []string
-	commands := teamCommands{core: "herdr-core", app: "herdr-app", run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+	commands := teamCommands{core: "herdr-core", app: "herdr-app", run: func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
 		calls = append(calls, name+" "+strings.Join(args, " "))
 		if name == "herdr-core" {
 			return []byte(`{"terminals":[]}`), nil
@@ -474,7 +475,7 @@ func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 
 // TestCommandErrorsNeverIncludeArguments verifies server adapters do not export selected paths or argv.
 func TestCommandErrorsNeverIncludeArguments(t *testing.T) {
-	raw, err := runTeamCommand(t.Context(), "/no-such-program", "private-project-path", "private-argument")
+	raw, err := runTeamCommand(t.Context(), nil, "/no-such-program", "private-project-path", "private-argument")
 	assert.Nil(t, raw)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "private-project-path")
@@ -485,12 +486,12 @@ func TestCommandErrorsNeverIncludeArguments(t *testing.T) {
 // TestStarterExitFailurePrecedesReady preserves a reported command failure even when its service answers.
 func TestStarterExitFailurePrecedesReady(t *testing.T) {
 	ready := false
-	commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(context.Context, string, ...string) ([]byte, error) {
+	commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(context.Context, []string, string, ...string) ([]byte, error) {
 		if ready {
 			return []byte("Chorus is running"), nil
 		}
 		return nil, assert.AnError
-	}, start: func(string, ...string) (<-chan error, error) {
+	}, start: func([]string, string, ...string) (<-chan error, error) {
 		ready = true
 		done := make(chan error, 1)
 		done <- assert.AnError

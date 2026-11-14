@@ -181,6 +181,7 @@ jobs:
             ./internal/diff \
             ./internal/genpublish \
             ./internal/goldenpath \
+            ./internal/modelsettings \
             ./internal/procgroup \
             ./internal/renameat \
             ./internal/scaffold \

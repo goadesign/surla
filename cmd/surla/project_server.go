@@ -25,8 +25,10 @@ import (
 	"unicode/utf8"
 
 	genprojectclient "github.com/goadesign/surla/gen/http/project/client"
+	gensurlaclient "github.com/goadesign/surla/gen/http/surla/client"
 	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/project"
 	"go.opentelemetry.io/otel"
 	goahttp "goa.design/goa/v3/http"
@@ -46,8 +48,9 @@ type projectRuntime struct {
 	removeTerminal func(context.Context, string) error
 	// listen binds only the saved project address; tests observe the actual close boundary.
 	listen func(string, string) (net.Listener, error)
-	// teamDependencies binds the server login environment and accepted-work lifetime.
-	teamDependencies func(context.Context) (project.TeamDependencies, error)
+	// teamDependencies binds the server login environment and accepted-work lifetime; its
+	// []string is the server's original environment, which only Herdr's programs receive.
+	teamDependencies func(context.Context, []string) (project.TeamDependencies, error)
 	// startTeamPrograms starts absent desktop/service dependencies after server readiness.
 	startTeamPrograms func(context.Context) error
 }
@@ -77,7 +80,7 @@ func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
 		configRoot: os.UserConfigDir,
 		preflight: func() error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
+			commands, err := cliTeamCommands()
 			if err != nil {
 				return err
 			}
@@ -88,11 +91,10 @@ func productionProjectRuntime() projectRuntime {
 		},
 		teamDependencies: projectTeamDependencies,
 		startTeamPrograms: func(ctx context.Context) error {
-			commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
+			commands, err := cliTeamCommands()
 			if err != nil {
 				return err
 			}
-			commands.start = startDetachedTeamProgram
 			return startTeamPrograms(ctx, commands)
 		},
 		startTerminal: func(ctx context.Context, state *project.State) (string, error) {
@@ -106,6 +108,21 @@ func productionProjectRuntime() projectRuntime {
 		removeTerminal: removeProjectTerminal,
 		listen:         net.Listen,
 	}
+}
+
+// cliTeamCommands resolves the team programs the surla command runs. Herdr's programs get
+// this command's environment unchanged: a Herdr core one of them starts keeps it for every
+// terminal, and agents may sign in with its provider variables. Chorus gets it without any
+// model provider family.
+func cliTeamCommands() (teamCommands, error) {
+	commands, err := resolveTeamCommands(exec.LookPath, runTeamCommand, installerProgramFolder())
+	if err != nil {
+		return teamCommands{}, err
+	}
+	commands.start = startDetachedTeamProgram
+	commands.herdrEnv = os.Environ()
+	commands.chorusEnv = withoutProviderFamilies(os.Environ())
+	return commands, nil
 }
 
 // start serializes discovery and starts at most one server, then opens a one-use views link.
@@ -165,6 +182,14 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		err = errors.Join(err, writeProjectCreatedNotice(stdout))
 	}
 	if err != nil {
+		return err
+	}
+
+	// The server answered for this project, so this shell's model provider
+	// settings go to it before anything else; a refusal stops the start.
+	settingsCtx, stopSettings := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopSettings()
+	if err := handOverModelSettings(settingsCtx, state, modelsettings.Select(os.Environ()), stdout); err != nil {
 		return err
 	}
 
@@ -479,6 +504,12 @@ func projectHolder(state *project.State) string {
 // come from the record there, and serve never derives a folder from its own
 // environment or working directory.
 func (runtime projectRuntime) serve(stateDir string) (err error) {
+	// Provider settings reach the server only through hand_over_model_settings: none that
+	// Herdr's core environment holds may supply a live target, a verification or a check.
+	herdrEnv, err := takeProviderFamilies()
+	if err != nil {
+		return err
+	}
 	state, err := project.Open(stateDir)
 	if err != nil {
 		return err
@@ -495,14 +526,14 @@ func (runtime projectRuntime) serve(stateDir string) (err error) {
 		err = errors.Join(err, provider.Shutdown(ctx))
 		otel.SetTracerProvider(previous)
 	}()
-	opts, err := projectServeOptions(state, os.Getenv, os.Environ())
+	opts, err := projectServeOptions(state, os.Environ())
 	if err != nil {
 		return err
 	}
 	opts.TracerProvider = provider
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	team, err := runtime.teamDependencies(ctx)
+	team, err := runtime.teamDependencies(ctx, herdrEnv)
 	if err != nil {
 		return err
 	}
@@ -623,17 +654,38 @@ func teamManagementEndpoint(state *project.State) goa.Endpoint {
 }
 
 // managementEndpoint preserves generated transport behavior without printing peer-authored
-// error text. Only declared error names select fixed CLI wording; other replies name status.
-// Response status belongs to this invocation's Doer, including a changed-key retry.
+// error text for one project service operation (see managementCall).
 func managementEndpoint(
 	state *project.State,
 	client *http.Client,
 	endpoint func(*genprojectclient.Client) goa.Endpoint,
 ) goa.Endpoint {
+	return managementCall(state, client, func(doer goahttp.Doer) goa.Endpoint {
+		return endpoint(genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false))
+	})
+}
+
+// modelSettingsEndpoint is the management call of the surla service's
+// hand_over_model_settings, with the same credential, retry and wording as
+// the project service's management calls.
+func modelSettingsEndpoint(state *project.State) goa.Endpoint {
+	return managementCall(state, projectHTTPClient(), func(doer goahttp.Doer) goa.Endpoint {
+		return gensurlaclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false).HandOverModelSettings()
+	})
+}
+
+// managementCall preserves generated transport behavior without printing peer-authored
+// error text. endpoint builds the generated operation on a fresh Doer for each invocation.
+// Only declared error names select fixed CLI wording; other replies name status.
+// Response status belongs to this invocation's Doer, including a changed-key retry.
+func managementCall(
+	state *project.State,
+	client *http.Client,
+	endpoint func(goahttp.Doer) goa.Endpoint,
+) goa.Endpoint {
 	return func(ctx context.Context, payload any) (any, error) {
 		doer := &managementDoer{state: state, client: client}
-		transport := genprojectclient.NewClient("http", state.Address(), doer, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-		result, err := endpoint(transport)(ctx, payload)
+		result, err := endpoint(doer)(ctx, payload)
 		if err == nil {
 			return result, nil
 		}
@@ -648,8 +700,13 @@ func managementEndpoint(
 		}
 		var responseErr *goahttp.ClientError
 		if errors.As(err, &responseErr) && responseErr.Name == "invalid_response" {
-			if responseErr.Method == "ensure_team" && doer.lastStatus == http.StatusNotFound {
+			newOperation := responseErr.Method == "ensure_team" || responseErr.Method == "hand_over_model_settings"
+			if newOperation && doer.lastStatus == http.StatusNotFound {
 				return nil, errors.New("this project’s server was started by another version; run surla stop, then surla")
+			}
+			if responseErr.Method == "hand_over_model_settings" && doer.lastStatus == http.StatusBadRequest {
+				return nil, fmt.Errorf("the project server refused the model settings from this shell (HTTP %d); "+
+					"each ANTHROPIC_ and OPENAI_ request setting must be at most %d characters", doer.lastStatus, modelsettings.MaxValueLength)
 			}
 			return nil, goahttp.ErrInvalidResponse(responseErr.Service, responseErr.Method, doer.lastStatus, "")
 		}
@@ -930,12 +987,14 @@ func projectBrowserProgram() (string, error) {
 }
 
 // openProjectViews is the only launch whose argument is allowed to contain a one-use browser credential.
+// The opener never receives the shell's model provider settings.
 func openProjectViews(ctx context.Context, url string) error {
 	program, err := projectBrowserProgram()
 	if err != nil {
 		return err
 	}
 	command := exec.CommandContext(ctx, program, url)
+	command.Env = withoutProviderFamilies(os.Environ())
 	return command.Run()
 }
 

@@ -60,7 +60,7 @@ func TestTeamFilteredSubscription(t *testing.T) {
 	var mu sync.Mutex
 	var calls [][]string
 	started := make(chan struct{}, 2)
-	o := teamObservations{commands: teamCommands{core: "recorded-herdr"}, stream: func(ctx context.Context, program string, args []string, read func(io.Reader) error) error {
+	o := teamObservations{commands: teamCommands{core: "recorded-herdr"}, stream: func(ctx context.Context, _ []string, program string, args []string, read func(io.Reader) error) error {
 		assert.Equal(t, "recorded-herdr", program)
 		mu.Lock()
 		calls = append(calls, args)
@@ -97,7 +97,7 @@ func TestTeamFilteredSubscription(t *testing.T) {
 // before any get, and the resulting narrow values contain no message or title.
 func TestTeamDiscoveryBeforeRead(t *testing.T) {
 	var calls [][]string
-	c := teamCommands{core: "recorded", run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+	c := teamCommands{core: "recorded", run: func(_ context.Context, _ []string, _ string, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		if args[0] == "ls" {
 			return []byte(`{"terminals":[{"address":"owned"}]}`), nil

@@ -83,7 +83,6 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 				Command:      []string{self},
 				Env:          append(os.Environ(), liveTargetModeEnv+"=serve"),
 				StartTimeout: time.Minute,
-				Model:        noModel(),
 			},
 		}
 	}
@@ -254,7 +253,7 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 				RunsDir:         runsDir,
 				SurlaVersion:    testSurlaVersion,
 				WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
-				Live:            &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
+				Live:            &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
 			}
 			var cp *ControlPlane
 			var card *gensurla.ChangeCardResult
@@ -646,7 +645,7 @@ func startRunFor(t *testing.T, cp *ControlPlane, verifiable bool, card *gensurla
 	plan.WorkDir = filepath.Join(runsDir, runID, "work")
 	_, err := verifyrun.Start(runsDir, verifyrun.Request{
 		RunID: runID, Owner: "alice@example.com", ChangeID: card.ChangeID, AcceptedAt: time.Now().UTC(), Timeout: time.Hour, Plan: plan,
-	}, []string{"/bin/sh", "-c", "exit 0", "sh"})
+	}, []string{"/bin/sh", "-c", "exit 0", "sh"}, nil)
 	require.NoError(t, err)
 	return runID
 }

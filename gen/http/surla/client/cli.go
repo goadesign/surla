@@ -440,6 +440,41 @@ func BuildConfigureModelPayload(surlaConfigureModelBody *string) (*surla.Configu
 	return v, nil
 }
 
+// BuildHandOverModelSettingsPayload builds the payload for the surla
+// hand_over_model_settings endpoint from CLI flags.
+func BuildHandOverModelSettingsPayload(surlaHandOverModelSettingsBody *string) (*surla.HandOverModelSettingsPayload, error) {
+	var err error
+	var body HandOverModelSettingsRequestBody
+	{
+		if surlaHandOverModelSettingsBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaHandOverModelSettingsBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"anthropic\": {\n         \"ANTHROPIC_API_KEY\": \"bb4\",\n         \"ANTHROPIC_AUTH_TOKEN\": \"j\"\n      },\n      \"openai\": {\n         \"OPENAI_BASE_URL\": \"qsj\",\n         \"OPENAI_CUSTOM_HEADERS\": \"p1\",\n         \"OPENAI_ORG_ID\": \"6\"\n      }\n   }'")
+		}
+	}
+	v := &surla.HandOverModelSettingsPayload{}
+	if body.Anthropic != nil {
+		v.Anthropic = make(map[string]string, len(body.Anthropic))
+		for key, val := range body.Anthropic {
+			tk := key
+			tv := val
+			v.Anthropic[tk] = tv
+		}
+	}
+	if body.Openai != nil {
+		v.Openai = make(map[string]string, len(body.Openai))
+		for key, val := range body.Openai {
+			tk := key
+			tv := val
+			v.Openai[tk] = tv
+		}
+	}
+
+	return v, nil
+}
+
 // BuildInitProjectPayload builds the payload for the surla init_project
 // endpoint from CLI flags.
 func BuildInitProjectPayload(surlaInitProjectBody *string) (*surla.InitProjectPayload, error) {

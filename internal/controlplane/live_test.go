@@ -30,6 +30,7 @@ import (
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/modelsettings"
 	genpromptsserver "github.com/goadesign/surla/internal/targetprompt/gen/http/prompts/server"
 	genprompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
 	"github.com/goadesign/surla/internal/verify"
@@ -141,6 +142,17 @@ func serveFakeTarget() int {
 	case "fail":
 		fmt.Fprintln(os.Stderr, "no provider key")
 		return 2
+	case "leak":
+		// A suite that prints its provider configuration, then a first line
+		// whose unknown field is its key, which the executor quotes.
+		for _, kv := range os.Environ() {
+			if name, _, _ := strings.Cut(kv, "="); modelsettings.InFamily(name) {
+				fmt.Fprintln(os.Stderr, "suite configuration:", kv)
+			}
+		}
+		fmt.Printf("{%q:true}\n", os.Getenv("ANTHROPIC_API_KEY"))
+		time.Sleep(time.Hour)
+		return 0
 	case "fail-pinned":
 		// A file the suite cannot remove makes the owner's cleanup fail.
 		pinned := filepath.Join(os.TempDir(), "immutable")
@@ -203,7 +215,6 @@ func newLiveControlPlane(t *testing.T, mode string) (*ControlPlane, string) {
 		Live: &LiveConfig{
 			Command: []string{self},
 			Env:     append(os.Environ(), liveTargetModeEnv+"="+mode), StartTimeout: time.Minute,
-			Model: noModel(),
 		},
 	})
 	require.NoError(t, err)
@@ -423,7 +434,7 @@ func TestCloseStopsTheLiveTarget(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
@@ -448,7 +459,7 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live: &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
 			StartTimeout: time.Hour},
 	})
 	require.NoError(t, err)
@@ -489,7 +500,7 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
@@ -728,7 +739,7 @@ func TestAStartThatFailsBeforeReadyAndCannotBeCleanedUpKeepsItsOwner(t *testing.
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=fail-pinned")},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=fail-pinned")},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -766,7 +777,7 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live: &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
 			StartTimeout: 300 * time.Millisecond},
 	})
 	require.NoError(t, err)
@@ -813,7 +824,7 @@ func TestGetLiveTargetFollowsEachTransition(t *testing.T) {
 		Verification:   &VerificationConfig{RunsDir: t.TempDir()},
 		Live: &LiveConfig{
 			Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
-			StartTimeout: time.Minute, Model: noModel(),
+			StartTimeout: time.Minute,
 		},
 	})
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
@@ -907,7 +918,7 @@ func TestGetLiveTargetShowsAStartInProgressWithoutWaiting(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     t.TempDir(),
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live: &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
 			StartTimeout: time.Hour},
 	})
 	require.NoError(t, err)
@@ -952,7 +963,7 @@ func TestGetLiveTargetShowsATargetNotConfirmedStopped(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
@@ -1041,7 +1052,7 @@ func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
 		Verification:   &VerificationConfig{RunsDir: t.TempDir()},
 		Live: &LiveConfig{
 			Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
-			StartTimeout: time.Minute, Model: noModel(),
+			StartTimeout: time.Minute,
 		},
 	})
 	cp.changesWait = 20 * time.Second
