@@ -11,8 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/modelsettings"
@@ -173,16 +176,27 @@ func (c *ControlPlane) chooseModel(choice gensurla.Connection) error {
 // starts with: the environment of the model choice in force, built from
 // Options.Live.Env, and the held request settings of its provider when the
 // choice is a direct provider. A gateway or no model gives no settings.
-func (c *ControlPlane) liveLaunch() ([]string, []modelsettings.Settings) {
+func (c *ControlPlane) liveLaunch(requireModel bool) ([]string, []modelsettings.Settings, error) {
 	c.modelMu.Lock()
 	defer c.modelMu.Unlock()
+	if requireModel && c.liveModel.Kind() == gensurla.ConnectionKindNone {
+		return nil, nil, gensurla.MakeLiveTargetUnavailable(errors.New(msgLiveModelRequired))
+	}
 	env := liveTargetEnv(c.liveBaseEnv, c.liveModel)
 	if direct, ok := c.liveModel.AsDirect(); ok {
 		if settings, held := c.heldSettings[direct.Provider]; held {
-			return env, []modelsettings.Settings{settings}
+			return env, []modelsettings.Settings{settings}, nil
 		}
 	}
-	return env, nil
+	return env, nil, nil
+}
+
+// hasLiveModel checks the early refusal without capturing a launch. The
+// accepted launch snapshots the current choice and settings under liveMu.
+func (c *ControlPlane) hasLiveModel() bool {
+	c.modelMu.Lock()
+	defer c.modelMu.Unlock()
+	return c.liveModel.Kind() != gensurla.ConnectionKindNone
 }
 
 // evaluatorSettings returns, in one modelMu section, the held request
@@ -216,13 +230,16 @@ func modelChoice(p *gensurla.ConfigureModelPayload) (gensurla.Connection, error)
 		modelName = strings.TrimSpace(*p.ModelName)
 	}
 	if p.GatewayAddr != nil {
-		gatewayAddr = strings.TrimSpace(*p.GatewayAddr)
+		gatewayAddr = *p.GatewayAddr
 	}
 	_, known := modelsettings.Lookup(provider)
 	switch {
 	case gatewayAddr != "" && (provider != "" || modelName != ""):
 		return gensurla.Connection{}, errors.New("gateway_addr cannot be combined with provider or model_name; the gateway chooses the model")
 	case gatewayAddr != "":
+		if !validModelGateway(gatewayAddr) {
+			return gensurla.Connection{}, errors.New("gateway_addr must be a host and decimal port from 1 to 65535, such as 127.0.0.1:8080 or [::1]:8080; no URL, path or whitespace")
+		}
 		return gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: gatewayAddr}), nil
 	case provider == "" && modelName == "":
 		return gensurla.Connection{}, errors.New("specify both provider and model_name, or specify gateway_addr")
@@ -233,6 +250,22 @@ func modelChoice(p *gensurla.ConfigureModelPayload) (gensurla.Connection, error)
 	default:
 		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: provider, ModelName: modelName}), nil
 	}
+}
+
+// validModelGateway validates the address the generated acceptance program
+// consumes, without resolving names or probing network reachability.
+func validModelGateway(addr string) bool {
+	host, portText, err := net.SplitHostPort(addr)
+	if err != nil || host == "" || strings.ContainsAny(host, "/\\?#@") || strings.ContainsFunc(addr, unicode.IsSpace) {
+		return false
+	}
+	for _, digit := range portText {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	port, err := strconv.Atoi(portText)
+	return err == nil && port >= 1 && port <= 65535
 }
 
 // handedOver returns the providers present in p, by name. A nil map is an

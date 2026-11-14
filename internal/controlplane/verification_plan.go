@@ -133,7 +133,7 @@ const (
 // tests_not_accepted can take in every state. Only an acceptance makes the
 // builder's assignment unread, so the project server's Chorus reminder reaches
 // the builder exactly then.
-const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"
+const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again"
 
 // Error says what is refused, why and who acts.
 func (r *layoutRefusal) Error() string {
@@ -190,6 +190,18 @@ func (c *ControlPlane) verificationPlan(
 	c.mu.RLock()
 	testsCommit, _, err := c.testsChoice(principal, changeID, revision)
 	c.mu.RUnlock()
+	return c.verificationPlanForTests(ctx, candidateCommit, revision, testsCommit, err)
+}
+
+// verificationPlanForTests completes the shared plan from testsChoice's
+// snapshot. Live starts select the confirmed card and tests in one c.mu read;
+// both entry points map the same refusal and build exactly those inputs.
+func (c *ControlPlane) verificationPlanForTests(
+	ctx context.Context,
+	candidateCommit, revision, testsCommit string,
+	selectionErr error,
+) (VerificationConfig, error) {
+	err := selectionErr
 	var notAccepted testsNotAccepted
 	if errors.As(err, &notAccepted) {
 		// verify_change's caller is the builder, so it reads the builder's step.
@@ -275,8 +287,7 @@ func (c *ControlPlane) testsChoice(
 // bound workspace, and returns the plan that builds candidateCommit's
 // programs and runs testsCommit's generated entry point, written by agents
 // (verify.TestsWritten, the one place written tests are marked).
-// Verification passes the accepted tests' commit; a live copy passes the
-// candidate commit twice. A project folder that is no longer the directory
+// Verification and live targets pass the accepted tests' commit. A project folder that is no longer the directory
 // this control plane bound or is outside any git repository, a commit the
 // repository does not hold, or a commit lacking the layout is refused with a
 // *layoutRefusal saying what and who acts: the builder for the folder and

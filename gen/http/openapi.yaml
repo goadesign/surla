@@ -1387,7 +1387,7 @@ paths:
             tags:
                 - surla
             summary: get_live_target surla
-            description: 'Report this server''s live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.'
+            description: 'Report this server''s live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; ended after an unexpected ending with confirmed cleanup, or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.'
             operationId: surla#get_live_target
             responses:
                 "200":
@@ -1414,7 +1414,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.
+            description: 'Build the candidate commit for the owner''s confirmed change and bind draft_override to this server''s one live target. Stored verification settings use the operator''s evaluator and need no build. Otherwise the change''s current revision must have a build with accepted tests: the candidate programs come from candidate_commit and the test program from the accepted tests commit. Written tests require a chosen model; with a direct provider the executor serves a private loopback model gateway and passes no provider setting to the program. Card, tests, model and plan refusals preserve the running target. After those checks a replacement stops the old target and discards its drafts, even if the new startup fails. A target that ends unexpectedly is reported as ended after confirmed cleanup; a server restart leaves none.'
             operationId: surla#start_live_target
             parameters:
                 - name: start_live_target_request_body
@@ -1423,6 +1423,7 @@ paths:
                   schema:
                     $ref: '#/definitions/StartLiveTargetPayload'
                     required:
+                        - change_id
                         - candidate_commit
             responses:
                 "200":
@@ -1443,6 +1444,30 @@ paths:
                             id: 123abc
                             message: parameter 'p' must be an integer
                             name: forbidden
+                            temporary: false
+                            timeout: false
+                "404":
+                    description: 'not_found: No owned Change Card exists with this change_id.'
+                    schema:
+                        $ref: '#/definitions/SurlaStartLiveTargetNotFoundResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_found
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'no_test_layout: The candidate or accepted tests lacks the required test layout.'
+                    schema:
+                        $ref: '#/definitions/SurlaStartLiveTargetNoTestLayoutResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: no_test_layout
                             temporary: false
                             timeout: false
                 "422":
@@ -6722,7 +6747,7 @@ definitions:
         properties:
             live_target:
                 type: object
-                description: none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.
+                description: none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.
                 example:
                     candidate_commit: Aliquid rerum vel atque ducimus iusto sunt.
                     prompts:
@@ -6816,6 +6841,36 @@ definitions:
                                 - not_confirmed_stopped
                       required:
                         - candidate_commit
+                        - message
+                        - state
+                    - type: object
+                      properties:
+                        candidate_commit:
+                            type: string
+                            description: The commit the ended target ran.
+                            example: Dignissimos dolorum ab quaerat minima.
+                        ended_at:
+                            type: string
+                            description: When the server observed that target ending.
+                            example: "1999-10-12T05:40:36Z"
+                            format: date-time
+                        message:
+                            type: string
+                            description: Fixed explanation of what is known and the builder's next step.
+                            example: Molestias natus dolorem.
+                        started_at:
+                            type: string
+                            description: When that target became ready.
+                            example: "1983-03-25T04:56:54Z"
+                            format: date-time
+                        state:
+                            type: string
+                            enum:
+                                - ended
+                      required:
+                        - candidate_commit
+                        - started_at
+                        - ended_at
                         - message
                         - state
         description: This server's live target, as get_live_target reports it.
@@ -9834,9 +9889,16 @@ definitions:
                 description: Full commit ID to build, in the candidate repository's object format.
                 example: 4f0b3c1d2e5a6978877665544332211009988776
                 pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+            change_id:
+                type: string
+                description: Owned, confirmed change from list_builder_assignments.
+                example: k1
+                minLength: 1
         example:
             candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+            change_id: k1
         required:
+            - change_id
             - candidate_commit
     StartedBuild:
         title: StartedBuild
@@ -16611,6 +16673,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaStartLiveTargetConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaStartLiveTargetForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -16733,6 +16838,178 @@ definitions:
             name: bad_request
             temporary: false
             timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartLiveTargetNoBuildResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartLiveTargetNoTestLayoutResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartLiveTargetNotFoundResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartLiveTargetTestsNotAcceptedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
         required:
             - name
             - id

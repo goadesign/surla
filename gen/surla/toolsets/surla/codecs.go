@@ -5572,7 +5572,7 @@ var getLiveTargetResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
 		JSONType:    "object",
-		Description: "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.",
+		Description: "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
@@ -5582,6 +5582,7 @@ var getLiveTargetResultFields = []tools.FieldMetadata{
 			"starting",
 			"running",
 			"not_confirmed_stopped",
+			"ended",
 		},
 	},
 	{
@@ -5757,6 +5758,61 @@ var getLiveTargetResultFields = []tools.FieldMetadata{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
 				Value:         "not_confirmed_stopped",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
+		JSONType:    "object",
+		Description: "The last ready target ended unexpectedly and its processes are confirmed stopped. This in-memory observation lasts until an explicit stop, an accepted replacement, or a server restart. It contains no address, prompt, credential or provider detail.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "ended",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "The commit the ended target ran.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "ended",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("started_at")},
+		JSONType:    "string",
+		Description: "When that target became ready.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "ended",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("ended_at")},
+		JSONType:    "string",
+		Description: "When the server observed that target ending.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "ended",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "Fixed explanation of what is known and the builder's next step.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "ended",
 			},
 		},
 	},
@@ -10618,7 +10674,12 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 var startLiveTargetPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Candidate commit to build and run as this server's live CP3 target.",
+		Description: "Owned, confirmed change and candidate commit to build and run as this server's live CP3 target.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Owned, confirmed change from list_builder_assignments.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_commit")},
@@ -15637,6 +15698,15 @@ func MarshalGetLiveTargetResult(v *GetLiveTargetResult) ([]byte, error) {
 		u := liveTargetValue
 		u.SetNotConfirmedStopped((*toolhttp.LiveTargetNotConfirmedStoppedTransport)(obj))
 		liveTargetValue = u
+	case "ended":
+		actual, _ := in.LiveTarget.AsEnded()
+		var obj *toolhttp.LiveTargetEndedTransport
+		if actual != nil {
+			obj = encodeLiveTargetEndedToLiveTargetEndedTransport(actual)
+		}
+		u := liveTargetValue
+		u.SetEnded((*toolhttp.LiveTargetEndedTransport)(obj))
+		liveTargetValue = u
 	}
 	out.LiveTarget = &liveTargetValue
 	return json.Marshal(out)
@@ -15699,6 +15769,15 @@ func UnmarshalGetLiveTargetResult(data []byte) (*GetLiveTargetResult, error) {
 		}
 		u := out.LiveTarget
 		u.SetNotConfirmedStopped((*LiveTargetNotConfirmedStopped)(obj))
+		out.LiveTarget = u
+	case "ended":
+		actual, _ := in.LiveTarget.AsEnded()
+		var obj *LiveTargetEnded
+		if actual != nil {
+			obj = decodeLiveTargetEndedTransportToLiveTargetEnded(actual)
+		}
+		u := out.LiveTarget
+		u.SetEnded((*LiveTargetEnded)(obj))
 		out.LiveTarget = u
 	}
 	return out, nil
@@ -17557,6 +17636,7 @@ func MarshalStartLiveTargetPayload(v *StartLiveTargetPayload) ([]byte, error) {
 	_ = in
 	var out *toolhttp.StartLiveTargetPayloadTransport
 	out = &toolhttp.StartLiveTargetPayloadTransport{
+		ChangeID:        &in.ChangeID,
 		CandidateCommit: &in.CandidateCommit,
 	}
 	return json.Marshal(out)
@@ -17583,6 +17663,7 @@ func UnmarshalStartLiveTargetPayload(data []byte) (*StartLiveTargetPayload, erro
 	_ = in
 	var out *StartLiveTargetPayload
 	out = &StartLiveTargetPayload{
+		ChangeID:        *in.ChangeID,
 		CandidateCommit: *in.CandidateCommit,
 	}
 	return out, nil
@@ -21258,9 +21339,17 @@ func validateStartLiveTargetPayloadJSONValue(path string, value any, description
 			); err != nil {
 				return err
 			}
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Owned, confirmed change from list_builder_assignments.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"candidate_commit",
+				"change_id",
 			})
 		}
 	}
@@ -21386,7 +21475,7 @@ func validateGetLiveTargetResultJSONValue(path string, value any, description st
 		case "live_target":
 			if err := validateGetLiveTargetResultRootLiveTargetJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.",
+				typed[key], "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.",
 			); err != nil {
 				return err
 			}
@@ -21415,7 +21504,7 @@ func validateGetLiveTargetResultRootLiveTargetJSONValue(path string, value any, 
 	rawDiscriminator, discriminatorPresent := typed["state"]
 	discriminator, ok := rawDiscriminator.(string)
 	if !ok {
-		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"none", "starting", "running", "not_confirmed_stopped"})
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"none", "starting", "running", "not_confirmed_stopped", "ended"})
 	}
 	branch := make(map[string]any, len(typed)-1)
 	for key, item := range typed {
@@ -21432,8 +21521,10 @@ func validateGetLiveTargetResultRootLiveTargetJSONValue(path string, value any, 
 		return validateGetLiveTargetResultRunningLiveTargetTransportJSONValue(path, branch, "")
 	case "not_confirmed_stopped":
 		return validateGetLiveTargetResultLiveTargetNotConfirmedStoppedTransportJSONValue(path, branch, "")
+	case "ended":
+		return validateGetLiveTargetResultLiveTargetEndedTransportJSONValue(path, branch, "")
 	default:
-		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"none", "starting", "running", "not_confirmed_stopped"})
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"none", "starting", "running", "not_confirmed_stopped", "ended"})
 	}
 }
 
@@ -21655,6 +21746,66 @@ func validateGetLiveTargetResultLiveTargetNotConfirmedStoppedTransportJSONValue(
 			return unknownJSONFieldError(path, key, []string{
 				"candidate_commit",
 				"message",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetLiveTargetResultLiveTargetEndedTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultLiveTargetEndedTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit the ended target ran.",
+			); err != nil {
+				return err
+			}
+		case "ended_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the server observed that target ending.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Fixed explanation of what is known and the builder's next step.",
+			); err != nil {
+				return err
+			}
+		case "started_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When that target became ready.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"ended_at",
+				"message",
+				"started_at",
 			})
 		}
 	}
@@ -25757,6 +25908,16 @@ func decodeLiveTargetNotConfirmedStoppedTransportToLiveTargetNotConfirmedStopped
 
 	return res
 }
+func decodeLiveTargetEndedTransportToLiveTargetEnded(v *toolhttp.LiveTargetEndedTransport) *LiveTargetEnded {
+	res := &LiveTargetEnded{
+		CandidateCommit: *v.CandidateCommit,
+		StartedAt:       *v.StartedAt,
+		EndedAt:         *v.EndedAt,
+		Message:         *v.Message,
+	}
+
+	return res
+}
 func encodeLiveTargetNoneToLiveTargetNoneTransport(v *LiveTargetNone) *toolhttp.LiveTargetNoneTransport {
 	res := &toolhttp.LiveTargetNoneTransport{}
 
@@ -25799,6 +25960,16 @@ func encodeLivePromptItemToLivePromptItemTransport(v *LivePromptItem) *toolhttp.
 func encodeLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedTransport(v *LiveTargetNotConfirmedStopped) *toolhttp.LiveTargetNotConfirmedStoppedTransport {
 	res := &toolhttp.LiveTargetNotConfirmedStoppedTransport{
 		CandidateCommit: &v.CandidateCommit,
+		Message:         &v.Message,
+	}
+
+	return res
+}
+func encodeLiveTargetEndedToLiveTargetEndedTransport(v *LiveTargetEnded) *toolhttp.LiveTargetEndedTransport {
+	res := &toolhttp.LiveTargetEndedTransport{
+		CandidateCommit: &v.CandidateCommit,
+		StartedAt:       &v.StartedAt,
+		EndedAt:         &v.EndedAt,
 		Message:         &v.Message,
 	}
 

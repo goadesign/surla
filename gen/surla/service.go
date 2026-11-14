@@ -112,15 +112,18 @@ type Service interface {
 	// leaves the target's text unchanged; update_not_confirmed means the target
 	// may or may not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
-	// Build a candidate commit exactly as Checkpoint 4 does and run it as this
-	// server's one live CP3 target, then bind draft_override to it. The target's
-	// program is the operator's evaluator when verification settings are stored
-	// with surla verification set; otherwise it is the generated entry point of
-	// the test module in that same candidate commit, which needs no build and no
-	// accepted tests. A running target is stopped first, so there is never more
-	// than one. The target runs until stop_live_target, a later start_live_target,
-	// its own exit, or this server's shutdown; a server restart leaves none
-	// running.
+	// Build the candidate commit for the owner's confirmed change and bind
+	// draft_override to this server's one live target. Stored verification
+	// settings use the operator's evaluator and need no build. Otherwise the
+	// change's current revision must have a build with accepted tests: the
+	// candidate programs come from candidate_commit and the test program from the
+	// accepted tests commit. Written tests require a chosen model; with a direct
+	// provider the executor serves a private loopback model gateway and passes no
+	// provider setting to the program. Card, tests, model and plan refusals
+	// preserve the running target. After those checks a replacement stops the old
+	// target and discards its drafts, even if the new startup fails. A target that
+	// ends unexpectedly is reported as ended after confirmed cleanup; a server
+	// restart leaves none.
 	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
 	// Stop this server's live CP3 target, if one runs, and unbind draft_override
 	// from it. Stopping when none runs is not an error.
@@ -128,9 +131,10 @@ type Service interface {
 	// Report this server's live target: none; starting, with the commit being
 	// built; running, with its commit, its address, when it became ready and, for
 	// each prompt whose draft it accepted, the prompt identifier, the version in
-	// force and when it was accepted; or not confirmed stopped, with what to do
-	// next. Prompt text is never returned. It changes nothing and saves nothing:
-	// the answer lasts as long as the live target and this server.
+	// force and when it was accepted; ended after an unexpected ending with
+	// confirmed cleanup, or not confirmed stopped, with what to do next. Prompt
+	// text is never returned. It changes nothing and saves nothing: the answer
+	// lasts as long as the live target and this server.
 	GetLiveTarget(context.Context) (res *LiveTargetStatus, err error)
 	// Start Checkpoint 4 verification of a candidate commit for the owner's
 	// confirmed Change Card revision and return its run_id at once. With
@@ -1181,6 +1185,21 @@ type LivePromptItem struct {
 	AcceptedAt string
 }
 
+// The last ready target ended unexpectedly and its processes are confirmed
+// stopped. This in-memory observation lasts until an explicit stop, an
+// accepted replacement, or a server restart. It contains no address, prompt,
+// credential or provider detail.
+type LiveTargetEnded struct {
+	// The commit the ended target ran.
+	CandidateCommit string
+	// When that target became ready.
+	StartedAt string
+	// When the server observed that target ending.
+	EndedAt string
+	// Fixed explanation of what is known and the builder's next step.
+	Message string
+}
+
 // No live target is running.
 type LiveTargetNone struct {
 }
@@ -1221,7 +1240,8 @@ type LiveTargetStatus struct {
 	// none when no live target runs; starting while one is built and started;
 	// running with its commit, address, start time and the prompts whose drafts
 	// are in force; not_confirmed_stopped when its processes could not be
-	// confirmed stopped.
+	// confirmed stopped; ended when a ready target ended unexpectedly and cleanup
+	// is confirmed.
 	LiveTarget LiveTarget
 }
 
@@ -1259,7 +1279,8 @@ type ModelGateway struct {
 	GatewayAddr string
 }
 
-// No model is chosen: live targets start without a model setting.
+// No model is chosen. A written-tests live target requires a model choice; a
+// stored evaluator may start without one.
 type ModelNone struct {
 }
 
@@ -1462,6 +1483,8 @@ type StartBuildResult struct {
 // StartLiveTargetPayload is the payload type of the surla service
 // start_live_target method.
 type StartLiveTargetPayload struct {
+	// Owned, confirmed change from list_builder_assignments.
+	ChangeID string
 	// Full commit ID to build, in the candidate repository's object format.
 	CandidateCommit string
 }
@@ -2084,21 +2107,6 @@ func MakeUpdateNotConfirmed(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "update_not_confirmed", false, false, false)
 }
 
-// MakeLiveTargetUnavailable builds a goa.ServiceError from an error.
-func MakeLiveTargetUnavailable(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "live_target_unavailable", false, false, false)
-}
-
-// MakeLiveTargetFailed builds a goa.ServiceError from an error.
-func MakeLiveTargetFailed(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "live_target_failed", false, false, false)
-}
-
-// MakeLiveTargetStopFailed builds a goa.ServiceError from an error.
-func MakeLiveTargetStopFailed(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "live_target_stop_failed", false, false, false)
-}
-
 // MakeNoBuild builds a goa.ServiceError from an error.
 func MakeNoBuild(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "no_build", false, false, false)
@@ -2112,6 +2120,21 @@ func MakeTestsNotAccepted(err error) *goa.ServiceError {
 // MakeNoTestLayout builds a goa.ServiceError from an error.
 func MakeNoTestLayout(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "no_test_layout", false, false, false)
+}
+
+// MakeLiveTargetUnavailable builds a goa.ServiceError from an error.
+func MakeLiveTargetUnavailable(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_unavailable", false, false, false)
+}
+
+// MakeLiveTargetFailed builds a goa.ServiceError from an error.
+func MakeLiveTargetFailed(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_failed", false, false, false)
+}
+
+// MakeLiveTargetStopFailed builds a goa.ServiceError from an error.
+func MakeLiveTargetStopFailed(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_stop_failed", false, false, false)
 }
 
 // MakeNotImplemented builds a goa.ServiceError from an error.
@@ -4339,6 +4362,44 @@ func validatejsonLivePromptItemTransport(value *jsonLivePromptItemTransport) (er
 	return err
 }
 
+// jsonLiveTargetEndedTransport stores JSON fields until they have been validated.
+type jsonLiveTargetEndedTransport struct {
+	// The commit the ended target ran.
+	CandidateCommit *string `json:"candidate_commit"`
+	// When that target became ready.
+	StartedAt *string `json:"started_at"`
+	// When the server observed that target ending.
+	EndedAt *string `json:"ended_at"`
+	// Fixed explanation of what is known and the builder's next step.
+	Message *string `json:"message"`
+}
+
+// validatejsonLiveTargetEndedTransport checks decoded JSON before it becomes a service value.
+func validatejsonLiveTargetEndedTransport(value *jsonLiveTargetEndedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if value.EndedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ended_at", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if value.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *value.StartedAt, goa.FormatDateTime))
+	}
+	if value.EndedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.ended_at", *value.EndedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
 // jsonLiveTargetNoneTransport stores JSON fields until they have been validated.
 type jsonLiveTargetNoneTransport struct {
 }
@@ -4432,7 +4493,8 @@ type jsonLiveTargetStatusTransport struct {
 	// none when no live target runs; starting while one is built and started;
 	// running with its commit, address, start time and the prompts whose drafts
 	// are in force; not_confirmed_stopped when its processes could not be
-	// confirmed stopped.
+	// confirmed stopped; ended when a ready target ended unexpectedly and cleanup
+	// is confirmed.
 	LiveTarget *jsonLiveTargetTransport `json:"live_target"`
 }
 
@@ -4468,6 +4530,13 @@ func validatejsonLiveTargetStatusTransport(value *jsonLiveTargetStatusTransport)
 				actual, _ := value.LiveTarget.AsNotConfirmedStopped()
 				if actual != nil {
 					if err2 := validatejsonLiveTargetNotConfirmedStoppedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "ended":
+				actual, _ := value.LiveTarget.AsEnded()
+				if actual != nil {
+					if err2 := validatejsonLiveTargetEndedTransport(actual); err2 != nil {
 						err = goa.MergeErrors(err, err2)
 					}
 				}
@@ -5165,6 +5234,8 @@ func validatejsonStartBuildResultTransport(value *jsonStartBuildResultTransport)
 
 // jsonStartLiveTargetPayloadTransport stores JSON fields until they have been validated.
 type jsonStartLiveTargetPayloadTransport struct {
+	// Owned, confirmed change from list_builder_assignments.
+	ChangeID *string `json:"change_id"`
 	// Full commit ID to build, in the candidate repository's object format.
 	CandidateCommit *string `json:"candidate_commit"`
 }
@@ -5174,8 +5245,16 @@ func validatejsonStartLiveTargetPayloadTransport(value *jsonStartLiveTargetPaylo
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
 	if value.CandidateCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.ChangeID != nil {
+		if utf8.RuneCountInString(*value.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *value.ChangeID, utf8.RuneCountInString(*value.ChangeID), 1, true))
+		}
 	}
 	if value.CandidateCommit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
@@ -7719,6 +7798,13 @@ func validateLivePromptItemOriginal(value *LivePromptItem) (err error) {
 	return err
 }
 
+// validateLiveTargetEndedOriginal checks the original typed value before JSON conversion.
+func validateLiveTargetEndedOriginal(value *LiveTargetEnded) (err error) {
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.started_at", value.StartedAt, goa.FormatDateTime))
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.ended_at", value.EndedAt, goa.FormatDateTime))
+	return err
+}
+
 // validateLiveTargetStartingOriginal checks the original typed value before JSON conversion.
 func validateLiveTargetStartingOriginal(value *LiveTargetStarting) (err error) {
 	err = goa.MergeErrors(err, goa.ValidateFormat("value.since", value.Since, goa.FormatDateTime))
@@ -7746,6 +7832,13 @@ func validateLiveTargetStatusOriginal(value *LiveTargetStatus) (err error) {
 			actual, _ := value.LiveTarget.AsRunning()
 			if actual != nil {
 				if err2 := validateRunningLiveTargetOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "ended":
+			actual, _ := value.LiveTarget.AsEnded()
+			if actual != nil {
+				if err2 := validateLiveTargetEndedOriginal(actual); err2 != nil {
 					err = goa.MergeErrors(err, err2)
 				}
 			}
@@ -8022,6 +8115,9 @@ func validateStartBuildResultOriginal(value *StartBuildResult) (err error) {
 
 // validateStartLiveTargetPayloadOriginal checks the original typed value before JSON conversion.
 func validateStartLiveTargetPayloadOriginal(value *StartLiveTargetPayload) (err error) {
+	if utf8.RuneCountInString(value.ChangeID) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.change_id", value.ChangeID, utf8.RuneCountInString(value.ChangeID), 1, true))
+	}
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.candidate_commit", value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	return err
 }
@@ -8844,6 +8940,7 @@ type jsonLiveTargetTransport struct {
 	Starting            *jsonLiveTargetStartingTransport
 	Running             *jsonRunningLiveTargetTransport
 	NotConfirmedStopped *jsonLiveTargetNotConfirmedStoppedTransport
+	Ended               *jsonLiveTargetEndedTransport
 }
 
 // jsonLiveTargetTransportKind identifies the selected branch of jsonLiveTargetTransport.
@@ -8854,6 +8951,7 @@ const (
 	jsonLiveTargetTransportKindStarting            jsonLiveTargetTransportKind = "starting"
 	jsonLiveTargetTransportKindRunning             jsonLiveTargetTransportKind = "running"
 	jsonLiveTargetTransportKindNotConfirmedStopped jsonLiveTargetTransportKind = "not_confirmed_stopped"
+	jsonLiveTargetTransportKindEnded               jsonLiveTargetTransportKind = "ended"
 )
 
 // Kind returns the selected branch.
@@ -8937,6 +9035,25 @@ func (u *jsonLiveTargetTransport) SetNotConfirmedStopped(value *jsonLiveTargetNo
 	u.NotConfirmedStopped = value
 }
 
+// newjsonLiveTargetTransportEnded creates jsonLiveTargetTransport with its ended branch selected.
+func newjsonLiveTargetTransportEnded(value *jsonLiveTargetEndedTransport) jsonLiveTargetTransport {
+	return jsonLiveTargetTransport{kind: jsonLiveTargetTransportKindEnded, Ended: value}
+}
+
+// AsEnded returns the ended branch when it is selected.
+func (u jsonLiveTargetTransport) AsEnded() (_ *jsonLiveTargetEndedTransport, ok bool) {
+	if u.kind != jsonLiveTargetTransportKindEnded {
+		return
+	}
+	return u.Ended, true
+}
+
+// SetEnded selects the ended branch.
+func (u *jsonLiveTargetTransport) SetEnded(value *jsonLiveTargetEndedTransport) {
+	u.kind = jsonLiveTargetTransportKindEnded
+	u.Ended = value
+}
+
 // Validate checks that one complete branch is selected.
 func (u jsonLiveTargetTransport) Validate() error {
 	switch u.kind {
@@ -8960,10 +9077,15 @@ func (u jsonLiveTargetTransport) Validate() error {
 			return goa.MissingFieldError("value", "jsonLiveTargetTransport")
 		}
 		return nil
+	case jsonLiveTargetTransportKindEnded:
+		if u.Ended == nil {
+			return goa.MissingFieldError("value", "jsonLiveTargetTransport")
+		}
+		return nil
 	case "":
 		return goa.MissingFieldError("state", "jsonLiveTargetTransport")
 	default:
-		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonLiveTargetTransportKindNone), string(jsonLiveTargetTransportKindStarting), string(jsonLiveTargetTransportKindRunning), string(jsonLiveTargetTransportKindNotConfirmedStopped)})
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonLiveTargetTransportKindNone), string(jsonLiveTargetTransportKindStarting), string(jsonLiveTargetTransportKindRunning), string(jsonLiveTargetTransportKindNotConfirmedStopped), string(jsonLiveTargetTransportKindEnded)})
 	}
 }
 
@@ -8982,6 +9104,8 @@ func (u jsonLiveTargetTransport) MarshalJSON() ([]byte, error) {
 		value = u.Running
 	case jsonLiveTargetTransportKindNotConfirmedStopped:
 		value = u.NotConfirmedStopped
+	case jsonLiveTargetTransportKindEnded:
+		value = u.Ended
 	default:
 		return nil, fmt.Errorf("unexpected jsonLiveTargetTransport branch %q", u.kind)
 	}
@@ -9070,8 +9194,17 @@ func (u *jsonLiveTargetTransport) UnmarshalJSON(data []byte) error {
 		}
 		u.kind = jsonLiveTargetTransportKindNotConfirmedStopped
 		u.NotConfirmedStopped = value
+	case string(jsonLiveTargetTransportKindEnded):
+		var value *jsonLiveTargetEndedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonLiveTargetTransportKindEnded
+		u.Ended = value
 	default:
-		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonLiveTargetTransportKindNone), string(jsonLiveTargetTransportKindStarting), string(jsonLiveTargetTransportKindRunning), string(jsonLiveTargetTransportKindNotConfirmedStopped)})
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonLiveTargetTransportKindNone), string(jsonLiveTargetTransportKindStarting), string(jsonLiveTargetTransportKindRunning), string(jsonLiveTargetTransportKindNotConfirmedStopped), string(jsonLiveTargetTransportKindEnded)})
 	}
 	return u.Validate()
 }
@@ -15996,6 +16129,98 @@ func DecodeLivePromptItem(data []byte) (out *LivePromptItem, err error) {
 	return out, nil
 }
 
+// EncodeLiveTargetEnded turns a service value into JSON using the field names in the Goa design.
+func EncodeLiveTargetEnded(in *LiveTargetEnded) ([]byte, error) {
+	if err := checkLiveTargetEndedValue(in); err != nil {
+		return nil, fmt.Errorf("encode LiveTargetEnded JSON: %w", err)
+	}
+	if err := validateLiveTargetEndedOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate LiveTargetEnded value: %w", err)
+	}
+	var body *jsonLiveTargetEndedTransport
+	{
+		body = &jsonLiveTargetEndedTransport{
+			CandidateCommit: &in.CandidateCommit,
+			StartedAt:       &in.StartedAt,
+			EndedAt:         &in.EndedAt,
+			Message:         &in.Message,
+		}
+	}
+	if err := validatejsonLiveTargetEndedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate LiveTargetEnded JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode LiveTargetEnded JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateLiveTargetEndedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateLiveTargetEndedValue(in *LiveTargetEnded) error {
+	if err := checkLiveTargetEndedValue(in); err != nil {
+		return fmt.Errorf("validate LiveTargetEnded value: %w", err)
+	}
+	if err := validateLiveTargetEndedOriginal(in); err != nil {
+		return fmt.Errorf("validate LiveTargetEnded value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "LiveTargetEnded")
+	}
+
+	var body *jsonLiveTargetEndedTransport
+	{
+		body = &jsonLiveTargetEndedTransport{
+			CandidateCommit: &in.CandidateCommit,
+			StartedAt:       &in.StartedAt,
+			EndedAt:         &in.EndedAt,
+			Message:         &in.Message,
+		}
+	}
+	if err := validatejsonLiveTargetEndedTransport(body); err != nil {
+		return fmt.Errorf("validate LiveTargetEnded value: %w", err)
+	}
+	return nil
+}
+
+// DecodeLiveTargetEnded checks JSON field names from the Goa design and returns a service value.
+func DecodeLiveTargetEnded(data []byte) (out *LiveTargetEnded, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode LiveTargetEnded JSON: %w", err)
+	}
+	if err := validateLiveTargetEndedJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode LiveTargetEnded JSON: %w", err)
+	}
+	var body *jsonLiveTargetEndedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode LiveTargetEnded JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode LiveTargetEnded JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode LiveTargetEnded JSON after first value: %w", err)
+	}
+	if err := validatejsonLiveTargetEndedTransport(body); err != nil {
+		return out, fmt.Errorf("validate LiveTargetEnded JSON: %w", err)
+	}
+	{
+		out = &LiveTargetEnded{
+			CandidateCommit: *body.CandidateCommit,
+			StartedAt:       *body.StartedAt,
+			EndedAt:         *body.EndedAt,
+			Message:         *body.Message,
+		}
+	}
+	return out, nil
+}
+
 // EncodeLiveTargetNone turns a service value into JSON using the field names in the Goa design.
 func EncodeLiveTargetNone(in *LiveTargetNone) ([]byte, error) {
 	if err := checkLiveTargetNoneValue(in); err != nil {
@@ -16365,6 +16590,15 @@ func EncodeLiveTargetStatus(in *LiveTargetStatus) ([]byte, error) {
 			u := liveTargetValue
 			u.SetNotConfirmedStopped((*jsonLiveTargetNotConfirmedStoppedTransport)(obj))
 			liveTargetValue = u
+		case "ended":
+			actual, _ := in.LiveTarget.AsEnded()
+			var obj *jsonLiveTargetEndedTransport
+			if actual != nil {
+				obj = encodeLiveTargetEndedToLiveTargetEndedTransport(actual)
+			}
+			u := liveTargetValue
+			u.SetEnded((*jsonLiveTargetEndedTransport)(obj))
+			liveTargetValue = u
 		}
 		body.LiveTarget = &liveTargetValue
 	}
@@ -16433,6 +16667,15 @@ func ValidateLiveTargetStatusValue(in *LiveTargetStatus) error {
 			}
 			u := liveTargetValue
 			u.SetNotConfirmedStopped((*jsonLiveTargetNotConfirmedStoppedTransport)(obj))
+			liveTargetValue = u
+		case "ended":
+			actual, _ := in.LiveTarget.AsEnded()
+			var obj *jsonLiveTargetEndedTransport
+			if actual != nil {
+				obj = encodeLiveTargetEndedToLiveTargetEndedTransport(actual)
+			}
+			u := liveTargetValue
+			u.SetEnded((*jsonLiveTargetEndedTransport)(obj))
 			liveTargetValue = u
 		}
 		body.LiveTarget = &liveTargetValue
@@ -16505,6 +16748,15 @@ func DecodeLiveTargetStatus(data []byte) (out *LiveTargetStatus, err error) {
 			}
 			u := out.LiveTarget
 			u.SetNotConfirmedStopped((*LiveTargetNotConfirmedStopped)(obj))
+			out.LiveTarget = u
+		case "ended":
+			actual, _ := body.LiveTarget.AsEnded()
+			var obj *LiveTargetEnded
+			if actual != nil {
+				obj = decodeLiveTargetEndedTransportToLiveTargetEnded(actual)
+			}
+			u := out.LiveTarget
+			u.SetEnded((*LiveTargetEnded)(obj))
 			out.LiveTarget = u
 		}
 	}
@@ -18570,6 +18822,7 @@ func EncodeStartLiveTargetPayload(in *StartLiveTargetPayload) ([]byte, error) {
 	var body *jsonStartLiveTargetPayloadTransport
 	{
 		body = &jsonStartLiveTargetPayloadTransport{
+			ChangeID:        &in.ChangeID,
 			CandidateCommit: &in.CandidateCommit,
 		}
 	}
@@ -18601,6 +18854,7 @@ func ValidateStartLiveTargetPayloadValue(in *StartLiveTargetPayload) error {
 	var body *jsonStartLiveTargetPayloadTransport
 	{
 		body = &jsonStartLiveTargetPayloadTransport{
+			ChangeID:        &in.ChangeID,
 			CandidateCommit: &in.CandidateCommit,
 		}
 	}
@@ -18636,6 +18890,7 @@ func DecodeStartLiveTargetPayload(data []byte) (out *StartLiveTargetPayload, err
 	}
 	{
 		out = &StartLiveTargetPayload{
+			ChangeID:        *body.ChangeID,
 			CandidateCommit: *body.CandidateCommit,
 		}
 	}
@@ -23201,6 +23456,17 @@ func decodeLivePromptItemTransportToLivePromptItem(v *jsonLivePromptItemTranspor
 	return res
 }
 
+func decodeLiveTargetEndedTransportToLiveTargetEnded(v *jsonLiveTargetEndedTransport) *LiveTargetEnded {
+	res := &LiveTargetEnded{
+		CandidateCommit: *v.CandidateCommit,
+		StartedAt:       *v.StartedAt,
+		EndedAt:         *v.EndedAt,
+		Message:         *v.Message,
+	}
+
+	return res
+}
+
 func decodeLiveTargetNoneTransportToLiveTargetNone(v *jsonLiveTargetNoneTransport) *LiveTargetNone {
 	res := &LiveTargetNone{}
 
@@ -24290,6 +24556,17 @@ func encodeLivePromptItemToLivePromptItemTransport(v *LivePromptItem) *jsonLiveP
 		PromptID:   &v.PromptID,
 		Version:    &v.Version,
 		AcceptedAt: &v.AcceptedAt,
+	}
+
+	return res
+}
+
+func encodeLiveTargetEndedToLiveTargetEndedTransport(v *LiveTargetEnded) *jsonLiveTargetEndedTransport {
+	res := &jsonLiveTargetEndedTransport{
+		CandidateCommit: &v.CandidateCommit,
+		StartedAt:       &v.StartedAt,
+		EndedAt:         &v.EndedAt,
+		Message:         &v.Message,
 	}
 
 	return res
@@ -30634,6 +30911,66 @@ func validateLivePromptItemJSONValue(path string, value any, description string)
 	return nil
 }
 
+// validateLiveTargetEndedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateLiveTargetEndedJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit the ended target ran.",
+			); err != nil {
+				return err
+			}
+		case "ended_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the server observed that target ending.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Fixed explanation of what is known and the builder's next step.",
+			); err != nil {
+				return err
+			}
+		case "started_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When that target became ready.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"ended_at",
+				"message",
+				"started_at",
+			})
+		}
+	}
+	return nil
+}
+
 // validateLiveTargetNoneJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateLiveTargetNoneJSONValue(path string, value any, description string) error {
 	field := path
@@ -30824,7 +31161,7 @@ func validateLiveTargetStatusJSONValue(path string, value any, description strin
 		case "live_target":
 			if err := validateLiveTargetStatusJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.",
+				typed[key], "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.",
 			); err != nil {
 				return err
 			}
@@ -30869,6 +31206,8 @@ func validateLiveTargetStatusJSONValue2(path string, value any, description stri
 		return validateLiveTargetStatusJSONValue3(path, branch, "")
 	case "not_confirmed_stopped":
 		return validateLiveTargetNotConfirmedStoppedJSONValue(path, branch, "")
+	case "ended":
+		return validateLiveTargetEndedJSONValue(path, branch, "")
 	default:
 		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
 	}
@@ -31867,9 +32206,17 @@ func validateStartLiveTargetPayloadJSONValue(path string, value any, description
 			); err != nil {
 				return err
 			}
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Owned, confirmed change from list_builder_assignments.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"candidate_commit",
+				"change_id",
 			})
 		}
 	}
@@ -36367,6 +36714,45 @@ func checkLivePromptItemLivePromptItemValue(in *LivePromptItem, field string, ac
 	return nil
 }
 
+// checkLiveTargetEndedValue checks text and cycles before conversion.
+func checkLiveTargetEndedValue(in *LiveTargetEnded) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkLiveTargetEndedLiveTargetEndedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkLiveTargetEndedLiveTargetEndedValue checks one generated value on the active path.
+func checkLiveTargetEndedLiveTargetEndedValue(in *LiveTargetEnded, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.CandidateCommit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "candidate_commit", false))
+		}
+		if !utf8.ValidString(string(in.StartedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "started_at", false))
+		}
+		if !utf8.ValidString(string(in.EndedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "ended_at", false))
+		}
+		if !utf8.ValidString(string(in.Message)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "message", false))
+		}
+	}
+	return nil
+}
+
 // checkLiveTargetNoneValue checks text and cycles before conversion.
 func checkLiveTargetNoneValue(in *LiveTargetNone) error {
 	if in == nil {
@@ -36548,6 +36934,14 @@ func checkLiveTargetStatusLiveTargetStatusValue(in *LiveTargetStatus, field stri
 			if branch1 != nil {
 			}
 			if err := checkLiveTargetNotConfirmedStoppedLiveTargetNotConfirmedStoppedValue(branch1, generatedJSONChildPath(field, "live_target", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.LiveTarget.AsEnded(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkLiveTargetEndedLiveTargetEndedValue(branch1, generatedJSONChildPath(field, "live_target", false), active); err != nil {
 				return err
 			}
 		}
@@ -37257,6 +37651,9 @@ func checkStartLiveTargetPayloadStartLiveTargetPayloadValue(in *StartLiveTargetP
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
 		if !utf8.ValidString(string(in.CandidateCommit)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "candidate_commit", false))
 		}

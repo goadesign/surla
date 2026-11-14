@@ -13265,7 +13265,7 @@ paths:
             tags:
                 - surla
             summary: get_live_target surla
-            description: 'Report this server''s live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.'
+            description: 'Report this server''s live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; ended after an unexpected ending with confirmed cleanup, or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.'
             operationId: surla#get_live_target
             responses:
                 "200":
@@ -13304,7 +13304,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.
+            description: 'Build the candidate commit for the owner''s confirmed change and bind draft_override to this server''s one live target. Stored verification settings use the operator''s evaluator and need no build. Otherwise the change''s current revision must have a build with accepted tests: the candidate programs come from candidate_commit and the test program from the accepted tests commit. Written tests require a chosen model; with a direct provider the executor serves a private loopback model gateway and passes no provider setting to the program. Card, tests, model and plan refusals preserve the running target. After those checks a replacement stops the old target and discards its drafts, even if the new startup fails. A target that ends unexpectedly is reported as ended after confirmed cleanup; a server restart leaves none.'
             operationId: surla#start_live_target
             requestBody:
                 description: Request body for start_live_target.
@@ -13315,6 +13315,7 @@ paths:
                             $ref: '#/components/schemas/StartLiveTargetPayload'
                         example:
                             candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+                            change_id: k1
             responses:
                 "200":
                     description: OK response.
@@ -13337,6 +13338,32 @@ paths:
                                 id: 123abc
                                 message: parameter 'p' must be an integer
                                 name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No owned Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'no_test_layout: The candidate or accepted tests lacks the required test layout.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: no_test_layout
                                 temporary: false
                                 timeout: false
                 "422":
@@ -20536,7 +20563,7 @@ components:
             properties:
                 live_target:
                     type: object
-                    description: none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.
+                    description: none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.
                     example:
                         candidate_commit: Aliquid rerum vel atque ducimus iusto sunt.
                         prompts:
@@ -20648,6 +20675,41 @@ components:
                             message: Maxime quis.
                           required:
                             - candidate_commit
+                            - message
+                            - state
+                        - type: object
+                          properties:
+                            candidate_commit:
+                                type: string
+                                description: The commit the ended target ran.
+                                example: Dignissimos dolorum ab quaerat minima.
+                            ended_at:
+                                type: string
+                                description: When the server observed that target ending.
+                                example: "1999-10-12T05:40:36Z"
+                                format: date-time
+                            message:
+                                type: string
+                                description: Fixed explanation of what is known and the builder's next step.
+                                example: Molestias natus dolorem.
+                            started_at:
+                                type: string
+                                description: When that target became ready.
+                                example: "1983-03-25T04:56:54Z"
+                                format: date-time
+                            state:
+                                type: string
+                                enum:
+                                    - ended
+                          example:
+                            candidate_commit: Dignissimos dolorum ab quaerat minima.
+                            ended_at: "1999-10-12T05:40:36Z"
+                            message: Molestias natus dolorem.
+                            started_at: "1983-03-25T04:56:54Z"
+                          required:
+                            - candidate_commit
+                            - started_at
+                            - ended_at
                             - message
                             - state
             description: This server's live target, as get_live_target reports it.
@@ -23199,10 +23261,17 @@ components:
                     description: Full commit ID to build, in the candidate repository's object format.
                     example: 4f0b3c1d2e5a6978877665544332211009988776
                     pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+                change_id:
+                    type: string
+                    description: Owned, confirmed change from list_builder_assignments.
+                    example: k1
+                    minLength: 1
             description: Request body for start_live_target.
             example:
                 candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+                change_id: k1
             required:
+                - change_id
                 - candidate_commit
         StartedBuild:
             type: object

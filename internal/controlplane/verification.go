@@ -118,20 +118,32 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 func (c *ControlPlane) verifiableCard(principal Principal, changeID, revision string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	record, exists, err := c.cards.load(changeID)
-	switch {
-	case err != nil:
+	record, err := c.confirmedCard(principal, changeID)
+	if err != nil {
 		return err
-	case !exists:
-		return gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", changeID))
-	case record.owner != principal.ID:
-		return gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, changeID))
-	case record.card.Status != StatusConfirmed:
-		return gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before verification (status %q)", changeID, record.card.Status))
-	case record.card.RequestRevision != revision:
+	}
+	if record.card.RequestRevision != revision {
 		return gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", changeID, revision, record.card.RequestRevision))
 	}
 	return nil
+}
+
+// confirmedCard checks ownership and confirmation under the caller's c.mu.
+// Both verification and live starts use this boundary; live starts derive the
+// revision from this same read rather than guessing a caller-supplied revision.
+func (c *ControlPlane) confirmedCard(principal Principal, changeID string) (storedChangeCard, error) {
+	record, err := c.ownedCard(principal, changeID)
+	if err != nil {
+		var serviceErr *goa.ServiceError
+		if errors.As(err, &serviceErr) && serviceErr.Name == "not_found" {
+			return storedChangeCard{}, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q: take the change_id from list_builder_assignments", changeID))
+		}
+		return storedChangeCard{}, err
+	}
+	if record.card.Status != StatusConfirmed {
+		return storedChangeCard{}, gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before verification or a live target (status %q)", changeID, record.card.Status))
+	}
+	return record, nil
 }
 
 // GetVerification returns the state of a verification run to the principal

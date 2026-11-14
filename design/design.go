@@ -425,12 +425,13 @@ var DraftOverrideResult = Type("DraftOverrideResult", func() {
 
 // StartLiveTargetPayload names the candidate commit a CP3 live target runs.
 var StartLiveTargetPayload = Type("StartLiveTargetPayload", func() {
-	Description("Candidate commit to build and run as this server's live CP3 target.")
+	Description("Owned, confirmed change and candidate commit to build and run as this server's live CP3 target.")
+	Attribute("change_id", String, "Owned, confirmed change from list_builder_assignments.", func() { MinLength(1) })
 	Attribute("candidate_commit", String, "Full commit ID to build, in the candidate repository's object format.", func() {
 		Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$")
 		Example("4f0b3c1d2e5a6978877665544332211009988776")
 	})
-	Required("candidate_commit")
+	Required("change_id", "candidate_commit")
 })
 
 // LiveTargetResult describes the live CP3 target a server now runs.
@@ -491,23 +492,35 @@ var LiveTargetNotConfirmedStopped = Type("LiveTargetNotConfirmedStopped", func()
 	Required("candidate_commit", "message")
 })
 
+// LiveTargetEnded is the last ready target that ended unexpectedly after
+// the server confirmed that all its processes stopped.
+var LiveTargetEnded = Type("LiveTargetEnded", func() {
+	Description("The last ready target ended unexpectedly and its processes are confirmed stopped. This in-memory observation lasts until an explicit stop, an accepted replacement, or a server restart. It contains no address, prompt, credential or provider detail.")
+	Attribute("candidate_commit", String, "The commit the ended target ran.")
+	Attribute("started_at", String, "When that target became ready.", func() { Format(FormatDateTime) })
+	Attribute("ended_at", String, "When the server observed that target ending.", func() { Format(FormatDateTime) })
+	Attribute("message", String, "Fixed explanation of what is known and the builder's next step.")
+	Required("candidate_commit", "started_at", "ended_at", "message")
+})
+
 // LiveTargetStatus is this server's live target in exactly one state.
 var LiveTargetStatus = Type("LiveTargetStatus", func() {
 	Description("This server's live target, as get_live_target reports it.")
-	OneOf("live_target", "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.", func() {
+	OneOf("live_target", "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
 		Attribute("none", LiveTargetNone)
 		Attribute("starting", LiveTargetStarting)
 		Attribute("running", RunningLiveTarget)
 		Attribute("not_confirmed_stopped", LiveTargetNotConfirmedStopped)
+		Attribute("ended", LiveTargetEnded)
 	})
 	Required("live_target")
 })
 
 // ModelNone is the model connection when no model is chosen.
 var ModelNone = Type("ModelNone", func() {
-	Description("No model is chosen: live targets start without a model setting.")
+	Description("No model is chosen. A written-tests live target requires a model choice; a stored evaluator may start without one.")
 })
 
 // ModelDirect is a direct model provider and model name.
@@ -861,14 +874,24 @@ var _ = Service("surla", func() {
 	})
 
 	Method("start_live_target", func() {
-		Description("Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.")
+		Description("Build the candidate commit for the owner's confirmed change and bind draft_override to this server's one live target. Stored verification settings use the operator's evaluator and need no build. Otherwise the change's current revision must have a build with accepted tests: the candidate programs come from candidate_commit and the test program from the accepted tests commit. Written tests require a chosen model; with a direct provider the executor serves a private loopback model gateway and passes no provider setting to the program. Card, tests, model and plan refusals preserve the running target. After those checks a replacement stops the old target and discards its drafts, even if the new startup fails. A target that ends unexpectedly is reported as ended after confirmed cleanup; a server restart leaves none.")
+		Error("not_found", ErrorResult, "No owned Change Card exists with this change_id.")
+		Error("conflict", ErrorResult, "The change is not confirmed, a required commit is unavailable, or the project folder was replaced.")
+		Error("no_build", ErrorResult, "The current change revision has no usable build.")
+		Error("tests_not_accepted", ErrorResult, "The current build has no accepted tests; the message names who acts next.")
+		Error("no_test_layout", ErrorResult, "The candidate or accepted tests lacks the required test layout.")
 		Payload(StartLiveTargetPayload)
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. Without stored verification settings, the commit's own test module starts it, so the commit needs the test layout surla init makes. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.")
+		Tool("start_live_target", "Start a live target for change_id from list_builder_assignments and candidate_commit so draft_override can try prompt text. The change must be owned and confirmed. Without stored verification settings its current build must have accepted tests, which start the target, and a model must be chosen. A refusal naming the user's step means tell the user. Refused preflight preserves a running target; an accepted replacement discards its drafts even if startup then fails. Commit prompt text to preserve it.")
 		HTTP(func() {
 			POST("/live-target")
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
+			Response("no_build", StatusConflict)
+			Response("tests_not_accepted", StatusConflict)
+			Response("no_test_layout", StatusConflict)
 			Response(StatusOK)
 			Response("live_target_unavailable", StatusNotImplemented)
 			Response("live_target_failed", StatusUnprocessableEntity)
@@ -888,9 +911,9 @@ var _ = Service("surla", func() {
 	})
 
 	Method("get_live_target", func() {
-		Description("Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.")
+		Description("Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; ended after an unexpected ending with confirmed cleanup, or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.")
 		Result(LiveTargetStatus)
-		Tool("get_live_target", "Report this server's live target. It changes nothing. It answers none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted (never the text); or not_confirmed_stopped, with what to do next.")
+		Tool("get_live_target", "Report this server's live target. It changes nothing. It answers none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted (never the text); ended with commit, start and observed end times and a safe next step, or not_confirmed_stopped, with what to do next.")
 		HTTP(func() {
 			GET("/live-target")
 			Response(StatusOK)

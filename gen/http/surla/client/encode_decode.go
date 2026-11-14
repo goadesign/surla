@@ -1128,6 +1128,11 @@ func EncodeStartLiveTargetRequest(encoder func(*http.Request) goahttp.Encoder) f
 // the surla start_live_target endpoint. restoreBody controls whether the
 // response body should be restored after having been read.
 // DecodeStartLiveTargetResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "no_build" (type *goa.ServiceError): http.StatusConflict
+//   - "tests_not_accepted" (type *goa.ServiceError): http.StatusConflict
+//   - "no_test_layout" (type *goa.ServiceError): http.StatusConflict
 //   - "live_target_unavailable" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "live_target_failed" (type *goa.ServiceError): http.StatusUnprocessableEntity
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
@@ -1168,6 +1173,86 @@ func DecodeStartLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder,
 			}
 			res := NewStartLiveTargetResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body StartLiveTargetNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+			}
+			err = ValidateStartLiveTargetNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+			}
+			return nil, NewStartLiveTargetNotFound(&body)
+		case http.StatusConflict:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "conflict":
+				var (
+					body StartLiveTargetConflictResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+				}
+				err = ValidateStartLiveTargetConflictResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+				}
+				return nil, NewStartLiveTargetConflict(&body)
+			case "no_build":
+				var (
+					body StartLiveTargetNoBuildResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+				}
+				err = ValidateStartLiveTargetNoBuildResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+				}
+				return nil, NewStartLiveTargetNoBuild(&body)
+			case "tests_not_accepted":
+				var (
+					body StartLiveTargetTestsNotAcceptedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+				}
+				err = ValidateStartLiveTargetTestsNotAcceptedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+				}
+				return nil, NewStartLiveTargetTestsNotAccepted(&body)
+			case "no_test_layout":
+				var (
+					body StartLiveTargetNoTestLayoutResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+				}
+				err = ValidateStartLiveTargetNoTestLayoutResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+				}
+				return nil, NewStartLiveTargetNoTestLayout(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "start_live_target", resp.StatusCode, string(body))
+			}
 		case http.StatusNotImplemented:
 			var (
 				body StartLiveTargetLiveTargetUnavailableResponseBody
@@ -5803,6 +5888,20 @@ func unmarshalLivePromptItemResponseBodyToSurlaLivePromptItem(v *LivePromptItemR
 func unmarshalLiveTargetNotConfirmedStoppedResponseBodyToSurlaLiveTargetNotConfirmedStopped(v *LiveTargetNotConfirmedStoppedResponseBody) *surla.LiveTargetNotConfirmedStopped {
 	res := &surla.LiveTargetNotConfirmedStopped{
 		CandidateCommit: *v.CandidateCommit,
+		Message:         *v.Message,
+	}
+
+	return res
+}
+
+// unmarshalLiveTargetEndedResponseBodyToSurlaLiveTargetEnded builds a value of
+// type *surla.LiveTargetEnded from a value of type
+// *LiveTargetEndedResponseBody.
+func unmarshalLiveTargetEndedResponseBodyToSurlaLiveTargetEnded(v *LiveTargetEndedResponseBody) *surla.LiveTargetEnded {
+	res := &surla.LiveTargetEnded{
+		CandidateCommit: *v.CandidateCommit,
+		StartedAt:       *v.StartedAt,
+		EndedAt:         *v.EndedAt,
 		Message:         *v.Message,
 	}
 

@@ -897,9 +897,9 @@ func (c *ControlPlane) DraftOverride(ctx context.Context, p *gensurla.DraftOverr
 		if strings.TrimSpace(p.NewContent) == "" {
 			return nil, errors.New("new_content is required when target_kind is prompt_template")
 		}
-		lt := c.boundLive()
-		if lt == nil {
-			return nil, gensurla.MakeNoLiveTarget(errors.New(msgNoLiveTarget))
+		lt, err := c.boundLive()
+		if err != nil {
+			return nil, err
 		}
 		return c.draftLive(ctx, lt, strings.TrimSpace(*p.PromptID), p.NewContent)
 	default:

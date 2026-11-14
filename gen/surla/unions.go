@@ -609,6 +609,7 @@ type LiveTarget struct {
 	starting            *LiveTargetStarting
 	running             *RunningLiveTarget
 	notConfirmedStopped *LiveTargetNotConfirmedStopped
+	ended               *LiveTargetEnded
 }
 
 // LiveTargetKind records which LiveTarget branch is selected.
@@ -623,6 +624,8 @@ const (
 	LiveTargetKindRunning LiveTargetKind = "running"
 	// LiveTargetKindNotConfirmedStopped identifies the not_confirmed_stopped branch.
 	LiveTargetKindNotConfirmedStopped LiveTargetKind = "not_confirmed_stopped"
+	// LiveTargetKindEnded identifies the ended branch.
+	LiveTargetKindEnded LiveTargetKind = "ended"
 )
 
 // Kind returns the selected branch.
@@ -726,6 +729,30 @@ func (u *LiveTarget) SetNotConfirmedStopped(v *LiveTargetNotConfirmedStopped) {
 	}
 }
 
+// NewLiveTargetEnded constructs LiveTarget with the ended branch set.
+func NewLiveTargetEnded(v *LiveTargetEnded) LiveTarget {
+	return LiveTarget{
+		kind:  LiveTargetKindEnded,
+		ended: v,
+	}
+}
+
+// AsEnded returns the value when the ended branch is selected.
+func (u LiveTarget) AsEnded() (_ *LiveTargetEnded, ok bool) {
+	if u.kind != LiveTargetKindEnded {
+		return
+	}
+	return u.ended, true
+}
+
+// SetEnded selects the ended branch and stores v.
+func (u *LiveTarget) SetEnded(v *LiveTargetEnded) {
+	*u = LiveTarget{
+		kind:  LiveTargetKindEnded,
+		ended: v,
+	}
+}
+
 // Validate ensures exactly one valid branch is selected.
 func (u LiveTarget) Validate() error {
 	_, err := u.Value()
@@ -742,6 +769,7 @@ func (u LiveTarget) Value() (any, error) {
 			string(LiveTargetKindStarting),
 			string(LiveTargetKindRunning),
 			string(LiveTargetKindNotConfirmedStopped),
+			string(LiveTargetKindEnded),
 		})
 	case LiveTargetKindNone:
 		if u.none == nil {
@@ -763,12 +791,18 @@ func (u LiveTarget) Value() (any, error) {
 			return nil, goa.MissingFieldError("value", "LiveTarget")
 		}
 		return u.notConfirmedStopped, nil
+	case LiveTargetKindEnded:
+		if u.ended == nil {
+			return nil, goa.MissingFieldError("value", "LiveTarget")
+		}
+		return u.ended, nil
 	default:
 		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
 			string(LiveTargetKindNone),
 			string(LiveTargetKindStarting),
 			string(LiveTargetKindRunning),
 			string(LiveTargetKindNotConfirmedStopped),
+			string(LiveTargetKindEnded),
 		})
 	}
 }
@@ -852,6 +886,12 @@ func (u *LiveTarget) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		u.SetNotConfirmedStopped(v)
+	case string(LiveTargetKindEnded):
+		var v *LiveTargetEnded
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetEnded(v)
 	default:
 		if raw.Type == "" {
 			return goa.MissingFieldError("state", "LiveTarget")
@@ -861,6 +901,7 @@ func (u *LiveTarget) UnmarshalJSON(data []byte) error {
 			string(LiveTargetKindStarting),
 			string(LiveTargetKindRunning),
 			string(LiveTargetKindNotConfirmedStopped),
+			string(LiveTargetKindEnded),
 		})
 	}
 	return nil
