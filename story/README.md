@@ -2,8 +2,8 @@
 
 Describe business roles and flows as ordinary Go source, before choosing an
 architecture. Goa evaluates the declarations into `expr.Root.Stories`.
-This nested module depends on Goa and the standard library. It does not load
-Surla's control plane or Goa-AI.
+This nested module depends on Goa and the standard library. It loads none of
+Surla's server and nothing of Goa-AI.
 
 ```go
 package design
@@ -63,10 +63,28 @@ other DSLs, evaluation uses a process-wide context and must run serially.
 The language can coexist with ordinary Goa API declarations and can also be
 evaluated on its own, without any API, service, or model declaration.
 
-This module currently supplies language and expressions only. Story code
-generation, sandboxed Story refresh, timeline editing, independent test
-authoring, and verification integration are described in the
-[engineering design](../docs/STORY_TEST_DESIGN.md) and are not implemented here.
+This module supplies the language and its expressions only. Surla, in the
+module above this one, does the rest with them:
+
+- When the guide (the coding agent the user talks to) calls `refresh_story`,
+  Surla's server evaluates the project's Story in its sandbox. It keeps the
+  evaluated Story with a change when the guide proposes or revises that
+  change with the evaluation's `op_id`.
+- When the user builds the change, Surla generates one required test per
+  finished flow. A separate coding agent, the test writer, writes those
+  tests, and Surla checks what it reports before the tests count.
+- Surla verifies the commit of the builder, the coding agent that writes the
+  application code, with the accepted tests.
+
+[Story flows and the tests a build requires](../docs/STORY_TEST_DESIGN.md)
+describes each step. Surla's page shows a Story's flows; to change a Story,
+the guide edits its source.
+
+A project's design imports this module, so the project's `go.mod` must
+require it. A starter project made by `surla init` does, at the version
+Surla itself requires. In another project, a Story refresh that fails for
+that reason names the command to run:
+`go get github.com/goadesign/surla/story@<version>`.
 
 Run this module's checks from `story/`:
 
