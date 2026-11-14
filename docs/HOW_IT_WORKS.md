@@ -504,8 +504,12 @@ Like verification settings, they apply when the server starts again.
 Approval then makes one more check: the files in the release folder must be
 the binaries the run built. When one is missing or differs, approval is
 refused, and the refusal ends with your step: "publish the binaries the run
-built into the release folder that the promotion settings name, in a folder
-named after the commit, or remove the promotion settings". See
+built, whose folder the run's Proof view shows, into the release folder that
+the promotion settings name, in a folder named after the commit, or remove
+the promotion settings". For a completed run, the Proof view shows you its
+actual binary folder under **Binaries built by this run**, as selectable
+code. Use that folder for the selected run; the approval error panel repeats
+it. Agents never receive this path. See
 [`surla promotion`](REFERENCE.md#surla-verification-and-surla-promotion) and
 [`approve_merge`](REFERENCE.md#approve_merge).
 
