@@ -102,7 +102,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	card := confirmCard(t, cp, alice, "starter-live-prompt")
 
-	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: card.ChangeID, CandidateCommit: commit})
 	require.NoError(t, err)
 	before := askLive(t, started.URL)
 	assert.True(t, strings.HasPrefix(before, "SYSTEM="), before)
@@ -133,7 +133,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, os.WriteFile(planner, []byte(edited), 0o600))
 	c2 := commitAll(t, dir)
 
-	restarted, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: c2})
+	restarted, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: card.ChangeID, CandidateCommit: c2})
 	require.NoError(t, err, "starting C2 replaces the C1 target")
 	assert.Equal(t, "SYSTEM="+text, askLive(t, restarted.URL), "C2 carries the committed text without any draft")
 	stopped, err := cp.StopLiveTarget(alice)
