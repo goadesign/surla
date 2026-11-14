@@ -105,7 +105,12 @@ Only you confirm a change, start a build and approve a result, and you do it on
 the page. Each agent has its own connection to the server with only its own
 role's permissions. While the team works, the page's **Team** view shows each
 agent's state; an agent that is waiting for you is named above every view,
-with an action such as **Show guide pane** that brings its pane forward.
+with an action such as **Show guide pane** that brings its pane forward. When
+the builder or the test writer has an assignment it has not read, for example
+after Surla accepts the tests, the server sends it one fixed Chorus direct
+message asking it to read its assignments. One that stays idle with the
+assignment unread for 90 seconds is named as waiting for you, and the page says
+what to tell it.
 
 You can go back at any point: adopt a revised change, build again, or the test
 writer reports again after findings. Adopting a revised change gives it a new

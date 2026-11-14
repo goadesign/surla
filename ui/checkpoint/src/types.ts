@@ -300,7 +300,7 @@ export interface StorySummaryItem {
 
 export interface TeamRoleState {
   assignment: "unread" | "nothing_owed" | "unknown";
-  attention: "none" | "permission" | "question" | "auth" | "silent" | "unknown";
+  attention: "none" | "permission" | "question" | "auth" | "silent" | "assignment" | "unknown";
   handle: string;
   role: "guide" | "builder" | "test_writer";
   state: "not_started" | "ended" | "starting" | "needs_you" | "working" | "waiting" | "error" | "unknown";
@@ -2280,6 +2280,7 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
           "question",
           "auth",
           "silent",
+          "assignment",
           "unknown"
         ]
       },

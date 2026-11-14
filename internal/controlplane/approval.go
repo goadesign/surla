@@ -87,6 +87,12 @@ func (c *ControlPlane) ApproveMerge(
 			record.card.RequestRevision,
 		))
 	}
+	var notAccepted testsNotAccepted
+	if errors.As(choiceErr, &notAccepted) {
+		// approve_merge's caller is the user, so the refusal names the builder
+		// and never instructs an agent.
+		return nil, refuseApprovalTestsNotAccepted(notAccepted.saved)
+	}
 	if choiceErr != nil {
 		return nil, choiceErr
 	}

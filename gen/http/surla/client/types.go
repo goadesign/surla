@@ -3797,7 +3797,9 @@ type TeamRoleStateResponseBody struct {
 	Handle *string `form:"handle,omitempty" json:"handle,omitempty" xml:"handle,omitempty"`
 	// Current terminal state; unknown means Herdr cannot establish it.
 	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
-	// Reported block kind or the reason a silent running agent needs the user.
+	// Reported block kind, or why a running agent needs the user: silent when it
+	// reports nothing for 60 seconds, assignment when it has waited with an unread
+	// assignment for 90 seconds.
 	Attention *string `form:"attention,omitempty" json:"attention,omitempty" xml:"attention,omitempty"`
 	// held when Chorus reports a watcher, gone after its absence grace, unknown
 	// otherwise.
@@ -15904,8 +15906,8 @@ func ValidateTeamRoleStateResponseBody(body *TeamRoleStateResponseBody) (err err
 		}
 	}
 	if body.Attention != nil {
-		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "assignment" || *body.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if body.Watcher != nil {
@@ -15953,8 +15955,8 @@ func validateTeamRoleStateResponseBody(body *TeamRoleStateResponseBody, path str
 		}
 	}
 	if body.Attention != nil {
-		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "unknown") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "unknown"}))
+		if !(*body.Attention == "none" || *body.Attention == "permission" || *body.Attention == "question" || *body.Attention == "auth" || *body.Attention == "silent" || *body.Attention == "assignment" || *body.Attention == "unknown") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".attention", *body.Attention, []any{"none", "permission", "question", "auth", "silent", "assignment", "unknown"}))
 		}
 	}
 	if body.Watcher != nil {

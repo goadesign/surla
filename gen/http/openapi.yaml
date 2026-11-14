@@ -17330,14 +17330,15 @@ definitions:
                     - unknown
             attention:
                 type: string
-                description: Reported block kind or the reason a silent running agent needs the user.
-                example: auth
+                description: 'Reported block kind, or why a running agent needs the user: silent when it reports nothing for 60 seconds, assignment when it has waited with an unread assignment for 90 seconds.'
+                example: assignment
                 enum:
                     - none
                     - permission
                     - question
                     - auth
                     - silent
+                    - assignment
                     - unknown
             handle:
                 type: string
@@ -17374,7 +17375,7 @@ definitions:
                     - unknown
         example:
             assignment: unknown
-            attention: auth
+            attention: assignment
             handle: Quae ea aut iusto ea blanditiis.
             role: test_writer
             state: waiting
@@ -17397,19 +17398,19 @@ definitions:
                 description: Registered roles in guide, builder, test_writer order; empty before registration.
                 example:
                     - assignment: unknown
-                      attention: auth
+                      attention: assignment
                       handle: Quae ea aut iusto ea blanditiis.
                       role: test_writer
                       state: waiting
                       watcher: unknown
                     - assignment: unknown
-                      attention: auth
+                      attention: assignment
                       handle: Quae ea aut iusto ea blanditiis.
                       role: test_writer
                       state: waiting
                       watcher: unknown
                     - assignment: unknown
-                      attention: auth
+                      attention: assignment
                       handle: Quae ea aut iusto ea blanditiis.
                       role: test_writer
                       state: waiting
@@ -17421,19 +17422,19 @@ definitions:
         example:
             roles:
                 - assignment: unknown
-                  attention: auth
+                  attention: assignment
                   handle: Quae ea aut iusto ea blanditiis.
                   role: test_writer
                   state: waiting
                   watcher: unknown
                 - assignment: unknown
-                  attention: auth
+                  attention: assignment
                   handle: Quae ea aut iusto ea blanditiis.
                   role: test_writer
                   state: waiting
                   watcher: unknown
                 - assignment: unknown
-                  attention: auth
+                  attention: assignment
                   handle: Quae ea aut iusto ea blanditiis.
                   role: test_writer
                   state: waiting

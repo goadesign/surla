@@ -3,7 +3,6 @@ package project
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,57 +10,8 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
-
-// TestTeamFreshForegroundShell refuses a shell that replaced the published waiting agent.
-func TestTeamFreshForegroundShell(t *testing.T) {
-	o, f, now := newSupervisionFixture(t)
-	assert.Equal(t, "waiting", o.roles["builder"].public.State)
-	f.terminal.Foreground = &TeamForeground{Argv: []string{"-zsh"}}
-	o.remind(t.Context(), now)
-	assert.Equal(t, []string{"terminal"}, f.reads)
-	assert.Empty(t, f.sends)
-}
-
-// TestTeamKnownUnboundVimGap records why a non-shell predicate cannot authorize
-// production binding: stale idle plus vim still passes it. This recorded send is
-// a known gap, not permission to bind a real sender or a capability to preserve
-// once positive own-agent foreground facts are available.
-func TestTeamKnownUnboundVimGap(t *testing.T) {
-	o, f, now := newSupervisionFixture(t)
-	f.terminal.Foreground = &TeamForeground{Argv: []string{"vim"}}
-	o.remind(t.Context(), now)
-	assert.Len(t, f.sends, 1, "recorded stand-in exposes the gap; production remains unbound")
-}
-
-// TestTeamUnreadUnknownCannotRemind keeps an unsent generation through a failed
-// assignment read without treating the retained debt as permission to remind.
-func TestTeamUnreadUnknownCannotRemind(t *testing.T) {
-	for _, gone := range []bool{false, true} {
-		t.Run(map[bool]string{false: "watcher unknown", true: "independent watcher gone"}[gone], func(t *testing.T) {
-			o, f, now := newSupervisionFixture(t)
-			assert.False(t, o.roles["builder"].owed["one"])
-			o.assignments(t.Context(), func(context.Context) ([]controlplane.AssignmentGeneration, error) { return nil, assert.AnError })
-			if gone {
-				o.watchers(TeamWatcherView{}, nil, now.Add(-teamWatcherGrace))
-			}
-			o.publish(t.Context(), now, false)
-			assert.Equal(t, "unknown", o.roles["builder"].public.Assignment)
-			assert.Contains(t, o.roles["builder"].owed, "one")
-			o.remind(t.Context(), now)
-			if gone {
-				require.Len(t, f.sends, 1)
-				assert.Equal(t, watcherReminder, f.sends[0].Text)
-			} else {
-				assert.Empty(t, f.sends)
-			}
-		})
-	}
-}
 
 // TestTeamWatcherHeldOutageIsUnknown preserves unknown through a failed view,
 // even after the grace period while Herdr continues to report normally.
@@ -155,61 +105,45 @@ func TestTeamAssignmentSetProjection(t *testing.T) {
 	}
 }
 
-// TestTeamReminderFailureTelemetry separates actual failures from normal refusals
-// and the explicitly unbound sender, without retaining the private cause or result.
+// TestTeamReminderFailureTelemetry records each kind of failed post as outcome
+// failed, with the fixed error, error status and the bounded post and failure
+// attributes. No caller sees an error, and however many reads follow, that
+// generation gets no second attempt.
 func TestTeamReminderFailureTelemetry(t *testing.T) {
-	for _, outcome := range []string{"sent", "blocked", "status_changed", "finished", "unavailable", "unexpected private outcome", "send error", "unbound"} {
-		t.Run(outcome, func(t *testing.T) {
-			exporter := tracetest.NewInMemoryExporter()
-			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-			previous := otel.GetTracerProvider()
-			otel.SetTracerProvider(provider)
-			t.Cleanup(func() { otel.SetTracerProvider(previous); assert.NoError(t, provider.Shutdown(context.Background())) })
-			o, f, now := newSupervisionFixture(t)
-			exporter.Reset()
-			f.outcome = outcome
-			failed := outcome == "send error" || outcome == "unexpected private outcome"
-			if outcome == "send error" {
-				f.outcome = "unavailable"
-				f.sendErr = errors.New("PRIVATE /private/project sender cause")
-			}
-			if outcome == "unbound" {
-				o.server.team.dependencies.Sender = nil
-			}
-			o.remind(t.Context(), now)
-			o.remind(t.Context(), now)
-			spans := exporter.GetSpans()
-			require.Len(t, spans, 1, "a refused/failed attempt stays latched until state changes")
-			span := spans[0]
-			assert.Equal(t, "surla.team.reminder", span.Name)
-			assert.Equal(t, failed, span.Status.Code == codes.Error)
-			wantOutcome := outcome
-			if failed {
-				wantOutcome = "failed"
-			} else if outcome == "unbound" {
-				wantOutcome = "unavailable"
-			}
-			var actualOutcome string
-			for _, a := range span.Attributes {
-				assert.NotContains(t, a.Value.AsString(), "private")
-				if a.Key == "team.outcome" {
-					actualOutcome = a.Value.AsString()
+	for _, post := range []string{"who", "send"} {
+		for _, kind := range []string{"connection", "timeout", "http_status", "rpc_error", "tool_error", "response"} {
+			t.Run(post+" "+kind, func(t *testing.T) {
+				exporter, _ := recordSpans(t)
+				o, f, now := newSupervisionFixture(t)
+				listed(o, now.Add(-teamJoinSettle), true, "builder-example")
+				f.sendErr = TeamSendFailure{Post: post, Kind: kind}
+				exporter.Reset()
+				o.remind(t.Context(), now)
+				for later := range 5 {
+					at := now.Add(time.Duration(later+1) * time.Minute)
+					setOwed(t, o, map[string][]string{"builder": {"one"}})
+					listed(o, at, true, "builder-example")
+					o.remind(t.Context(), at)
 				}
-			}
-			assert.Equal(t, wantOutcome, actualOutcome)
-			if failed {
+				assert.Len(t, f.sends, 1, "a failed generation is never tried again")
+				_, err := o.server.ReadTeam(t.Context())
+				assert.NoError(t, err)
+				spans := reminderSpans(exporter)
+				require.Len(t, spans, 1)
+				span := spans[0]
+				assert.Equal(t, codes.Error, span.Status.Code)
+				assert.Equal(t, "team reminder post failed", span.Status.Description)
 				require.Len(t, span.Events, 1)
-				assert.Equal(t, "team reminder delivery failed", span.Status.Description)
-			} else {
-				assert.Empty(t, span.Events)
-			}
-			for _, event := range span.Events {
-				for _, a := range event.Attributes {
-					assert.NotContains(t, a.Value.AsString(), "PRIVATE")
-					assert.NotContains(t, a.Value.AsString(), "/private/")
+				assert.Equal(t, "failed", spanAttribute(span, "team.outcome"))
+				assert.Equal(t, post, spanAttribute(span, "team.post"))
+				assert.Equal(t, kind, spanAttribute(span, "team.failure"))
+				for _, a := range span.Events[0].Attributes {
+					if a.Key == "exception.message" {
+						assert.Equal(t, "team reminder post failed", a.Value.AsString())
+					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -230,18 +164,15 @@ func TestTeamStreamStallBoundary(t *testing.T) {
 			o.event(t.Context(), TeamEvent{Kind: "heartbeat", Role: "guide"}, now.Add(age))
 			f.terminal = builder
 			stalled := o.publish(t.Context(), now.Add(age), false)
-			o.remind(t.Context(), now.Add(age))
 			if age < teamStreamStallBound {
 				assert.False(t, stalled)
 				assert.Equal(t, "waiting", o.roles["guide"].public.State)
-				assert.Len(t, f.sends, 1)
 				return
 			}
 			assert.True(t, stalled)
 			for _, role := range o.roles {
 				assert.Equal(t, "unknown", role.public.State)
 			}
-			assert.Empty(t, f.sends)
 			reads := len(f.reads)
 			o.event(t.Context(), TeamEvent{Kind: "heartbeat", Role: "builder"}, now.Add(age))
 			o.event(t.Context(), TeamEvent{Kind: "heartbeat", Role: "guide"}, now.Add(age))
@@ -264,10 +195,8 @@ func TestTeamLateHeartbeatRequiresSnapshot(t *testing.T) {
 	later := now.Add(teamStreamStallBound)
 	o.event(t.Context(), TeamEvent{Kind: "heartbeat", Role: "builder"}, later)
 	o.publish(t.Context(), later, false)
-	o.remind(t.Context(), later)
 	assert.Equal(t, "unknown", o.roles["builder"].public.State)
 	assert.Empty(t, f.reads)
-	assert.Empty(t, f.sends)
 	o.event(t.Context(), TeamEvent{Kind: "snapshot", Role: "builder", Sequence: 20, Terminals: []TeamTerminal{f.terminal}}, later)
 	o.publish(t.Context(), later, false)
 	assert.Equal(t, "waiting", o.roles["builder"].public.State)
@@ -280,9 +209,7 @@ func TestTeamMultipleLivePanesAreUnknown(t *testing.T) {
 	other.Address = "other-terminal"
 	o.event(t.Context(), TeamEvent{Kind: "snapshot", Role: "builder", Sequence: 20, Terminals: []TeamTerminal{f.terminal, other}}, now)
 	o.publish(t.Context(), now, false)
-	o.remind(t.Context(), now)
 	assert.Equal(t, "unknown", o.roles["builder"].public.State)
-	assert.Empty(t, f.sends)
 }
 
 // TestTeamAssignmentScanCadence exercises the real owner's initial, snapshot,
