@@ -237,19 +237,32 @@ func gitCommitAll(t *testing.T, repo, message string) string {
 }
 
 // runTestGit runs git in dir with a fixed test identity, no inherited GIT_*
-// variables and no system or global configuration, and returns its stdout.
+// variables and no system or global configuration (testGitEnv), and returns
+// its stdout.
 func runTestGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=Surla Test",
 		"-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Env = testGitEnv()
+	out, err := cmd.Output()
+	require.NoError(t, err, "git %v", args)
+	return string(out)
+}
+
+// testGitEnv returns the environment every git command a test runs gets: the
+// test process's environment without any GIT_* variable, no system or global
+// Git configuration, and the fixed test identity as author and committer. Git
+// exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE to the commands its hooks
+// run, so a test started from a hook would otherwise commit into the hook's
+// repository instead of its own.
+func testGitEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "GIT_") {
 			env = append(env, kv)
 		}
 	}
-	cmd.Env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
-	out, err := cmd.Output()
-	require.NoError(t, err, "git %v", args)
-	return string(out)
+	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_AUTHOR_NAME=Surla Test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Surla Test", "GIT_COMMITTER_EMAIL=test@example.com")
 }
