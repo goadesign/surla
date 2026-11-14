@@ -9,6 +9,8 @@ package controlplane
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -412,7 +415,7 @@ func TestHeldSettingsRevealNothingWhenFormatted(t *testing.T) {
 	for name, operand := range map[string]any{"held settings": state.held, "model state": state, "pointer to model state": &state} {
 		t.Run(name, func(t *testing.T) {
 			var outputs []string
-			for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x"} {
+			for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X", "% x", "%#x", "%d", "%p"} {
 				outputs = append(outputs, fmt.Sprintf(verb, operand))
 			}
 			for _, handler := range []func(*bytes.Buffer) slog.Handler{
@@ -427,7 +430,7 @@ func TestHeldSettingsRevealNothingWhenFormatted(t *testing.T) {
 			require.NoError(t, err)
 			outputs = append(outputs, string(raw))
 			for _, out := range outputs {
-				assertHoldsNoSentinel(t, out)
+				assertHoldsNoEncodedSentinel(t, out)
 			}
 		})
 	}
@@ -776,6 +779,28 @@ func isolateProviderFamilies(t *testing.T) {
 		if modelsettings.InFamily(name) {
 			t.Setenv(name, value)
 			require.NoError(t, os.Unsetenv(name))
+		}
+	}
+}
+
+// assertHoldsNoEncodedSentinel fails for every sentinel text holds as is,
+// quoted or JSON-escaped, in hexadecimal (either case, with or without
+// spaces) or in any base64 alphabet, the forms a formatter or marshaller
+// could reveal it in.
+func assertHoldsNoEncodedSentinel(t *testing.T, text string) {
+	t.Helper()
+	for _, sentinel := range allSentinels {
+		quoted := strconv.Quote(sentinel)
+		escaped, err := json.Marshal(sentinel)
+		require.NoError(t, err)
+		for _, form := range []string{
+			sentinel, quoted[1 : len(quoted)-1], string(escaped[1 : len(escaped)-1]),
+			hex.EncodeToString([]byte(sentinel)), strings.ToUpper(hex.EncodeToString([]byte(sentinel))),
+			fmt.Sprintf("% x", sentinel), fmt.Sprintf("% X", sentinel),
+			base64.StdEncoding.EncodeToString([]byte(sentinel)), base64.URLEncoding.EncodeToString([]byte(sentinel)),
+			base64.RawStdEncoding.EncodeToString([]byte(sentinel)), base64.RawURLEncoding.EncodeToString([]byte(sentinel)),
+		} {
+			assert.NotContains(t, text, form)
 		}
 	}
 }

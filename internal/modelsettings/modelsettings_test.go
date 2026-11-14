@@ -2,9 +2,14 @@ package modelsettings
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -105,7 +110,7 @@ func TestHeldValuesRevealNothingWhenFormatted(t *testing.T) {
 	for name, operand := range operands {
 		t.Run(name, func(t *testing.T) {
 			var outputs []string
-			for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X", "%d", "%T"} {
+			for _, verb := range append(slices.Clone(formattingVerbs), "%T", "%p") {
 				outputs = append(outputs, fmt.Sprintf(verb, operand))
 			}
 			outputs = append(outputs, fmt.Sprint(operand), fmt.Sprintln(operand))
@@ -122,9 +127,7 @@ func TestHeldValuesRevealNothingWhenFormatted(t *testing.T) {
 			require.NoError(t, err)
 			outputs = append(outputs, string(raw))
 			for _, out := range outputs {
-				for _, sentinel := range sentinels {
-					assert.NotContains(t, out, sentinel)
-				}
+				assertNoEncodedSentinel(t, out)
 			}
 		})
 	}
@@ -135,6 +138,22 @@ func TestHeldValuesRevealNothingWhenFormatted(t *testing.T) {
 	assert.Equal(t, Redacted, newValue(keySentinel).String())
 	assert.Equal(t, Redacted, newValue(keySentinel).GoString())
 	assert.Equal(t, Redacted, newValue(keySentinel).LogValue().String())
+}
+
+// TestValueFormatsAsTheRedactionWithEveryVerb formats a bare Value, and a
+// pointer to one, with every verb and a range of flags, widths and
+// precisions: each output is exactly the redaction, so no verb can render
+// the value in another form, such as hexadecimal.
+func TestValueFormatsAsTheRedactionWithEveryVerb(t *testing.T) {
+	value := newValue(keySentinel)
+	for _, verb := range formattingVerbs {
+		assert.Equal(t, Redacted, fmt.Sprintf(verb, value), verb)
+		assert.Equal(t, Redacted, fmt.Sprintf(verb, &value), "pointer, "+verb)
+	}
+	for _, verb := range []string{"%T", "%p"} {
+		assertNoEncodedSentinel(t, fmt.Sprintf(verb, value))
+		assertNoEncodedSentinel(t, fmt.Sprintf(verb, &value))
+	}
 }
 
 // TestSettingsKeepNamesAndBuildProgramEnvironments holds a provider's
@@ -293,4 +312,38 @@ func mustNew(t *testing.T, provider string, values map[string]string) Settings {
 	s, err := New(provider, values)
 	require.NoError(t, err)
 	return s
+}
+
+// formattingVerbs are the verbs, flags, widths and precisions Value is
+// formatted with; each must print exactly the redaction.
+var formattingVerbs = []string{
+	"%v", "%+v", "%#v", "%s", "%q", "%+q", "%#q", "%x", "%X", "% x", "% X", "%#x", "%#X", "%08x",
+	"%d", "%o", "%O", "%b", "%c", "%U", "%e", "%E", "%f", "%F", "%g", "%G", "%t",
+	"%10s", "%-10v", "%.3s", "%10.4q", "%+#v",
+}
+
+// encodedForms returns s as printed in the forms a formatter or marshaller
+// could reveal it: as is, quoted or JSON-escaped, in hexadecimal (lower and
+// upper case, with and without spaces) and in every base64 alphabet.
+func encodedForms(s string) []string {
+	quoted := strconv.Quote(s)
+	escaped, _ := json.Marshal(s)
+	return []string{
+		s, quoted[1 : len(quoted)-1], string(escaped[1 : len(escaped)-1]),
+		hex.EncodeToString([]byte(s)), strings.ToUpper(hex.EncodeToString([]byte(s))),
+		fmt.Sprintf("% x", s), fmt.Sprintf("% X", s),
+		base64.StdEncoding.EncodeToString([]byte(s)), base64.URLEncoding.EncodeToString([]byte(s)),
+		base64.RawStdEncoding.EncodeToString([]byte(s)), base64.RawURLEncoding.EncodeToString([]byte(s)),
+	}
+}
+
+// assertNoEncodedSentinel fails for every sentinel text holds in any of its
+// encoded forms.
+func assertNoEncodedSentinel(t *testing.T, text string) {
+	t.Helper()
+	for _, sentinel := range sentinels {
+		for _, form := range encodedForms(sentinel) {
+			assert.NotContains(t, text, form)
+		}
+	}
 }
