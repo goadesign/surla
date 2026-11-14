@@ -33,7 +33,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change from propose_change or
 		// revise_change. confirm_intent does not rewrite this text; when status is
@@ -157,7 +157,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change from propose_change or
 		// revise_change. confirm_intent does not rewrite this text; when status is
@@ -225,7 +225,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change from propose_change or
 		// revise_change. confirm_intent does not rewrite this text; when status is
@@ -397,7 +397,7 @@ type (
 		// True once you read this assignment in full with get_builder_assignment.
 		Read *bool `json:"read"`
 		// Where the test writer's tests for this build stand: not_used when no test
-		// writer is used because the project verifies with its stored evaluator;
+		// writer is used because the project has stored verification settings;
 		// otherwise accepted, with the commit and time, when the build records
 		// accepted tests, and not_yet_accepted when it records none.
 		WrittenTests *WrittenTests `json:"written_tests"`
@@ -419,7 +419,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change from propose_change or
 		// revise_change. confirm_intent does not rewrite this text; when status is
@@ -595,8 +595,9 @@ type (
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
 		// Whether this run's agreed revision and selected tests match the current
-		// Change Card and usable build or stored evaluator. This observation does not
-		// establish the current candidate working tree, deployment or approval.
+		// Change Card and the usable build or the stored verification settings. This
+		// observation does not establish the current candidate working tree,
+		// deployment or approval.
 		InputsCurrent *bool `json:"inputs_current"`
 		// Absolute folder containing the binaries built by this completed run.
 		// Returned only to the user when promotion settings are configured, so the
@@ -668,10 +669,10 @@ type (
 		// Opaque value for change detection. Compare it only for equality; the
 		// returned fields contain the facts this operation makes readable.
 		Version *string `json:"version"`
-		// Whether approve_merge can record approvals on this server. It is true
-		// whenever Checkpoint 4 verification is configured and any stored promotion
-		// settings could be resolved; it is false when verification is not configured
-		// or when resolving the promotion target returns an error.
+		// Whether approve_merge can record approvals on this server: true when the
+		// server runs Checkpoint 4 verification, as every server surla starts does,
+		// and any stored promotion settings could be resolved; false when the server
+		// runs no verification or resolving the promotion target fails.
 		ApprovalAvailable *bool `json:"approval_available"`
 	}
 	// ListTestWriterAssignmentsPayloadTransport is the internal JSON transport type for ListTestWriterAssignmentsPayload.
@@ -776,7 +777,7 @@ type (
 	ProposeChangePayloadTransport struct {
 		// Unique change identifier.
 		ChangeID *string `json:"change_id"`
-		// Operator feature request.
+		// The user's feature request.
 		Prompt *string `json:"prompt"`
 		// Optional op_id of a succeeded refresh_story operation for the bound
 		// workspace whose evaluated Stories this card adopts. When set, Surla reads
@@ -796,7 +797,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change from propose_change or
 		// revise_change. confirm_intent does not rewrite this text; when status is
@@ -938,7 +939,7 @@ type (
 		// when the change shows one waiting (proposed_revision.request_revision),
 		// otherwise the change's own.
 		RequestRevision *string `json:"request_revision"`
-		// Revised operator feature request.
+		// The user's revised feature request.
 		Prompt *string `json:"prompt"`
 		// Optional op_id of a succeeded refresh_story operation for the bound
 		// workspace whose evaluated Stories this revision adopts. When set, Surla
@@ -960,7 +961,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change from propose_change or
 		// revise_change. confirm_intent does not rewrite this text; when status is
@@ -1098,8 +1099,9 @@ type (
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
 		// Whether this run's agreed revision and selected tests match the current
-		// Change Card and usable build or stored evaluator. This observation does not
-		// establish the current candidate working tree, deployment or approval.
+		// Change Card and the usable build or the stored verification settings. This
+		// observation does not establish the current candidate working tree,
+		// deployment or approval.
 		InputsCurrent *bool `json:"inputs_current"`
 		// Absolute folder containing the binaries built by this completed run.
 		// Returned only to the user when promotion settings are configured, so the
@@ -1152,7 +1154,7 @@ type (
 	AmbiguityQuestionTransport struct {
 		// Stable question identifier.
 		ID *string `json:"id"`
-		// Plain-English question for the operator.
+		// Plain-English question for the user.
 		Question *string `json:"question"`
 		// Concrete resolution choices.
 		Options []string `json:"options"`
@@ -1171,8 +1173,8 @@ type (
 		// Suite identifier the tests at suite_commit declared in the report (shown,
 		// not compared).
 		SuiteID *string `json:"suite_id"`
-		// Commit of the tests the report ran: the operator's stored evaluator, or the
-		// tests Surla accepted for the change's build.
+		// Commit of the tests the report ran: the evaluator suite commit in the stored
+		// verification settings, or the tests Surla accepted for the change's build.
 		SuiteCommit *string `json:"suite_commit"`
 		// Dependency profile the tests at suite_commit declared in the report, such as
 		// sim or scripted-model (shown, not compared).
@@ -1210,7 +1212,7 @@ type (
 		// True once you read this assignment in full with get_builder_assignment.
 		Read *bool `json:"read"`
 		// Where the test writer's tests for this build stand: not_used when no test
-		// writer is used because the project verifies with its stored evaluator;
+		// writer is used because the project has stored verification settings;
 		// otherwise accepted, with the commit and time, when the build records
 		// accepted tests, and not_yet_accepted when it records none.
 		WrittenTests *WrittenTests `json:"written_tests"`
@@ -1451,9 +1453,9 @@ type (
 		// report.
 		State *string `json:"state"`
 		// Whether this run names the agreed request_revision and the tests selected
-		// now: the accepted test commit of the usable build in force, or the
-		// configured stored evaluator suite. It does not say whether the candidate
-		// working tree, deployment or approval is current.
+		// now: the accepted test commit of the usable build in force, or the evaluator
+		// suite in the stored verification settings. It does not say whether the
+		// candidate working tree, deployment or approval is current.
 		InputsCurrent *bool `json:"inputs_current"`
 	}
 	// LivePromptItemTransport is the internal JSON transport type for LivePromptItemTransport.
@@ -1507,7 +1509,7 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	ProposedRevisionItemTransport struct {
-		// Operator feature request for this revision.
+		// The user's feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of the proposed change.
 		Summary *string `json:"summary"`
@@ -1686,8 +1688,8 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	TestWriterProgressTransport struct {
-		// The tests' state: not_used when the project verifies with its stored
-		// evaluator; otherwise assigned, reported, needs_changes with the number of
+		// The tests' state: not_used when the project has stored verification
+		// settings; otherwise assigned, reported, needs_changes with the number of
 		// Surla's findings, accepted with the commit Surla recorded, or could_not_run
 		// with the reason and the user's step. Each verdict carries the time Surla
 		// reached it.
@@ -1958,8 +1960,9 @@ type (
 		// When the run was accepted.
 		AcceptedAt *string `json:"accepted_at"`
 		// Whether this run's agreed revision and selected tests match the current
-		// Change Card and usable build or stored evaluator. This observation does not
-		// establish the current candidate working tree, deployment or approval.
+		// Change Card and the usable build or the stored verification settings. This
+		// observation does not establish the current candidate working tree,
+		// deployment or approval.
 		InputsCurrent *bool `json:"inputs_current"`
 		// Absolute folder containing the binaries built by this completed run.
 		// Returned only to the user when promotion settings are configured, so the

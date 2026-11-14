@@ -49,7 +49,7 @@ type (
 		ChangeID string
 		// Status is the checkpoint status ("needs_confirmation" or "confirmed").
 		Status string
-		// Prompt is the operator feature request for this revision.
+		// Prompt is the user's feature request for this revision.
 		Prompt string
 		// Summary is the plain-English summary of requested behavior.
 		Summary string

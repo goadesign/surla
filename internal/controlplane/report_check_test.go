@@ -669,7 +669,7 @@ func TestStoredEvaluatorProjectsNeverJudge(t *testing.T) {
 	before = readBuildFile(t, cp, "chg")
 	_, err = cp.ReportTestsFinished(tests, report)
 	assertRefused(t, err, "conflict")
-	assert.ErrorContains(t, err, "no test writer is used: this project verifies with its stored evaluator")
+	assert.ErrorContains(t, err, "no test writer is used: this project has stored verification settings")
 	assert.Equal(t, before, readBuildFile(t, cp, "chg"), "a refused report changes nothing")
 	editBuildFile(t, cp, "chg", savedTestWriter(map[string]any{"state": testsReported}))
 	assert.Empty(t, cp.reports.reported(t.Context()), "no build is judged")

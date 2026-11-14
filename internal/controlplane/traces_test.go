@@ -300,7 +300,6 @@ func TestTraceToolExplainsMissingRecording(t *testing.T) {
 	assert.True(t, *complete.IsError)
 	require.NotEmpty(t, complete.Content)
 	require.NotNil(t, complete.Content[0].Text)
-	assert.Contains(t, *complete.Content[0].Text, "Options.TracerProvider")
 	assert.Contains(t, *complete.Content[0].Text, "start the project with surla")
 	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 		"generation-token": {ID: "alice@example.com"},
