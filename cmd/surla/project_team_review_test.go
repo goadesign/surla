@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -256,23 +255,6 @@ func TestServerTeamDependenciesResolveOnOperation(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), state.Record.Directory)
 	assert.NotContains(t, err.Error(), "PATH")
-}
-
-// TestOlderProjectServerNamesRestartStep exercises the generated 404 consumer with hostile text.
-func TestOlderProjectServerNamesRestartStep(t *testing.T) {
-	isolateServeWorkspace(t)
-	state, err := fixtureProjectState(t.TempDir())
-	require.NoError(t, err)
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, err := io.WriteString(w, "private peer text")
-		assert.NoError(t, err)
-	}))
-	defer api.Close()
-	state.Record.Port = api.Listener.Addr().(*net.TCPAddr).Port
-	require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("a", 64)}))
-	_, err = projectClient(state).EnsureTeam(t.Context())
-	require.EqualError(t, err, "this project’s server was started by another version; run surla stop, then surla")
 }
 
 // testBuildIdentity hashes this test binary's executable once per test process, as

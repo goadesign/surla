@@ -700,10 +700,6 @@ func managementCall(
 		}
 		var responseErr *goahttp.ClientError
 		if errors.As(err, &responseErr) && responseErr.Name == "invalid_response" {
-			newOperation := responseErr.Method == "ensure_team" || responseErr.Method == "hand_over_model_settings"
-			if newOperation && doer.lastStatus == http.StatusNotFound {
-				return nil, errors.New("this project’s server was started by another version; run surla stop, then surla")
-			}
 			if responseErr.Method == "hand_over_model_settings" && doer.lastStatus == http.StatusBadRequest {
 				return nil, fmt.Errorf("the project server refused the model settings from this shell (HTTP %d); "+
 					"each ANTHROPIC_ and OPENAI_ request setting must be at most %d characters", doer.lastStatus, modelsettings.MaxValueLength)
