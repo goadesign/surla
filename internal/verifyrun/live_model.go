@@ -22,7 +22,8 @@ import (
 )
 
 type (
-	// liveProvider removes provider text from every failure crossing the gateway.
+	// liveProvider removes provider wording and causes while preserving the
+	// structured classification consumers use.
 	liveProvider struct {
 		// inner is the provider constructed after preparation in this executor.
 		inner model.Provider

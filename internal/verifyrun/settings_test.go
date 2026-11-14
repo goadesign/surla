@@ -49,8 +49,15 @@ func TestLiveExecutorGivesSettingsOnlyToTheTestProgram(t *testing.T) {
 			prepared, prepErr := os.ReadFile(filepath.Join(p.Dir(), liveTmpDir, "prepare-report"))
 			suite, suiteErr := os.ReadFile(filepath.Join(p.Dir(), liveTmpDir, "suite-report"))
 			raw, rawErr := os.ReadFile(filepath.Join(p.Dir(), liveRequestFile))
+			log, logErr := os.ReadFile(filepath.Join(p.Dir(), "executor.log"))
 			require.NoError(t, p.Stop())
-			require.NoError(t, errors.Join(prepErr, suiteErr, rawErr))
+			require.NoError(t, errors.Join(prepErr, suiteErr, rawErr, logErr))
+			if tests == verify.TestsWritten {
+				// The test program can read this file while it runs, so the
+				// held values must not arrive through executor diagnostics.
+				assert.NotContains(t, string(log), "sentinel-handed-key")
+				assert.NotContains(t, string(log), "sentinel-url-credential")
+			}
 			assert.Equal(t, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nARGS_HOLD_SENTINEL=no\n",
 				string(prepared), "preparation sees no provider variable")
 			expected := "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\nANTHROPIC_BASE_URL=\nANTHROPIC_ADMIN_KEY=\nOPENAI_API_KEY=\nOPENAI_ORG_ID=\nARGS_HOLD_SENTINEL=no\n"

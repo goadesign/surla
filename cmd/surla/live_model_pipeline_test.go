@@ -39,11 +39,13 @@ type (
 	// pipelineResult is one generated client's observed result, never an SDK
 	// result substituted for the consumer proof.
 	pipelineResult struct {
-		Case    string
-		Text    string
-		Usage   model.TokenUsage
-		EOF     bool
-		Failure pipelineFailure
+		Case        string
+		Text        string
+		Usage       model.TokenUsage
+		EOF         bool
+		Chunks      int
+		PartialText string
+		Failure     pipelineFailure
 	}
 
 	// pipelineFailure retains every returned cause string for the sentinel
@@ -56,6 +58,7 @@ type (
 		UsageIncomplete     bool
 		RateLimited         bool
 		CountingUnsupported bool
+		UnadvertisedName    string
 	}
 
 	// pipelineProviderFailure is the provider's structured error contract.
@@ -102,6 +105,18 @@ type (
 		capture  pipelineCapture
 	}
 
+	// pipelineHTTPCall captures routing and framing facts without credentials.
+	pipelineHTTPCall struct {
+		Case, Method, Route, RequestContentType, ResponseContentType string
+		Status                                                       int
+	}
+
+	// pipelineHTTPRecorder retains the bounded fixture requests across handlers.
+	pipelineHTTPRecorder struct {
+		mu    sync.Mutex
+		calls []pipelineHTTPCall
+	}
+
 	// pipelineProvider transparently observes the actual command constructor's
 	// provider. The production liveProvider wrapper is outside this observer.
 	pipelineProvider struct {
@@ -135,7 +150,7 @@ func TestLiveSDKProvidersCrossTheProductionGateway(t *testing.T) {
 					t.Setenv(name, "")
 				}
 			}
-			server := newPipelineHTTPProvider(t, family.Name)
+			server, httpCalls := newPipelineHTTPProvider(t, family.Name)
 			defer server.Close()
 			endpoint := strings.Replace(server.URL, "://", "://u:pw-sentinel@", 1) + "/path-sentinel/"
 			values := map[string]string{family.Key: "key-sentinel", family.Prefix + "BASE_URL": endpoint,
@@ -177,6 +192,7 @@ func TestLiveSDKProvidersCrossTheProductionGateway(t *testing.T) {
 			require.Empty(t, capture.CaptureError)
 			require.NotEmpty(t, capture.Observations, "a missing observer must not look like zero SDK spans")
 			assertPipelineResults(t, family.Name, results, capture)
+			assertPipelineHTTPCalls(t, family.Name, httpCalls)
 		})
 	}
 }
@@ -250,9 +266,14 @@ func runLiveModelPipelineSuite(args []string) error {
 			failure = err
 			if err == nil {
 				for {
-					_, failure = stream.Recv()
+					var chunk model.Chunk
+					chunk, failure = stream.Recv()
 					if failure != nil {
 						break
+					}
+					result.Chunks++
+					if text, ok := chunk.(model.TextChunk); ok {
+						result.PartialText += text.Message.Text()
 					}
 				}
 				if failure == io.EOF {
@@ -382,6 +403,7 @@ func inspectPipelineFailure(err error) pipelineFailure {
 		}
 	}
 	visit(err)
+	failure.UnadvertisedName, _ = model.UnadvertisedToolName(err)
 	if provider, ok := model.AsProviderError(err); ok {
 		failure.Provider = &pipelineProviderFailure{Provider: provider.Provider(), Operation: provider.Operation(), Kind: string(provider.Kind()),
 			Code: provider.Code(), RequestID: provider.RequestID(), Status: provider.HTTPStatus(), Retryable: provider.Retryable()}
@@ -413,14 +435,34 @@ func writePipelineJSON(name string, value any) error {
 // newPipelineHTTPProvider is the only network peer the real SDK can reach.
 // The final case closes its listener and current socket, producing an actual
 // connection failure on retries rather than a fabricated provider error.
-func newPipelineHTTPProvider(t *testing.T, family string) *httptest.Server {
+func newPipelineHTTPProvider(t *testing.T, family string) (*httptest.Server, *pipelineHTTPRecorder) {
 	t.Helper()
 	var listener net.Listener
+	calls := &pipelineHTTPRecorder{}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
 		if !assert.NoError(t, err) {
 			return
 		}
+		var requestBody struct {
+			Stream bool `json:"stream"`
+		}
+		if !assert.NoError(t, json.Unmarshal(body, &requestBody)) {
+			return
+		}
+		scenario := "success"
+		if requestBody.Stream {
+			scenario = "stream"
+		}
+		for _, name := range []string{"case400", "casecount", "casebroken", "caseinvalid", "case429", "caseclosed"} {
+			if strings.Contains(string(body), name) {
+				scenario = name
+				break
+			}
+		}
+		call := pipelineHTTPCall{Case: scenario, Method: request.Method, RequestContentType: request.Header.Get("Content-Type"),
+			Route: strings.TrimPrefix(request.URL.Path, "/path-sentinel/")}
+		defer func() { calls.record(call) }()
 		assert.Contains(t, request.URL.Path, "/path-sentinel/")
 		if family == "anthropic" {
 			assert.Equal(t, "key-sentinel", request.Header.Get("X-Api-Key"))
@@ -452,23 +494,20 @@ func newPipelineHTTPProvider(t *testing.T, family string) *httptest.Server {
 			if strings.Contains(string(body), "case429") {
 				status, code = http.StatusTooManyRequests, "rate_limit_error"
 			}
+			call.Status, call.ResponseContentType = status, "application/json"
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
 			fmt.Fprintf(w, `{"type":"error","error":{"type":%q,"code":%q,"message":"key-sentinel token-sentinel header-sentinel pw-sentinel path-sentinel"}}`, code, code)
 			return
 		}
 		if strings.Contains(string(body), "caseinvalid") {
+			call.Status, call.ResponseContentType = http.StatusOK, "application/json"
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, pipelineInvalidToolResponse(family))
 			return
 		}
-		var decoded struct {
-			Stream bool `json:"stream"`
-		}
-		if !assert.NoError(t, json.Unmarshal(body, &decoded)) {
-			return
-		}
-		if decoded.Stream {
+		if requestBody.Stream {
+			call.Status, call.ResponseContentType = http.StatusOK, "text/event-stream"
 			w.Header().Set("Content-Type", "text/event-stream")
 			if strings.Contains(string(body), "casebroken") {
 				io.WriteString(w, liveSDKBrokenStream(family))
@@ -482,12 +521,13 @@ func newPipelineHTTPProvider(t *testing.T, family string) *httptest.Server {
 			}
 			return
 		}
+		call.Status, call.ResponseContentType = http.StatusOK, "application/json"
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, liveSDKResponse(family))
 	}))
 	listener = server.Listener
 	server.Start()
-	return server
+	return server, calls
 }
 
 // pipelineInvalidToolResponse makes each actual adapter reject an unadvertised
@@ -511,6 +551,9 @@ func assertPipelineResults(t *testing.T, family string, results []pipelineResult
 		encoded, err := json.Marshal(result.Failure)
 		require.NoError(t, err)
 		assertNoPipelineSentinels(t, string(encoded))
+		t.Logf("%s generated %s: eof=%t chunks=%d partial=%q provider=%+v rejected=%+v usage=%+v rateLimited=%t unsupportedCount=%t causes=%d",
+			family, result.Case, result.EOF, result.Chunks, result.PartialText, result.Failure.Provider, result.Failure.Rejected,
+			result.Failure.Usage, result.Failure.RateLimited, result.Failure.CountingUnsupported, len(result.Failure.Causes))
 	}
 	observed := map[string]pipelineFailure{}
 	for _, observation := range capture.Observations {
@@ -531,6 +574,10 @@ func assertPipelineResults(t *testing.T, family string, results []pipelineResult
 		assert.Empty(t, result.Failure.Causes)
 	}
 	assert.True(t, byCase["stream"].EOF, "the generated stream finishes with literal EOF")
+	assert.Greater(t, byCase["stream"].Chunks, 0)
+	assert.Equal(t, "answer", byCase["stream"].PartialText)
+	assert.Greater(t, byCase["casebroken"].Chunks, 0, "the generated consumer sees a chunk before the SDK fails")
+	assert.Equal(t, "answer", byCase["casebroken"].PartialText)
 	for scenario, operation := range map[string]string{"case400": "complete/case400", "casebroken": "stream/casebroken/terminal", "caseclosed": "complete/caseclosed"} {
 		raw := observed[operation]
 		consumer := byCase[scenario].Failure
@@ -539,31 +586,44 @@ func assertPipelineResults(t *testing.T, family string, results []pipelineResult
 		assert.Equal(t, raw.Provider, consumer.Provider)
 		assert.Equal(t, raw.Usage, consumer.Usage)
 		assert.Equal(t, raw.UsageIncomplete, consumer.UsageIncomplete)
+		t.Logf("%s generated client %s: provider=%+v usage=%+v causes=%d", family, scenario, consumer.Provider, consumer.Usage, len(consumer.Causes))
 	}
 	require.NotNil(t, byCase["case400"].Failure.Provider)
 	assert.Equal(t, 400, byCase["case400"].Failure.Provider.Status)
 	assert.Equal(t, "invalid_request", byCase["case400"].Failure.Provider.Kind)
 	if family == "anthropic" {
+		assert.Empty(t, byCase["case400"].Failure.Provider.Code, "the real Anthropic adapter exercises preservation of an empty code")
 		require.NotNil(t, byCase["casecount"].Failure.Provider)
 		assert.Equal(t, 400, byCase["casecount"].Failure.Provider.Status)
 		assert.Equal(t, observed["count/casecount"].Provider, byCase["casecount"].Failure.Provider)
 	} else {
 		assert.True(t, byCase["casecount"].Failure.CountingUnsupported)
 	}
+	require.NotNil(t, observed["complete/caseclosed"].Provider)
+	assert.Empty(t, observed["complete/caseclosed"].Provider.Code, "the transport failure exercises an empty crossing code too")
 	assert.True(t, byCase["case429"].Failure.RateLimited)
 	assert.Equal(t, observed["complete/case429"].Usage, byCase["case429"].Failure.Usage)
 	rawRejection := observed["complete/caseinvalid"].Rejected
 	require.NotNil(t, rawRejection, "the actual SDK adapter must produce this rejection")
 	assert.Equal(t, model.OutputValidationToolIdentity, rawRejection.Kind)
 	assert.True(t, rawRejection.Evidence.Present)
-	assert.NotEmpty(t, rawRejection.Evidence.SHA256)
+	// RejectProviderOutput cannot fingerprint a canonical response that its
+	// translation could not construct; the presence-only evidence is exact.
+	assert.Equal(t, model.ResponseEvidence{Present: true}, rawRejection.Evidence)
+	require.NotNil(t, rawRejection.Usage)
+	assert.Equal(t, 2, rawRejection.Usage.InputTokens)
+	assert.Equal(t, 1, rawRejection.Usage.OutputTokens)
 	assert.Equal(t, rawRejection, byCase["caseinvalid"].Failure.Rejected)
 	assert.Empty(t, rawRejection.Correction, "these natural SDK rejections are terminal; the R2 test proves nonempty correction preservation")
-	rawErrorText := strings.Join(observed["complete/caseinvalid"].Causes, "\n")
-	assert.Contains(t, rawErrorText, "key-sentinel", "the wrapper must actually remove the rejected unknown tool name")
+	assert.Equal(t, "key-sentinel", observed["complete/caseinvalid"].UnadvertisedName,
+		"the actual SDK retains the returned name behind its typed accessor")
+	assert.Empty(t, byCase["caseinvalid"].Failure.UnadvertisedName,
+		"the wrapper must remove the private cause, not merely its printable message")
 	spans, err := json.Marshal(capture.Spans)
 	require.NoError(t, err)
 	assertNoPipelineSentinels(t, string(spans))
+	t.Logf("%s pipeline complete: generated results=%d SDK observations=%d spans=%d literalEOF=%t partialText=%q rejected=%+v",
+		family, len(results), len(capture.Observations), len(capture.Spans), byCase["stream"].EOF, byCase["casebroken"].PartialText, rawRejection)
 }
 
 // assertNoPipelineSentinels checks credential fragments even when a URL's
@@ -587,5 +647,47 @@ func pipelineNilStream(stream model.Streamer) bool {
 		return value.IsNil()
 	default:
 		return false
+	}
+}
+
+// record retains one completed handler observation; it records no headers,
+// request body, endpoint credentials or dynamic machine-local address.
+func (r *pipelineHTTPRecorder) record(call pipelineHTTPCall) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, call)
+}
+
+// assertPipelineHTTPCalls verifies and logs the SDK's actual request framing
+// and the local fixture's JSON/SSE responses for the bounded focused capture.
+func assertPipelineHTTPCalls(t *testing.T, family string, recorder *pipelineHTTPRecorder) {
+	t.Helper()
+	recorder.mu.Lock()
+	calls := append([]pipelineHTTPCall(nil), recorder.calls...)
+	recorder.mu.Unlock()
+	require.NotEmpty(t, calls)
+	seen := map[string]int{}
+	for _, call := range calls {
+		seen[call.Case]++
+		assert.Equal(t, http.MethodPost, call.Method)
+		assert.True(t, strings.HasPrefix(call.RequestContentType, "application/json"))
+		switch call.Case {
+		case "stream", "casebroken":
+			assert.Equal(t, "text/event-stream", call.ResponseContentType)
+		case "caseclosed":
+			assert.Empty(t, call.ResponseContentType, "the socket is closed before any response")
+		default:
+			assert.Equal(t, "application/json", call.ResponseContentType)
+		}
+		t.Logf("%s HTTP %s %s case=%s request=%s response=%s status=%d", family, call.Method, call.Route,
+			call.Case, call.RequestContentType, call.ResponseContentType, call.Status)
+	}
+	for _, scenario := range []string{"success", "stream", "case400", "casebroken", "caseinvalid", "case429", "caseclosed"} {
+		assert.Positive(t, seen[scenario], "missing HTTP scenario %s", scenario)
+	}
+	if family == "anthropic" {
+		assert.Positive(t, seen["casecount"], "the native counter reached the provider")
+	} else {
+		assert.Zero(t, seen["casecount"], "unsupported counting does not invent an HTTP call")
 	}
 }
