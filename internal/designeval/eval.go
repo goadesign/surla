@@ -720,7 +720,9 @@ func withExit71Guidance(ctx context.Context, err error) error {
 // root before using its go binary. The selected module cache may not exist yet;
 // runSandboxed resolves it after dependency preparation. ctx bounds the command.
 func resolveToolchainEnv(ctx context.Context) (toolchainEnv, error) {
-	out, err := exec.CommandContext(ctx, "go", "env", "GOROOT", "GOMODCACHE").Output()
+	cmd := exec.CommandContext(ctx, "go", "env", "GOROOT", "GOMODCACHE")
+	cmd.Env = goEnv()
+	out, err := cmd.Output()
 	if err != nil {
 		return toolchainEnv{}, fmt.Errorf("resolve go env GOROOT GOMODCACHE: %w", err)
 	}

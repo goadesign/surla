@@ -138,8 +138,8 @@ type (
 var (
 	// linuxProbeOnce compiles testdata/linuxprobe once per test binary run.
 	linuxProbeOnce sync.Once
-	// linuxProbePath holds the compiled static linuxprobe binary path.
-	linuxProbePath string
+	// linuxProbeBytes holds the compiled static linuxprobe binary bytes.
+	linuxProbeBytes []byte
 	// linuxProbeErr holds any compilation error from building linuxprobe.
 	linuxProbeErr error
 )
@@ -211,10 +211,13 @@ func TestLinuxJailPrerequisitesAndGuards(t *testing.T) {
 }
 
 // TestLinuxJailBuildAndBuildTest verifies POS_build, POS_build_test, and the
-// B8b/N-a/B6c/B-i/B-iii build-mode attack checks under both full Landlock
-// scope (noscope=false) and simulated Landlock ABI 4-5 mode (noscope=true).
+// B8b/N-a/B6c/B-i/B-iii build-mode attack checks on the production path with
+// the host's real Landlock ABI, on the production path under a simulated
+// Landlock ABI 4 kernel, and with the explicit NoScope test knob.
 func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 	require.NoError(t, CheckSandbox())
+	realABI, abiErrno := landlockABIVersion()
+	require.Zero(t, abiErrno)
 	probeBin := buildLinuxProbe(t)
 	goroot := runtime.GOROOT()
 
@@ -228,12 +231,47 @@ func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 	ldLinux, err := readELFInterp("/bin/sh")
 	require.NoError(t, err)
 
-	for _, noScope := range []bool{false, true} {
-		t.Run(fmt.Sprintf("noscope_%v", noScope), func(t *testing.T) {
+	cases := []struct {
+		name                   string
+		callerNoScope          bool
+		simulateABI            int
+		wantSupervisedTgkill   int32
+		exerciseProductionAPIs bool
+	}{
+		{
+			name:                   "prod_real_abi",
+			callerNoScope:          false,
+			wantSupervisedTgkill:   map[bool]int32{true: 1, false: 0}[realABI < 6],
+			exerciseProductionAPIs: true,
+		},
+		{
+			name:                   "prod_simulated_abi4",
+			callerNoScope:          false,
+			simulateABI:            4,
+			wantSupervisedTgkill:   1,
+			exerciseProductionAPIs: true,
+		},
+		{
+			name:                 "explicit_noscope_knob",
+			callerNoScope:        true,
+			wantSupervisedTgkill: 1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.simulateABI > 0 {
+				simABI := tc.simulateABI
+				detectLandlockABI = func() (int, syscall.Errno) {
+					return simABI, 0
+				}
+				t.Cleanup(func() {
+					detectLandlockABI = landlockABIVersion
+				})
+			}
+
 			workDir := t.TempDir()
 			outDir := t.TempDir()
-			stagedOut := filepath.Join(workDir, "staged-app")
-			finalOut := filepath.Join(outDir, "app")
 			buildEnv := []string{
 				"PATH=" + filepath.Join(goroot, "bin") + ":/usr/bin:/bin",
 				"GOROOT=" + goroot,
@@ -248,50 +286,37 @@ func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 				"CGO_ENABLED=0",
 			}
 
-			out, refused, err := runTestJailed(t, jailConfig{
-				Mode:      modeBuild,
-				NoScope:   noScope,
-				Binary:    filepath.Join(goroot, "bin/go"),
-				Args:      []string{"build", "-trimpath", "-o", stagedOut, "."},
-				Dir:       srcDir,
-				Env:       buildEnv,
-				GOROOT:    goroot,
-				SourceDir: srcDir,
-				ModCache:  modCache,
-				WorkDir:   workDir,
-			}, nil)
-			require.NoError(t, err, "POS_build output: %s", out)
-			assert.Empty(t, refused)
-			require.NoError(t, publishStagedOutput(stagedOut, finalOut))
+			if tc.exerciseProductionAPIs {
+				buildLog := filepath.Join(outDir, "build.log")
+				err := Build(t.Context(), BuildSpec{
+					SourceDir: srcDir,
+					ModuleDir: srcDir,
+					Package:   ".",
+					Out:       filepath.Join(outDir, "app"),
+					GOROOT:    goroot,
+					ModCache:  modCache,
+					WorkDir:   workDir,
+					LogFile:   buildLog,
+				}, (*exec.Cmd).Run)
+				logBytes, _ := os.ReadFile(buildLog)
+				require.NoError(t, err, "POS_build output: %s", string(logBytes))
 
-			workDirTest := t.TempDir()
-			stagedTestOut := filepath.Join(workDirTest, "staged-test")
-			finalTestOut := filepath.Join(outDir, "cand.test")
-			testEnv := append([]string(nil), buildEnv[:4]...)
-			testEnv = append(testEnv,
-				"GOCACHE="+filepath.Join(workDirTest, "gocache"),
-				"TMPDIR="+workDirTest,
-				"GOTOOLCHAIN=local",
-				"GOFLAGS=-mod=readonly",
-				"GOPROXY=off",
-				"GONOSUMDB=*",
-				"CGO_ENABLED=0",
-			)
-			outTest, refusedTest, err := runTestJailed(t, jailConfig{
-				Mode:      modeBuild,
-				NoScope:   noScope,
-				Binary:    filepath.Join(goroot, "bin/go"),
-				Args:      []string{"test", "-c", "-trimpath", "-vet=off", "-o", stagedTestOut, "."},
-				Dir:       srcDir,
-				Env:       testEnv,
-				GOROOT:    goroot,
-				SourceDir: srcDir,
-				ModCache:  modCache,
-				WorkDir:   workDirTest,
-			}, nil)
-			require.NoError(t, err, "POS_build_test output: %s", outTest)
-			assert.Empty(t, refusedTest)
-			require.NoError(t, publishStagedOutput(stagedTestOut, finalTestOut))
+				workDirTest := t.TempDir()
+				testBuildLog := filepath.Join(outDir, "build-test.log")
+				builtTest, err := BuildTest(t.Context(), BuildSpec{
+					SourceDir: srcDir,
+					ModuleDir: srcDir,
+					Package:   ".",
+					Out:       filepath.Join(outDir, "cand.test"),
+					GOROOT:    goroot,
+					ModCache:  modCache,
+					WorkDir:   workDirTest,
+					LogFile:   testBuildLog,
+				}, (*exec.Cmd).Run)
+				testLogBytes, _ := os.ReadFile(testBuildLog)
+				require.NoError(t, err, "POS_build_test output: %s", string(testLogBytes))
+				assert.True(t, builtTest)
+			}
 
 			workDirEsc := t.TempDir()
 			probeInWork := filepath.Join(workDirEsc, "workdir-exec-probe")
@@ -306,7 +331,7 @@ func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 
 			escOut, _, err := runTestJailed(t, jailConfig{
 				Mode:      modeBuild,
-				NoScope:   noScope,
+				NoScope:   tc.callerNoScope,
 				Binary:    fakeGo,
 				Args:      []string{"build-exec-escapes", probeInWork, ldLinux},
 				Dir:       srcDir,
@@ -339,15 +364,15 @@ func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 			defer dgramConn.Close()
 			dgramPathRecvd := startPacketProbeListener(dgramConn)
 
-			absDgramName := fmt.Sprintf("@surla-build-dgram-%d-%v", os.Getpid(), noScope)
+			absDgramName := fmt.Sprintf("@surla-build-dgram-%d-%s", os.Getpid(), tc.name)
 			absDgramConn, err := net.ListenPacket("unixgram", absDgramName)
 			require.NoError(t, err)
 			defer absDgramConn.Close()
 			dgramAbsRecvd := startPacketProbeListener(absDgramConn)
 
-			sigOut, _, err := runTestJailed(t, jailConfig{
+			sigOut, _, sigTracker, err := runTestJailedWithTracker(t, jailConfig{
 				Mode:      modeBuild,
-				NoScope:   noScope,
+				NoScope:   tc.callerNoScope,
 				Binary:    fakeGo,
 				Args:      []string{"build-signals-and-dgram", strconv.Itoa(os.Getpid()), strconv.Itoa(bystander.Process.Pid), dgramPath, absDgramName},
 				Dir:       srcDir,
@@ -364,6 +389,7 @@ func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 			assert.Equal(t, "function not implemented", sigRes.TkillParent)
 			assert.Equal(t, "operation not permitted", sigRes.TgkillParent)
 			assert.Empty(t, sigRes.TgkillSelf)
+			assert.Equal(t, tc.wantSupervisedTgkill, sigTracker.tgkillSupervisedDenials.Load())
 			assert.Equal(t, "function not implemented", sigRes.IoctlSetown)
 			assert.Equal(t, "operation not permitted", sigRes.SpDgram)
 			assert.Equal(t, "operation not permitted", sigRes.SendmsgPath)
@@ -383,7 +409,7 @@ func TestLinuxJailBuildAndBuildTest(t *testing.T) {
 
 // TestLinuxJailSupervisorNetworkSuite exercises the SECCOMP_RET_USER_NOTIF
 // loopback/port supervisor (B3, B-ii, R9 TOCTOU) in both normal and
-// noscope=true modes, plus unjailed negative controls.
+// noscope=true modes, plus an unjailed listen-without-bind control.
 func TestLinuxJailSupervisorNetworkSuite(t *testing.T) {
 	require.NoError(t, CheckSandbox())
 	probeBin := buildLinuxProbe(t)
@@ -478,8 +504,7 @@ func TestLinuxJailSupervisorNetworkSuite(t *testing.T) {
 }
 
 // TestLinuxJailAttackSuite exercises B1-B9, B-i, B-iii, N3, N5, N-b, and B-vi
-// under both normal (noscope=false) and simulated ABI 4-5 (noscope=true) modes,
-// plus unjailed negative controls.
+// under both normal (noscope=false) and simulated ABI 4-5 (noscope=true) modes.
 func TestLinuxJailAttackSuite(t *testing.T) {
 	require.NoError(t, CheckSandbox())
 	probeBin := buildLinuxProbe(t)
@@ -643,7 +668,8 @@ func TestLinuxJailAttackSuite(t *testing.T) {
 }
 
 // buildLinuxProbe compiles verify/candidate/testdata/linuxprobe as a static
-// Cgo-free ELF binary once per test binary invocation.
+// Cgo-free ELF binary once per test binary invocation and writes it into
+// t.TempDir().
 func buildLinuxProbe(t *testing.T) string {
 	t.Helper()
 	linuxProbeOnce.Do(func() {
@@ -652,6 +678,7 @@ func buildLinuxProbe(t *testing.T) string {
 			linuxProbeErr = err
 			return
 		}
+		defer os.RemoveAll(dir)
 		out := filepath.Join(dir, "linuxprobe")
 		cmd := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go"), "build", "-o", out, "./testdata/linuxprobe")
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
@@ -659,19 +686,29 @@ func buildLinuxProbe(t *testing.T) string {
 			linuxProbeErr = fmt.Errorf("build linuxprobe: %w: %s", err, output)
 			return
 		}
-		linuxProbePath = out
+		linuxProbeBytes, linuxProbeErr = os.ReadFile(out)
 	})
 	require.NoError(t, linuxProbeErr)
-	return linuxProbePath
+	probePath := filepath.Join(t.TempDir(), "linuxprobe")
+	require.NoError(t, os.WriteFile(probePath, linuxProbeBytes, 0o755))
+	return probePath
 }
 
 // runTestJailed executes cfg inside the production Linux jail launcher and
 // supervisor, optionally passing extraFD6 at descriptor 6 to test close_range.
 func runTestJailed(t *testing.T, cfg jailConfig, extraFD6 *os.File) (string, []string, error) {
 	t.Helper()
+	out, refused, _, err := runTestJailedWithTracker(t, cfg, extraFD6)
+	return out, refused, err
+}
+
+// runTestJailedWithTracker executes cfg inside the production Linux jail
+// launcher and supervisor and returns the supervisor's refusalTracker.
+func runTestJailedWithTracker(t *testing.T, cfg jailConfig, extraFD6 *os.File) (string, []string, *refusalTracker, error) {
+	t.Helper()
 	if cfg.Mode == modeExecNoPorts || cfg.Mode == modeExecWithPorts {
 		if err := checkStaticELFNoInterp(cfg.Binary); err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 	}
 	var outBuf bytes.Buffer
@@ -692,7 +729,7 @@ func runTestJailed(t *testing.T, cfg jailConfig, extraFD6 *os.File) (string, []s
 			return cmd.Wait()
 		},
 	)
-	return strings.TrimSpace(outBuf.String()), tracker.list(), err
+	return strings.TrimSpace(outBuf.String()), tracker.list(), tracker, err
 }
 
 // runBPFSimulatorForArch verifies the generated Seccomp-BPF instruction streams
@@ -701,6 +738,8 @@ func runBPFSimulatorForArch(t *testing.T, arch string) (int, int) {
 	t.Helper()
 	sys := archSyscallsFor(arch)
 	prog := buildSeccompAllowlist(sys, jailConfig{Mode: modeExecWithPorts, ListenPort: 18080}, 12345)
+	buildScopedProg := buildSeccompAllowlist(sys, jailConfig{Mode: modeBuild, NoScope: false}, 12345)
+	buildNoScopeProg := buildSeccompAllowlist(sys, jailConfig{Mode: modeBuild, NoScope: true}, 12345)
 	postProg := buildPostHandoffDenySendmsgFilter(sys)
 
 	data := func(archVal uint32, nr int, a0, a1, a2 uint64) seccompData {
@@ -727,6 +766,9 @@ func runBPFSimulatorForArch(t *testing.T, arch string) (int, int) {
 	require.Equal(t, uint32(seccompRetUserNotif), evalBPF(prog, data(sys.auditArch, sys.sysPrctl, 4, 1, 0)))
 	require.Equal(t, uint32(seccompRetAllow), evalBPF(prog, data(sys.auditArch, sys.sysTgkill, 12345, 12345, 0)))
 	require.Equal(t, uint32(seccompRetErrno|uint32(syscall.EPERM)), evalBPF(prog, data(sys.auditArch, sys.sysTgkill, 99999, 99999, 0)))
+	require.Equal(t, uint32(seccompRetAllow), evalBPF(buildScopedProg, data(sys.auditArch, sys.sysTgkill, 99999, 99999, 0)))
+	require.Equal(t, uint32(seccompRetAllow), evalBPF(buildNoScopeProg, data(sys.auditArch, sys.sysTgkill, 12345, 12345, 0)))
+	require.Equal(t, uint32(seccompRetUserNotif), evalBPF(buildNoScopeProg, data(sys.auditArch, sys.sysTgkill, 99999, 99999, 0)))
 	require.Equal(t, uint32(seccompRetAllow), evalBPF(prog, data(sys.auditArch, sys.sysUtimensat, 3, 0, 0)))
 	require.Equal(t, uint32(seccompRetErrno|uint32(syscall.EPERM)), evalBPF(prog, data(sys.auditArch, sys.sysUtimensat, 3, 0x1000, 0)))
 	require.Equal(t, uint32(seccompRetErrno|uint32(syscall.EPERM)), evalBPF(prog, data(sys.auditArch, sys.sysPrlimit64, 0x100000000, 7, 0)))
@@ -740,6 +782,8 @@ func runBPFSimulatorForArch(t *testing.T, arch string) (int, int) {
 	return len(prog), len(postProg)
 }
 
+// startPacketProbeListener reads datagrams from conn and sets the returned
+// flag when any datagram arrives.
 func startPacketProbeListener(conn net.PacketConn) *atomic.Bool {
 	recvd := &atomic.Bool{}
 	go func() {
@@ -757,6 +801,9 @@ func startPacketProbeListener(conn net.PacketConn) *atomic.Bool {
 	return recvd
 }
 
+// makeNonCloexecSecretPipe creates a read pipe descriptor without O_CLOEXEC
+// preloaded with "secret" to verify that the launcher closes or marks extra
+// descriptors before execve.
 func makeNonCloexecSecretPipe(t *testing.T) *os.File {
 	t.Helper()
 	var p [2]int
@@ -767,6 +814,8 @@ func makeNonCloexecSecretPipe(t *testing.T) *os.File {
 	return os.NewFile(uintptr(p[0]), "secret-fd6")
 }
 
+// reserveFreeLoopbackPort allocates an ephemeral IPv4 loopback port and closes
+// the listener so the jailed child can bind it.
 func reserveFreeLoopbackPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -776,6 +825,8 @@ func reserveFreeLoopbackPort(t *testing.T) int {
 	return port
 }
 
+// nonLoopbackIPv4 returns the host's first non-loopback IPv4 address, or
+// 127.0.0.2 if no non-loopback IPv4 interface exists.
 func nonLoopbackIPv4() string {
 	addrs, _ := net.InterfaceAddrs()
 	for _, a := range addrs {
@@ -788,6 +839,8 @@ func nonLoopbackIPv4() string {
 	return "127.0.0.2"
 }
 
+// readSysctlTrimmed reads path and returns its trimmed contents or
+// "unavailable" when path cannot be read.
 func readSysctlTrimmed(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -796,6 +849,8 @@ func readSysctlTrimmed(path string) string {
 	return strings.TrimSpace(string(b))
 }
 
+// assertDeniedByJailOrContainer asserts that got is either ENOSYS from the
+// jail supervisor or EPERM from an outer container seccomp filter.
 func assertDeniedByJailOrContainer(t *testing.T, got string) {
 	t.Helper()
 	assert.True(

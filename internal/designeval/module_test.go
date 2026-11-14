@@ -204,3 +204,30 @@ func TestALoadFailureNamesTheStoryRequirementStepOnlyWhenItIsMissing(t *testing.
 		})
 	}
 }
+
+// TestGoEnvForwardsGOPATHWhenGOMODCACHEIsUnset verifies that module commands
+// and resolveToolchainEnv agree on the module cache when GOPATH is set and
+// GOMODCACHE is not, as in the official golang container image (GOPATH=/go).
+func TestGoEnvForwardsGOPATHWhenGOMODCACHEIsUnset(t *testing.T) {
+	tc, err := resolveToolchainEnv(t.Context())
+	require.NoError(t, err)
+
+	gopath := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GOPATH", gopath)
+	require.NoError(t, os.Unsetenv("GOMODCACHE"))
+
+	assert.Contains(t, goEnv(), "GOPATH="+gopath)
+
+	resolved, err := resolveToolchainEnv(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(gopath, "pkg", "mod"), resolved.modCache)
+
+	outPath := filepath.Join(t.TempDir(), "modcache.txt")
+	logPath := filepath.Join(t.TempDir(), "modcache.log")
+	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
+	require.NoError(t, gocmd.runTo(t.Context(), gopath, logPath, outPath, "env", "GOMODCACHE"))
+	got, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(gopath, "pkg", "mod"), strings.TrimSpace(string(got)))
+}

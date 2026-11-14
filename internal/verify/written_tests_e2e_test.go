@@ -82,8 +82,8 @@ func main() {
 // describes and runs the program, and assembles the report. From a server
 // environment holding a variable of its own and a provider key, written
 // tests see neither, so the run passes; the operator's evaluator sees both,
-// so the same program fails. It needs git and macOS. Run with: go test -tags
-// e2e ./internal/verify
+// so the same program fails. It needs git and macOS or Linux. Run with: go test
+// -tags e2e ./internal/verify
 func TestRunGivesWrittenTestsOnlyTheirRunsEnvironment(t *testing.T) {
 	t.Setenv("SURLA_TEST_SERVER_VAR", "present")
 	t.Setenv("ANTHROPIC_API_KEY", "ant-k")

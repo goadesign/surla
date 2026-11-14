@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -132,9 +133,16 @@ const (
 )
 
 var (
-	// checkSandboxOnce caches the host sandbox availability check for the
-	// lifetime of the process.
-	checkSandboxOnce = sync.OnceValue(runCheckSandboxInit)
+	// checkSandboxMu serializes checkSandbox until a check succeeds; failed
+	// checks are not cached so an operator who fixes a host setting can
+	// retry without restarting surla.
+	checkSandboxMu sync.Mutex
+	checkSandboxOK bool
+
+	// detectLandlockABI queries the kernel's Landlock ABI version; tests
+	// may override it to simulate an ABI 4-5 kernel through the production
+	// path.
+	detectLandlockABI = landlockABIVersion
 
 	// validatedGOROOTs caches successful per-GOROOT canary builds keyed by the
 	// resolved GOROOT path and its bin/go device, inode, size, and mtime.
@@ -151,7 +159,16 @@ func init() {
 // pidfd_getfd, and process_vm_readv primitives and can compile a canary Go
 // binary inside the build jail.
 func checkSandbox() error {
-	return checkSandboxOnce()
+	checkSandboxMu.Lock()
+	defer checkSandboxMu.Unlock()
+	if checkSandboxOK {
+		return nil
+	}
+	if err := runCheckSandboxInit(); err != nil {
+		return err
+	}
+	checkSandboxOK = true
+	return nil
 }
 
 // runCheckSandboxInit executes the one-time kernel prerequisite probe and, when
@@ -176,7 +193,7 @@ func checkKernelPrerequisites() error {
 	if err := checkNotSecureOrSetuid(); err != nil {
 		return fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
 	}
-	abi, errno := landlockABIVersion()
+	abi, errno := detectLandlockABI()
 	if errno != 0 || abi < 4 {
 		return fmt.Errorf("%w: landlock ABI %d (errno %v); Linux kernel >= 6.7 with Landlock ABI >= 4 is required", ErrIsolationUnavailable, abi, errno)
 	}
@@ -328,7 +345,7 @@ func ensureGOROOTCanary(goroot string) error {
 		if errors.Is(err, syscall.ENOENT) {
 			return nil
 		}
-		return fmt.Errorf("stat toolchain %s: %w", goBin, err)
+		return fmt.Errorf("%w: stat toolchain %s: %v", ErrIsolationUnavailable, goBin, err)
 	}
 	key := fmt.Sprintf("%s\x00%d:%d:%d:%d", goroot, st.Dev, st.Ino, st.Size, st.Mtim.Sec)
 	if _, ok := validatedGOROOTs.Load(key); ok {
@@ -341,9 +358,7 @@ func ensureGOROOTCanary(goroot string) error {
 	}
 	defer os.RemoveAll(canaryDir)
 
-	canarySrc := filepath.Join(canaryDir, "src")
-	canaryWork := filepath.Join(canaryDir, "work")
-	canaryMod := filepath.Join(canaryDir, "mod")
+	canarySrc, canaryWork, canaryMod := filepath.Join(canaryDir, "src"), filepath.Join(canaryDir, "work"), filepath.Join(canaryDir, "mod")
 	for _, d := range []string{canarySrc, canaryWork, canaryMod} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return fmt.Errorf("%w: prepare canary directory: %v", ErrIsolationUnavailable, err)
@@ -358,18 +373,15 @@ func ensureGOROOTCanary(goroot string) error {
 	canaryOut := filepath.Join(canaryWork, "canary-bin")
 	b := resolvedBuild{
 		spec: BuildSpec{
-			SourceDir: canarySrc,
-			ModuleDir: canarySrc,
-			Package:   ".",
-			Out:       canaryOut,
-			GOROOT:    goroot,
-			ModCache:  canaryMod,
-			WorkDir:   canaryWork,
+			SourceDir: canarySrc, ModuleDir: canarySrc, Package: ".",
+			Out: canaryOut, GOROOT: goroot, ModCache: canaryMod, WorkDir: canaryWork,
 		},
 		outDir: canaryWork,
 	}
+	canaryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	var logBuf bytes.Buffer
-	if err := b.runGoBuildWithWriter(context.Background(), (*exec.Cmd).Run, &logBuf, nil, false, canaryOut, "build", "-trimpath"); err != nil {
+	if err := b.runGoBuildWithWriter(canaryCtx, (*exec.Cmd).Run, &logBuf, nil, canaryOut, "build", "-trimpath"); err != nil {
 		return fmt.Errorf("%w: toolchain canary failed for %s: %v (%s)", ErrIsolationUnavailable, goroot, err, strings.TrimSpace(logBuf.String()))
 	}
 	validatedGOROOTs.Store(key, struct{}{})
@@ -415,6 +427,10 @@ func startProcessWithConfig(
 	logFile *os.File,
 	stdout io.Writer,
 ) (*Process, error) {
+	if err := resolveEffectiveNoScope(&cfg); err != nil {
+		logFile.Close()
+		return nil, fmt.Errorf("start candidate %s: %w", cfg.Binary, err)
+	}
 	cfgR, cfgW, err := os.Pipe()
 	if err != nil {
 		logFile.Close()
@@ -485,7 +501,10 @@ func startProcessWithConfig(
 
 	listenerFD, meta, recvErr := recvListenerFD(parentSock)
 	syscall.Close(parentSock)
-	if recvErr != nil {
+	if recvErr != nil || meta.ChildPID != cmd.Process.Pid {
+		if recvErr == nil {
+			syscall.Close(listenerFD)
+		}
 		errBytes, _ := io.ReadAll(errR)
 		errR.Close()
 		waitErr := cmd.Wait()
@@ -500,7 +519,7 @@ func startProcessWithConfig(
 	supWG.Add(1)
 	go func() {
 		defer supWG.Done()
-		serveUserNotif(listenerFD, meta.ChildPID, cfg, tracker, &childDone, activeDups)
+		serveUserNotif(listenerFD, cmd.Process.Pid, cfg, tracker, &childDone, activeDups)
 	}()
 
 	p := &Process{cmd: cmd, logFile: logPath, done: make(chan struct{})}
@@ -742,21 +761,11 @@ func applyLandlock(sys archSyscalls, cfg jailConfig) error {
 	abi := int(r1)
 
 	allFS := uint64(
-		landlockAccessFSExecute |
-			landlockAccessFSWriteFile |
-			landlockAccessFSReadFile |
-			landlockAccessFSReadDir |
-			landlockAccessFSRemoveDir |
-			landlockAccessFSRemoveFile |
-			landlockAccessFSMakeChar |
-			landlockAccessFSMakeDir |
-			landlockAccessFSMakeReg |
-			landlockAccessFSMakeSock |
-			landlockAccessFSMakeFifo |
-			landlockAccessFSMakeBlock |
-			landlockAccessFSMakeSym |
-			landlockAccessFSRefer |
-			landlockAccessFSTruncate)
+		landlockAccessFSExecute | landlockAccessFSWriteFile | landlockAccessFSReadFile |
+			landlockAccessFSReadDir | landlockAccessFSRemoveDir | landlockAccessFSRemoveFile |
+			landlockAccessFSMakeChar | landlockAccessFSMakeDir | landlockAccessFSMakeReg |
+			landlockAccessFSMakeSock | landlockAccessFSMakeFifo | landlockAccessFSMakeBlock |
+			landlockAccessFSMakeSym | landlockAccessFSRefer | landlockAccessFSTruncate)
 	if abi >= 5 {
 		allFS |= landlockAccessFSIoctlDev
 	}
@@ -773,12 +782,7 @@ func applyLandlock(sys archSyscalls, cfg jailConfig) error {
 		attrSize = 24
 	}
 
-	fdR1, _, errno := syscall.Syscall(
-		uintptr(sys.sysLandlockCreateRuleset),
-		uintptr(unsafe.Pointer(&attr)),
-		attrSize,
-		0,
-	)
+	fdR1, _, errno := syscall.Syscall(uintptr(sys.sysLandlockCreateRuleset), uintptr(unsafe.Pointer(&attr)), attrSize, 0)
 	if errno != 0 {
 		return fmt.Errorf("create_ruleset: %v", errno)
 	}
@@ -805,16 +809,9 @@ func applyLandlock(sys archSyscalls, cfg jailConfig) error {
 			}
 			access &= fileMask
 		}
-		rule := landlockPathBeneathAttr{
-			AllowedAccess: access,
-			ParentFD:      int32(fd),
-		}
+		rule := landlockPathBeneathAttr{AllowedAccess: access, ParentFD: int32(fd)}
 		_, _, errno := syscall.Syscall6(
-			uintptr(sys.sysLandlockAddRule),
-			uintptr(rulesetFD),
-			landlockRulePathBeneath,
-			uintptr(unsafe.Pointer(&rule)),
-			0, 0, 0,
+			uintptr(sys.sysLandlockAddRule), uintptr(rulesetFD), landlockRulePathBeneath, uintptr(unsafe.Pointer(&rule)), 0, 0, 0,
 		)
 		if errno != 0 {
 			return fmt.Errorf("add_rule %s: %v", path, errno)
@@ -936,7 +933,7 @@ func (b resolvedBuild) runGoBuild(
 	if err := ensureGOROOTCanary(b.spec.GOROOT); err != nil {
 		return err
 	}
-	return b.runGoBuildWithWriter(ctx, run, logFile, logFile, false, outPath, args...)
+	return b.runGoBuildWithWriter(ctx, run, logFile, logFile, outPath, args...)
 }
 
 // runGoBuildWithWriter runs one jailed `go` invocation, staging `-o` inside
@@ -947,7 +944,6 @@ func (b resolvedBuild) runGoBuildWithWriter(
 	run func(*exec.Cmd) error,
 	outWriter io.Writer,
 	logFile *os.File,
-	noScope bool,
 	outPath string,
 	args ...string,
 ) error {
@@ -959,13 +955,16 @@ func (b resolvedBuild) runGoBuildWithWriter(
 	defer os.RemoveAll(stageDir)
 
 	stagedOut := filepath.Join(stageDir, "out")
-	goArgs := append(append([]string{}, args...), "-o", stagedOut, spec.Package)
+	goArgs := append([]string{}, args...)
+	if len(goArgs) > 0 && goArgs[0] == "build" {
+		goArgs = append(goArgs, "-buildvcs=false")
+	}
+	goArgs = append(goArgs, "-o", stagedOut, spec.Package)
 	env := b.buildEnv()
 	goBin := filepath.Join(spec.GOROOT, "bin", "go")
 
 	cfg := jailConfig{
 		Mode:      modeBuild,
-		NoScope:   noScope,
 		Binary:    goBin,
 		Args:      goArgs,
 		Dir:       spec.ModuleDir,

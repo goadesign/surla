@@ -478,9 +478,10 @@ func skipWithoutSandbox(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	if runtime.GOOS != "darwin" {
-		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("the sandbox is implemented on macOS and Linux")
 	}
+	require.NoError(t, candidate.CheckSandbox())
 }
 
 // publishedSurla is a Surla version on the module proxy whose suite contract

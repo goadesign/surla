@@ -42,6 +42,10 @@ type (
 		refused []string
 		// logFile receives refusal lines as they occur when non-nil.
 		logFile *os.File
+		// tgkillSupervisedDenials counts build-mode foreign-target tgkill
+		// notifications denied by the supervisor on Landlock ABI 4-5 (or when
+		// NoScope is forced).
+		tgkillSupervisedDenials atomic.Int32
 	}
 
 	// activeDupSet tracks socket descriptors duplicated from a jailed child via
@@ -61,6 +65,22 @@ type (
 // newRefusalTracker returns an initialized refusalTracker.
 func newRefusalTracker() *refusalTracker {
 	return &refusalTracker{}
+}
+
+// resolveEffectiveNoScope queries the kernel's Landlock ABI once in the parent
+// and sets cfg.NoScope when Landlock IPC scopes (ABI >= 6) are unavailable, so
+// the child's Seccomp filter, the child's applyLandlock, and the parent's
+// supervisor all act on the same effective cfg.NoScope value.
+func resolveEffectiveNoScope(cfg *jailConfig) error {
+	if cfg.CheckSandboxProbe {
+		return nil
+	}
+	abi, errno := detectLandlockABI()
+	if errno != 0 || abi < 4 {
+		return fmt.Errorf("%w: landlock ABI %d (errno %v); Linux kernel >= 6.7 with Landlock ABI >= 4 is required", ErrIsolationUnavailable, abi, errno)
+	}
+	cfg.NoScope = cfg.NoScope || abi < 6
+	return nil
 }
 
 // runSupervisedJailed runs cfg inside the Linux jail using background context.
@@ -83,6 +103,9 @@ func runSupervisedJailedWithContext(
 	tracker *refusalTracker,
 	run func(*exec.Cmd) error,
 ) error {
+	if err := resolveEffectiveNoScope(&cfg); err != nil {
+		return err
+	}
 	cfgR, cfgW, err := os.Pipe()
 	if err != nil {
 		return err
@@ -345,10 +368,12 @@ func handleOneNotif(
 		targetTID := int(notif.Data.Args[1])
 		sig := int(notif.Data.Args[2])
 		if targetTGID <= 0 || targetTID <= 0 {
+			tracker.tgkillSupervisedDenials.Add(1)
 			return seccompNotifResp{ID: notif.ID, Error: -int32(syscall.EINVAL)}
 		}
 		taskPath := fmt.Sprintf("/proc/%d/task/%d", targetTGID, notif.Pid)
 		if _, err := os.Stat(taskPath); err != nil {
+			tracker.tgkillSupervisedDenials.Add(1)
 			return seccompNotifResp{ID: notif.ID, Error: -int32(syscall.EPERM)}
 		}
 		if !notifIDValid(listenerFD, notif.ID) {

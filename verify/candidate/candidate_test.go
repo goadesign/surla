@@ -564,7 +564,11 @@ func TestBuildReadsOnlyItsSourceDir(t *testing.T) {
 		unsandboxed(t, filepath.Join(root, "app"))
 		log, err := build(t, filepath.Join(root, "app"), filepath.Join(root, "app"))
 		require.Error(t, err, "lib is outside SourceDir, so the sandbox must deny reading it")
-		assert.Contains(t, log, "lib", "the build failed reading the replaced module:\n%s", log)
+		wantReplaceLog := "example.com/lib"
+		if runtime.GOOS == "linux" {
+			wantReplaceLog = "/lib: permission denied"
+		}
+		assert.Contains(t, log, wantReplaceLog, "the build failed reading the replaced module:\n%s", log)
 	})
 	t.Run("module directory outside the source tree is rejected", func(t *testing.T) {
 		root := newTree(t)
@@ -959,6 +963,10 @@ func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "extra_test.go"),
 		[]byte("package lib\n\nimport \"testing\"\n\nfunc TestExtra(t *testing.T) {}\n"), 0o600))
+	wantReplaceLog := "example.com/lib"
+	if runtime.GOOS == "linux" {
+		wantReplaceLog = "/lib: permission denied"
+	}
 	cases := []struct {
 		name    string
 		prepare func(t *testing.T, root string) (sourceDir string)
@@ -979,7 +987,7 @@ func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
 		{
 			name:    "replace leaving the source tree",
 			prepare: func(t *testing.T, root string) string { return filepath.Join(root, "app") },
-			wantLog: "lib",
+			wantLog: wantReplaceLog,
 		},
 	}
 	for _, c := range cases {

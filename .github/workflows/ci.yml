@@ -178,12 +178,14 @@ jobs:
           go test -race -vet=all -short -timeout 3m -json \
             ./cmd/surla \
             ./internal/abspath \
+            ./internal/designeval \
             ./internal/diff \
             ./internal/genpublish \
             ./internal/goldenpath \
             ./internal/procgroup \
             ./internal/renameat \
             ./internal/scaffold \
+            ./internal/testwriter \
             ./internal/traceview \
             ./internal/verify \
             ./internal/verifyrun \

@@ -139,18 +139,13 @@ var (
 	// ErrOutputTooLarge reports a candidate whose standard output exceeded the
 	// limit its Output caller set; the output read so far is discarded.
 	ErrOutputTooLarge = errors.New("candidate standard output exceeds its limit")
-
-	// sandboxCheck is the platform sandbox availability probe used by
-	// CheckSandbox. Tests replace it only to verify that CheckSandbox, Exec,
-	// and Build agree when the platform probe refuses.
-	sandboxCheck = checkSandbox
 )
 
 // CheckSandbox reports whether this host can enforce the candidate and build
 // sandboxes used by both Build and Exec. A failure wraps
 // ErrIsolationUnavailable; callers must not run candidate code without isolation.
 func CheckSandbox() error {
-	return sandboxCheck()
+	return checkSandbox()
 }
 
 // Pin copies the binary at src into store, the verifier's own artifact
@@ -257,9 +252,9 @@ func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 // only standard error. Standard output may hold at most maxBytes; one byte
 // more stops the read and fails with ErrOutputTooLarge, which the candidate
 // sees as a closed pipe. A candidate that exits unsuccessfully returns its
-// standard output with the exit error, an *exec.ExitError. Every Exec
-// admission error, including ErrIsolationUnavailable, is returned before the
-// candidate starts. The process is killed when ctx ends.
+// standard output with the exit error, which wraps an *exec.ExitError. Every
+// Exec admission error, including ErrIsolationUnavailable, is returned before
+// the candidate starts. The process is killed when ctx ends.
 //
 // Output suits short programs whose answer fits in memory, such as an
 // evaluator suite's --describe.
