@@ -199,11 +199,11 @@ type Service interface {
 	// authenticate the provider's requests. The project server holds them in
 	// memory only and forgets them when it stops. A live target's test program,
 	// including a candidate commit's test module that agents wrote, receives the
-	// chosen provider's held settings; a verification with the evaluator in stored
-	// verification settings receives every held provider's settings; tests a
-	// separate agent wrote for a verification, and the check helper, receive none.
-	// An absent provider attribute keeps what is held for that provider. A present
-	// one replaces everything held for it and must include the provider's key
+	// chosen provider's held settings; a verification with the operator's stored
+	// evaluator receives every held provider's settings; tests a separate agent
+	// wrote for a verification, and the check helper, receive none. An absent
+	// provider attribute keeps what is held for that provider. A present one
+	// replaces everything held for it and must include the provider's key
 	// variable; an empty one is refused, because it is neither a way to keep nor a
 	// way to forget. A request with neither attribute changes nothing and reports
 	// what is held. When no model is chosen and a provider is now held, live
