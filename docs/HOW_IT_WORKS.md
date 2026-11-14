@@ -1,152 +1,527 @@
-# How Surla Works: The 5 Checkpoints & Isolated Verification
+# How Surla Works
 
 **[← Back to README](../README.md)** · **[Golden Path Architecture →](ARCHITECTURE_PLAYBOOK.md)** · **[CLI & MCP Reference →](REFERENCE.md)**
 
-Surla replaces blind trust in agent-generated diffs with a chain of evidence from **natural-language intent → compiled Goa contract → the builder's implementation → OS-isolated verification**.
+This page follows one change through Surla from the first command to the
+merge. For each step it says what you do and see, what each agent does, and
+what the server records. The [reference](REFERENCE.md) holds the exact
+contract of every command, tool and field.
 
-Run `surla` in the project folder to start or attach to its server and open your views. The guide saves every Change Card awaiting your confirmation, including requests without open questions. Only your browser session confirms changes and approves results. See [project identity and lifecycle](REFERENCE.md#surla-serve).
+## Who does what
 
----
+A change involves you, three coding agents and one server per project folder.
+Each has its own credential, so the server always knows who is calling.
 
-The project server follows only its registered team handles in its own Herdr
-space. The [team API](REFERENCE.md#team-supervision) gives the user each role's
-terminal state, watcher fact and unread-assignment fact. Unknown observations
-remain unknown; reading this picture never marks an assignment read. A revised
-request does not automatically clear an older build's unread assignments. Only the user can ask to show a pane or reopen the launcher.
-The views page's **Team** view shows these separate observations and offers
-**Start agents** and role-specific **Show pane** controls. A role that needs you
-appears above every view. Failed reads retain facts labeled as last read;
-unknown observations remain unknown. Automatic reminder delivery is unavailable
-in the executable binding.
+| Who or what | What it is | Trusted for |
+| --- | --- | --- |
+| You, the user | The person who runs `surla` in the project folder. You act on the page in your browser. | The only one who confirms a change, starts a build and approves a result. |
+| The guide | The coding agent you talk to about what should change. | Writing the Story (described below) and proposing the change. Surla checks the proposal's shape, not whether it is right: you judge that when you confirm it. |
+| The builder | The coding agent that writes the application's code in the project folder. | Nothing on its word: its work counts only when Surla verifies a commit of it. |
+| The test writer | The coding agent that writes the tests for a build, in its own working copy of the project. | Nothing on its word: its tests count only when Surla's check accepts them. |
+| The server | The project's Surla server. `surla` starts one for each project folder. It keeps the record of what was agreed, built, accepted and approved, and it runs every check. | Deciding, from the files the agents produce, whether work is done. |
+| The page | A page in your browser that the server serves; the reference calls it the views page. It talks to the server as you. | Carrying your decisions. No agent has your identity. |
+| Herdr | The terminal program the agents and the server run in, one pane per agent. Its core, installed as `herdr-core` with the `hc` command, runs the terminals; the Herdr app shows them. | Running and showing the terminals. |
+| Chorus | The messaging service the agents use to talk to each other. It also provides the dialog where you choose which installed agent plays each role. | Conversation only: a message never makes work count as done. |
 
-After confirming a change, choose **Build this change** beside its summary.
-The page shows the saved build's revision, assignment reads, required Story test
-count and test-writer progress. It follows changes without reloading or losing
-unsaved edits. Building uses the agreed saved revision, including while a guide's
-proposal waits. **Build again** asks before replacing a current build and clearing
-its assignment reads and test-writer verdict; building a newly agreed revision
-directly replaces an earlier build. Before refining or adopting a different
-agreed revision, the page explains that its build becomes earlier and that a
-replacement build's written tests need acceptance again. Saved run labels say
-whether the recorded revision and selected tests still match; **Proof** names
-the test source and shows the written-test isolation notice.
-See [builds and assignments](REFERENCE.md#builds-and-assignments).
+Four more words appear on every step:
 
-## Overview: Strict Separation of Powers
+- The **sandbox** is the operating-system sandbox of macOS (`sandbox-exec`),
+  in which the server evaluates designs and builds and runs the code the
+  agents write for the application.
+- A **Story** is a plain description of what the system does, written as Go
+  code in the project's design. It names the actors and their **flows**. A flow
+  is one path from a starting event to an outcome, for example "a customer
+  asks for a refund under the limit and receives store credit". A flow with a
+  start, at least one outcome and no open question is **finished**; any other
+  flow is a draft. See the [Story language](../story/README.md).
+- A **Change Card** is the server's record of one change: your request, the
+  guide's analysis of it, the questions only you can answer, your answers and
+  the Story it was made from.
+- A **`request_revision`** is the digest of one exact version of a Change
+  Card. Building, verifying and approving each name it, so none of them can
+  apply to a version you did not confirm.
 
-Every change passes through three stages with different owners, so the agent that writes the code never defines the contract alone or grades its own output. The guide drafts the contract and you confirm it, the builder implements it, and an evaluator the builder does not control checks it before you approve the result:
+The table below also names the **live target**: a running copy of your
+application that the server builds from a commit, so the builder can try
+prompt wording before committing it (see
+[Trying prompt wording on a live target](#trying-prompt-wording-on-a-live-target)).
+
+The server decides who may call what from one table. A call by anyone else is
+refused with `forbidden` before anything changes. The agents call the server
+through an MCP (Model Context Protocol) connection named `surla`. You and the
+agents can read the Golden Path, Surla's built-in architecture playbook,
+published as the resource `surla://golden-path`.
+
+| Caller | Connects through | What it may do |
+| --- | --- | --- |
+| You | The page | Confirm a change, adopt or decline a proposed revision, start a build, approve a result, choose the model live targets use, stop a live target, start the agents and bring a pane forward. You read everything the page shows. |
+| The guide | Its `surla` MCP connection | Create a starter project, have the Story evaluated, and propose and revise changes. It reads the changes, builds and verification runs. |
+| The builder | Its `surla` MCP connection | Read its assignments, generate code, check the project, update its dependencies, run a live target and send prompt drafts to it, and ask the server to verify a commit. It reads the changes, builds and verification runs. |
+| The test writer | Its `surla` MCP connection | Read its test assignments and report its tests finished. It reads the build, and the verification runs of the changes it has an assignment for. |
+| The `surla` command | The server's management credential | Prepare the team, open the page and stop the server. It makes no decision about the application. |
+
+The reference lists [every operation and who may call it](REFERENCE.md#mcp-tools--resources)
+and describes [each operation](REFERENCE.md#mcp-tools).
+
+The roles separate duties; they do not wall the agents off from each other.
+All of them run as you, on one machine, and every result that depends on that
+says so.
+
+## The journey at a glance
 
 ```mermaid
-flowchart LR
-    A["1. Contract: Guide, You & Control Plane (CP1 → CP2)"] --> B["2. Builder (CP2 → CP3)"]
-    B --> C["3. Isolated Evaluator & Gate (CP4 → CP5)"]
+flowchart TD
+    A["You run surla in the project folder"] --> B["You choose an agent for each role in the Chorus dialog"]
+    B --> C["You describe the change to the guide"]
+    C --> D["The guide writes the Story and proposes a Change Card"]
+    D --> E["You answer its questions and confirm it on the page"]
+    E --> F["You press Build on the page"]
+    F --> G["The test writer writes one test per finished flow and reports"]
+    G --> H{"Surla checks the report"}
+    H -->|"findings"| G
+    H -->|"accepted at one commit"| J["Surla builds the builder's commit in its sandbox and runs the accepted tests against it"]
+    F --> I["The builder writes the code, commits and asks Surla to verify"]
+    I --> J
+    J --> K["You approve the result on the page"]
+    K --> L["You merge the tests commit into your branch, which already holds the builder's commit"]
 ```
 
-1. **📐 Contract: Guide, You & Control Plane (`CP1` → `CP2`) — Intent Lock, Compiled Contract**
-   - Scaffolds a new Goa + Goa-AI starter project over MCP with `init_project` (`POST /workspace/init`) inside `<workspace>/<dir>`, switching the running Surla server's active workspace to it in place without restarting, and surfaces concrete input/outcome examples and open domain questions at `CP1`, freezing a SHA-256 `request_revision` digest once you confirm.
-   - Evaluates `design/*.go` inside a sandboxed subprocess at `CP2` (`0` LLM tokens) to extract the C4 topology, tool schemas, and security guardrails (reading `design/*.go` privately for Change Cards and the candidate module snapshot from the bound workspace). While drafting or editing a domain Story in the bound workspace (including before any Goa service or C4 container exists), `refresh_story` (`POST /workspace/story/refresh`) and `get_story_refresh` (`GET /workspace/story/refresh`) evaluate the workspace snapshot in the background and return the observed Stories, actors, complete and draft flows, steps, and open questions in memory (`preview_architecture` still requires at least one Goa API or Service container); passing that succeeded `op_id` as `story_refresh_op_id` to `propose_change` or `revise_change` adopts the evaluated Stories and matching `design/*.go` snapshot into the Change Card and its `request_revision`.
-2. **🛠️ Builder (`CP2` → `CP3`) — Golden Path Implementation & Fast Draft Mode**
-   - The user starts a build of the agreed revision. Surla saves its Story and design, and the answers, examples and preserved behaviors the user confirmed, then registers the builder and, unless stored verification settings supply the evaluator, the test writer. In a starter project, it prepares the test writer's separate Git working copy and writes one required test entry per finished Story flow. Draft flows require none. Each role keeps its own credential and saved working folder; the test writer reads the saved design, Story, answers, examples and preserved behaviors through its assignment, because it may not read the change, and changes only the copy's test module. The build's result gives the next step for the launcher, including **Reload team** when it was already open. Window trouble leaves the build saved and the roles registered; the user can start the agents afterward. See [Builds and assignments](REFERENCE.md#builds-and-assignments).
-   - Builders read `surla://golden-path` and generated `AGENTS_QUICKSTART.md`. Because `goa gen` writes all HTTP/gRPC/MCP/OpenAPI plumbing, the builder implements only the domain and Temporal workflow packages. After editing a local design, `generate_code` regenerates the active application's code over MCP; `target: "eval"` regenerates its public local `eval/` module instead. Builders can edit and regenerate repeatedly on the same server, then call `check_project` to build and test the uncommitted application and `eval/` modules in Linux containers, and `update_dependencies` when Go's output shows a missing `go.sum` or `go.work.sum` entry or a `go.mod` update, before committing for verification (see the [MCP tools reference](REFERENCE.md#mcp-tools)).
-   - In `CP3`, `draft_override` updates prompt templates in memory, without rebuilding Go code, on the live target `start_live_target` runs (a `candidate_commit` built as `CP4` builds it and started in `--live` mode by the operator's stored evaluator or, without stored verification settings, by that commit's own test module; see the [`draft_override` reference](REFERENCE.md#mcp-tools)), while refusing to override compiled Go business rules (`compiled_rule`). A runtime override is never what `CP4` verifies: to keep drafted text, edit it into the prompt's source, build and test it (with `check_project` when the Surla server is bound to a workspace), commit, and verify that commit for the same `request_revision`. You can test **Customer** vs. **Approving Manager** flows against the candidate API and stateful simulators.
-3. **🛡️ Isolated Evaluator & Gate (`CP4` → `CP5`) — Sandboxed Verification, Crash & Budget Proof**
-   - `verify.Run` checks out exact `CandidateCommit` and `SuiteCommit` SHAs, builds the candidate binaries inside a macOS `sandbox-exec` jail (`candidate.Build`), and runs the trusted evaluator suite against them—exposed on the CLI as `surla verify` and on the control plane as `verify_change` (`POST /changes/{change_id}/verifications`), `get_verification` (`GET /verifications/{run_id}`), and `list_verifications` (`GET /changes/{change_id}/verifications`; see [`docs/REFERENCE.md`](REFERENCE.md#mcp-tools)), which run and inspect each verification in a detached supervised process group (`internal/verifyrun`) that survives the Surla server restarts. Without stored verification settings, `verify_change` runs the tests Surla accepted for the change's build, at the commit it recorded, and refuses a change without a build or accepted tests. Those tests were written by a separate agent on the same machine, so their program starts with only `PATH` and a temporary folder in its environment, and every result says where its tests came from. The suite starts each candidate process in its own sandbox (`candidate.Exec`); in the `examples/orders-eval` reference suite, candidate LLM calls also go through the evaluator's gRPC model gateway.
-   - Redacts unseen **holdout scenarios** from builder reports (`Report.ForBuilders()`) and re-derives the report from raw evidence to verify `CandidateCommit`, `RequestRevision`, `SuiteID`, `SuiteCommit`, candidate binary `Artifacts` digests, and `Environment` in `verify.Approve`—exposed on the CLI as `surla approve` (which checks a saved report file against explicit flags without recording a card approval) and on the control plane as `approve_merge` (`POST /changes/approve`, which checks the tests currently chosen for the change, loads the report from the project's report store, checks staged binary digests when optional promotion settings are stored, and saves the recorded approval on `ChangeCardResult.approval` in `Options.CardsDir` for the card's authenticated principal without merging or deploying).
+Tool descriptions and the server's terminal name these steps by checkpoint:
 
----
+| Checkpoint | Step on this page |
+| --- | --- |
+| `CP1` | [Agreeing on a change](#agreeing-on-a-change) |
+| `CP2` | [Previewing the architecture](#previewing-the-architecture) |
+| `CP3` | [Trying prompt wording on a live target](#trying-prompt-wording-on-a-live-target) |
+| `CP4` | [Verifying the builder's commit](#verifying-the-builders-commit) |
+| `CP5` | [Approving and merging](#approving-and-merging) |
 
-## Checkpoint 1 (`CP1`): Confirm What Surla Understood
+Surla deploys nothing and merges nothing. The journey ends with you merging
+the tests.
 
-The guide analyzes your feature request itself: it reads the target's current `design/*.go` and the Golden Path playbook served at `surla://golden-path`, then calls `propose_change` with the request and its analysis—a summary, the open questions only you can answer, concrete examples that become checks, and the existing behaviors the change must keep. The tool and field descriptions tell the agent what each part must contain. Surla runs no model and needs no model key for this step: it checks the analysis, assigns its IDs, and saves it as a structured **Change Card**:
+## Starting: `surla`, the team and the page
+
+You type `surla` in the project folder. The [README](../README.md#install)
+lists what to install first; when Herdr or Chorus is missing, `surla` stops
+and prints the command that installs it, or the folder to add to your
+`PATH` when the program is installed in `~/.local/bin`.
+
+1. **The server starts.** The first time, `surla` prints `Created a new,
+   empty Surla project. Moving or renaming this folder starts a new project.`
+   It starts the server in its own Herdr terminal, labelled
+   `surla_project=<id>`, and tells it the private state folder it found for
+   this project. That folder belongs to your account and lies outside the
+   project folder. If a server for this folder already runs, `surla` attaches
+   to it instead of starting a second one, when the same build of `surla`
+   started it. A server another build started, such as one still running
+   after you install a new `surla`, is refused with `this project's server
+   was started by another build of surla; run surla stop, then surla`. If the
+   server stops while starting, `surla` prints `the project server stopped
+   while starting, and its last lines were:` followed by those lines. Nothing
+   else was started; fix what they name and run `surla` again.
+2. **The team is prepared.** `surla` starts Chorus and the Herdr app if they
+   are not running, gives the project a Herdr space (the set of tabs that
+   holds the project's terminals) and registers the guide. It prints
+   `Team <name>.` and your next step, for example `Choose an agent for each
+   role in the open Chorus dialog in Herdr.` If the team cannot be prepared,
+   `surla` still opens the page, because confirming and approving need no
+   agent, and then prints `the project team is not ready:` with what failed
+   and the step that repairs it; **Start agents** on the page tries again.
+3. **The page opens.** `surla` opens the page in your browser through a
+   single-use link and prints `Surla is running for <folder> at <address>`.
+   To open the page again later, run `surla` again in the same folder.
+4. **You choose the agents.** The Chorus dialog lists one row per role Surla
+   registered. On the first start that is the guide alone. You pick which
+   installed agent plays it. The guide's pane opens in the project's Herdr
+   space with Surla's first message, which points it to the Golden Path and
+   to the project's changes.
+
+The page has one view per task. Changes, Team, Story and Live target are
+always there; the others appear once you open a change.
+
+| View | What it is for |
+| --- | --- |
+| Changes | The project's Change Cards, most recently saved first, each with its latest saved verification run. |
+| Team | Each role's pane state, its Chorus watcher (the agent's background wait for messages) and whether it read its assignment, with **Start agents** and an action per role that brings its pane forward, such as **Show guide pane**. |
+| Story | The Story of the change shown, and the guide's latest Story draft. |
+| Live target | The running copy of your application that the builder tries prompts on, and the model connection it uses. |
+| Decisions & Approval | The Change Card: its questions, your answers, confirmation, a proposed revision, the build and the recorded approval. |
+| Architecture | The architecture preview of the confirmed card. |
+| Proof | The verification runs of the change and the action that approves a passed result. |
+
+A **Traces** drawer shows the server's [operation diagnostics](REFERENCE.md#operation-diagnostics).
+The [views page reference](REFERENCE.md#views-page) describes each view in
+full. `surla stop` stops the server in order; see
+[the `surla` command](REFERENCE.md#surla-serve).
+
+## Agreeing on a change
+
+You type your request in the guide's pane, for example "Customers can get a
+refund on an order. Under $50 it is store credit at once; above that a
+manager approves it."
+
+1. **The guide writes the Story.** It edits the Story in the project's design
+   and calls `refresh_story`, which returns at once while the server
+   evaluates the design in its sandbox. `get_story_refresh` then returns the
+   Story the server found: actors, finished and draft flows, steps and open
+   questions. The Story view shows that draft while the guide works. Where
+   the Story starts from depends on the project:
+   - A starter project already has a Story, in `design/story.go`, with one
+     finished flow, `prices-cookie`, and the test that flow requires. The
+     guide adds your flows to that file.
+   - In a folder with no service, the guide first creates the starter
+     project with `init_project`: a folder inside the project folder holding
+     the service, its Story, its test module in `eval/` and a first commit.
+     The server then works in that starter folder, and so do the builder and
+     the test writer's working copy.
+   - In a project made another way, the design can import the Story language
+     only when the project's `go.mod` requires its module. When it does not,
+     the failed evaluation names the step: in the folder that holds that
+     `go.mod`, run `go get github.com/goadesign/surla/story@<version>`, at the
+     version Surla's own `go.mod` requires, commit `go.mod` and `go.sum`, then
+     try again.
+2. **The guide proposes the change.** It calls `propose_change` with your
+   request, its analysis and, to include the Story, the Story refresh it
+   made. Surla runs no model for this step. It checks the analysis's shape,
+   assigns the IDs of its questions and examples, and saves it as a Change
+   Card in the project's private state folder, where it waits for you. The
+   card appears in the Changes view by itself.
+3. **You answer and confirm.** In Decisions & Approval you read the card,
+   answer each question and press **Confirm Intent & Lock Examples**. The
+   server marks the card `confirmed`, records you as the one who confirmed
+   it, and computes its `request_revision`. That revision is the **agreed
+   revision**.
+
+A card for the refund request holds, for example:
 
 ```text
-Surla · Here's What I Understood (change_id: req-refunds, status: needs_confirmation)
-───────────────────────────────────────────────────────────────────────────────────────
-Examples (each maps to an isolated evaluator check):
-  ✓ check_01  $35 item ($38.50 total)     → Instant store credit, no approval [deterministic]
-  ✓ check_02  $75 item ($82.00 total)     → Waits for manager approval        [deterministic]
-  ✓ check_03  Manager declines $75 refund → Customer sees reason + support    [model_judged]
+Change req-refunds · needs confirmation
 
-Open questions to settle before building:
-  ? req-refunds-ambiguity-01  Does "under $50" mean item subtotal or total with tax & shipping?
-                              (e.g., $48 item + $6 shipping = $54)
-  ? req-refunds-ambiguity-02  What happens at exactly $50.00 — instant credit or manager approval?
+Examples
+  check_01  $35 item ($38.50 total)      → store credit at once, no approval   deterministic
+  check_02  $75 item ($82.00 total)      → waits for a manager's approval      deterministic
+  check_03  Manager declines a $75 refund → customer sees the reason            model_judged
+
+Questions only you can answer
+  req-refunds-ambiguity-01  Does "under $50" mean the item price or the total with tax and shipping?
+                            (A $48 item with $6 shipping totals $54.)
+  req-refunds-ambiguity-02  At exactly $50.00, store credit or a manager's approval?
 ```
 
-- **Server-assigned IDs & strict validation**: The generated MCP and HTTP decoders reject an analysis with a missing or blank required field, a `null` list element, fewer than two options for a question, no example, or an unknown `verification_kind`, and both refuse a field the contract does not declare, such as an ambiguity ID chosen by the caller (HTTP answers `400` `decode_payload`; remove the field and send the request again). The control plane then rejects, as `unprocessable`, a question that repeats an option, assigns deterministic `<change_id>-ambiguity-NN` and default `check_01`, `check_02`, ... IDs (matching `goa-ai/eval` `validateID`) in Go code, and saves every text exactly as sent. Surla cannot judge whether the analysis is complete or correct; you do that when you review and confirm the card.
-- **Durable project state**: The project server derives one private card, run, and report tree outside the workspace. Its existing exclusive card-store lock lasts through ordered cleanup and running-record removal. Cards are saved with a synced temporary file, atomic rename and directory sync; strict decoding, trailing-data rejection and canonical revision verification protect reads. See the [project server reference](REFERENCE.md#surla-serve).
-- **Revision lock & iterative refinement (`revise_change`, `confirm_intent`, `decline_revision`, `get_change`, & `approve_merge`)**: When you answer the open questions on the views page, `confirm_intent` moves the card to `confirmed` and computes a canonical SHA-256 `request_revision` digest. When requirements or scope change on an existing `change_id`, the guide, the only caller that revises, calls `revise_change` (`POST /changes/revise`) with the latest revision's `request_revision` (the waiting proposal's, when one waits), a revised `prompt` (and optional `story_refresh_op_id`), and a new analysis made against that revision (as `get_change` returns it, with its earlier prompt, confirmed answers, open questions, summary, examples, preserved behaviors, and any adopted `stories`). Passing `story_refresh_op_id` adopts the evaluated Stories and matching `design/*.go` snapshot from that succeeded `refresh_story` operation, while omitting `story_refresh_op_id` on a revision that already has `stories` keeps those `stories` and their saved `design_source` together without re-reading the workspace. The analysis accounts for every example of the revision it revises exactly once via `prior_id` or `removed_example_ids`, and Surla rejects it as `unprocessable` when it does not: surviving and edited prior examples keep their IDs, IDs from the immediately prior table (including removed IDs) are reserved while constructing the current revision, and brand-new examples receive the lowest unused `check_NN` ID absent from the prior and resulting tables. The new revision is in `needs_confirmation` (even when `0` open ambiguities remain) with no `answers`, `confirmed_by` or `approval`, because its questions are newly analyzed and can differ from the earlier ones; the guide restates earlier decisions that still hold and checks that they appear in the returned `summary`, `examples`, and `preserved_behaviors`. `revise_change` also re-binds any new `ui_composition`. A change you never confirmed is replaced by the new revision; you then answer its `ambiguities` and confirm its `request_revision` on the views page. An agreed (`confirmed`) change is not replaced: the new revision waits beside it as `proposed_revision`, and the agreed revision stays in force with its answers, confirmation, approval, `stories` and design source, so architecture previews, verification and approval keep working on it. A later revision names the proposal's `request_revision` and replaces it. You adopt the proposal on the views page by answering its questions and confirming it (`confirm_intent` with the proposal's `request_revision`), which makes it the agreed revision under a new `request_revision` with no approval carried over, or decline it (`decline_revision`), which leaves the agreed revision exactly as it was. While a proposal waits, refining the agreed revision is refused until you adopt or decline. Only you confirm: the views page calls `confirm_intent`, which confirms or refines the locked answers or examples while carrying any saved `stories` forward without re-evaluating the workspace (returning the stored card on a no-op submit and minting a new `request_revision` when answers or examples change, which invalidates stale downstream previews, verification reports, and any recorded `approval`). If another editor updates the card first, `get_change` (`GET /changes/{change_id}`) fetches the latest saved `ChangeCardResult`. Whenever `get_change` or a no-op `confirm_intent` reads a card with a recorded `approval`, it checks the tests currently chosen for the change and, when `Options.PromotionTarget` is bound, `PromotionTarget.CurrentArtifacts` for `approval.candidate_commit`: it returns `approval` (and `unverified_approval: nil`) only when the chosen tests' commit still matches `SuiteCommit` and either no `PromotionTarget` is bound or the current `Artifacts` still match; it omits both `approval` and `unverified_approval` on a shallow response copy when the chosen tests changed or `CurrentArtifacts` succeeds with different binary digests (without mutating the saved card or `request_revision`); and when the chosen tests match, `Options.PromotionTarget` is bound, and `CurrentArtifacts` returns an error, it omits `approval` and populates `unverified_approval` (`UnverifiedApprovalItem`, carrying the recorded approval metadata and a path-free operator recovery `reason`, while recording the raw `CurrentArtifacts` error on the `controlplane.check_approval` span) rather than failing the card read. `preview_architecture` and `approve_merge` reject a `request_revision` that is not the revision in force. `surla verify` records the `-request-revision` you pass in its report, and `surla approve` (`verify.Approve`) compares a saved report file with the explicit binding flags its caller supplies without looking up a stored card.
+`deterministic` means code can check the outcome directly; `model_judged`
+means checking it needs judgment. Surla cannot tell whether the analysis is
+complete or correct. You decide that when you confirm the card.
 
----
+The guide can revise the change at any time with `revise_change`. Before you
+confirm, the revision replaces the card's content and waits for your answers.
+After you confirm, it waits beside the agreed revision as a **proposed
+revision**; see [Going back](#going-back).
 
-## Checkpoint 2 (`CP2`): Review the Compiled Contract
+## Previewing the architecture
 
-Calling `preview_architecture` against a confirmed Change Card stages the bound workspace's candidate module snapshot inside an isolated subprocess, runs Goa, Goa-AI, and `goa.design/model` evaluation, and returns the bound architecture preview (for local read-only design inspection without a Change Card, `request_revision`, or `design_digest`, run `surla preview -dir <module>` on the CLI to print the raw `designeval.Result`):
+The Architecture view asks the server for `preview_architecture` on the
+confirmed card. The server evaluates the project's design in a sandboxed
+process, with no model and no tokens, and shows what the design declares: its
+containers and the calls between them, each agent's time and tool-call
+limits, and each tool's schemas, including whether a tool declares a
+design-time `Confirmation` gate.
 
-```text
-Surla · Contract & Build Plan (Request rev #2, Design digest sha256:4f8a...)
-───────────────────────────────────────────────────────────────────────────────────────
-Scope:    1 edge service (orders), 2 internal services (commerce, payments), 1 agent (refund)
-Contract: orders.issue_store_credit & orders.request_refund
-          • tenant_id & customer_id injected server-side (omitted from LLM schema)
-          • BoundedResult pagination on orders.list_orders & orders.continue_orders
-          • Design-time Confirmation gate on orders.request_refund
-```
+The preview does not compare the design with the Change Card. A declared
+`Confirmation` gate means the runtime pauses a run for approval before it
+calls the tool's method; it does not show that the service delivers the
+request to the right person and continues after the answer. The
+[`examples/orders`](../examples/orders/README.md) platform implements that
+workflow for a manager approving refunds. To read a design without a Change
+Card, run `surla preview -dir <module>`.
 
-The preview reports what the design declares: its containers and the calls between them, each agent's time and tool-call limits, and each tool's schemas, including whether it declares a design-time `Confirmation` gate. It does not compare the design with the Change Card's requirements. A declared `Confirmation` gate means the runtime pauses the run for approval before executing the bound tool method (so the bound method's own authorization has not run yet); it does not show that the service delivers that request to the right person and continues after the answer. The host can inspect the pending call's payload when handling the suspension and answer `Approved: false` immediately when the caller is not authorized to request the action, or implement and verify the full approval workflow in application code, as [`examples/orders`](../examples/orders/README.md) does for a manager approving refunds.
+## Building
 
-## Checkpoint 3 (`CP3`): Fast Draft Overrides & Live Sandbox Walkthrough
+You press **Build this change** in Decisions & Approval. Above the button the
+page says what starts: "Building starts a builder and, unless this project has
+stored verification settings, a test writer whose tests Surla runs on this
+machine outside the sandbox to check the builder’s work." **Stored
+verification settings** name a test suite of your own, an **evaluator**, at
+one exact commit; you save them with `surla verification set <file>`, and
+they apply when the server starts again. Building always uses the agreed
+revision, including while a proposed revision waits.
+The reference gives the exact contract of
+[builds and assignments](REFERENCE.md#builds-and-assignments).
 
-At `CP3`, Surla separates in-memory prompt tuning from compiled business rules and pairs the candidate service with stateful dependency simulators (`examples/orders-eval/sim`).
+### What a build adds
 
-The views page also offers [operation diagnostics](REFERENCE.md#operation-diagnostics)
-through **Traces**. It reads saved safe summaries and older pages without
-discarding unsaved Change Card edits.
+1. **The server checks first.** It refuses the start, and saves nothing, when
+   the card is not confirmed or the revision is not the agreed one, or when
+   the project lacks what a build with a test writer needs: a Git repository
+   with at least one commit, the test module `surla init` makes (`eval/` in
+   the project folder), a Git name and address, a `.surla-tests` folder and a
+   `surla/tests` branch that nothing else uses, macOS for Surla's sandbox,
+   and no other build start or test check in progress. Each refusal says
+   what is missing and the step to take; the reference lists them under
+   [`start_build`](REFERENCE.md#start_build).
+2. **The server opens the test writer's working copy** (described below) and
+   saves the build: the agreed revision, its Story and its design, and the
+   answers, examples and preserved behaviors you confirmed for it.
+3. **It registers the builder and the test writer**, each with its own
+   credential and folder. The builder works in the project folder; the test
+   writer works in its working copy.
+4. **It writes the required tests.** For each finished flow of the Story, the
+   server generates one required test into the working copy's test module.
+   Draft flows require none. The Build section shows the count, for example
+   "3 required Story tests."
+5. **It brings up the team.** The Chorus dialog opens with rows for the
+   builder and the test writer. If it was already open, click **Reload team**
+   first. Surla asks for the builder's pane to the right of the guide's and
+   the test writer's below the builder's, and gives each Surla's first
+   message.
 
-> **Current implementation vs. target CP3 UI:** Today, `internal/controlplane` serves the `draft_override` MCP tool (`POST /sandbox/draft`), which applies `prompt_template` updates to the live target `start_live_target` runs on the Surla server (from a committed starter or stored verification settings), and refuses them with `no_live_target`, naming `start_live_target`, when none is running. Surla never changes prompts in an application the user started or deployed. The [views page](REFERENCE.md#views-page) shows Change Cards, the Story of the change shown and the guide's current Story draft, architecture previews, verification runs, and the live target with the prompts its drafts changed and the model connection; it does not show structural design comparisons or prompt text. Role-switched Customer vs. Approving Manager flows run directly against the candidate HTTP API in [`examples/orders`](../examples/orders/README.md) and [`examples/orders-eval`](../examples/orders-eval/). The role-switcher dropdown, one-click scenario replay buttons, `+ Make This an Example` capture, and `openui.v1` action dispatch shown below are the target CP3 design, not shipped controls.
+The work belongs to the server. Closing the page does not stop it, and the
+page says the start can take a few minutes. Opening the working copy and
+writing the tests have a five-minute limit, and bringing up the team its own
+45-second limit. Trouble with the Herdr window after the build is saved
+leaves the build and the roles in place; press **Start agents** in the Team
+view when the window is free.
 
-```text
-Surla Sandbox · Candidate 3a506f6 · [ENV: SIMULATED PAYMENTS — NO REAL MONEY MOVES]
-Role: [Customer ▾] (Switch to [Approving Manager] to approve/decline paused refunds)
-───────────────────────────────────────────────────────────────────────────────────────
-One-click replay of your confirmed examples:
-  [▶ Replay: $48 + $6 shipping ($54) → Waits for manager]
-  [▶ Replay: $50.00 total            → Instant store credit]
-  [▶ Replay: $75 declined by manager → Customer explanation]
-Or type any prompt to poke the agent live...        [+ Make This an Example] [⚡ Draft Tweak]
-```
+With stored verification settings, the project verifies with the evaluator
+those settings name. Building then adds only the builder, uses no working
+copy, and the Build section shows the test writer as "Not used — stored
+verification settings". See
+[`surla verification`](REFERENCE.md#surla-verification-and-surla-promotion).
 
-- **Role Switching Against Real Auth Boundaries**: Trigger a `\$54.00` refund as a **Customer**, verify that a `Customer` bearer token receives `403 Forbidden` if it calls the manager approval endpoint (`POST /runs/{run_id}/approval`), and switch to **Approving Manager** to approve or decline the paused workflow run via the public API.
-- **CP1 Decision Studio (views page)**: When a Change Card the [views page](REFERENCE.md#views-page) shows carries a `ui_composition` from `propose_change` or `revise_change`, the page renders it with the OpenUI decision catalog (`DecisionWorkspace`, `PolicySimulatorTable`, `PolicySimulatorRow`, `AmbiguityChoiceCard`, `WorkflowTimeline`, `WorkflowStep`, `ImpactCallout`). Its choice controls edit the same CP1 draft (`CP1DraftContext`) as the form. The view is composed by your coding agent in its analysis and carries a `Model-Proposed Illustration` badge and a notice when you edit examples locally. When a Change Card transitions to a new revision for the same `change_id`, the page displays the previous saved revision in `#surla-prior-revision`; when a new revision arrives while you have unsaved edits, switching to the incoming card (`#surla-replace-incoming-card`) preserves only your changed draft answers (with ambiguity question text) and changed examples in `#surla-preserved-draft` alongside the new card. When a confirmed card carries a current `approval` from `approve_merge`, the page renders the `#surla-cp5-approval` panel describing that verified check on the saved Change Card (with full commit, report, suite, and binary SHA-256 digests under expandable `Verified inputs and digests` details) and warns when unsaved draft edits would mint a new `request_revision` and clear that approval; when a saved approval cannot currently be verified against `PromotionTarget` (`unverified_approval`), the page renders `#surla-cp5-unverified-approval` with the recovery reason, recorded approval details, and a `#surla-cp5-refresh-approval` action that reads the card again without losing unsaved draft edits. `validateCompletedOpenUI` rejects compositions for another revision, components in the wrong slot, and props outside the catalog schemas, and the full form stays usable when it does. The published `@openuidev/lang-core@1.0.2` parser still silently skips bare lines and same-line trailing tokens; `validateCompletedOpenUI` already rejects programs whose `meta.discarded` is non-empty, which takes effect once a release with [thesysdev/openui#1525](https://github.com/thesysdev/openui/pull/1525) is selected.
-- **Fast Draft Mode (`draft_override`)**:
-  - Editing a **prompt template** (`target_kind: "prompt_template"`) sends the text to the live target `start_live_target` runs (described in the [`draft_override` reference](REFERENCE.md#mcp-tools); with none running, the Surla server refuses it with `no_live_target`) to update the target platform's `prompt.Store` in memory, without rebuilding Go code, and returns the new `prompt_version` digest. On the target side, [`examples/orders`](../examples/orders/) wires a process-owned `prompt.NewInMemoryStore()` via `runtime.WithPromptStore` and exposes its `prompts` service's `override_prompt` (`PUT /prompts/{prompt_id}`, requiring the live key Surla passes to a live copy it starts): it validates the template before saving it, returns the accepted text's `sha256:...` version (`prompt.VersionFromTemplate`), and applies it on the next turn planned by that `orders` process (while a newly started `orders` process begins with its generated built-in `sha256:...` baseline prompt and other running `orders` processes keep their own prompts). The Surla server applies `prompt_template` edits only to a live target started with `start_live_target`.
-  - Attempting to override a **compiled business rule** (`target_kind: "compiled_rule"`, such as the `\$50.00` limit) is rejected (`requires_rebuild: true`) so hard domain invariants never drift into unverified prompt text.
+### What appears in the project folder
 
----
+| What | Where | Why |
+| --- | --- | --- |
+| The test writer's working copy | `.surla-tests/` inside the project folder | A linked Git working copy (`git worktree`) of the whole repository, where the test writer writes its tests. |
+| The tests branch | `surla/tests` | The branch checked out in the working copy. Surla reserves the name; it starts at the project's commit, and Surla commits the accepted tests on it. |
+| Two lines in the repository's local exclude file | A comment and `.surla-tests/` in `.git/info/exclude` | Keeps the working copy out of `git status`. No tracked file of the project changes. |
 
-## Checkpoints 4 & 5 (`CP4` & `CP5`): OS-Isolated Verification & Merge Gate
+The `.surla` prefix makes the builder's `check_project` skip the folder.
 
-When verification runs via `surla verify` on the CLI or `verify_change` (`POST /changes/{change_id}/verifications`), `get_verification` (`GET /verifications/{run_id}`), and `list_verifications` (`GET /changes/{change_id}/verifications`; see [`docs/REFERENCE.md`](REFERENCE.md#mcp-tools)) over MCP/HTTP (`internal/verify` `verify.Run` and `internal/verifyrun`, exercised end-to-end by `go test -race -tags e2e ./internal/verify` and `(cd examples/orders-eval && go test -race -tags e2e ./acceptance)`), Surla never trusts the builder's working directory or test output:
+When you build again, the server brings a clean working copy to the project's
+commit only when your branch already contains `surla/tests`. Otherwise it
+keeps the copy as it is and the page records why: the tests are not merged
+("Merge the tests branch into the project's branch, then build again"), or
+the copy holds uncommitted work.
 
-```text
-Surla Evaluator Report · Candidate 3a506f6 (OS Sandbox: macOS sandbox-exec)
-───────────────────────────────────────────────────────────────────────────────────────
-Status: passed (5/5 scenarios passed · 1 unseen holdout scenario verified)
+### The test writer writes the tests
 
-Confirmed Examples & Resilience Checks:
-  ✓ store_credit_within_limit              $38.50 total → store credit, no manager
-  ✓ card_refund_needs_manager              $54.00 total → waits; only that tenant's manager approves → 1 card refund
-  ✓ refund_survives_worker_crash           worker killed (kill -9) after payment → 1 refund on replay
-  ✓ pending_approval_survives_api_restart  API killed and restarted while waiting → approval → 1 card refund
-  ✓ other_customers_order_refused          [HOLDOUT] another customer's order → no refund
+The test writer reads its assignment with `get_test_writer_assignment`: the
+working folder, the design and Story as agreed at the built revision, your
+answers, examples and preserved behaviors as you confirmed them, and one
+required test per finished flow. It may not read the change itself, so the
+assignment is how its tests learn what you agreed, and they must hold the
+service to it as well as to the Story's flows. It writes the tests inside the
+test module, `eval/` in its working copy, and changes nothing outside it. It
+never regenerates that module itself, because Surla writes the required
+tests into it at the start and again at each report. It checks its work
+with `go build ./...` in `eval/`, which fails naming any required method not
+yet written.
+Then it calls `report_tests_finished`. The report returns at once with the
+report's number; the build shows the test writer as **Reported**. In a
+starter project the test of the starter's own flow, the method `PricesCookie`
+in `eval/acceptance`, is already written and shows the form to follow.
 
-Token & Cost Gate (via Evaluator Model Gateway):
-  ✓ Measured usage within scenario budgets · 0 incomplete usage records
-```
+### Surla checks the tests
 
-### Why the Builder Cannot Game the Evaluator
-1. **OS Process & Filesystem Sandbox (`verify/candidate` & `verify/suite`)**: On macOS, candidate builds (`candidate.Build`, run by `verify.Run`) and candidate server/worker processes (`candidate.Exec`, started by the evaluator suite after `suite.Main` pins each `--artifact` binary with `candidate.Pin`) run under a strict `sandbox-exec` Seatbelt profile. They can write only to their temporary build/state directories and bind or connect only to evaluator-assigned `127.0.0.1` ports. `candidate.BuildTest` compiles one candidate package's `_test.go` files into a single test binary under the same build profile (`go test -c -trimpath -vet=off`), returning `false` without writing a test binary when the package has no tests. Its contract requires the caller to run that binary only through `candidate.Pin` and `candidate.Exec`. There, the test runs with `StateDir` as its working directory, so a package's `testdata/` is present only if the caller copies it in; a test that starts a child process fails with `operation not permitted`, and listening or connecting outside its assigned ports is denied. `candidate.Output` runs one pinned binary to completion under the same runtime profile and returns its standard output, with only standard error in the log file, so a caller reads a program's answer exactly, such as an evaluator suite's `--describe` declaration. No Surla command calls `candidate.BuildTest` or `candidate.Output` today; `check_project` runs a workspace's tests in Linux containers instead (see the [MCP tools reference](REFERENCE.md#mcp-tools)). Each scenario attaches `pinned.Evidence("<name>")` so the verifier can compare the suite-reported binary digests with the bound digests (actual process execution remains the trusted evaluator suite's responsibility).
-2. **Evaluator-Owned Contracts & Simulators**: In the [`examples/orders-eval`](../examples/orders-eval/) reference suite, the evaluator binary is compiled from its own commit (`SuiteCommit`) with its own copy of the generated contracts and stateful commerce/payment simulators.
-3. **Gateway-Enforced Token & Cost Accounting**: Every LLM call the candidate makes in `examples/orders-eval` traverses a `goa-ai` gRPC model gateway hosted by the evaluator. If a change bloats tool payloads (`TestSeededPayloadBloatFailsTheBudget`, raising an order page from `10` to `50` items) or makes a call whose usage the gateway cannot fully account for (counted in the evaluator's `Usage.Unreported`), the scenario fails even if functional assertions pass.
-4. **Redacted Holdout View (`Report.ForBuilders()`)**: Builders receive a `BuilderReport` (`Report.ForBuilders()`) showing only anonymous holdout outcomes (`holdout-1`)—never the holdout scenario names, declarations, checks, or failure logs.
-5. **Merge-Gate Check (`verify.Approve`, `surla approve`, and `approve_merge`)**: `verify.Approve` re-derives the entire `verify.Report` from its `Binding`, `Suite`, and raw `eval.Report` `Evidence` and verifies that `CandidateCommit`, `RequestRevision`, `SuiteID`, `SuiteCommit`, candidate binary `Artifacts` SHA-256 digests, and `Environment` match the change being promoted before approving. On the CLI, `surla approve` decodes a saved report file (`verify.DecodeReport`) and checks it against explicit promotion flags, printing a JSON summary (`report_digest`, `binding`, `counts`) on success without contacting a server or saving card state. On the control plane, `approve_merge` (`POST /changes/approve`) checks the tests currently chosen for the change and `request_revision`, loads the report by `report_digest` from the project's report store, checks the report with `verify.Approve` against the owner's confirmed `request_revision`, candidate commit, and chosen tests' commit (and against `PromotionTarget.CurrentArtifacts` when optional promotion settings are stored, recording `artifacts: {}` otherwise), and saves the updated card with `approval` (`ChangeCardResult.approval`) in `Options.CardsDir` for the authenticated principal (replacing any prior approval on that revision) without merging branches or deploying binaries (optional `surla promotion set <file>` followed by a server restart binds a staged-release `PromotionTarget` that hashes each configured regular-file binary inside an atomically published `<release_dir>/<candidate_commit>/` directory through a single `os.OpenRoot` handle, approving those staged binaries for a fresh launch with the evaluator suite's fixed configuration without claiming anything about already running processes). Whenever `get_change` or a no-op `confirm_intent` reads a saved card with a recorded `approval`, it re-checks the tests currently chosen for the change and, when promotion settings are stored, `PromotionTarget.CurrentArtifacts(ctx, approval.CandidateCommit)` (rehashing the staged binaries for the stored promotion settings): it omits both `approval` and `unverified_approval` when the chosen tests' commit or staged binary digests have changed (leaving the saved card on disk unchanged), and returns `unverified_approval` (omitting `approval`, with a path-free operator recovery reason) when the chosen tests match, promotion settings are stored, and `CurrentArtifacts` returns an error (such as missing staged binaries).
+Surla, not the test writer, decides whether the tests count. Right after each
+report, the server checks the working copy without trusting its author (the
+reference gives the check's limits under
+[judging reports](REFERENCE.md#judging-reports)):
+
+1. It compares the copy's files with the last commit that `surla/tests` and
+   the project's branch share, so the test writer's own commits count too.
+   Any changed file outside the test module is a finding.
+2. It writes the required tests again from the Story saved with the build, so
+   the test writer cannot change what is required.
+3. It builds the generated test program, `gen/cmd/<name>-evals` in the test
+   module, in Surla's build sandbox. A compiler error, such as a missing
+   method, is a finding.
+4. It runs the program's `--describe` in the sandbox to list the scenarios,
+   the named tests, it declares. A required scenario that is missing is a
+   finding, and so is a scenario tagged `holdout`, the tag that hides a
+   scenario from what the server returns (see
+   [hidden scenarios](#verifying-the-builders-commit)).
+
+The verdict replaces **Reported** and marks the test writer's assignment
+unread, so it reads it again.
+
+| Verdict on the page | What happened | Who acts |
+| --- | --- | --- |
+| Needs changes | Surla found problems. The page shows their number; **Read findings** shows their text. | The test writer reads them in its assignment, fixes them and reports again. |
+| Accepted | Surla committed exactly the checked files on `surla/tests`, with your Git identity and the message `Add the tests Surla accepted for change <id>, report <n>`. The build details show that commit. The builder's assignment is marked unread too. | The builder can verify. |
+| Could not run | The check stopped for a cause the test writer cannot fix, such as a time limit, Git trouble, a sandbox that could not start, or dependencies that cannot be downloaded where Surla runs. The page shows the reason and your step. | You take the step; it says whether the test writer then reports again or you build again. |
+
+An acceptance always carries the same sentence, which the page shows: "Surla
+checked that these tests build into the generated test program and declare
+every required scenario; it did not judge what they assert." Whether the
+tests check the right things is still yours to judge.
+
+## Trying prompt wording on a live target
+
+When the application calls an AI model, the builder can try prompt wording
+before committing it. It calls `start_live_target` with a commit. The server
+builds that commit in its sandbox and starts it as the **live target**: a
+running copy of your application that only Surla started. Surla never
+changes prompts in an application you started or deployed. Without stored
+verification settings, the commit's own test module starts the copy, so the
+commit needs the test layout `surla init` makes but no accepted tests.
+
+The builder then calls `draft_override`. A prompt template change
+(`target_kind: "prompt_template"`) goes to the live target in memory, without
+rebuilding, and the result returns the version in force. A change to a
+compiled business rule (`target_kind: "compiled_rule"`, such as the $50
+limit) changes nothing: the result says `requires_rebuild: true`, because the
+rule needs a Go rebuild and verification, so a hard rule never moves into
+prompt text. A draft lasts as long as the live target: to keep wording, the
+builder edits it into the prompt's source and commits it.
+
+In the Live target view you see the target's state and commit, the prompts it
+changed (never their text), and **Stop live target**. Under **Model
+connection** you choose the model that live targets started afterwards use: a
+provider and model name, whose key must be in the server's environment, or a
+running model gateway. The server runs in a Herdr terminal, which has the
+environment of the Herdr core rather than of the shell where you typed
+`surla`. See the [live target prompt contract](REFERENCE.md#live-target-prompt-contract).
+
+## Verifying the builder's commit
+
+The builder commits its code and calls `verify_change` with the change, the
+revision from its assignment and its commit. Without stored verification
+settings, the server refuses before running anything when the revision has no
+build (`no_build`), when the build's tests are not accepted
+(`tests_not_accepted`, naming the test writer's state), or when a commit lacks
+the test layout (`no_test_layout`). Each refusal names who acts next; see
+[`verify_change`](REFERENCE.md#verify_change).
+
+An accepted call returns a run ID at once. The run happens in its own
+**run directory**: a folder the server keeps outside the project, holding the
+run's request, its lock, its result and its logs. The run continues when the
+builder disconnects or the server restarts. It:
+
+1. checks out the builder's commit and builds the application in Surla's
+   macOS sandbox, which lets a build write only its own folders;
+2. takes the accepted tests at the exact commit Surla recorded for this
+   build, and builds their generated test program;
+3. runs that program, which starts each of the builder's programs in its own
+   sandbox, with access only to the local ports the run assigns.
+
+The test program itself runs outside the sandbox: it starts the builder's
+programs in their own sandboxes, and macOS does not nest one sandbox inside
+another. It starts with only `PATH` and a temporary folder in its
+environment: no model key and nothing else of yours. Surla's test layout
+plans with a scripted model during verification.
+
+Every run records where its tests came from. For tests the test writer wrote,
+the run's result, as `verify_change`, `get_verification` and
+`list_verifications` return it, names the tests commit and carries this
+notice: "These tests were written by a separate agent on this machine and are
+not isolated from the builder." The Proof view lists the change's saved runs
+and shows the selected run's scenarios and outcome. For a run of the test
+writer's tests it shows that notice with the result. Under **Candidate and
+run details** it shows the builder's commit as "Candidate commit" and the
+tests commit as "Accepted tests commit", or as "Evaluator commit" when the
+run used the evaluator that stored verification settings name.
+
+The Changes view shows each change's latest saved run, for example "Latest
+saved run: passed", and says under it whether that run counts for the change
+as it stands. "Matches the agreed revision and selected tests." means the run
+verified the agreed revision with the tests a run of that revision would
+use: the tests accepted for the build of that revision or, with stored
+verification settings, the evaluator they name. Otherwise the line reads
+"Earlier inputs or no current test selection." and tells you to ask the
+builder for a run of the agreed revision. A run that does not match stays
+readable in the Proof view.
+
+The server returns only the builder view of a report, to you and to the
+agents alike. An evaluator named in stored verification settings can declare
+**hidden scenarios**: scenarios tagged `holdout`, whose names, checks and logs
+never appear in what the server returns; the builder view shows only an
+anonymous outcome such as `holdout-1`. The test writer's tests cannot be
+hidden, because Surla's check refuses the tag.
+
+With stored verification settings, a run uses the evaluator those settings
+name and needs no build. Outside the journey, the
+[`surla verify`](REFERENCE.md#surla-verify) command runs one verification from
+the command line.
+
+## Approving and merging
+
+When a run passed, the Proof view offers **Approve this result**. Only you
+can approve. The server reloads the run's report and derives it again from
+its evidence, checks that it passed and that it verified the agreed revision
+with the tests accepted for that revision, and records the approval on the
+Change Card: the builder's commit, the tests commit and the report. Approval
+merges and deploys nothing.
+
+The approval names two commits: the builder's commit that the run verified,
+and the tests commit that Surla accepted for the revision. The recorded
+approval lists them under **Verified inputs and digests** as **Builder's
+commit** and **Tests' commit**. The builder commits in the project folder,
+so its commit is already on the branch checked out there. For the test
+writer's tests you merge the tests commit, which is on `surla/tests`, into
+that branch: the page follows the server's notice with "merge commit <tests
+commit> (on branch surla/tests)". With stored verification settings the tests
+commit is the evaluator's, and there is nothing to merge. Approval is
+refused when the run used other tests than the ones accepted for the
+revision; the builder then verifies again and you approve that run. A
+recorded approval stays shown only while the same tests commit is the
+accepted one: after another report or another build, it reappears only if
+Surla accepts that same commit again.
+
+Approval needs no settings. A project can store promotion settings with
+`surla promotion set <file>`: a release folder, where your own release step
+publishes the builder's binaries for each commit, and the binaries' names.
+Like verification settings, they apply when the server starts again.
+Approval then makes one more check: the files in the release folder must be
+the binaries the run built. When one is missing or differs, approval is
+refused, and the refusal ends with your step: "publish the binaries the run
+built into the release folder that the promotion settings name, in a folder
+named after the commit, or remove the promotion settings". See
+[`surla promotion`](REFERENCE.md#surla-verification-and-surla-promotion) and
+[`approve_merge`](REFERENCE.md#approve_merge).
+
+A change to the agreed revision drops its approval; see
+[Going back](#going-back).
+
+## When an agent needs you
+
+Agents stop at questions and permission prompts. The server follows each
+registered role's pane in Herdr and shows, on every view of the page, one line
+per role that waits for you, for example "Builder needs you: permission",
+with a **Show builder pane** action that brings that pane forward. You answer
+in the pane.
+
+The Team view shows each role's pane state (Not started, Starting, Working,
+Waiting, Needs you, Ended, Error or Status unknown), whether its Chorus
+watcher is held, and whether it owes an assignment read. **Start agents**
+opens the Chorus dialog for roles that are not running. What the server cannot
+observe stays "unknown"; it never guesses. Surla never types into an agent's
+pane. See [team supervision](REFERENCE.md#team-supervision).
+
+## Going back
+
+Any step can be taken again on the same change. The server always says which
+revision a build, a run or an approval belongs to.
+
+| What happens | What stays valid | What must be redone |
+| --- | --- | --- |
+| The guide revises a confirmed change | The agreed revision stays in force with its answers, build, runs and approval. The page shows the proposed revision beside it, under "Waiting for you". Refining the agreed revision is blocked until you adopt or decline. | Nothing until you decide. |
+| You decline the proposed revision | Everything, exactly as it was. | Nothing. |
+| You adopt the proposed revision (answer its questions, then **Adopt this revision**) | Earlier runs stay readable for their revision. | The adopted revision has another `request_revision` and no approval. The build becomes "Built for an earlier revision" and the builder's `verify_change` for the old revision is refused: build again. |
+| You change answers or examples of the agreed revision (**Refine Confirmed Answers & Examples**) | A submit with no change keeps everything. | A change gives another `request_revision`, drops the approval, and needs a build of that revision. |
+| You build the same revision again (**Build again…**, which asks first) | The agreed revision. | Both assignments become unread, the test writer's work returns to Assigned without report or verdict, and its tests must be reported, checked and accepted again before verification. |
+| The test writer reports again | The build. | Its earlier verdict is cleared; Surla checks the report again. |
+| Surla says the tests branch and the project share no history | Commits you already merged. | Run `git worktree remove .surla-tests` and `git branch -D surla/tests` in the project folder, then build again. |
+
+When the agreed revision has a build, the page says what adopting or refining
+does to it, above **Adopt this revision** and, once you have edited an answer
+or an example, above **Refine Confirmed Answers & Examples**: the build stays
+on the earlier revision, and a build of the changed revision replaces both
+assignments and clears the test writer's report and verdict, so its tests
+must be reported, checked and accepted again before verification. With stored
+verification settings it says instead that a build of the changed revision
+updates the builder's assignment and that verification keeps using those
+settings.
+
+Building a revision you have just adopted or confirmed does not ask first.
+Each assignment stays as it was, for its revision, until you build again.
