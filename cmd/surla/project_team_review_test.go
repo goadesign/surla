@@ -4,6 +4,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -272,6 +275,119 @@ func TestOlderProjectServerNamesRestartStep(t *testing.T) {
 	require.EqualError(t, err, "this project’s server was started by another version; run surla stop, then surla")
 }
 
+// testBuildIdentity hashes this test binary's executable once per test process, as
+// project.BuildIdentity reads a running surla's once. Hashing the whole binary takes
+// long enough under the race detector to miss a test's bounded wait, so no request
+// handler or deadline may include it.
+var testBuildIdentity = sync.OnceValues(func() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(self)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+})
+
+// testBuild is the build identity of this test binary: the SHA-256 of its executable.
+// Call it on the test's goroutine before starting a fake server or a deadline, and
+// give handlers the returned value: require must not run on a handler's goroutine.
+func testBuild(t *testing.T) string {
+	t.Helper()
+	build, err := testBuildIdentity()
+	require.NoError(t, err)
+	return build
+}
+
+// serveFixtureIdentity answers the project's identity at its saved address while the card
+// store is held, as a running server of the given build would; an empty build omits the
+// field, as servers built before it did. Stop requests release the store.
+func serveFixtureIdentity(t *testing.T, state *project.State, build string) {
+	t.Helper()
+	cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
+	require.NoError(t, err)
+	var closeOnce sync.Once
+	closeStore := func() { closeOnce.Do(func() { assert.NoError(t, cp.Close()) }) }
+	t.Cleanup(closeStore)
+	api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/project/identity":
+			identity := map[string]string{"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner}
+			if build != "" {
+				identity["build"] = build
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(identity))
+		case "/project/stop":
+			w.WriteHeader(http.StatusAccepted)
+			go closeStore()
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	require.NoError(t, api.Listener.Close())
+	api.Listener, err = net.Listen("tcp", state.Address())
+	require.NoError(t, err)
+	api.Start()
+	t.Cleanup(api.Close)
+	require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("b", 64)}))
+}
+
+// TestServerOfAnotherBuildNamesRestartStep refuses to attach to a running server that
+// another build of surla started, such as the one running before an upgrade, and names
+// the restart step; the same build attaches.
+func TestServerOfAnotherBuildNamesRestartStep(t *testing.T) {
+	for _, tc := range []struct{ name, build string }{
+		{"same build", ""},
+		{"another build", strings.Repeat("0", 64)},
+		{"build not reported", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			build := tc.build
+			if tc.name == "same build" {
+				build = testBuild(t)
+			}
+			serveFixtureIdentity(t, state, build)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			_, _, err = attachOrStartProject(ctx, state, func(context.Context, *project.State) (string, error) {
+				t.Error("a running server is never started again")
+				return "", nil
+			})
+			if tc.name == "same build" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.EqualError(t, err, "this project's server was started by another build of surla; run surla stop, then surla")
+		})
+	}
+}
+
+// TestStopAcceptsServerOfAnyBuild keeps surla stop working against a server that another
+// build started, including one built before servers reported their build.
+func TestStopAcceptsServerOfAnyBuild(t *testing.T) {
+	for _, tc := range []struct{ name, build string }{
+		{"another build", strings.Repeat("0", 64)},
+		{"build not reported", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			serveFixtureIdentity(t, state, tc.build)
+			var output strings.Builder
+			require.NoError(t, testProjectRuntime().stop(nil, &output))
+			assert.Equal(t, "Surla stopped.\n", output.String())
+		})
+	}
+}
+
 // TestCLIAlreadyOpenAndCredentialNonleak runs the actual CLI with generated management transport and recorded commands.
 func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 	isolateServeWorkspace(t)
@@ -401,7 +517,7 @@ func TestTeamTimeoutHasRecoveryStep(t *testing.T) {
 			defer cancel()
 			if operation == "team" {
 				_, err = projectClient(state).EnsureTeam(ctx)
-				require.ErrorContains(t, err, "check Herdr, then run surla again")
+				require.ErrorContains(t, err, "open the Herdr app, then click Start agents on the views page")
 			} else {
 				_, err = projectClient(state).Identity(ctx)
 				require.ErrorContains(t, err, "project server request did not finish")

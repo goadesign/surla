@@ -43,6 +43,39 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 
 }
 
+// TestUnusableOperatorFolderNamesStep reports an operator storage root that exists but
+// that this account cannot use, as `surla` finds it before reading any project record,
+// with its path and the step that repairs it.
+func TestUnusableOperatorFolderNamesStep(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the superuser can open folders of any mode")
+	}
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+	}{
+		{name: "folder this account cannot open", mode: 0o000},
+		{name: "folder this account cannot search", mode: 0o600},
+		{name: "folder others can open", mode: 0o755},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgRoot, err := abspath.Eval(t.TempDir())
+			require.NoError(t, err)
+			opRoot := filepath.Join(cfgRoot, "surla", "operator")
+			require.NoError(t, os.MkdirAll(opRoot, 0o700))
+			require.NoError(t, os.Chmod(opRoot, tc.mode))
+			t.Cleanup(func() { assert.NoError(t, os.Chmod(opRoot, 0o700)) })
+			t.Chdir(t.TempDir())
+
+			_, err = testProjectRuntimeAt(cfgRoot).discover()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), opRoot)
+			assert.Contains(t, err.Error(), "chmod 700 "+opRoot)
+			assert.Contains(t, err.Error(), "run surla again")
+		})
+	}
+}
+
 // isolateServeWorkspace supplies a new 0700 test configuration root
 // and changes the working directory to a new empty workspace directory,
 // returning that workspace directory path.

@@ -46,8 +46,15 @@ func runTeamCommand(ctx context.Context, program string, args ...string) ([]byte
 	return raw, nil
 }
 
-// resolveTeamCommands requires the exact executable names consumed by the Chorus launcher.
-func resolveTeamCommands(find func(string) (string, error), run func(context.Context, string, ...string) ([]byte, error)) (teamCommands, error) {
+// resolveTeamCommands requires the exact executable names consumed by the Chorus launcher,
+// found by find on PATH. A program that is missing from PATH but present in installed, the
+// installers' folder, is reported as off PATH, naming that folder, since installing it
+// again would not change PATH.
+func resolveTeamCommands(
+	find func(string) (string, error),
+	run func(context.Context, string, ...string) ([]byte, error),
+	installed string,
+) (teamCommands, error) {
 	programs := []struct{ name, install string }{
 		{"herdr-core", "curl -fsSL https://releases.herdr.dev/core/install.sh | sh"},
 		{"herdr-app", "curl -fsSL https://releases.herdr.dev/app/install.sh | sh"},
@@ -57,6 +64,11 @@ func resolveTeamCommands(find func(string) (string, error), run func(context.Con
 	for _, program := range programs {
 		path, err := find(program.name)
 		if err != nil {
+			if installed != "" {
+				if _, offPath := exec.LookPath(filepath.Join(installed, program.name)); offPath == nil {
+					return teamCommands{}, fmt.Errorf("%s is installed in %s, which is not on PATH; add %s to PATH, then run surla again", program.name, installed, installed)
+				}
+			}
 			return teamCommands{}, fmt.Errorf("%s is required; install it with: %s", program.name, program.install)
 		}
 		found = append(found, path)
@@ -340,4 +352,14 @@ func runServerTeamCommand(ctx context.Context, program string, args ...string) (
 		return nil, errors.New("required Herdr program is unavailable on the server login PATH")
 	}
 	return runTeamCommand(ctx, resolved, args...)
+}
+
+// installerProgramFolder is the folder where the Herdr and Chorus installers place their
+// programs, ~/.local/bin, or empty when the home folder is unknown.
+func installerProgramFolder() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "bin")
 }

@@ -120,19 +120,6 @@ func EncodeEnsureTeamError(encoder func(context.Context, http.ResponseWriter) go
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusConflict)
 			return enc.Encode(body)
-		case "team_unavailable":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewEnsureTeamTeamUnavailableResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return enc.Encode(body)
 		case "forbidden":
 			var res *goa.ServiceError
 			errors.As(v, &res)
@@ -158,6 +145,19 @@ func EncodeEnsureTeamError(encoder func(context.Context, http.ResponseWriter) go
 			}
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "team_unavailable":
+			var res *project.TeamUnavailable
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewEnsureTeamTeamUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return enc.Encode(body)
 		default:
 			return encodeError(ctx, w, v)

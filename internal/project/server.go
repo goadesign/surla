@@ -3,8 +3,12 @@ package project
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,8 +42,23 @@ type (
 		team teamOperation
 		// now supplies the link-expiration clock; tests replace it deterministically.
 		now func() time.Time
+		// build is the BuildIdentity read when the server was created, before any later
+		// replacement of its executable file can change what that path names.
+		build string
 	}
 )
+
+// buildIdentity reads this process's executable once; see BuildIdentity.
+var buildIdentity = sync.OnceValues(readBuildIdentity)
+
+// BuildIdentity is the SHA-256 of this process's executable file, read on first use. The
+// project server reports it from Identity and the CLI compares it with its own, so a CLI
+// never attaches to a server started by another build. A version string cannot serve:
+// two local builds of one commit, or of one dirty working tree, report the same version
+// and the same VCS settings in their build information, while their executables differ.
+// The server reads it when created, because an in-place upgrade later replaces the file
+// its executable path names.
+func BuildIdentity() (string, error) { return buildIdentity() }
 
 // NewServer creates fresh management authority for one server lifetime.
 // The caller publishes it only after binding the listener and revokes it before closing that listener.
@@ -51,7 +70,12 @@ func NewServer(state *State, stop func(), team TeamDependencies) (*Server, error
 	if err != nil {
 		return nil, err
 	}
+	build, err := BuildIdentity()
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
+		build:      build,
 		state:      state,
 		team:       teamOperation{dependencies: team},
 		stop:       stop,
@@ -171,7 +195,7 @@ func (s *Server) Identity(ctx context.Context) (*genproject.ProjectIdentity, err
 		return nil, err
 	}
 	r := s.state.Record
-	return &genproject.ProjectIdentity{ProjectID: r.ID, Directory: r.Directory, Owner: r.Owner}, nil
+	return &genproject.ProjectIdentity{ProjectID: r.ID, Directory: r.Directory, Owner: r.Owner, Build: &s.build}, nil
 }
 
 // Stop requests the composition root's ordered shutdown without blocking its own HTTP request.
@@ -308,4 +332,22 @@ func (s *Server) registerAgent(handle string, agent agentRecord) (string, error)
 		return "", errors.Join(err, os.Remove(s.state.AgentFile(handle)))
 	}
 	return handle, nil
+}
+
+// readBuildIdentity hashes the file this process's executable path names.
+func readBuildIdentity() (build string, err error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("find the surla executable: %w", err)
+	}
+	f, err := os.Open(self)
+	if err != nil {
+		return "", fmt.Errorf("read the surla executable: %w", err)
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	sum := sha256.New()
+	if _, err := io.Copy(sum, f); err != nil {
+		return "", fmt.Errorf("read the surla executable %s: %w", self, err)
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }

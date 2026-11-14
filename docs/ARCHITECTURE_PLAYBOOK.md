@@ -90,7 +90,8 @@ generation. A start first authorizes the bound project owner, then takes the
 project's working-copy turn without waiting; a busy turn refuses the start.
 It never holds the card lock during Git, generation or a team call. After
 opening the copy and rechecking the agreed revision, it saves the build's
-Story, design and selected roles. It immediately calls the project's
+Story, design, confirmed answers, examples, preserved behaviors and selected
+roles, all from that second check. It immediately calls the project's
 `RegisterBuildRoles` before generation, so a later failure cannot leave a saved
 build whose agents are missing from the registry. A generation verdict is saved
 only if the build's start time, report number and assigned state still match.
