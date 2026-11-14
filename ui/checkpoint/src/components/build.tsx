@@ -36,9 +36,6 @@ export interface BuildSectionProps {
   onOpenTeam: () => void;
 }
 
-// startExplanation belongs immediately before each control that sends a start.
-const startExplanation = "Building starts a builder and, unless this project has stored verification settings, a test writer whose tests Surla runs on this machine outside the sandbox to check the builder’s work.";
-
 // BuildSectionView shows the owner's saved facts without starting work on a
 // refresh. Replacing a current build requires a separate explicit confirmation.
 export function BuildSectionView({
@@ -144,6 +141,11 @@ export function BuildSectionView({
     ? "Build agreed revision"
     : saved !== null ? "Build current agreed revision" : "Build this change";
   const showDirect = !current && confirmed && displayedCurrent && build !== null;
+  const startExplanation = saved?.test_writer.tests.state === "not_used"
+    ? "Build starts the builder. This project uses its configured tests. Surla runs those tests on this machine with your permissions: read them before you approve."
+    : saved !== null
+      ? "Build starts the builder and the test writer. Surla runs the test writer’s tests on this machine with your permissions: read them before you approve."
+      : "Build starts the builder. If this project needs a test writer, it starts that writer too. Surla runs the tests on this machine with your permissions: read them before you approve.";
 
   return (
     <Card
@@ -186,17 +188,22 @@ export function BuildSectionView({
       {actionError !== null ? (
         <Alert id="surla-build-action-error" variant="destructive" role="alert">{actionError}</Alert>
       ) : null}
-      {build?.state === "not_started" ? <p>No build is ready for this change.</p> : null}
+      {build?.state === "not_started" ? <p id="surla-build-state">Not built yet.</p> : null}
       {saved !== null ? (
         <>
-          <p>{current ? "Built from the agreed revision." : "Built for an earlier revision."}</p>
-          <p>Started <time dateTime={saved.started_at}>{saved.started_at}</time></p>
+          <BuildProgress build={saved} />
           <p>
             {saved.required_test_count === 0
               ? "No tests of this change’s Story were required."
               : saved.required_test_count + " required Story " + (saved.required_test_count === 1 ? "test." : "tests.")}
           </p>
-          <p id="surla-build-builder">Builder: Assignment {saved.builder.read ? "read" : "unread"}.</p>
+          <p id="surla-build-builder">
+            Builder: {saved.builder.read
+              ? "Assignment read."
+              : saved.test_writer.tests.state === "accepted"
+                ? "Assignment unread: accepted tests are ready for it to read."
+                : "Assignment unread: it has not read this build’s instructions yet."}
+          </p>
           <TestWriterFacts
             build={saved}
             findingTexts={findingTexts}
@@ -222,14 +229,13 @@ export function BuildSectionView({
         {showDirect ? (
           <Button
             id="surla-build-start"
-            variant={otherPrimary ? "default" : "primary"}
+            variant={otherPrimary || saved?.test_writer.tests.state === "needs_changes" ? "default" : "primary"}
             disabled={blocked}
             onClick={start}
           >{directLabel}</Button>
         ) : null}
         <Button
           id="surla-build-view-team"
-          variant={current && !otherPrimary ? "primary" : "default"}
           disabled={disabled || starting}
           onClick={onOpenTeam}
         >View team</Button>
@@ -278,6 +284,41 @@ export function BuildSectionView({
   );
 }
 
+// BuildProgress describes the saved step without treating a read as proof of
+// work, or an earlier revision's tests as progress on the current agreement.
+function BuildProgress({ build }: { build: StartedBuild }) {
+  const tests = build.test_writer.tests;
+  if (!build.in_force) {
+    return <p id="surla-build-state">Earlier build, started <time dateTime={build.started_at}>{localBuildTime(build.started_at)}</time>. The agreed revision has changed.</p>;
+  }
+  switch (tests.state) {
+    case "needs_changes":
+      return <p id="surla-build-state">Sent back to the test writer. It fixes this and reports again; nothing is yours to do unless it asks you in its pane.</p>;
+    case "accepted":
+      return <p id="surla-build-state">Tests accepted. The builder finishes the code and asks Surla to check it. Your next decision: approve, after the check passes.</p>;
+    case "reported":
+      return <p id="surla-build-state">The test writer reported its tests. Surla checks them before the builder can use them.</p>;
+    case "could_not_run":
+      return <p id="surla-build-state">Surla could not check the test writer’s tests. Read the reason and next step below.</p>;
+    case "assigned":
+    case "not_used":
+      return <p id="surla-build-state">Building since <time dateTime={build.started_at}>{localBuildTime(build.started_at)}</time>. {tests.state === "not_used" ? "The builder uses this project’s configured tests." : "Next: the test writer prepares tests for the builder’s code."} Your next decision: approve, after the builder’s check passes.</p>;
+  }
+}
+
+// localBuildTime shows local minutes, adding the date for starts before today.
+// Exact timestamps remain available in Build details.
+function localBuildTime(at: string) {
+  const date = new Date(at);
+  return date.toLocaleString(undefined, {
+    ...(date.toDateString() === new Date().toDateString() ? {} : {
+      year: "numeric", month: "short", day: "numeric",
+    }),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // TestWriterFacts keeps assignment reads separate from declared test progress.
 // Findings text comes only from the page's independently correlated user read.
 function TestWriterFacts({ build, findingTexts, loading, error, disabled, onRead }: {
@@ -289,14 +330,24 @@ function TestWriterFacts({ build, findingTexts, loading, error, disabled, onRead
   onRead: () => void;
 }) {
   const tests = build.test_writer.tests;
-  let label: string;
+  let progress: string;
   switch (tests.state) {
-    case "not_used": label = "Not used — stored verification settings"; break;
-    case "assigned": label = "Assigned"; break;
-    case "reported": label = "Reported"; break;
-    case "needs_changes": label = "Needs changes"; break;
-    case "accepted": label = "Accepted"; break;
-    case "could_not_run": label = "Could not run"; break;
+    case "not_used": progress = "Not needed; this project uses its configured tests."; break;
+    case "assigned": progress = build.test_writer.read
+      ? "Assignment read. It has not reported tests yet."
+      : "Assignment unread: it has not read this build’s instructions yet."; break;
+    case "reported": progress = build.test_writer.read
+      ? "Assignment read. Surla is checking its reported tests."
+      : "Assignment unread: its reported tests are being checked."; break;
+    case "needs_changes": progress = build.test_writer.read
+      ? "Assignment read. It has the findings to address."
+      : "Assignment unread: new findings are ready for it to read."; break;
+    case "accepted": progress = build.test_writer.read
+      ? "Assignment read. It has read the acceptance of its tests."
+      : "Assignment unread: the acceptance of its tests is ready for it to read."; break;
+    case "could_not_run": progress = build.test_writer.read
+      ? "Assignment read. It has the reason the check could not run."
+      : "Assignment unread: the reason the check could not run is ready for it to read."; break;
   }
   const findingCount = tests.state === "needs_changes" ? tests.finding_count : 0;
   const items = findingTexts === null ? null : (
@@ -306,16 +357,12 @@ function TestWriterFacts({ build, findingTexts, loading, error, disabled, onRead
   );
   return (
     <div id="surla-build-test-writer" data-state={tests.state}>
-      <p>
-        Test writer: <Badge variant={tests.state === "needs_changes" ? "warning" : "default"}>{label}</Badge>
-        {tests.state !== "not_used" ? (
-          <> · Assignment {build.test_writer.read ? "read" : "unread"}</>
-        ) : null}
-      </p>
+      <p>Test writer: {progress}</p>
       {tests.state === "could_not_run" ? <p>{tests.reason} {tests.step}</p> : null}
       {tests.state === "accepted" ? <p id="surla-build-not-judged">{tests.not_judged}</p> : null}
       {tests.state === "needs_changes" ? (
         <div id="surla-build-findings" aria-busy={loading}>
+          <p><strong>What Surla told the test writer</strong></p>
           <p>{findingCount} {findingCount === 1 ? "finding" : "findings"}</p>
           {findingCount > 0 ? (
             <>
