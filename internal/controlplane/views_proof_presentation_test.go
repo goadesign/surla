@@ -4,6 +4,7 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -97,8 +98,10 @@ func TestViewsPageProofPresentsOneSavedVerdict(t *testing.T) {
 			svc.set(run)
 			svc.list(card.ChangeID, run.RunID)
 			ps := startPageServer(t, svc)
+			wireRun, err := gensurla.EncodeVerificationStatusResult(run)
+			require.NoError(t, err)
 			runPageScript(t, ps, map[string]any{
-				"change": card.ChangeID, "run": run, "heading": tc.heading,
+				"change": card.ChangeID, "run": json.RawMessage(wireRun), "heading": tc.heading,
 				"showCounts": tc.showCounts, "notice": writtenTestsNotice,
 			}, `
 const page = await openPage(origin, { link: input.link });

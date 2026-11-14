@@ -320,7 +320,7 @@ approve.click();
 expect(page.sent("POST", "/changes/approve").length === 0, "a pending card refresh submitted approval");
 await control(origin, "release", { key: "GET " + cardPath });
 await until(() => held.status === 503 && page.$("#surla-cp4-card-error") && page.$("#surla-cp4-retry-card") && !page.$("#surla-cp4-retry-card").disabled, "the failed background card read exposed no user recovery");
-expect(page.text("#surla-cp4-card-error").includes("The saved card could not be refreshed.") && approve.disabled && preserved(), "the failed card read hid its failure, enabled approval or discarded work");
+expect(page.text("#surla-cp4-card-error").includes("The saved card could not be refreshed.") && approve.disabled && preserved(), "the failed card read hid its failure, enabled approval or discarded work: " + JSON.stringify({message: page.text("#surla-cp4-card-error"), disabled: approve.disabled, preserved: preserved(), run: page.$("#surla-result-view").dataset.runId === input.run, verdict: page.text("#surla-cp4-title") === verdict, details: page.text("#surla-cp4-details") === details, field: page.$('textarea[data-field="expected_outcome"]') === draft, draft: draft.value === "Preserve this draft through the card read"}));
 approve.click();
 expect(page.sent("POST", "/changes/approve").length === 0, "a failed background card refresh submitted approval");
 await control(origin, "hold", { key: "GET " + cardPath });

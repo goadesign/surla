@@ -3,6 +3,7 @@
 package controlplane
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -46,7 +47,9 @@ func TestViewsPageConfirmedBuildLeadsTheFoldedAgreement(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	runPageScript(t, ps, map[string]any{"card": card}, `
+	wireCard, err := gensurla.EncodeChangeCardResult(card)
+	require.NoError(t, err)
+	runPageScript(t, ps, map[string]any{"card": json.RawMessage(wireCard)}, `
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").disabled, "Build was not ready");
 const editor = page.$("#surla-cp1-editor");
