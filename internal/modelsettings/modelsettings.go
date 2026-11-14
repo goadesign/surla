@@ -293,9 +293,10 @@ func New(provider string, values map[string]string) (Settings, error) {
 // text; any other invalid UTF-8 in the excerpt becomes U+FFFD.
 //
 // Every occurrence that overlaps the excerpt starts at most ExcerptContext
-// bytes before it, so it lies wholly inside text and is marked. Hence no
-// byte of an exact occurrence of a held value, or of a held value whose
-// writing stopped at the end of the longer text, is returned. The same value
+// bytes before it, so it lies wholly inside text and is marked. Hence,
+// apart from an endpoint's scheme and host, no byte of an exact occurrence
+// of a held value, or of a held value whose writing stopped at the end of
+// the longer text, is returned. The same value
 // printed in another form, quoted, escaped or re-encoded, is not recognized
 // and is returned as printed.
 func ProtectExcerpt(text string, start int, held ...Settings) string {

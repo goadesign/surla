@@ -380,7 +380,9 @@ changed (never their text), and **Stop live target**. Under **Model
 connection** you choose the model that live targets started afterwards use: a
 provider and model name, whose key and request settings `surla` handed to the
 server from the shell where you typed it, or a running model gateway. While no
-model is chosen, the first provider handed over picks its default model. The
+model is chosen, a hand-over picks the default model of the provider whose
+settings it holds, `anthropic` first when it holds both, in the order of the
+reference's [provider table](REFERENCE.md#hand_over_model_settings). The
 server runs in a Herdr terminal, which has the environment of the Herdr core
 rather than of your shell, so `surla` hands the settings over itself; see
 [model provider settings](REFERENCE.md#model-provider-settings) and the

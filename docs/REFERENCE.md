@@ -43,7 +43,7 @@ an operation, who may call it, what it returns and how it refuses.
 
 | Need | Why | How to get it |
 | --- | --- | --- |
-| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Two kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)), and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
+| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
 | **Go 1.27.3 or later** | `surla` is a Go program, and the project's checks use Go. Surla runs Goa inside its sandbox with each module's own versions, so no `goa` binary is needed. | [go.dev/dl](https://go.dev/dl/) |
 | **Surla** | The command itself. | `go install github.com/goadesign/surla/cmd/surla@latest` |
 | **Herdr core** (`herdr-core` and `hc`) | The server and every agent run in Herdr terminals. | `curl -fsSL https://releases.herdr.dev/core/install.sh \| sh` ([herdr.dev/core](https://herdr.dev/core/)) |
@@ -1647,11 +1647,12 @@ the target declares the same method in its own Goa design and implements it:
   apart from what keeps the excerpt valid UTF-8, as the span exporter
   requires: a character the excerpt's start cuts, or one left unfinished at
   the end of the log, is left out, and any other invalid UTF-8 is exported as
-  U+FFFD. So no byte of an exact occurrence of a setting the target was given, or of
-  one whose writing stopped at the end of the log, is exported. The same
-  value printed in another form, such as quoted, escaped, or rewritten by a
-  URL parser or an SDK, is not recognized and is exported as printed; a
-  custom-headers value is recognized only as a whole, not header by header.
+  U+FFFD. So, apart from a base URL's scheme and host, no byte of an exact
+  occurrence of a setting the target was given, or of one whose writing
+  stopped at the end of the log, is exported. The same value printed in
+  another form, such as quoted, escaped, or rewritten by a URL parser or an
+  SDK, is not recognized and is exported as printed; a custom-headers value
+  is recognized only as a whole, not header by header.
 - The starter's test module implements this contract: `override_prompt`
   replaces `<name>.helper.system`, and its `Live` function serves a direct
   provider through its own loopback model gateway so the key stays out of the

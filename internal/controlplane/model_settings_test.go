@@ -206,7 +206,7 @@ func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 		assert.False(t, strings.Contains(lower, "tests agents wrote and the check helper receive none"), name)
 	}
 	for _, promise := range []string{
-		"no byte of an exact occurrence of a setting the target was given, or of one whose writing stopped at the end of the log, is exported",
+		"So, apart from a base URL's scheme and host, no byte of an exact occurrence of a setting the target was given, or of one whose writing stopped at the end of the log, is exported.",
 		"is not recognized and is exported as printed",
 		"apart from what keeps the excerpt valid UTF-8, as the span exporter requires: a character the excerpt's start cuts, or one left unfinished at the end of the log, is left out, and any other invalid UTF-8 is exported as U+FFFD.",
 	} {
