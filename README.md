@@ -316,14 +316,18 @@ under test running in the sandbox too.
 
 ### 4. Prompt changes without rebuilding
 
-Prompt wording and compiled business rules are kept apart. The builder starts
-a live target from a commit and sends new prompt wording to it with
+Prompt wording and compiled business rules are kept apart. The builder names
+the confirmed change and a commit to start a live target. Without stored
+verification settings, the current build's accepted tests start that copy
+using the chosen model; they receive no provider settings. The builder sends new prompt wording to it with
 `draft_override`, without rebuilding Go code. A draft aimed at a compiled
 business rule changes nothing and says that the rule needs a rebuild and
 verification. A draft lasts as long as the live target: to
 keep it, the builder commits the text and verifies that commit. The page's
 **Live target** view shows which prompts changed and the model live targets
-use. See [`start_live_target`](docs/REFERENCE.md#start_live_target),
+use. An unexpected ending leaves the commit, launch and observed-end times,
+and the builder's recovery step after cleanup, including after a page reload.
+See [`start_live_target`](docs/REFERENCE.md#start_live_target),
 [`draft_override`](docs/REFERENCE.md#draft_override) and the
 [live target prompt contract](docs/REFERENCE.md#live-target-prompt-contract).
 

@@ -34,7 +34,7 @@ async function openLive(page) {
   await until(() => page.$("#surla-live-target") && page.$("#surla-live-target").dataset.state !== "unread", "the live target was never read");
 }
 async function startTarget(commit) {
-  const out = await api(origin, "POST", "/live-target", { candidate_commit: commit }, input.builder);
+  const out = await api(origin, "POST", "/live-target", { change_id: "chg-live", candidate_commit: commit }, input.builder);
   expect(out.status === 200, "the builder could not start a live target: " + JSON.stringify(out));
   return out.body;
 }
@@ -62,6 +62,9 @@ func TestViewsPageLiveTargetFollowsAStartDraftsAndAnEnd(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
 	cp := pageLiveControlPlane(t, "serve", Options{TracerProvider: provider})
 	ps := startPageServer(t, cp)
+	ps.act("refresh-live-observation", func() {
+		saveStoryCard(t, cp, "chg-live", StatusConfirmed, refundStory("A revised visible flow"))
+	})
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
 await openLive(page);
@@ -69,6 +72,7 @@ expect(liveState(page) === "none", "a fresh server shows " + liveState(page));
 expect(page.text("#surla-live-none").includes("The builder agent starts one from a commit to try prompt wording on it."), "the empty state does not say what starts a live target: " + page.text("#surla-live-none"));
 expect(!page.text("#surla-live-stage").includes("start_live_target"), "a sentence names an operation");
 expect(!page.$("#surla-live-stop"), "Stop is offered with nothing running");
+expect(page.text("#surla-model-current").includes("Without stored verification settings, choose a model") && page.text("#surla-model-current").includes("With stored settings, the evaluator may supply its own model"), "the missing-model explanation must distinguish both verification profiles");
 const typed = page.$("#surla-model-name");
 page.type(typed, "typed-but-not-applied");
 
@@ -94,15 +98,35 @@ expect(!page.text("#surla-live-prompts").includes(first.prompt_version), "the fi
 expect(!page.text("#surla-live-stage").includes("Answer in"), "prompt text appeared on the page");
 expect(page.$("#surla-model-name") === typed && typed.value === "typed-but-not-applied", "a refresh lost the model form's typed text");
 
+const endings = [];
+const announcements = new page.win.MutationObserver(() => endings.push(page.text("#surla-live-announcement")));
+announcements.observe(page.$("#surla-live-announcement"), { childList: true, characterData: true, subtree: true });
+typed.focus();
 await fetch(started.url + "/exit", { method: "POST" }).catch(() => {});
-await until(() => liveState(page) === "none", "a target that ended by itself is still shown", 30000);
-await until(() => page.text("#surla-live-announcement") === "No live target is running.", "the end was not announced: " + page.text("#surla-live-announcement"));
+await until(() => liveState(page) === "ended", "a target that ended by itself did not leave an ended observation", 30000);
+await until(() => page.text("#surla-live-announcement") === "The live target for commit aaaaaaa ended unexpectedly.", "the end was not announced: " + page.text("#surla-live-announcement"));
+expect(page.text("#surla-live-ended").includes(commitA), "the ended observation lost its commit");
+expect(page.$$("#surla-live-ended time").length === 2 && page.$$("#surla-live-ended time").every((time) => time.getAttribute("datetime")), "the ended launch and observation times are missing");
+expect(page.text("#surla-live-message").includes("exact cause is unavailable") && page.text("#surla-live-message").includes("builder"), "the ended observation must name its uncertainty and recovery");
+expect(!page.$("#surla-live-stop") && !page.$("#surla-live-address") && !page.$("#surla-live-prompts"), "an ended target retains controls or live facts");
 expect(page.$("#surla-model-name") === typed && typed.value === "typed-but-not-applied", "a refresh lost the model form's typed text");
+expect(page.doc.activeElement === typed, "the end stole focus from the unsent model form");
+const endedReads = page.sent("GET", "/live-target").length;
+await control(origin, "act", { key: "refresh-live-observation" });
+await until(() => page.sent("GET", "/live-target").length > endedReads && !page.$("#surla-live-stage").getAttribute("aria-busy"), "the page did not refresh the retained observation");
+expect(endings.filter((text) => text === "The live target for commit aaaaaaa ended unexpectedly.").length === 1, "the same ending was announced more than once: " + JSON.stringify(endings));
+announcements.disconnect();
+
+const reloaded = await openPage(origin, { link: input.link + "-2" });
+await openLive(reloaded);
+expect(liveState(reloaded) === "ended" && reloaded.text("#surla-live-ended") === page.text("#surla-live-ended"), "reload lost the ended observation");
+expect(reloaded.text("#surla-live-announcement") === "", "reload announced an old ending as a new event");
+reloaded.close();
 
 const reads = page.sent("GET", "/live-target").length;
 const lists = page.sent("GET", "/changes").length;
 expect(reads <= lists + 1, "the live target was read " + reads + " times for " + lists + " list reads: it is read only when the version moves");
-const others = page.requests.filter((r) => !["/changes", "/change-updates", "/live-target", "/cp1/model", "/project/browser-session", "/team"].includes(r.path));
+const others = page.requests.filter((r) => !["/changes", "/change-updates", "/changes/chg-live", "/changes/chg-live/build", "/live-target", "/cp1/model", "/project/browser-session", "/team"].includes(r.path));
 expect(others.length === 0, "the page sent other requests: " + JSON.stringify(others.map((r) => r.method + " " + r.path)));
 const history = await api(origin, "GET", "/traces?status=all&limit=100", undefined, input.guide);
 expect(history.status === 200, "diagnostics could not be read: " + JSON.stringify(history));
@@ -120,7 +144,7 @@ func TestViewsPageLiveTargetShowsAStartInProgress(t *testing.T) {
 	runPageScript(t, ps, nil, liveScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
 await openLive(page);
-void api(origin, "POST", "/live-target", { candidate_commit: commitA }, input.builder);
+void api(origin, "POST", "/live-target", { change_id: "chg-live", candidate_commit: commitA }, input.builder);
 await until(() => liveState(page) === "starting", "a start in progress was not drawn");
 expect(page.text("#surla-live-starting").includes(commitA) && page.text("#surla-live-starting").includes("cannot be stopped until the start finishes"), "the starting state is not described: " + page.text("#surla-live-starting"));
 expect(page.$("#surla-live-starting time"), "the start time is missing");
@@ -193,7 +217,7 @@ await until(() => liveState(page) === "running", "the started target did not app
 page.$("#surla-live-stop").click();
 await until(() => page.doc.activeElement === page.$("#surla-live-stop-confirm"), "the confirmation did not take focus");
 await fetch(started.url + "/exit", { method: "POST" }).catch(() => {});
-await until(() => liveState(page) === "none", "a target that ended by itself is still shown", 30000);
+await until(() => liveState(page) === "ended", "a target that ended by itself did not leave an ended observation", 30000);
 await until(() => !page.$("#surla-live-stop-confirm"), "the confirmation stayed open for a target that ended");
 await until(() => page.doc.activeElement === page.$("#surla-live-target-title"), "focus did not go to the view's heading: " + page.doc.activeElement.outerHTML.slice(0, 80));
 
@@ -202,7 +226,7 @@ await until(() => liveState(page) === "running" && page.$("#surla-live-stop"), "
 page.$("#surla-live-stop").focus();
 expect(page.doc.activeElement === page.$("#surla-live-stop"), "the Stop control did not take focus");
 await fetch(again.url + "/exit", { method: "POST" }).catch(() => {});
-await until(() => liveState(page) === "none", "the second target that ended is still shown", 30000);
+await until(() => liveState(page) === "ended", "the second target that ended did not leave an ended observation", 30000);
 await until(() => page.doc.activeElement === page.$("#surla-live-target-title"), "focus left on Stop did not go to the view's heading: " + page.doc.activeElement.outerHTML.slice(0, 80));
 expect(page.sent("DELETE", "/live-target").length === 0, "a stop was sent although the user never confirmed");
 page.close();
@@ -229,7 +253,7 @@ await until(() => page.sent("GET", "/live-target").length >= 2, "the page did no
 await sleep(600);
 expect(page.$("#surla-live-stop-outcome"), "the refusal went while the state stayed the same");
 await fetch(started.url + "/exit", { method: "POST" }).catch(() => {});
-await until(() => liveState(page) === "none", "a target that ended by itself is still shown", 30000);
+await until(() => liveState(page) === "ended", "a target that ended by itself did not leave an ended observation", 30000);
 await until(() => !page.$("#surla-live-stop-outcome"), "the refusal stayed after the state changed");
 page.close();
 `)
@@ -463,5 +487,7 @@ func pageLiveControlPlane(t *testing.T, mode string, opts Options) *ControlPlane
 		Env:          append(os.Environ(), liveTargetModeEnv+"="+mode),
 		StartTimeout: time.Minute,
 	}
-	return pageControlPlane(t, opts)
+	cp := pageControlPlane(t, opts)
+	saveStoryCard(t, cp, "chg-live", StatusConfirmed, refundStory("Start a live target"))
+	return cp
 }

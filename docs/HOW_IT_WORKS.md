@@ -368,12 +368,25 @@ before you can approve.
 ## Trying prompt wording on a live target
 
 When the application calls an AI model, the builder can try prompt wording
-before committing it. It calls `start_live_target` with a commit. The server
+before committing it. It calls `start_live_target` with the confirmed change's
+ID and a commit. The server
 builds that commit in its sandbox and starts it as the **live target**: a
 running copy of your application that only Surla started. Surla never
 changes prompts in an application you started or deployed. Without stored
-verification settings, the commit's own test module starts the copy, so the
-commit needs the test layout `surla init` makes but no accepted tests.
+verification settings, the test program at that build's accepted tests commit
+starts the copy. The current revision must have a build with accepted tests,
+and you choose a model before the builder starts it. With stored settings,
+the operator's evaluator starts it; no build is needed, but the change must
+still be owned and confirmed. A refused change, tests, commit or model check
+keeps the target already running and its prompt drafts.
+
+The test program runs on this computer outside the sandbox, with your access
+to files and the network; the application it starts runs inside the sandbox.
+The test writer's accepted program receives no provider settings. When you
+choose a direct provider, Surla serves that model to it through a loopback
+gateway in the live executor process. The operator's stored evaluator still
+receives the chosen provider's settings. Running as you, these programs can
+still read keys your other programs hold.
 
 The builder then calls `draft_override`. A prompt template change
 (`target_kind: "prompt_template"`) goes to the live target in memory, without
@@ -396,6 +409,15 @@ server runs in a Herdr terminal, which has the environment of the Herdr core
 rather than of your shell, so `surla` hands the settings over itself; see
 [model provider settings](REFERENCE.md#model-provider-settings) and the
 [live target prompt contract](REFERENCE.md#live-target-prompt-contract).
+
+If the target ends by itself, Surla confirms its processes are stopped before
+showing **Ended unexpectedly**, its commit, when it started and when Surla
+observed the ending. The message says the exact cause is unavailable and
+names the builder's recovery step; it exposes no log or provider error. The
+notice survives page reloads until a new start is accepted, an explicit stop
+clears it, or Surla restarts. A refused new start keeps the notice. The page
+offers no Stop button for a target already ended. A stop whose cleanup cannot
+be confirmed remains **Not confirmed stopped**, and no replacement starts.
 
 ## Verifying the builder's commit
 

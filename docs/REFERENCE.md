@@ -43,7 +43,7 @@ an operation, who may call it, what it returns and how it refuses.
 
 | Need | Why | How to get it |
 | --- | --- | --- |
-| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). Three kinds of agent-written code run elsewhere: the test program the test writer wrote runs on this machine outside the sandbox, with only `PATH` and `TMPDIR` (see [`verify_change`](#verify_change)); without stored verification settings, a live target's test program, built from the candidate commit's own test module, runs on this machine outside the sandbox with the chosen provider's held settings, its key, token, base URL and headers included (see [`start_live_target`](#start_live_target)); and `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
+| **macOS** | Surla builds agent-written code, and runs the application it builds, only inside the macOS sandbox (`sandbox-exec`). The test writer's accepted test program runs on this machine outside the sandbox with your access to files and the network. Verification gives it only `PATH` and `TMPDIR`; a live target also gives it a target key and a model gateway, without provider settings (see [`verify_change`](#verify_change) and [`start_live_target`](#start_live_target)). With stored verification settings, the operator's evaluator runs outside the sandbox and receives provider settings. Running as you, these programs can still read keys your other programs hold. `check_project` runs the project's tests in Linux containers (see **Docker** below). On another system every sandboxed step refuses with `candidate isolation is unavailable on this platform`, and a build start without stored verification settings refuses with `sandbox_unavailable`. | — |
 | **Go 1.27.3 or later** | `surla` is a Go program, and the project's checks use Go. Surla runs Goa inside its sandbox with each module's own versions, so no `goa` binary is needed. | [go.dev/dl](https://go.dev/dl/) |
 | **Surla** | The command itself. | `go install github.com/goadesign/surla/cmd/surla@latest` |
 | **Herdr core** (`herdr-core` and `hc`) | The server and every agent run in Herdr terminals. | `curl -fsSL https://releases.herdr.dev/core/install.sh \| sh` ([herdr.dev/core](https://herdr.dev/core/)) |
@@ -352,8 +352,8 @@ written by the test writer:
 
 With stored verification settings, every change verifies with that evaluator,
 builds add only the builder, and live targets run that evaluator. Without
-them, `verify_change` runs the tests Surla accepted for the change's build,
-and a live target runs the test module of the commit being tried. Runs and
+them, verification and live targets run the tests Surla accepted for the
+change's current build, alongside the candidate's own programs. Runs and
 reports always go to the project's state folder.
 
 **Promotion settings** are optional: approval needs none. When they are
@@ -626,8 +626,8 @@ A call refused for its credential, its caller or its fields changes nothing,
 and so does a refusal made before the operation's work starts, such as an
 unknown `change_id` or a stale `request_revision`. Each operation's entry
 says what a later refusal may leave. For example, `start_live_target` stops
-the running target only once it has accepted the commit to start, so a start
-refused for its commit, repository or folder leaves the running target and its
+the running target only once it has accepted the change, tests, commit and model,
+so a start refused for any of them, its repository or its folder leaves the running target and its
 prompt drafts in place, while one whose build or start then fails has already
 stopped it. `update_not_confirmed` means the live target may or may not have
 applied the text. Refusals take these shapes:
@@ -1016,28 +1016,44 @@ from a commit, so the builder can try prompt wording with
 
 #### `start_live_target`
 
-`POST /live-target`. **Input:** `candidate_commit` (a full commit ID).
+`POST /live-target`. **Input:** `change_id`, `candidate_commit` (a full commit ID).
 **Output:** `LiveTargetResult` (`candidate_commit`, `url`, `message`).
 
-Builds the commit as verification does and runs its program's `--live` mode.
-Without stored verification settings, the program is the generated test
-program of the test module in that same commit, the builder's own tree: no
-build and no accepted tests are needed. With them, it is the evaluator the
-settings name. `url` is the application's loopback address. There is one live
-target per server. A start refused before the running target is stopped
-leaves that target and its prompt drafts in place: the server is stopping,
-or, without stored verification settings, the commit is not in the repository
-or lacks the test layout, or the project folder is in no Git repository or was
-replaced. Once the commit is accepted, the running target is stopped, which
-discards every prompt draft applied to it, even if the build then fails.
-Prompt text survives only when it is committed. A target runs until
-`stop_live_target`, a later start, its own exit or the server's stop; the
-build continues if the caller disconnects.
+Checks the owner's confirmed change and builds the candidate as verification
+does. Without stored verification settings, the current revision must have a
+build whose tests Surla accepted, and a model must be chosen in the Live target
+view. The candidate's programs come from `candidate_commit`; the generated test
+program comes from the accepted tests commit and starts them with `--live`.
+Builder edits to its own test module never become that live test program.
+With stored verification settings, the named evaluator starts the target and
+needs no build or accepted tests; the change must still be owned and confirmed.
+`url` is the application's loopback address.
+
+The test program runs on this computer outside the candidate sandbox, with
+your access to files and the network; the application runs inside it. For
+written tests, Surla gives the program no provider setting. With a direct
+provider, the executor serves the selected model through a loopback gateway;
+with a chosen gateway, the program uses that gateway. The operator's stored
+evaluator keeps its provider settings. Running as you, a test program can
+still read keys your other programs hold.
+
+There is one live target per server. Card, plan and model checks run before
+waiting for a start in progress, and again before replacing the old target.
+A refusal leaves the running target and its prompt drafts, or its retained
+ended observation, in place. Once a replacement is accepted and the old
+target is confirmed stopped, its drafts are discarded, even if the new build
+or start fails. Prompt text survives only when committed. A target runs until
+`stop_live_target`, a later accepted start, its own exit or the server's stop;
+building continues if the caller disconnects.
 
 | Refusal | When |
 | --- | --- |
-| `live_target_failed` (`422`) | A step failed, named in the message: the commit lacks the test layout `surla init` makes or is not in the repository, the project folder is in no Git repository or was replaced after the server started, or the build or start failed. When the earlier target's processes could not be confirmed stopped, no target can start until the user stops and starts Surla. |
-| `live_target_unavailable` (`501`) | The server is stopping; start the project again with `surla`. |
+| `not_found` (`404`), `forbidden` (`403`) | The change does not exist or belongs to another owner. Take `change_id` from the builder's assignments. |
+| `conflict` (`409`) | The change is not confirmed, the commit is not in the repository, or the project folder was replaced. Follow the named user or builder step. |
+| `no_build` (`409`), `tests_not_accepted` (`409`) | Without stored settings, the current revision has no build or its tests are not accepted. The message names who acts; the builder waits for that step before verifying or starting again. |
+| `no_test_layout` (`409`) | The required starter test layout is missing; follow the same layout step as verification. |
+| `live_target_failed` (`422`) | Building or starting failed. For written tests, fix the candidate's startup or tell the user so the test writer can correct and report its acceptance package. If the earlier target's processes could not be confirmed stopped, stop and start Surla before another start. |
+| `live_target_unavailable` (`501`) | The server is stopping, or a written-tests project has no model choice. The message names whether to start Surla again or choose a model in the Live target view. |
 
 #### `stop_live_target`
 
@@ -1045,7 +1061,8 @@ build continues if the caller disconnects.
 `message`).
 
 Stops the live target and discards its drafts; `stopped` is `false` when none
-ran. A stop is attempted once.
+ran. If an ended observation remains, it clears that notice and says no
+process was running. A process stop is attempted once.
 
 | Refusal | When |
 | --- | --- |
@@ -1058,9 +1075,15 @@ ran. A stop is attempted once.
 `live_target.state` is `none`; `starting` (`candidate_commit`, `since`),
 which cannot be stopped until the start finishes; `running`
 (`candidate_commit`, `url`, `started_at`, and `prompts`: each accepted
-draft's `prompt_id`, `version` and `accepted_at`, never its text); or
+draft's `prompt_id`, `version` and `accepted_at`, never its text);
+`ended` (`candidate_commit`, `started_at`, `ended_at`, `message`); or
 `not_confirmed_stopped` (`candidate_commit` and a `message` naming the step:
-stop and start Surla). It changes and saves nothing.
+stop and start Surla). An unexpected ending is published only after confirmed
+process cleanup. Its message states that the exact cause is unavailable and
+names the builder's recovery step; it exposes no address, key, provider
+settings, prompt drafts or logs. That one observation survives reads and page
+reloads until a successful explicit Stop, an accepted replacement, or the
+server's restart. It is not durable history. A read changes and saves nothing.
 
 #### `draft_override`
 
@@ -1079,7 +1102,7 @@ answers `applied_in_store: false` and `requires_rebuild: true`, with a
 | `no_live_target` (`409`) | No live target runs; call `start_live_target` first. Nothing changed. |
 | `prompt_not_found` (`404`), `invalid_prompt` (`422`) | The target refused the text; its prompt is unchanged. |
 | `target_rejected_credential` (`502`) | The target refused the server's key; start it again. |
-| `live_target_ended` (`409`) | The target stopped during the update, so it may or may not have applied the text; start it again. |
+| `live_target_ended` (`409`) | The target ended unexpectedly before this call, or stopped during the update. The former changes nothing and names the builder's recovery step; during an update it may or may not have applied the text. |
 | `update_not_confirmed` (`502`) | The target did not answer, so it may or may not have applied the text; send it again. |
 
 #### `configure_model`
@@ -1091,7 +1114,9 @@ The user's **Apply** in the Live target view. It chooses, without a restart,
 the model that live targets started afterwards receive: a direct provider,
 whose request settings `surla` handed to the server from the shell where it
 ran ([`hand_over_model_settings`](#hand_over_model_settings)), or a plaintext
-gRPC `goa-ai` model gateway. A running target keeps its model. Keys never
+gRPC `goa-ai` model gateway at a hostname or IP address and port 1–65535,
+such as `127.0.0.1:53114` or `[::1]:53114`, without a URL scheme or path.
+Surla validates its syntax without trying to connect. A running target keeps its model. Keys never
 travel in this request or through MCP. The choice and the held settings last
 until the server stops; after a restart no model is chosen, so the next
 `surla` that hands settings over selects that provider's default model again.
@@ -1100,7 +1125,7 @@ Verification does not use the choice.
 | Refusal | When |
 | --- | --- |
 | `400` | An unknown provider or another schema violation. |
-| `unprocessable` (`422`) | An invalid combination, or the server holds no request settings for the chosen provider: `provider anthropic needs ANTHROPIC_API_KEY: export it, with any ANTHROPIC_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway.` |
+| `unprocessable` (`422`) | An invalid combination or gateway address, or the server holds no request settings for the chosen provider: `provider anthropic needs ANTHROPIC_API_KEY: export it, with any ANTHROPIC_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway.` The previous choice stays in force. |
 
 #### `get_model_connection`
 
@@ -1131,6 +1156,11 @@ starting with its prefix) that cross; any other family variable, such as
 | `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` | `claude-sonnet-4-6` |
 | `openai` | `OPENAI_API_KEY` | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `OPENAI_CUSTOM_HEADERS` | `gpt-5.4-mini` |
 
+The pinned Anthropic SDK uses the API key and base URL. When an API key is
+held, it ignores `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_CUSTOM_HEADERS`; handing
+them over does not make them apply to a written-tests live target's provider.
+Surla preserves that SDK precedence rather than parsing those values itself.
+
 An absent provider keeps what the server holds for it. A present one replaces
 everything held for it and must include its key, so an empty map is refused.
 While no model is chosen, live targets then use the default model of the
@@ -1141,12 +1171,18 @@ They are its one source of provider settings: it removes every `ANTHROPIC_`
 and `OPENAI_` variable from its own environment when it starts, so none that
 the Herdr core holds reaches a live target, a verification or a check; only
 Herdr's own programs, which the server runs with the environment it started
-with, still receive them. A live target's test program, including a candidate
-commit's test module that agents wrote, receives the chosen provider's held
-settings. A verification with an operator's stored evaluator receives every
-held provider's settings, as held when it is accepted. Tests a separate agent
-wrote for a verification, and the check helper, receive none. A live target
-or verification already running keeps the settings it started with.
+with, still receive them. A stored evaluator's live target receives the chosen
+provider's held settings; a verification with that evaluator receives every
+held provider's settings, as held when it is accepted. The test writer's
+accepted program receives none, in verification or a live target. For a live
+target with a direct provider, the server instead hands settings over standard
+input to its executor, after that process starts; the executor constructs a
+provider after preparation and serves it through a loopback model gateway.
+The settings are absent from the executor's starting environment and the test
+program's environment. The gateway ends with that executor; a gateway panic
+ends the target rather than the project server. The check helper also receives
+none. A live target or verification already running keeps the settings it
+started with.
 
 | Refusal | When |
 | --- | --- |
@@ -1767,7 +1803,7 @@ holds it beside them (**Switch to Incoming Card**).
 | **Changes** | The project's changes ([`list_changes`](#list_changes)), opening directly on the only one. With none: `This project has no changes yet. Ask the guide to propose a change; it appears here by itself.` A change with a waiting proposed revision is marked **New revision proposed**. Each change shows its latest saved run, such as **Latest saved run: passed**, or **No saved runs**, and under a run what `inputs_current` says: `Matches the agreed revision and selected tests.` or `Earlier inputs or no current test selection. Ask the builder for a check of the agreed revision and selected tests.` |
 | **Team** | Each registered role's state, its Chorus watcher, and whether its assignment is read, with a **Show … pane** action per role, such as **Show guide pane**, and **Start agents**, which says what it returned and when. With no role: `No agents are registered. Start agents prepares the guide; building adds the required roles.` Nothing runs on a refresh. |
 | **Story** | The Story saved with the shown revision, one row of step cards per flow: a finished flow is marked **will be tested end to end**, others **draft: not tested** with the reasons. Below it, the current Story evaluation ([`get_story_refresh`](#get_story_refresh)): none, running, failed, or succeeded, and how it differs from the change's Story; a draft is not part of the change until the guide revises the change with it and the user confirms. |
-| **Live target** | Whether a live target is starting, running or not confirmed stopped, its commit, address and accepted prompt versions (never the text), and **Stop live target**, which asks first. Below it, the model live targets started afterwards use and a form whose **Apply** sends [`configure_model`](#configure_model); a refusal names a missing key's variable. |
+| **Live target** | Whether a live target is starting, running, ended unexpectedly or not confirmed stopped. A running target shows its commit, address, accepted prompt versions (never the text), and **Stop live target**, which asks first. An ended target shows its commit, launch and observed-end times, and the builder's recovery step. Below it, the model live targets started afterwards use and a form whose **Apply** sends [`configure_model`](#configure_model); a refusal names a missing key's variable. |
 | **Decisions & Approval** | The Change Card: questions to answer, examples, preserved behaviors, and **Confirm Intent & Lock Examples** (on an agreed card, **Refine Confirmed Answers & Examples**). A proposed revision appears above the agreed one with everything adopting it would confirm (changed request and summary, questions and examples marked **New**, **Edited**, **Kept** or **Removed**, Story and design changes), **Adopt this revision** and **Decline**. A stale submission offers **Load Latest Card**. On a confirmed card the **Build** section comes first, with the saved agreement below it under **Agreed:** and the request. **Agreement details** and **Refine agreed answers and examples** remain available for review and refinement; an active edit stays open. After approval, the recorded approval names the builder's commit and the tests commit. |
 | **Architecture** | [`preview_architecture`](#preview_architecture) for the revision shown. |
 | **Proof** | The change's verification runs and each report's scenario outcomes, hidden scenarios anonymous, with **Approve this result** for a matching passed run. **Check started** shows the request's start time in local time, not a completion time; the exact recorded timestamp stays in details. A single saved run needs no selector. With promotion settings, a completed run shows its actual binary folder under **Binaries built by this run**, as selectable code; the approval error panel repeats the selected run's folder. A run of written tests shows the `notice` of its `test_source`. **Candidate and run details** shows the run's candidate commit and its tests commit, labeled **Accepted tests commit** for written tests and **Evaluator commit** for an evaluator named in stored verification settings. |
