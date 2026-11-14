@@ -770,7 +770,8 @@ func TestVerifyChangeTestModuleFileLimitBelowAtAndAbove(t *testing.T) {
 			var refusal *goa.ServiceError
 			require.ErrorAs(t, err, &refusal)
 			assert.Equal(t, "conflict", refusal.Name)
-			if count <= maxChangedTestFiles {
+			assert.Equal(t, 20, maxChangedTestFiles)
+			if count <= 20 {
 				assert.NotContains(t, refusal.Message, " more)")
 			} else {
 				assert.Contains(t, refusal.Message, " (and 1 more));")
@@ -793,7 +794,7 @@ func TestVerifyChangeTestModuleFileLimitBelowAtAndAbove(t *testing.T) {
 			gitForLayoutTest(t, repo.workspace, "commit", "-q", "-m", "round 1 restore")
 			afterRound1 := strings.TrimSpace(gitForLayoutTest(t, repo.workspace, "rev-parse", "HEAD"))
 
-			if count <= maxChangedTestFiles {
+			if count <= 20 {
 				run, err := cp.VerifyChange(builder, &gensurla.VerifyChangePayload{
 					ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: afterRound1,
 				})

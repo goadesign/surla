@@ -901,12 +901,12 @@ var _ = Service("surla", func() {
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, or the project folder was replaced after the server started; the message ends with the step.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match, the candidate commit is not in the project's repository, the project folder was replaced after the server started, or (without stored verification settings) the candidate commit shares no history with the accepted tests' commit or changes hand-written files in the test module; the message names any changed test-module files and ends with the restore or user step.")
 		Error("no_build", ErrorResult, "Without stored verification settings: the user has not built the change's revision in force with a test writer, so no tests are accepted for it. The message names the revision built, if any, and ends with the user's step.")
 		Error("tests_not_accepted", ErrorResult, "Without stored verification settings: Surla has not accepted the tests of the change's build. The message names the test writer's state and who acts, and ends with the step.")
 		Error("no_test_layout", ErrorResult, "Without stored verification settings: a commit lacks the test layout surla init makes, the accepted tests' commit is no longer in the project's repository, or the project folder is not in a git repository. The message names the commit or folder and what is missing, and ends with the step.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests: your build assignment says when they are.")
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests (your build assignment says when they are), and it refuses a candidate commit that changes hand-written files of the test module, naming them and the restore step.")
 		HTTP(func() {
 			POST("/changes/{change_id}/verifications")
 			Response(StatusOK)
@@ -1040,12 +1040,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("check_project", func() {
-		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
+		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it (leaving the starter test module out in a written-tests project and saying so), each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
 		Result(CheckProjectResult)
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
+		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container, leaving the starter test module out in a written-tests project and saying so. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
 		HTTP(func() {
 			POST("/workspace/check")
 			Response(StatusOK)
@@ -1056,12 +1056,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("update_dependencies", func() {
-		Description("Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
+		Description("Run go mod tidy for every Go module of the active workspace (leaving the starter test module out in a written-tests project and saying so) in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
 		Result(UpdateDependenciesResult)
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
+		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy, leaving the starter test module out in a written-tests project and saying so) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
 		HTTP(func() {
 			POST("/workspace/dependencies")
 			Response(StatusOK)

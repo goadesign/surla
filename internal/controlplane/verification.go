@@ -54,9 +54,10 @@ var errVerificationUnavailable = errors.New("verification is not configured on t
 // the running state. The caller must own the card, the card must be
 // confirmed, and request_revision must be its current revision; then
 // verificationPlan chooses what runs and refuses what cannot (no build, tests
-// not accepted, no test layout). The run is accepted into its own directory
-// under the runs folder and carried out by processes that outlive this call
-// and this server (see verifyrun).
+// not accepted, no test layout, no common history with the accepted tests, or
+// hand-written changes in the test module). The run is accepted into its own
+// directory under the runs folder and carried out by processes that outlive
+// this call and this server (see verifyrun).
 func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChangePayload) (*gensurla.VerificationStatusResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {

@@ -101,7 +101,8 @@ func TestStarterPlanReadsTheCommittedLayout(t *testing.T) {
 		assert.Equal(t, []changedGitFile{{path: "eval/go.mod"}}, refusal.changed)
 		assert.ErrorContains(t, err,
 			"candidate commit "+candidate+" changes hand-written files in the test module eval since base commit "+tests+" (eval/go.mod);"+
-				" tests in eval belong to the test writer, not the builder:"+
+				" tests in eval belong to the test writer, not the builder;"+
+				" renaming the service module is the user's to do on their own branch between changes, not during a build:"+
 				" restore eval to base commit "+tests+" (git restore --source="+tests+" --staged --worktree -- ':(top,literal)eval/go.mod'), commit, and call verify_change again")
 	})
 

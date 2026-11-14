@@ -3010,7 +3010,7 @@ func (registryDeclarations) field171() *genregistry.ToolFieldMetadata {
 
 // schema172 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema172() *genregistry.ToolSchema {
-	registryText1 := "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again."
+	registryText1 := "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container, leaving the starter test module out in a written-tests project and saying so. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.check_project",
 		Description:            &registryText1,
@@ -3021,16 +3021,16 @@ func (declarations registryDeclarations) schema172() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Check Project",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 72,
-				Terms:  map[string]int{"a": 1, "again": 1, "an": 2, "and": 2, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 4, "id": 1, "if": 1, "in": 1, "input": 1, "isolated": 1, "it": 1, "linux": 1, "message": 2, "mod": 1, "needs": 2, "no": 1, "on": 1, "op": 1, "or": 2, "output": 2, "passed": 1, "project": 2, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "says": 2, "sum": 2, "surla": 1, "tests": 1, "the": 6, "uncommitted": 1, "update": 2, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1},
+				Length: 86,
+				Terms:  map[string]int{"a": 2, "again": 1, "an": 2, "and": 3, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 4, "id": 1, "if": 1, "in": 2, "input": 1, "isolated": 1, "it": 1, "leaving": 1, "linux": 1, "message": 2, "mod": 1, "module": 1, "needs": 2, "no": 1, "on": 1, "op": 1, "or": 2, "out": 1, "output": 2, "passed": 1, "project": 3, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "saying": 1, "says": 2, "so": 1, "starter": 1, "sum": 2, "surla": 1, "test": 1, "tests": 2, "the": 7, "uncommitted": 1, "update": 2, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1, "written": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.",
+				Description:     "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container, leaving the starter test module out in a written-tests project and saying so. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 72,
-					Terms:  map[string]int{"a": 1, "again": 1, "an": 2, "and": 2, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 4, "id": 1, "if": 1, "in": 1, "input": 1, "isolated": 1, "it": 1, "linux": 1, "message": 2, "mod": 1, "needs": 2, "no": 1, "on": 1, "op": 1, "or": 2, "output": 2, "passed": 1, "project": 2, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "says": 2, "sum": 2, "surla": 1, "tests": 1, "the": 6, "uncommitted": 1, "update": 2, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1},
+					Length: 86,
+					Terms:  map[string]int{"a": 2, "again": 1, "an": 2, "and": 3, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 4, "id": 1, "if": 1, "in": 2, "input": 1, "isolated": 1, "it": 1, "leaving": 1, "linux": 1, "message": 2, "mod": 1, "module": 1, "needs": 2, "no": 1, "on": 1, "op": 1, "or": 2, "out": 1, "output": 2, "passed": 1, "project": 3, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "saying": 1, "says": 2, "so": 1, "starter": 1, "sum": 2, "surla": 1, "test": 1, "tests": 2, "the": 7, "uncommitted": 1, "update": 2, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1, "written": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
 				Payload:       declarations.metadata180(),
@@ -30946,7 +30946,7 @@ func (registryDeclarations) field1809() *genregistry.ToolFieldMetadata {
 
 // schema1810 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema1810() *genregistry.ToolSchema {
-	registryText1 := "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again."
+	registryText1 := "Add missing requirements and checksums for the workspace's Go modules (go mod tidy, leaving the starter test module out in a written-tests project and saying so) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.update_dependencies",
 		Description:            &registryText1,
@@ -30957,16 +30957,16 @@ func (declarations registryDeclarations) schema1810() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Update Dependencies",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 59,
-				Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
+				Length: 73,
+				Terms:  map[string]int{"a": 3, "add": 1, "again": 1, "and": 4, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "in": 1, "input": 1, "it": 1, "leaving": 1, "missing": 2, "mod": 3, "module": 1, "modules": 1, "needed": 1, "no": 1, "or": 2, "out": 1, "project": 3, "reports": 1, "requirements": 1, "s": 1, "saying": 1, "so": 1, "starter": 1, "sum": 4, "surla": 1, "test": 1, "tests": 1, "the": 3, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1, "written": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.",
+				Description:     "Add missing requirements and checksums for the workspace's Go modules (go mod tidy, leaving the starter test module out in a written-tests project and saying so) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 59,
-					Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
+					Length: 73,
+					Terms:  map[string]int{"a": 3, "add": 1, "again": 1, "and": 4, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "in": 1, "input": 1, "it": 1, "leaving": 1, "missing": 2, "mod": 3, "module": 1, "modules": 1, "needed": 1, "no": 1, "or": 2, "out": 1, "project": 3, "reports": 1, "requirements": 1, "s": 1, "saying": 1, "so": 1, "starter": 1, "sum": 4, "surla": 1, "test": 1, "tests": 1, "the": 3, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1, "written": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
 				Payload:       declarations.metadata1819(),
@@ -31098,7 +31098,7 @@ func (registryDeclarations) field1820() *genregistry.ToolFieldMetadata {
 
 // schema1821 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema1821() *genregistry.ToolSchema {
-	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests: your build assignment says when they are."
+	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests (your build assignment says when they are), and it refuses a candidate commit that changes hand-written files of the test module, naming them and the restore step."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.verify_change",
 		Description:            &registryText1,
@@ -31109,16 +31109,16 @@ func (declarations registryDeclarations) schema1821() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Verify Change",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 56,
-				Terms:  map[string]int{"a": 2, "accepted": 1, "and": 1, "are": 1, "assignment": 1, "build": 1, "built": 1, "candidate": 1, "card": 1, "change": 3, "commit": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "has": 2, "id": 1, "is": 1, "it": 1, "its": 1, "of": 1, "project": 1, "read": 1, "refused": 1, "returns": 1, "revision": 2, "run": 1, "says": 1, "settings": 1, "start": 1, "stores": 1, "surla": 2, "tests": 1, "that": 1, "the": 3, "they": 1, "to": 1, "unless": 1, "until": 1, "user": 1, "verification": 3, "verify": 2, "when": 1, "with": 1, "your": 1},
+				Length: 77,
+				Terms:  map[string]int{"a": 3, "accepted": 1, "and": 3, "are": 1, "assignment": 1, "build": 1, "built": 1, "candidate": 2, "card": 1, "change": 3, "changes": 1, "commit": 2, "confirmed": 1, "cp4": 1, "files": 1, "for": 1, "get": 1, "hand": 1, "has": 2, "id": 1, "is": 1, "it": 2, "its": 1, "module": 1, "naming": 1, "of": 2, "project": 1, "read": 1, "refused": 1, "refuses": 1, "restore": 1, "returns": 1, "revision": 2, "run": 1, "says": 1, "settings": 1, "start": 1, "step": 1, "stores": 1, "surla": 2, "test": 1, "tests": 1, "that": 2, "the": 5, "them": 1, "they": 1, "to": 1, "unless": 1, "until": 1, "user": 1, "verification": 3, "verify": 2, "when": 1, "with": 1, "written": 1, "your": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-				Description:     "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests: your build assignment says when they are.",
+				Description:     "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Unless the project stores verification settings, it is refused until the user has built that revision and Surla has accepted its tests (your build assignment says when they are), and it refuses a candidate commit that changes hand-written files of the test module, naming them and the restore step.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 56,
-					Terms:  map[string]int{"a": 2, "accepted": 1, "and": 1, "are": 1, "assignment": 1, "build": 1, "built": 1, "candidate": 1, "card": 1, "change": 3, "commit": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "has": 2, "id": 1, "is": 1, "it": 1, "its": 1, "of": 1, "project": 1, "read": 1, "refused": 1, "returns": 1, "revision": 2, "run": 1, "says": 1, "settings": 1, "start": 1, "stores": 1, "surla": 2, "tests": 1, "that": 1, "the": 3, "they": 1, "to": 1, "unless": 1, "until": 1, "user": 1, "verification": 3, "verify": 2, "when": 1, "with": 1, "your": 1},
+					Length: 77,
+					Terms:  map[string]int{"a": 3, "accepted": 1, "and": 3, "are": 1, "assignment": 1, "build": 1, "built": 1, "candidate": 2, "card": 1, "change": 3, "changes": 1, "commit": 2, "confirmed": 1, "cp4": 1, "files": 1, "for": 1, "get": 1, "hand": 1, "has": 2, "id": 1, "is": 1, "it": 2, "its": 1, "module": 1, "naming": 1, "of": 2, "project": 1, "read": 1, "refused": 1, "refuses": 1, "restore": 1, "returns": 1, "revision": 2, "run": 1, "says": 1, "settings": 1, "start": 1, "step": 1, "stores": 1, "surla": 2, "test": 1, "tests": 1, "that": 2, "the": 5, "them": 1, "they": 1, "to": 1, "unless": 1, "until": 1, "user": 1, "verification": 3, "verify": 2, "when": 1, "with": 1, "written": 1, "your": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
 				Payload:       declarations.metadata1873(),

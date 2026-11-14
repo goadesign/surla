@@ -185,10 +185,18 @@ func (r *layoutRefusal) Error() string {
 		if len(remove) > 0 {
 			cmds = append(cmds, fmt.Sprintf("git rm -f -- %s", strings.Join(remove, " ")))
 		}
+		renameNote := ""
+		testGoMod := path.Join(r.testModule, "go.mod")
+		for _, c := range r.changed {
+			if c.path == testGoMod {
+				renameNote = "; renaming the service module is the user's to do on their own branch between changes, not during a build"
+				break
+			}
+		}
 		return fmt.Sprintf("candidate commit %s changes hand-written files in the test module %s since base commit %s (%s);"+
-			" tests in %s belong to the test writer, not the builder:"+
+			" tests in %s belong to the test writer, not the builder%s:"+
 			" restore %s to base commit %s (%s), commit, and call verify_change again",
-			r.commit, r.testModule, r.baseCommit, list, r.testModule, r.testModule, r.baseCommit, strings.Join(cmds, " && "))
+			r.commit, r.testModule, r.baseCommit, list, r.testModule, renameNote, r.testModule, r.baseCommit, strings.Join(cmds, " && "))
 	}
 	step := "the builder commits the layout surla init makes and verifies again"
 	if r.actor == testWriterActs {
