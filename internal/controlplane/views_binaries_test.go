@@ -109,6 +109,13 @@ func newBinariesPageFixture(t *testing.T, promotion bool) binariesPageFixture {
 		dir := verify.CandidateBinariesDir(workDir)
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "orders"), []byte("fixture binary; never executed"), 0o600))
+		if i > 0 {
+			// Both executions reference one saved report. Generating another
+			// fixture report would introduce fresh evidence IDs and a new digest.
+			result, err := os.ReadFile(filepath.Join(runsDir, f.older, "result.json"))
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(runsDir, runID, "result.json"), result, 0o600))
+		}
 		_, state, err := verifyrun.Read(runsDir, runID)
 		require.NoError(t, err)
 		if i == 0 {
