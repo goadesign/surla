@@ -135,7 +135,9 @@ var ErrLiveEnded = errors.New("live target ended")
 type LiveStartError struct {
 	// Summary describes the failure in one sentence.
 	Summary string
-	// Detail is at most maxLiveDetail bytes from the end of executor.log.
+	// Detail is the last maxLiveDetail bytes of executor.log with the
+	// settings the target was given replaced (modelsettings.ProtectExcerpt),
+	// so a replacement can make it longer.
 	Detail string
 	// Err is the underlying cause, or nil.
 	Err error
@@ -351,13 +353,14 @@ func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 }
 
 // startError returns a *LiveStartError with the executor log's current tail,
-// in which every exact occurrence of a setting the target was given is
-// protected, whoever wrote the line, and any piece of one that the tail's
-// start or end cuts is dropped (modelsettings.ProtectExcerpt). The log
-// itself is the suite's own output and stays as written.
+// read with the context before it that modelsettings.ProtectExcerpt needs,
+// which replaces every byte of a setting the target was given, whoever
+// wrote the line, including one the tail's start cuts or the log's end
+// leaves unfinished. The log itself is the suite's own output and stays as
+// written.
 func (p *LiveProcess) startError(summary string, cause error) *LiveStartError {
-	detail, cut := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail)
-	return &LiveStartError{Summary: summary, Detail: modelsettings.ProtectExcerpt(detail, cut, p.settings...), Err: cause}
+	text, start := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail, modelsettings.ExcerptContext)
+	return &LiveStartError{Summary: summary, Detail: modelsettings.ProtectExcerpt(text, start, p.settings...), Err: cause}
 }
 
 // Dir returns the live directory, which Stop removes.
@@ -468,25 +471,27 @@ func decodeLiveLine(text string) (liveLine, error) {
 	return line, nil
 }
 
-// logTail returns at most n bytes from the end of the file at path and
-// whether it left earlier bytes out, or a note saying why it could not be
-// read.
-func logTail(path string, n int64) (string, bool) {
+// logTail reads the tail of the file at path, its last n bytes, together
+// with up to context bytes before it, bounded by the file's start. It
+// returns what it read and where the tail starts in it, or a note saying
+// why the file could not be read, which is all tail.
+func logTail(path string, n, context int64) (string, int) {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Sprintf("(executor log unreadable: %v)", err), false
+		return fmt.Sprintf("(executor log unreadable: %v)", err), 0
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return fmt.Sprintf("(executor log unreadable: %v)", err), false
+		return fmt.Sprintf("(executor log unreadable: %v)", err), 0
 	}
-	start := max(info.Size()-n, 0)
-	b := make([]byte, info.Size()-start)
-	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Sprintf("(executor log unreadable: %v)", err), false
+	tail := max(info.Size()-n, 0)
+	from := max(tail-context, 0)
+	b := make([]byte, info.Size()-from)
+	if _, err := f.ReadAt(b, from); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Sprintf("(executor log unreadable: %v)", err), 0
 	}
-	return string(b), start > 0
+	return string(b), int(tail - from)
 }
 
 // decodeLiveRequest reads live.json, rejecting unknown fields, trailing data

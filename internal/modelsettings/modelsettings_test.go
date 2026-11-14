@@ -189,6 +189,7 @@ func TestNewRefusesSettingsThatCannotBeHeld(t *testing.T) {
 		{name: "other provider's name", provider: "anthropic", values: map[string]string{"ANTHROPIC_API_KEY": keySentinel, "OPENAI_ORG_ID": tokenSentinel}, want: "OPENAI_ORG_ID is not a request setting of provider anthropic"},
 		{name: "empty value", provider: "openai", values: map[string]string{"OPENAI_API_KEY": keySentinel, "OPENAI_ORG_ID": ""}, want: "provider openai setting OPENAI_ORG_ID is empty"},
 		{name: "NUL", provider: "anthropic", values: map[string]string{"ANTHROPIC_API_KEY": keySentinel, "ANTHROPIC_BASE_URL": urlSentinel + "\x00" + tokenSentinel}, want: "provider anthropic setting ANTHROPIC_BASE_URL contains a NUL character"},
+		{name: "too long", provider: "anthropic", values: map[string]string{"ANTHROPIC_API_KEY": keySentinel, "ANTHROPIC_CUSTOM_HEADERS": strings.Repeat("é", MaxValueLength+1)}, want: "provider anthropic setting ANTHROPIC_CUSTOM_HEADERS is longer than 4096 characters"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := New(tc.provider, tc.values)
@@ -290,7 +291,7 @@ func TestProtectReplacesHeldValuesInExportedText(t *testing.T) {
 			})
 			openai := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "sentinel-openai-key-0b", "OPENAI_ORG_ID": "org-visible", "OPENAI_PROJECT_ID": "proj-visible"})
 			text := "key " + keySentinel + "\nurl " + tc.baseURL + "\n" + `json: unknown field "` + tokenSentinel + `"` + "\norg org-visible project proj-visible openai sentinel-openai-key-0b\n"
-			got := Protect(text, anthropic, openai)
+			got := ProtectExcerpt(text, 0, anthropic, openai)
 			assert.Contains(t, got, "url "+tc.want+"\n")
 			assert.Contains(t, got, "key "+Redacted+"\n")
 			assert.Contains(t, got, `json: unknown field "`+Redacted+`"`)
@@ -301,48 +302,100 @@ func TestProtectReplacesHeldValuesInExportedText(t *testing.T) {
 		})
 	}
 
-	t.Run("longer values first, replacements not searched again", func(t *testing.T) {
+	t.Run("values inside other values make one replacement", func(t *testing.T) {
 		openai := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "abc", "OPENAI_CUSTOM_HEADERS": "abc-def", "OPENAI_BASE_URL": "https://abc.invalid/abc"})
-		assert.Equal(t, Redacted+" "+Redacted+" "+Redacted+" x", Protect("abc-def abc https://abc.invalid/abc x", openai))
+		assert.Equal(t, Redacted+" "+Redacted+" "+Redacted+" x", ProtectExcerpt("abc-def abc https://abc.invalid/abc x", 0, openai))
 	})
 	t.Run("nothing held", func(t *testing.T) {
-		assert.Equal(t, "unchanged "+keySentinel, Protect("unchanged "+keySentinel))
-		assert.Equal(t, "unchanged", Protect("unchanged", Settings{}))
+		assert.Equal(t, "unchanged "+keySentinel, ProtectExcerpt("unchanged "+keySentinel, 0))
+		assert.Equal(t, "unchanged", ProtectExcerpt("unchanged", 0, Settings{}))
 	})
 }
 
-// TestProtectExcerptDropsPiecesAtItsEdges cuts a key shaped like a real
-// one, a token and a base URL holding a path credential at every offset,
-// at the start of an excerpt that begins where its text was cut and at the
-// end of one that stops inside a value: no piece of the value survives,
-// only the text around it. An uncut start keeps text that merely looks
-// like a value's end, a whole value is still protected, and values that
-// overlap each other across the cut are both dropped.
-func TestProtectExcerptDropsPiecesAtItsEdges(t *testing.T) {
+// TestProtectExcerptReplacesEveryByteOfHeldValues covers excerpts whose
+// edges or whole extent cut held values: a cut at every offset of a key
+// shaped like a real one, a token and a base URL with a path credential,
+// with the cut value in the context; a text ending at every offset inside
+// one; values overlapping each other, the second unfinished; a value that
+// begins with its own end printed back to back across the excerpt; a value
+// longer than the excerpt, finished and unfinished; an excerpt shorter than
+// a value; text that merely looks like a value's end, which stays whole;
+// and values at the edge of ExcerptContext. No byte of a held value is
+// returned, and every other byte is.
+func TestProtectExcerptReplacesEveryByteOfHeldValues(t *testing.T) {
 	anthropic := mustNew(t, "anthropic", map[string]string{
 		"ANTHROPIC_API_KEY": realShapedKey, "ANTHROPIC_AUTH_TOKEN": tokenSentinel, "ANTHROPIC_BASE_URL": urlSentinel,
 	})
-	for name, value := range map[string]string{"key": realShapedKey, "token": tokenSentinel, "base URL": urlSentinel} {
+	for name, tc := range map[string]struct{ value, replacement string }{
+		"key":      {realShapedKey, Redacted},
+		"token":    {tokenSentinel, Redacted},
+		"base URL": {urlSentinel, "https://gateway.invalid"},
+	} {
 		t.Run(name, func(t *testing.T) {
-			for c := 1; c < len(value); c++ {
-				assert.Equal(t, "\nlater log lines\n", ProtectExcerpt(value[c:]+"\nlater log lines\n", true, anthropic),
-					"cut %d bytes into the value", c)
-				assert.Equal(t, "earlier log lines\n", ProtectExcerpt("earlier log lines\n"+value[:c], false, anthropic),
-					"log ending %d bytes into the value", c)
+			before := "earlier log lines\n"
+			for c := 0; c < len(tc.value); c++ {
+				text := before + tc.value + "\nlater log lines\n"
+				assert.Equal(t, tc.replacement+"\nlater log lines\n", ProtectExcerpt(text, len(before)+c, anthropic),
+					"excerpt starting %d bytes into the value", c)
+			}
+			for c := 1; c < len(tc.value); c++ {
+				assert.Equal(t, before+Redacted, ProtectExcerpt(before+tc.value[:c], 0, anthropic),
+					"text ending %d bytes into the value", c)
 			}
 		})
 	}
-	assert.Equal(t, "AA starts the log "+Redacted+"\n", ProtectExcerpt("AA starts the log "+realShapedKey+"\n", false, anthropic),
-		"an uncut start keeps its text, and a whole value is replaced")
-	assert.Equal(t, "url https://gateway.invalid\n", ProtectExcerpt("url "+urlSentinel+"\n", true, anthropic))
 
-	// The key's end overlaps the header's start in the text, so dropping
-	// the key's piece leaves a piece of the header, which is dropped too.
-	chained := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "sentinel-chain-abcd", "OPENAI_CUSTOM_HEADERS": "abcd-efgh-sentinel"})
-	text := "sentinel-chain-abcd-efgh-sentinel tail"
-	for c := 1; c < len("sentinel-chain-abcd"); c++ {
-		assert.Equal(t, " tail", ProtectExcerpt(text[c:], true, chained), "cut %d bytes in", c)
-	}
+	t.Run("text that only looks like a value's end stays", func(t *testing.T) {
+		key := mustNew(t, "anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-keyAA"})
+		text := strings.Repeat("A", 8000) + " ok " + "sentinel-keyAA" + "\n"
+		for _, start := range []int{0, 11, 7999} {
+			assert.Equal(t, text[start:len(text)-15]+Redacted+"\n", ProtectExcerpt(text, start, key), "excerpt from %d", start)
+		}
+		assert.Equal(t, "AA starts the log "+Redacted+"\n", ProtectExcerpt("AA starts the log "+realShapedKey+"\n", 0, anthropic))
+	})
+
+	t.Run("overlapping values make one replacement", func(t *testing.T) {
+		chained := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "sentinel-chain-abcd", "OPENAI_CUSTOM_HEADERS": "abcd-efgh-sentinel"})
+		text := "sentinel-chain-abcd-efgh-sentinel tail"
+		for c := 0; c < len("sentinel-chain-abcd-efgh-sentinel"); c++ {
+			assert.Equal(t, Redacted+" tail", ProtectExcerpt(text, c, chained), "excerpt from %d", c)
+		}
+		assert.Equal(t, "x "+Redacted, ProtectExcerpt("x sentinel-chain-abcd-efgh-", 0, chained), "the second value is unfinished")
+		shared := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "sentinel-AAAA-shared", "OPENAI_CUSTOM_HEADERS": "shared-sentinelBBBB"})
+		assert.Equal(t, "x "+Redacted+" y", ProtectExcerpt("x sentinel-AAAA-shared-sentinelBBBB y", 0, shared))
+	})
+
+	t.Run("a value beginning with its own end, back to back", func(t *testing.T) {
+		const border = "sk-proj-sentinelBORDERKEY-0123456789abcdefghijklmnopqrs"
+		key := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": border})
+		text := strings.Repeat(border, 200) + border[:40]
+		assert.Equal(t, Redacted, ProtectExcerpt(text, len(text)-8192, key), "the unfinished last copy and every whole one form one run")
+		separated := strings.Repeat(border+"\n", 200) + border[:40]
+		got := ProtectExcerpt(separated, len(separated)-8192, key)
+		assert.Empty(t, strings.Trim(strings.ReplaceAll(got, Redacted, ""), "\n"), "only separators remain")
+	})
+
+	t.Run("a value longer than the excerpt", func(t *testing.T) {
+		text := "log\n" + realShapedKey
+		assert.Equal(t, Redacted, ProtectExcerpt(text, len(text)-10, anthropic), "finished")
+		unfinished := "log\n" + realShapedKey[:50]
+		assert.Equal(t, Redacted, ProtectExcerpt(unfinished, len(unfinished)-5, anthropic), "unfinished")
+		header := "j" + strings.Repeat("q", 28) + "j"
+		headers := mustNew(t, "anthropic", map[string]string{"ANTHROPIC_API_KEY": keySentinel, "ANTHROPIC_CUSTOM_HEADERS": header})
+		assert.Equal(t, Redacted, ProtectExcerpt(header[:29], 0, headers), "an excerpt shorter than the value, missing its last byte")
+	})
+
+	t.Run("values at the edge of the context", func(t *testing.T) {
+		// The longest value New accepts: MaxValueLength four-byte characters.
+		longest := strings.Repeat("\U0001D11E", MaxValueLength)
+		require.Len(t, longest, ExcerptContext+1)
+		held := mustNew(t, "anthropic", map[string]string{"ANTHROPIC_API_KEY": keySentinel, "ANTHROPIC_CUSTOM_HEADERS": longest})
+		text := longest + "\nrest\n"
+		assert.Equal(t, Redacted+"\nrest\n", ProtectExcerpt(text, ExcerptContext, held), "the value's last byte begins the excerpt")
+		assert.Equal(t, "\nrest\n", ProtectExcerpt(text, len(longest), held), "the value ends just before the excerpt")
+		shorter := "earlier " + keySentinel + "\nrest\n"
+		assert.Equal(t, "\nrest\n", ProtectExcerpt(shorter, len("earlier "+keySentinel), held))
+	})
 }
 
 // mustNew returns the settings New builds from values, or stops the test.

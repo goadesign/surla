@@ -189,10 +189,10 @@ func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
 // wrote, receives the chosen provider's settings, and that only tests
 // written for a verification and the check helper receive none, as
 // TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment and
-// TestWrittenTestRunsReceiveNoProviderSettings prove. The reference says the
-// exported log protects exact occurrences and edge pieces only, as
-// TestProtectExcerptDropsPiecesAtItsEdges proves, and that other forms of a
-// value are exported as printed.
+// TestWrittenTestRunsReceiveNoProviderSettings prove. The reference states
+// the exported log's guarantee as TestProtectExcerptReplacesEveryByteOfHeldValues
+// proves it: no byte of an exact occurrence, or of an unfinished value at
+// the log's end, and other forms of a value exported as printed.
 func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
 	require.NoError(t, err)
@@ -207,13 +207,18 @@ func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 		assert.False(t, strings.Contains(lower, "tests agents wrote and the check helper receive none"), name)
 	}
 	for _, promise := range []string{
-		"every exact occurrence of a key, token or header value the target was given is replaced by `[redacted]`",
-		"a piece of such a value at either edge of the excerpt",
+		"no byte of an exact occurrence of a setting the target was given, or of one whose writing stopped at the end of the log, is exported",
 		"is not recognized and is exported as printed",
 	} {
 		assert.True(t, strings.Contains(string(reference), promise), promise)
 	}
-	assert.False(t, strings.Contains(string(reference), "with every key, token and header value the target was given replaced by"))
+	for _, stale := range []string{
+		"with every key, token and header value the target was given replaced by",
+		"a piece of such a value at either edge of the excerpt",
+		"as is text that overlaps an exact occurrence",
+	} {
+		assert.False(t, strings.Contains(string(reference), stale), stale)
+	}
 }
 
 // TestHandOverModelSettingsRefusesWithNamesOnly sends each refused request,
@@ -591,8 +596,8 @@ func TestLiveStartFailureExportsProtectedDetail(t *testing.T) {
 // TestLiveStartFailureExportsNoKeyPieceAtTheCut hands over a key shaped
 // like a real one, then starts a live target whose executor stand-in
 // prints it followed by enough output that the exported tail's cut falls
-// 13 bytes into it: the executor_log_tail event, every span and the
-// diagnostics history hold no piece of the key.
+// 13 bytes into it: the executor_log_tail event replaces the key once, and
+// it, every span and the diagnostics history hold no piece of the key.
 func TestLiveStartFailureExportsNoKeyPieceAtTheCut(t *testing.T) {
 	isolateProviderFamilies(t)
 	const key = "sk-ant-api03-sentinelRANDOMPART0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZq7w3e9r1t5uZZAA"
@@ -627,7 +632,7 @@ func TestLiveStartFailureExportsNoKeyPieceAtTheCut(t *testing.T) {
 			assertSpanNeverContainsValue(t, span, key[i:i+8])
 		}
 	}
-	assert.Equal(t, strings.Repeat("y", filler), tail, "only the output after the key is exported")
+	assert.Equal(t, modelsettings.Redacted+strings.Repeat("y", filler), tail, "the cut key is replaced once and the output after it kept")
 	history, err := os.ReadFile(filepath.Join(cardsDir, "traces.jsonl"))
 	require.NoError(t, err)
 	assert.NotContains(t, string(history), "sentinelRANDOMPART")

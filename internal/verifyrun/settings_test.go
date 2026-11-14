@@ -154,12 +154,13 @@ func TestLiveStartDetailProtectsHeldSettings(t *testing.T) {
 	}
 }
 
-// TestStartErrorDropsValuePiecesTheTailCuts writes executor logs longer
-// than the exported tail, whose cut falls inside a held key (in its random
-// part and in its fixed prefix), a token and a base URL's path credential,
-// and a log a writer stopped inside a key. The Detail startError exports
-// holds no piece of any of them, only the log text around them.
-func TestStartErrorDropsValuePiecesTheTailCuts(t *testing.T) {
+// TestStartErrorReplacesValuesTheTailCuts writes executor logs longer than
+// the exported tail, whose cut falls inside a held key (in its random part
+// and in its fixed prefix), a token and a base URL's path credential, and a
+// log a writer stopped inside a key. The Detail startError exports replaces
+// each such value once, from the context it reads before the tail, and
+// keeps all the log text around it.
+func TestStartErrorReplacesValuesTheTailCuts(t *testing.T) {
 	const key = "sk-ant-api03-sentinelRANDOMPART0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZq7w3e9r1t5uZZAA"
 	const token = "sentinel-cut-token-5d2c"
 	const baseURL = "https://gateway.invalid/sentinel-path-credential-7f3a/"
@@ -167,32 +168,69 @@ func TestStartErrorDropsValuePiecesTheTailCuts(t *testing.T) {
 		"ANTHROPIC_API_KEY": key, "ANTHROPIC_AUTH_TOKEN": token, "ANTHROPIC_BASE_URL": baseURL,
 	})
 	require.NoError(t, err)
+	// credential is the base URL's part after its scheme and host, which the
+	// replacement keeps.
+	credential := baseURL[strings.Index(baseURL, "sentinel"):]
 	before := strings.Repeat("p", 99) + "\n"
 	for _, tc := range []struct {
-		name  string
-		value string
-		cut   int
+		name, value, replacement string
+		cut                      int
 	}{
-		{name: "inside the key's random part", value: key, cut: 13},
-		{name: "inside the key's fixed prefix", value: key, cut: 5},
-		{name: "inside the token", value: token, cut: 10},
-		{name: "inside the base URL's path credential", value: baseURL, cut: strings.Index(baseURL, "sentinel") + 3},
+		{name: "inside the key's random part", value: key, replacement: modelsettings.Redacted, cut: 13},
+		{name: "inside the key's fixed prefix", value: key, replacement: modelsettings.Redacted, cut: 5},
+		{name: "inside the token", value: token, replacement: modelsettings.Redacted, cut: 10},
+		{name: "inside the base URL's path credential", value: baseURL, replacement: "https://gateway.invalid", cut: strings.Index(baseURL, "sentinel") + 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// The tail starts len(before)+cut bytes into the log: cut bytes
 			// into the value.
 			after := "\n" + strings.Repeat("y", maxLiveDetail-(len(tc.value)-tc.cut)-1)
 			detail := startErrorDetail(t, before+tc.value+after, anthropic)
-			assert.Equal(t, after, detail, "only the text after the value is exported")
-			assertNoPiece(t, detail, key, token, baseURL)
+			assert.Equal(t, tc.replacement+after, detail, "the cut value is replaced once and the text after it kept")
+			assertNoPiece(t, detail, key, token, credential)
 		})
 	}
 	t.Run("log ending inside the key", func(t *testing.T) {
 		earlier := strings.Repeat("y", maxLiveDetail) + "\n"
 		detail := startErrorDetail(t, earlier+key[:71], anthropic)
-		assert.Equal(t, earlier[len(earlier)+71-maxLiveDetail:], detail, "the tail keeps the log's last bytes before the unfinished key")
-		assertNoPiece(t, detail, key, token, baseURL)
+		assert.Equal(t, earlier[len(earlier)+71-maxLiveDetail:]+modelsettings.Redacted, detail, "the unfinished key is replaced")
+		assertNoPiece(t, detail, key, token, credential)
 	})
+}
+
+// TestStartErrorReplacesValuesThatFillTheTail exports the tails the review
+// found leaking: a key that begins with its own last character, printed
+// back to back across the whole tail and read while its last copy is being
+// written; a custom-headers value of 3,000 CJK characters, longer than the
+// tail, read while it is being written and once written; and the longest
+// value a hand-over allows, whose last byte begins the tail, which only a
+// context of ExcerptContext bytes before the tail reveals.
+func TestStartErrorReplacesValuesThatFillTheTail(t *testing.T) {
+	const border = "sk-proj-sentinelBORDERKEY-0123456789abcdefghijklmnopqrs"
+	borderKey, err := modelsettings.New("openai", map[string]string{"OPENAI_API_KEY": border})
+	require.NoError(t, err)
+	assert.Equal(t, modelsettings.Redacted, startErrorDetail(t, strings.Repeat(border, 200)+border[:40], borderKey))
+
+	var cjk strings.Builder
+	cjk.WriteString("X-Sentinel-Header: ")
+	for i := range 3000 {
+		cjk.WriteRune(rune(0x4E00 + (i*7919)%20000))
+	}
+	header := cjk.String()
+	require.Greater(t, len(header), maxLiveDetail)
+	headers, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-cjk-key", "ANTHROPIC_CUSTOM_HEADERS": header})
+	require.NoError(t, err)
+	assert.Equal(t, modelsettings.Redacted, startErrorDetail(t, "suite configuration:\n"+header[:len(header)-100], headers), "being written")
+	assert.Equal(t, modelsettings.Redacted+"\n", startErrorDetail(t, "suite configuration:\n"+header+"\n", headers), "written")
+
+	longest := strings.Repeat("\U0001D11E", modelsettings.MaxValueLength)
+	edge, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-edge-key", "ANTHROPIC_CUSTOM_HEADERS": longest})
+	require.NoError(t, err)
+	before := strings.Repeat("p", 99) + "\n"
+	after := "\n" + strings.Repeat("y", maxLiveDetail-2)
+	assert.Equal(t, modelsettings.Redacted+after, startErrorDetail(t, before+longest+after, edge), "the value's last byte begins the tail")
+	after += "y"
+	assert.Equal(t, after, startErrorDetail(t, before+longest+after, edge), "the value ends just before the tail")
 }
 
 // startErrorDetail writes log as a live directory's executor log and
@@ -205,8 +243,8 @@ func startErrorDetail(t *testing.T, log string, held ...modelsettings.Settings) 
 	return p.startError("summary", nil).Detail
 }
 
-// assertNoPiece fails when text holds any eight bytes of a value's part
-// after its first eight, which are the parts a cut can leave.
+// assertNoPiece fails when text holds any eight bytes of a value after its
+// first eight, which are the parts a cut can leave.
 func assertNoPiece(t *testing.T, text string, values ...string) {
 	t.Helper()
 	for _, value := range values {

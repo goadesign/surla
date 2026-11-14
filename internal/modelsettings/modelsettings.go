@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 type (
@@ -54,12 +55,12 @@ type (
 		kind settingKind
 	}
 
-	// settingKind says how Protect treats a held value.
+	// settingKind says how ProtectExcerpt treats a held value.
 	settingKind int
 
 	// Value is one held setting value. String, GoString, Format (every
 	// verb), LogValue, MarshalJSON and MarshalText all answer Redacted; only
-	// Settings.Environ and Protect read the value itself.
+	// Settings.Environ and ProtectExcerpt read the value itself.
 	Value struct {
 		// raw returns the value. It is a function so that printing a struct
 		// that holds a Value in an unexported field, which reflection cannot
@@ -99,22 +100,27 @@ type (
 )
 
 const (
-	// Redacted is what every formatting of a Value shows, and what Protect
-	// writes in place of a held secret.
+	// Redacted is what every formatting of a Value shows, and what
+	// ProtectExcerpt writes in place of a held secret.
 	Redacted = "[redacted]"
-	// MaxValueLength bounds one request setting value, in characters. The
-	// hand-over's design validates it and the surla command names it when
-	// the project server refuses a longer value.
+	// MaxValueLength bounds one request setting value, in characters. New
+	// refuses a longer value, the hand-over's design validates it, and the
+	// surla command names it when the project server refuses a longer value.
 	MaxValueLength = 4096
+	// ExcerptContext is how many bytes before an excerpt ProtectExcerpt
+	// needs to read: an occurrence of a held value that overlaps the excerpt
+	// starts at most this far before it, because a held value has at most
+	// MaxValueLength characters of at most utf8.UTFMax bytes each.
+	ExcerptContext = MaxValueLength*utf8.UTFMax - 1
 )
 
 const (
-	// kindSecret is a credential: Protect replaces it with Redacted.
+	// kindSecret is a credential: ProtectExcerpt replaces it with Redacted.
 	kindSecret settingKind = iota
 	// kindURL is an endpoint that may carry credentials in its user
-	// information, path or query: Protect keeps only its scheme and host.
+	// information, path or query: ProtectExcerpt keeps only its scheme and host.
 	kindURL
-	// kindPlain names an account or project: Protect leaves it visible.
+	// kindPlain names an account or project: ProtectExcerpt leaves it visible.
 	kindPlain
 )
 
@@ -234,9 +240,10 @@ func Select(environ []string) Selection {
 // New returns the request settings of the provider named provider from
 // values, keyed by variable name. It refuses a provider the table does not
 // hold, a name that is not one of its request settings, settings without its
-// key, and an empty value or one containing NUL, which no program
-// environment can carry. Every error names the provider and at most one
-// variable, never a value.
+// key, an empty value, one containing NUL, which no program environment can
+// carry, and one longer than MaxValueLength characters, which ExcerptContext
+// relies on. Every error names the provider and at most one variable, never
+// a value.
 func New(provider string, values map[string]string) (Settings, error) {
 	p, ok := Lookup(provider)
 	if !ok {
@@ -255,23 +262,41 @@ func New(provider string, values map[string]string) (Settings, error) {
 			return Settings{}, fmt.Errorf("provider %s setting %s is empty", p.Name, name)
 		case strings.ContainsRune(value, 0):
 			return Settings{}, fmt.Errorf("provider %s setting %s contains a NUL character", p.Name, name)
+		case utf8.RuneCountInString(value) > MaxValueLength:
+			return Settings{}, fmt.Errorf("provider %s setting %s is longer than %d characters", p.Name, name, MaxValueLength)
 		}
 		held[name] = newValue(value)
 	}
 	return Settings{provider: p.Name, values: held}, nil
 }
 
-// Protect returns text with every exact occurrence of a held value replaced,
-// for text the project server takes from a live target's log. A secret
-// becomes Redacted. An endpoint becomes its scheme and host only, without
-// user information, path, query or fragment, or Redacted when no such
-// scheme and host can be read from it or they contain a held secret. An
-// account or project name stays. Longer values are replaced first, and
-// replaced text is not searched again.
-func Protect(text string, held ...Settings) string {
-	type pair struct{ old, new string }
+// ProtectExcerpt returns the excerpt text[start:] of a longer text, such as
+// the end of a live target's log, with the held secret and endpoint values
+// in it replaced. text holds the excerpt and, before it, up to
+// ExcerptContext bytes of what preceded it in the longer text (all of it
+// when there is less); it ends where the longer text ended, possibly inside
+// a value its writer had not finished.
+//
+// In all of text it marks the bytes of every exact occurrence of every held
+// secret or endpoint value, overlapping occurrences included, and the
+// longest end of text that is a proper prefix of one. It then returns the
+// excerpt's unmarked bytes as they are and, in place of each maximal run of
+// marked bytes that reaches the excerpt, one replacement: the scheme and
+// host of the endpoint when the run is exactly one occurrence of a held
+// endpoint and of no secret (Redacted when no scheme and host can be read
+// from it or they contain a held secret), and Redacted otherwise. Account
+// and project names stay.
+//
+// Every occurrence that overlaps the excerpt starts at most ExcerptContext
+// bytes before it, so it lies wholly inside text and is marked. Hence no
+// byte of an exact occurrence of a held value, or of a held value whose
+// writing stopped at the end of the longer text, is returned. The same value
+// printed in another form, quoted, escaped or re-encoded, is not recognized
+// and is returned as printed.
+func ProtectExcerpt(text string, start int, held ...Settings) string {
+	// span is the byte interval [from, to) of text one mark covers.
+	type span struct{ from, to int }
 	var secrets []string
-	var pairs []pair
 	for _, s := range held {
 		p, _ := Lookup(s.provider)
 		for name, v := range s.values {
@@ -280,79 +305,68 @@ func Protect(text string, held ...Settings) string {
 			}
 		}
 	}
+	// depth counts, as differences, how many marks cover each byte.
+	depth := make([]int, len(text)+1)
+	mark := func(m span) { depth[m.from]++; depth[m.to]-- }
+	endpoints := map[span]string{}
+	secretSpans := map[span]bool{}
 	for _, s := range held {
 		p, _ := Lookup(s.provider)
 		for name, v := range s.values {
-			switch p.kind(name) {
-			case kindSecret:
-				pairs = append(pairs, pair{v.raw(), Redacted})
-			case kindURL:
-				pairs = append(pairs, pair{v.raw(), endpoint(v.raw(), secrets)})
+			kind, raw := p.kind(name), v.raw()
+			if kind == kindPlain {
+				continue
 			}
-		}
-	}
-	if len(pairs) == 0 {
-		return text
-	}
-	slices.SortStableFunc(pairs, func(a, b pair) int { return cmp.Compare(len(b.old), len(a.old)) })
-	args := make([]string, 0, 2*len(pairs))
-	for _, p := range pairs {
-		args = append(args, p.old, p.new)
-	}
-	return strings.NewReplacer(args...).Replace(text)
-}
-
-// ProtectExcerpt is Protect for an excerpt of a longer text, such as the
-// end of a live target's log, where a held value may be cut in pieces that
-// Protect, which recognizes whole occurrences only, would leave as they are.
-// startCut says the excerpt starts where the longer text was cut; its end
-// may also stop inside a value a writer had not finished.
-//
-// It first trims the excerpt's edges: while the excerpt starts with a
-// non-empty proper suffix of a held secret or endpoint value (only when
-// startCut), it drops the longest such prefix; while it ends with a
-// non-empty proper prefix of one, it drops the longest such suffix. Then it
-// applies Protect. This leaves no piece of a held value: an occurrence the
-// cut splits begins the excerpt with a proper suffix of its value, which the
-// first trim removes whole, being at most as long as the longest such
-// prefix; an occurrence that a trim in turn splits now begins the excerpt
-// the same way and the next trim removes it; the end is symmetric. When the
-// trims stop, every occurrence still overlapping the excerpt lies wholly
-// inside it, where Protect replaces it. A trim drops at most one value's
-// length of other text, which only shortens the diagnostic.
-func ProtectExcerpt(excerpt string, startCut bool, held ...Settings) string {
-	values := protectedValues(held)
-	for startCut {
-		n := 0
-		for _, v := range values {
-			for k := len(v) - 1; k > n; k-- {
-				if strings.HasPrefix(excerpt, v[len(v)-k:]) {
-					n = k
+			for i := 0; ; {
+				j := strings.Index(text[i:], raw)
+				if j < 0 {
+					break
+				}
+				m := span{i + j, i + j + len(raw)}
+				mark(m)
+				if kind == kindURL {
+					endpoints[m] = endpoint(raw, secrets)
+				} else {
+					secretSpans[m] = true
+				}
+				i += j + 1
+			}
+			for k := min(len(raw)-1, len(text)); k > 0; k-- {
+				if strings.HasSuffix(text, raw[:k]) {
+					mark(span{len(text) - k, len(text)})
 					break
 				}
 			}
 		}
-		if n == 0 {
-			break
-		}
-		excerpt = excerpt[n:]
 	}
-	for {
-		n := 0
-		for _, v := range values {
-			for k := len(v) - 1; k > n; k-- {
-				if strings.HasSuffix(excerpt, v[:k]) {
-					n = k
-					break
-				}
+	marked := make([]bool, len(text))
+	for i, covering := 0, 0; i < len(text); i++ {
+		covering += depth[i]
+		marked[i] = covering > 0
+	}
+	var out strings.Builder
+	for i := 0; i < len(text); {
+		if !marked[i] {
+			if i >= start {
+				out.WriteByte(text[i])
 			}
+			i++
+			continue
 		}
-		if n == 0 {
-			break
+		j := i
+		for j < len(text) && marked[j] {
+			j++
 		}
-		excerpt = excerpt[:len(excerpt)-n]
+		if j > start {
+			replacement := Redacted
+			if ep, ok := endpoints[span{i, j}]; ok && !secretSpans[span{i, j}] {
+				replacement = ep
+			}
+			out.WriteString(replacement)
+		}
+		i = j
 	}
-	return Protect(excerpt, held...)
+	return out.String()
 }
 
 // Settings returns the names of p's request settings, in table order.
@@ -382,7 +396,7 @@ func (s Settings) Names() []string {
 
 // Environ returns the settings s holds as NAME=value entries sorted by name,
 // for the environment of a program permitted to receive them. It is the one
-// place besides Protect where a held value is read.
+// place besides ProtectExcerpt where a held value is read.
 func (s Settings) Environ() []string {
 	env := make([]string, 0, len(s.values))
 	for _, name := range s.Names() {
@@ -410,22 +424,7 @@ func (Value) MarshalJSON() ([]byte, error) { return json.Marshal(Redacted) }
 // MarshalText returns Redacted.
 func (Value) MarshalText() ([]byte, error) { return []byte(Redacted), nil }
 
-// protectedValues returns the raw values Protect replaces in held: every
-// secret and endpoint, but no plain account or project name.
-func protectedValues(held []Settings) []string {
-	var values []string
-	for _, s := range held {
-		p, _ := Lookup(s.provider)
-		for name, v := range s.values {
-			if p.kind(name) != kindPlain {
-				values = append(values, v.raw())
-			}
-		}
-	}
-	return values
-}
-
-// kind returns how Protect treats the setting name of p; a name p does not
+// kind returns how ProtectExcerpt treats the setting name of p; a name p does not
 // list is plain.
 func (p Provider) kind(name string) settingKind {
 	for _, s := range p.settings {
