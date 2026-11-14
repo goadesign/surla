@@ -360,9 +360,14 @@ export function VerificationView({
           {listError}
         </Alert>
       ) : null}
-      {cardLoadError !== null && !sameCardLoaded ? (
+      {cardLoadError !== null ? (
         <Alert id="surla-cp4-card-error" variant="destructive" role="alert">
           {cardLoadError}
+          <div className="surla-field-row">
+            <Button id="surla-cp4-retry-card" disabled={loadingCard} onClick={onOpenChangeCard}>
+              {loadingCard ? "Reading agreement…" : "Retry agreement read"}
+            </Button>
+          </div>
         </Alert>
       ) : null}
       <div className="surla-field-row">

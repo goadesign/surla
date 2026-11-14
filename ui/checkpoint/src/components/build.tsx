@@ -208,12 +208,12 @@ export function BuildSectionView({
       ) : null}
       {check !== null && !sentBack ? (
         <p id="surla-build-state" data-inputs-current={checkKnown ? String(check.inputs_current) : "unknown"}>
-          {check.state.type === "running"
-            ? "Surla is checking the builder’s code. Your next decision is approval after the check passes."
-            : !checkKnown
+          {!checkKnown
             ? "A saved check is available. Its current agreement and tests have not been confirmed."
             : !matchedCheck
             ? "The saved check used an earlier agreement or test selection. The builder checks the current agreement and tests again; then you can approve."
+            : check.state.type === "running"
+            ? "Surla is checking the builder’s code. Your next decision is approval after the check passes."
             : report?.passed
             ? recordedCheck
               ? "The check passed and your approval is recorded."

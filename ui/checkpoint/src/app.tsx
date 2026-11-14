@@ -953,8 +953,7 @@ export function bootstrapViewsPage() {
           if (waitTroubleShown) {
             waitTroubleShown = false;
             statusEl.textContent = "This page is up to date with the Surla server again.";
-            syncNoticeRegion();
-            if (activeResult?.kind === "team") syncResultRegion();
+            syncAllRegions();
           }
           continue;
         }
@@ -977,8 +976,7 @@ export function bootstrapViewsPage() {
       if (!waitTroubleShown) {
         waitTroubleShown = true;
         statusEl.textContent = trouble;
-        syncNoticeRegion();
-        if (activeResult?.kind === "team") syncResultRegion();
+        syncAllRegions();
       }
       failedRounds += 1;
       const delay = Math.min(WAIT_RETRY_MS * 2 ** (failedRounds - 1), WAIT_RETRY_MAX_MS);
@@ -1006,14 +1004,22 @@ export function bootstrapViewsPage() {
           if (outcome.kind === "session") {
             endSession();
           }
+          cardLoadErrors.set(changeId, outcome.message);
           return;
         }
+        if (outcome.result.change_id !== changeId) {
+          cardLoadErrors.set(changeId, "The server returned a different Change Card.");
+          return;
+        }
+        cardLoadErrors.delete(changeId);
         receiveLatestCard(outcome.result);
       } while (cardRefreshAgain && session !== null);
     })();
     void cardRefresh.finally(() => {
       cardRefresh = null;
+      syncAllRegions();
     });
+    syncAllRegions();
   }
 
   // receiveLatestCard applies a background read of the open card. The same
@@ -1025,7 +1031,12 @@ export function bootstrapViewsPage() {
     if (!activeEditor || activeEditor.card.change_id !== latest.change_id) {
       return;
     }
+    cardLoadErrors.delete(latest.change_id);
     const ed = activeEditor;
+    if (latest.request_revision !== ed.card.request_revision || latest.status !== ed.card.status) {
+      verificationGeneration++;
+      refreshVerificationObservations(latest.change_id);
+    }
     if (latest.request_revision === ed.card.request_revision) {
       const before = ed.card.proposed_revision;
       const after = latest.proposed_revision;
@@ -1122,7 +1133,7 @@ export function bootstrapViewsPage() {
   // visible while any of these facts are unknown.
   function runInputsKnown(run: VerificationStatusResult): boolean {
     return sessionState === "active" && !document.hidden && changeList !== null && listError === null &&
-      !waitTroubleShown && !editorBusy &&
+      !waitTroubleShown && !editorBusy && cardRefresh === null &&
       runObservationGeneration.get(run.run_id) === verificationGeneration &&
       !hasPending("get_verification", run.run_id) &&
       !hasPending("list_verifications", run.change_id) &&
@@ -1436,8 +1447,10 @@ export function bootstrapViewsPage() {
               buildStartReceipt = null;
               buildStartError = null;
             }
-            if (before !== null && JSON.stringify(before) !== JSON.stringify(result.build)) {
-              refreshOpenCard(changeId);
+            if (before === null || JSON.stringify(before) !== JSON.stringify(result.build)) {
+              verificationGeneration++;
+              if (before !== null) refreshOpenCard(changeId);
+              refreshVerificationObservations(changeId);
             }
             followBuildFindings();
           }
@@ -2168,7 +2181,8 @@ export function bootstrapViewsPage() {
               findingsError={findingsError}
               check={latestCheck}
               checkKnown={latestCheck !== null && runInputsKnown(latestCheck)}
-              checkError={latestCheck !== null ? runRequestErrors.get(latestCheck.run_id) ?? null : null}
+              checkError={cardLoadErrors.get(ed.card.change_id) ??
+                (latestCheck !== null ? runRequestErrors.get(latestCheck.run_id) ?? null : null)}
               approvalAvailable={approvalUnavailable === null && changeList?.approval_available === true}
               onRefresh={() => readBuild(ed.card.change_id)}
               onReadFindings={readBuildFindings}
@@ -2400,7 +2414,7 @@ export function bootstrapViewsPage() {
               loadedCard={loadedCard}
               checking={displayedRun ? hasPending("get_verification", displayedRun.run_id) : false}
               loadingList={hasPending("list_verifications", effectiveChangeId)}
-              loadingCard={editorBusy}
+              loadingCard={editorBusy || cardRefresh !== null}
               requestError={displayedRun ? runRequestErrors.get(displayedRun.run_id) ?? null : null}
               listError={listRequestErrors.get(effectiveChangeId) ?? null}
               cardLoadError={
@@ -2409,7 +2423,10 @@ export function bootstrapViewsPage() {
               onCheckStatus={handleCheckVerificationStatus}
               onLoadVerifications={() => handleListVerifications(effectiveChangeId)}
               onSelectRun={handleSelectVerificationRun}
-              onOpenChangeCard={() => openChange(effectiveChangeId)}
+              onOpenChangeCard={() => {
+                if (activeEditor?.card.change_id === effectiveChangeId) handleLoadLatestCard();
+                else openChange(effectiveChangeId);
+              }}
               onReturnToChangeCard={handleReturnToChangeCard}
             />
             {displayedRun ? (
@@ -2759,7 +2776,6 @@ export function bootstrapViewsPage() {
     if (!activeEditor) {
       return;
     }
-    cardLoadErrors.delete(activeEditor.card.change_id);
     editorOpen = true;
     activeResult = activeEditor.incomingCard ? { kind: "cp1-incoming-card" } : null;
     rootEl.dataset.state = "cp1-change-card";
