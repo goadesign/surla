@@ -3128,6 +3128,13 @@ export function bootstrapViewsPage() {
       { change_id: changeId },
       changeId,
       (latestCard) => {
+        if (latestCard.change_id !== changeId) {
+          const message = "The server returned a different Change Card.";
+          cardLoadErrors.set(changeId, message);
+          showFormError(message);
+          return;
+        }
+        cardLoadErrors.delete(changeId);
         if (
           activeEditor &&
           latestCard.change_id === activeEditor.card.change_id &&

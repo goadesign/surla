@@ -14,7 +14,7 @@ await until(() => page.$("#surla-build-start") && !page.$("#surla-build-start").
 expect(page.text("#surla-build-state") === "Not built yet.", "the initial state must describe a build that has not started");
 expect(!page.$("#surla-build-view-team").classList.contains("surla-btn-primary"), "team navigation must not be the primary action");
 page.$("#surla-build-start").click();
-await until(() => page.text("#surla-build-findings").includes("Finding from build 1."), "the saved finding did not appear");
+await until(() => page.text("#surla-build-findings").includes("Finding from build 1.") && !page.$("#surla-build-loading"), "the saved finding and build read did not settle");
 expect(page.text("#surla-build-state") === "Sent back to the test writer. It fixes this and reports again; nothing is yours to do unless it asks you in its pane.", "the state must identify who fixes the tests before showing findings");
 const build = page.$("#surla-build-section");
 expect(build.querySelector("p") === page.$("#surla-build-state"), "the saved step must be the first build explanation");
