@@ -178,6 +178,86 @@ func TestCheckoutRecordsTheExactCommitInEitherObjectFormat(t *testing.T) {
 	}
 }
 
+// TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits runs
+// a verification in a process whose environment points git at another
+// repository, work tree and index, as git does for the commands its hooks run.
+// The checkout must clone the plan's repository at its commit (Run then stops
+// at the plan's absent module, after the checkout) and leave every file of the
+// other repository as it was.
+func TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits(t *testing.T) {
+	commit := func(dir string) string {
+		git(t, dir, "init", "--quiet")
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte(dir), 0o600))
+		git(t, dir, "add", "f")
+		git(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "c")
+		return strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	}
+	repo, decoy := t.TempDir(), t.TempDir()
+	head := commit(repo)
+	commit(decoy)
+	files := func() map[string]string {
+		got := map[string]string{}
+		require.NoError(t, filepath.WalkDir(decoy, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			raw, err := os.ReadFile(path)
+			got[path] = string(raw)
+			return err
+		}))
+		return got
+	}
+	before := files()
+	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
+	t.Setenv("GIT_WORK_TREE", decoy)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(decoy, ".git", "index"))
+
+	_, err := Run(t.Context(), Plan{
+		CandidateRepo:   repo,
+		CandidateCommit: head,
+		CandidateModule: "absent",
+		Binaries:        map[string]string{"orders": "./cmd/orders"},
+		SuiteCommit:     head,
+		SuiteCommand:    "./cmd/suite",
+		WorkDir:         t.TempDir(),
+		Tests:           TestsEvaluator,
+	})
+	var stage *StageError
+	require.ErrorAs(t, err, &stage)
+	assert.Equal(t, "The candidate commit does not contain the configured module.", stage.Summary,
+		"the checkout itself succeeded: %v", err)
+	assert.Equal(t, before, files(), "the inherited repository is untouched")
+}
+
+// TestCheckoutGitEnvDropsOnlyRepositoryRedirects checks that the checkout's
+// environment drops each variable that would point git at another
+// repository, and keeps the settings a remote repository's clone may need:
+// its protocol, credentials and configuration.
+func TestCheckoutGitEnvDropsOnlyRepositoryRedirects(t *testing.T) {
+	for _, name := range checkoutRedirects {
+		t.Setenv(name, "/elsewhere")
+	}
+	kept := map[string]string{
+		"GIT_SSH_COMMAND": "ssh -i key", "GIT_ASKPASS": "/usr/bin/askpass",
+		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader", "GIT_CONFIG_VALUE_0": "x",
+		"GIT_ALLOW_PROTOCOL": "https:ssh:file",
+	}
+	for name, value := range kept {
+		t.Setenv(name, value)
+	}
+	got := map[string]string{}
+	for _, kv := range checkoutGitEnv() {
+		name, value, _ := strings.Cut(kv, "=")
+		got[name] = value
+	}
+	for _, name := range checkoutRedirects {
+		assert.NotContains(t, got, name)
+	}
+	for name, value := range kept {
+		assert.Equal(t, value, got[name], "%s reaches the clone", name)
+	}
+}
+
 // TestBuildSummarySurfacesExit71GuidanceWithoutLeakingPrivateDiagnostics
 // verifies that buildSummary replaces the generic build failure summary with
 // conditional exit-71 recovery guidance only when a non-canceled build command
