@@ -24,6 +24,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -184,27 +185,35 @@ func TestModelChoiceTextsSayTheDefaultFollowsOnlyWithoutAChoice(t *testing.T) {
 	}
 }
 
-// TestSettingsTextsPromiseOnlyWhatTheCodeDoes reads the published contract
-// and the reference. Both say a live target's test program, even one agents
-// wrote, receives the chosen provider's settings, and that only tests
-// written for a verification and the check helper receive none, as
-// TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment and
-// TestWrittenTestRunsReceiveNoProviderSettings prove. The reference states
-// the exported log's guarantee as TestProtectExcerptReplacesEveryByteOfHeldValues
-// proves it: no byte of an exact occurrence, or of an unfinished value at
-// the log's end, and other forms of a value exported as printed; and that
-// the excerpt is valid UTF-8, as TestProtectExcerptExportsValidUTF8 and
-// TestStartErrorExportsValidUTF8 prove.
+// TestSettingsTextsPromiseOnlyWhatTheCodeDoes checks the published profiles:
+// only the operator's stored evaluator receives provider settings; accepted
+// written tests use a live gateway and the check helper receives none. It also
+// preserves the documented exact-value, partial-value and UTF-8 log guarantees.
 func TestSettingsTextsPromiseOnlyWhatTheCodeDoes(t *testing.T) {
 	openAPI := documentText(t, "../../gen/http/openapi3.json")
 	reference := documentText(t, "../../docs/REFERENCE.md")
-	// Sentences are compared without case: one starts a sentence where the
-	// other does not.
-	for name, text := range map[string]string{"OpenAPI": openAPI, "REFERENCE.md": reference} {
-		lower := strings.ToLower(text)
-		assert.True(t, strings.Contains(lower, "including a candidate commit's test module that agents wrote, receives the chosen provider's held settings"), name)
-		assert.True(t, strings.Contains(lower, "tests a separate agent wrote for a verification, and the check helper, receive none"), name)
-		assert.False(t, strings.Contains(lower, "tests agents wrote and the check helper receive none"), name)
+	for _, doc := range []struct {
+		name, text string
+		promises   []string
+	}{
+		{name: "OpenAPI", text: openAPI, promises: []string{
+			"a live target with the operator's stored evaluator receives the chosen provider's held settings",
+			"accepted written tests receive no provider settings in verification or live targets",
+			"the check helper receives none",
+		}},
+		{name: "REFERENCE.md", text: reference, promises: []string{
+			"a stored evaluator's live target receives the chosen provider's held settings",
+			"the test writer's accepted program receives none, in verification or a live target",
+			"the check helper also receives none",
+		}},
+	} {
+		lower := strings.ToLower(doc.text)
+		for _, promise := range doc.promises {
+			assert.Contains(t, lower, promise, doc.name)
+		}
+		assert.Contains(t, lower, "loopback model gateway", doc.name)
+		assert.NotContains(t, lower, "including a candidate commit's test module that agents wrote, receives the chosen provider's held settings", doc.name)
+		assert.NotContains(t, lower, "a test module from the commit, which agents wrote, receives only", doc.name)
 	}
 	for _, promise := range []string{
 		"So, apart from a base URL's scheme and host, no byte of an exact occurrence of a setting the target was given, or of one whose writing stopped at the end of the log, is exported.",
@@ -565,11 +574,12 @@ func TestLiveStartFailureExportsProtectedDetail(t *testing.T) {
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=leak"), StartTimeout: time.Minute},
 	})
+	seedLiveChange(t, cp)
 	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{
 		"ANTHROPIC_API_KEY": sentinelKey, "ANTHROPIC_AUTH_TOKEN": sentinelToken, "ANTHROPIC_BASE_URL": sentinelURL,
 	}})
 
-	_, err = cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err = cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assertServiceError(t, err, "live_target_failed")
 	assertHoldsNoSentinel(t, err.Error())
 	var tail string
@@ -616,9 +626,10 @@ func TestLiveStartFailureExportsNoKeyPieceAtTheCut(t *testing.T) {
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
 		Live:         &LiveConfig{Command: []string{"/bin/sh", "-c", script, "executor"}, Env: os.Environ(), StartTimeout: time.Minute},
 	})
+	seedLiveChange(t, cp)
 	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": key}})
 
-	_, err := cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	_, err := cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	assertServiceError(t, err, "live_target_failed")
 	var tail string
 	for _, span := range recorder.Ended() {
@@ -633,6 +644,8 @@ func TestLiveStartFailureExportsNoKeyPieceAtTheCut(t *testing.T) {
 			assertSpanNeverContainsValue(t, span, key[i:i+8])
 		}
 	}
+	assert.LessOrEqual(t, len(tail), exported, "the exported excerpt is bounded after protecting held settings")
+	assert.True(t, utf8.ValidString(tail), "the exported excerpt remains valid UTF-8")
 	assert.Equal(t, modelsettings.Redacted+strings.Repeat("y", filler), tail, "the cut key is replaced once and the output after it kept")
 	history, err := os.ReadFile(filepath.Join(cardsDir, "traces.jsonl"))
 	require.NoError(t, err)
@@ -654,12 +667,13 @@ func TestSavedFilesHoldNoHandedOverValue(t *testing.T) {
 		Verification: &VerificationConfig{RunsDir: runsDir},
 		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
 	})
+	seedLiveChange(t, cp)
 	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{
 		Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelKey, "ANTHROPIC_AUTH_TOKEN": sentinelToken, "ANTHROPIC_BASE_URL": sentinelURL},
 		Openai:    map[string]string{"OPENAI_API_KEY": sentinelOpenAIKey},
 	})
 	builder := asCaller("alice@example.com", CallerBuilder)
-	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
 	assertHoldsNoSentinel(t, started.Message)
 	dirs, err := verifyrunLeftovers(cardsDir)
@@ -700,8 +714,9 @@ exec "$0" "$1" "$2" "$3"`
 	})
 	builder := asCaller("alice@example.com", CallerBuilder)
 	commit := strings.Repeat("a", 40)
+	seedLiveChange(t, cp)
 	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelKey}})
-	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	started, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 	require.NoError(t, err)
 
 	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelSecondKey}})
@@ -720,7 +735,7 @@ exec "$0" "$1" "$2" "$3"`
 	require.NoError(t, err)
 	assert.Equal(t, "FIRST_KEY=yes\nKEY_SET=yes\n", string(raw), "the running target started with the first settings")
 
-	_, err = cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	_, err = cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{ChangeID: liveTestChangeID, CandidateCommit: commit})
 	require.NoError(t, err)
 	raw, err = os.ReadFile(filepath.Join(reports, "launch-1"))
 	require.NoError(t, err)

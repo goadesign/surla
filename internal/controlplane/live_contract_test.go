@@ -86,7 +86,10 @@ func TestLiveStartRefusalsPreserveTheRunningTarget(t *testing.T) {
 		assert.Equal(t, "Keep this draft.", lastText(t, started.URL))
 		dirs, err := verifyrun.LeftoverLiveDirs(root)
 		require.NoError(t, err)
-		assert.Equal(t, []string{owned.proc.Dir()}, dirs)
+		require.Len(t, dirs, 1)
+		resolved, err := filepath.EvalSymlinks(dirs[0])
+		require.NoError(t, err)
+		assert.Equal(t, owned.proc.Dir(), resolved)
 	}
 }
 

@@ -142,7 +142,7 @@ func TestVerificationAndLiveTargetsUseTheAcceptedTests(t *testing.T) {
 			var live verifyrun.LiveRequest
 			readJSONFile(t, filepath.Join(liveDirs[0], "live.json"), &live)
 			wantLive := layoutPlan(repo, repo.candidate, repo.tests)
-			wantLive.RequestRevision = card.RequestRevision
+			assert.Empty(t, live.Plan.RequestRevision, "live requests do not persist a verification revision")
 			wantLive.WorkDir = filepath.Join(liveDirs[0], "work")
 			assert.Equal(t, wantLive, withoutReport(live.Plan), "the live copy runs accepted tests, not candidate-owned eval code")
 			_, err = cp.StopLiveTarget(builder)
