@@ -145,7 +145,7 @@ expect(page.$("#surla-openui-local-edit-notice"), "expected #surla-openui-local-
 
 // The page's confirmation saves the OpenUI answer and the edited example.
 page.$("#surla-confirm-submit").click();
-await until(() => !page.$("#surla-openui-workspace") && editorRegion().textContent.includes("[Confirmed answer: subtotal_only]"), "expected #surla-openui-workspace to unmount and confirmed answer label to appear after confirm_intent");
+await until(() => !page.$("#surla-openui-workspace") && page.text("#surla-confirmed-decisions").includes("subtotal_only"), "expected #surla-openui-workspace to unmount and the saved agreement to show the confirmed answer after confirm_intent");
 const sent = page.sent("POST", "/changes/confirm")[0].body;
 expect(sent.answers["chg-openui-ambiguity-01"] === "subtotal_only" && sent.examples[0].expected_outcome === "Auto-approved with audit log", "confirm_intent did not send the OpenUI answer: " + JSON.stringify(sent));
 const confirmed = (await api(origin, "GET", "/changes/chg-openui", undefined, input.guide)).body;
@@ -156,7 +156,7 @@ expect(decisions && decisions.textContent.includes("Confirmed Decisions:") && de
 // A confirmed card without questions keeps the plain Summary heading.
 await open("chg-zero-amb");
 page.$("#surla-confirm-submit").click();
-await until(() => editorRegion().textContent.includes("Confirmed Change Decision"), "the zero-question card did not confirm");
+await until(() => editorRegion().textContent.includes("Agreed:"), "the zero-question card did not confirm");
 expect(!page.$("#surla-confirmed-decisions") && editorRegion().textContent.includes("Summary: ") && !editorRegion().textContent.includes("Initial Proposal Summary: "), "expected zero-ambiguity confirmed card to omit #surla-confirmed-decisions and keep Summary heading");
 
 // 4. Every invalid composition falls back to the canonical editor.

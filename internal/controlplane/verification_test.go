@@ -62,6 +62,7 @@ func TestVerifyChangeAcceptsOnlyTheOwnersCurrentConfirmedRevision(t *testing.T) 
 		assert.Equal(t, commit, started.CandidateCommit)
 		assert.Equal(t, cfg.Plan.SuiteCommit, started.SuiteCommit)
 		assert.Equal(t, gensurla.StateKindRunning, started.State.Kind())
+		assert.True(t, started.InputsCurrent)
 
 		saved, err := os.ReadFile(filepath.Join(cfg.RunsDir, started.RunID, "request.json"))
 		require.NoError(t, err)
@@ -109,6 +110,7 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, card.RequestRevision, res.RequestRevision)
 		assert.Equal(t, commit, res.CandidateCommit)
+		assert.True(t, res.InputsCurrent)
 		return res
 	}
 
@@ -154,6 +156,7 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 		res, err := restarted.GetVerification(alice, &gensurla.GetVerificationPayload{RunID: runID})
 		require.NoError(t, err, "the run does not depend on the saved Change Card")
 		assert.Equal(t, "chg", res.ChangeID)
+		assert.False(t, res.InputsCurrent, "a fresh card directory preserves historical access without a current match")
 	})
 
 	t.Run("unknown run", func(t *testing.T) {
@@ -348,6 +351,8 @@ func TestListVerifications(t *testing.T) {
 		assert.Equal(t, "2026-10-31T12:00:00.9Z", res.Runs[0].AcceptedAt)
 		assert.Equal(t, card.RequestRevision, res.Runs[0].RequestRevision)
 		assert.Equal(t, runEarly, res.Runs[1].RunID)
+		assert.True(t, res.Runs[0].InputsCurrent)
+		assert.True(t, res.Runs[1].InputsCurrent)
 		assert.Equal(t, "2026-10-31T12:00:00.1Z", res.Runs[1].AcceptedAt)
 
 		completed, ok := res.Runs[0].State.AsCompleted()

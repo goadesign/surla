@@ -20,6 +20,9 @@ export interface VerificationViewProps {
   // run is the currently selected VerificationStatusResult snapshot, or null
   // when loading, empty, or failed before any run was selected.
   run: VerificationStatusResult | null;
+  // inputsKnown says the selected run's current-input observation is fresh.
+  // Saved report facts remain readable while that observation is unknown.
+  inputsKnown: boolean;
   // listedRuns is the exact server-ordered array of runs from the last loaded
   // VerificationListResult for changeId, or null if no list has been loaded yet.
   listedRuns: VerificationStatusResult[] | null;
@@ -72,16 +75,26 @@ const failureStageLabels: Record<VerificationNotCompleted["stage"], string> = {
 function runStatusHeading(run: VerificationStatusResult): string {
   const state = run.state;
   if (state.type === "running") {
-    return "Verification in progress";
+    return "The check is running";
   }
   if (state.type === "completed") {
-    return state.value.report.passed
-      ? "Verification passed"
-      : "Verification did not pass";
+    const report = state.value.report;
+    return report.passed
+      ? `The check passed: ${report.counts.passed} of ${report.counts.required} scenarios.`
+      : `The check did not pass: ${report.counts.passed} of ${report.counts.required} scenarios passed.`;
   }
   return state.value.kind === "interrupted"
-    ? "Verification interrupted"
-    : "Verification could not finish";
+    ? "The check was interrupted"
+    : "The check could not finish";
+}
+
+// localStartTime presents the request acceptance time in the reader's locale.
+// The exact timestamp remains in the run details.
+function localStartTime(acceptedAt: string): string {
+  return new Date(acceptedAt).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 // VerificationView renders the selected run or the loading/empty/error list
@@ -90,6 +103,7 @@ function runStatusHeading(run: VerificationStatusResult): string {
 export function VerificationView({
   changeId,
   run,
+  inputsKnown,
   listedRuns,
   loadedCard,
   checking,
@@ -118,7 +132,7 @@ export function VerificationView({
           aria-labelledby="surla-cp4-title"
           aria-busy="true"
         >
-          <h2 id="surla-cp4-title">Loading saved verifications</h2>
+          <h2 id="surla-cp4-title" tabIndex={-1}>Loading saved verifications</h2>
           <p>Reading saved verification runs for this Change Card...</p>
           <div className="surla-field-row">
             <Button id="surla-load-verifications" disabled={true} onClick={onLoadVerifications}>
@@ -154,7 +168,7 @@ export function VerificationView({
           id="surla-cp4-verification"
           aria-labelledby="surla-cp4-title"
         >
-          <h2 id="surla-cp4-title">Could not load saved verifications</h2>
+          <h2 id="surla-cp4-title" tabIndex={-1}>Could not load saved verifications</h2>
           <Alert id="surla-cp4-list-error" variant="destructive" role="alert">
             <strong>Could not load saved verifications. </strong>
             {listError}
@@ -201,10 +215,10 @@ export function VerificationView({
         id="surla-cp4-verification"
         aria-labelledby="surla-cp4-title"
       >
-        <h2 id="surla-cp4-title">No saved verifications</h2>
+        <h2 id="surla-cp4-title" tabIndex={-1}>No saved verifications</h2>
         <p id="surla-cp4-empty">
-          No verification runs are currently saved for this Change Card. The builder starts
-          checks for a confirmed change, then you can load saved verifications here.
+          No checks are saved for this change yet. Once the tests are accepted,
+          the builder finishes the code and asks Surla to check it. The result appears here.
         </p>
         {cardLoadError !== null && !sameCardLoaded ? (
           <Alert id="surla-cp4-card-error" variant="destructive" role="alert">
@@ -255,34 +269,22 @@ export function VerificationView({
       aria-labelledby="surla-cp4-title"
       aria-busy={checking || loadingList ? "true" : undefined}
     >
-      <div className="surla-region-header">
-        <div className="surla-region-title-group">
-          <h2 id="surla-cp4-title">{title}</h2>
-        </div>
-        <div className="surla-toolbar-actions">
-          <Badge
-            variant={
-              state.type === "completed"
-                ? state.value.report.passed
-                  ? "success"
-                  : "destructive"
-                : state.type === "running"
-                ? "accent"
-                : "warning"
-            }
-          >
-            {"candidate " + run.candidate_commit.slice(0, 7)}
-          </Badge>
-          {state.type === "completed" ? (
-            <Badge>{state.value.suite_id + " (" + state.value.environment + ")"}</Badge>
-          ) : null}
-        </div>
-      </div>
+      <h2 id="surla-cp4-title" tabIndex={-1}>{title}</h2>
       {testSource.source === "written_tests" ? (
-        <Alert variant="warning" id="surla-cp4-test-source">
+        <p id="surla-cp4-test-source">
           {testSource.notice}
-        </Alert>
+        </p>
       ) : null}
+      <p id="surla-cp4-started">
+        Check started <time dateTime={run.accepted_at}>{localStartTime(run.accepted_at)}</time>.
+      </p>
+      <p id="surla-cp4-inputs" role="status">
+        {!inputsKnown
+          ? "Whether this saved result matches the current agreement and selected tests is not known. Check status to read it again."
+          : run.inputs_current
+          ? "This result matches the agreed revision and selected tests."
+          : "This saved result does not match the current agreement and selected tests. The builder checks again before you can approve."}
+      </p>
       {displayedCardRevision !== null && displayedCardRevision !== run.request_revision ? (
         <Alert variant="warning" role="status" id="surla-cp4-different-revision">
           This result applies to a different saved Change Card revision
@@ -303,16 +305,11 @@ export function VerificationView({
           Not included in the last loaded list; reload to check.
         </p>
       ) : null}
-      {listedRuns !== null && listedRuns.length > 0 ? (
+      {listedRuns !== null && listedRuns.length > 1 ? (
         <div id="surla-cp4-run-list" role="group" aria-label="Saved verification runs">
           {listedRuns.map((r) => {
             const revShort = r.request_revision.slice(0, 15);
-            const revLabel =
-              displayedCardRevision !== null
-                ? r.request_revision === displayedCardRevision
-                  ? "Matches loaded card revision (" + revShort + ")"
-                  : "Different card revision (" + revShort + ")"
-                : "Card revision " + revShort;
+            const revLabel = "Saved card revision " + revShort;
             return (
               <Button
                 key={r.run_id}
@@ -325,8 +322,8 @@ export function VerificationView({
                 {runStatusHeading(r) +
                   " — candidate " +
                   r.candidate_commit.slice(0, 7) +
-                  " — accepted " +
-                  r.accepted_at +
+                  " — started " +
+                  localStartTime(r.accepted_at) +
                   " · " +
                   revLabel}
               </Button>
@@ -363,13 +360,18 @@ export function VerificationView({
           {listError}
         </Alert>
       ) : null}
-      {cardLoadError !== null && !sameCardLoaded ? (
+      {cardLoadError !== null ? (
         <Alert id="surla-cp4-card-error" variant="destructive" role="alert">
           {cardLoadError}
+          <div className="surla-field-row">
+            <Button id="surla-cp4-retry-card" disabled={loadingCard} onClick={onOpenChangeCard}>
+              {loadingCard ? "Reading agreement…" : "Retry agreement read"}
+            </Button>
+          </div>
         </Alert>
       ) : null}
       <div className="surla-field-row">
-        {state.type === "running" || requestError !== null ? (
+        {state.type === "running" || requestError !== null || !inputsKnown ? (
           <Button
             id="surla-cp4-check-status"
             variant="primary"
@@ -410,7 +412,7 @@ export function VerificationView({
           <dd><code>{run.suite_commit}</code></dd>
           <dt>Verification run</dt><dd><code>{run.run_id}</code></dd>
           <dt>Change Card</dt><dd><code>{run.change_id}</code></dd>
-          <dt>Accepted</dt>
+          <dt>Check started</dt>
           <dd><time dateTime={run.accepted_at}>{run.accepted_at}</time></dd>
           {state.type === "running" ? (
             <>
@@ -431,28 +433,26 @@ export function VerificationView({
   );
 }
 
-// CompletedReport shows the entire declared denominator and every builder-safe
-// outcome. It never derives a verdict from counts or missing diagnostics.
+// CompletedReport preserves every builder-safe outcome and shows detailed
+// counts when something did not pass. The heading owns the saved verdict.
 function CompletedReport({ report }: { report: BuilderVerificationReport }) {
   const counts = report.counts;
   return (
     <>
-      <p>{counts.passed} of {counts.required} required scenarios passed.</p>
       {report.suite_failed ? (
         <Alert variant="destructive" role="status">
           The evaluation failed or ended unexpectedly.
           Individual scenario outcomes are shown below.
         </Alert>
       ) : null}
-      <dl className="surla-verification-counts" aria-label="Scenario outcome counts">
-        <div><dt>Required</dt><dd>{counts.required}</dd></div>
-        <div><dt>Passed</dt><dd>{counts.passed}</dd></div>
-        <div><dt>Failed</dt><dd>{counts.failed}</dd></div>
-        <div><dt>Not run</dt><dd>{counts.not_run}</dd></div>
-        <div><dt>Could not evaluate</dt><dd>{counts.harness_error}</dd></div>
-      </dl>
+      {counts.failed > 0 || counts.not_run > 0 || counts.harness_error > 0 || report.suite_failed ? (
+        <dl className="surla-verification-counts" aria-label="Scenario outcome counts">
+          <div><dt>Failed</dt><dd>{counts.failed}</dd></div>
+          <div><dt>Not run</dt><dd>{counts.not_run}</dd></div>
+          <div><dt>Could not evaluate</dt><dd>{counts.harness_error}</dd></div>
+        </dl>
+      ) : null}
       <h3>Declared scenarios</h3>
-      <p>Unseen audit scenarios show only an anonymous outcome.</p>
       <ul className="surla-verification-scenarios">
         {report.scenarios.map((scenario) => (
           <li key={scenario.id}>

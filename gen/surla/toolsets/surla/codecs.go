@@ -6541,6 +6541,11 @@ var getVerificationResultFields = []tools.FieldMetadata{
 		Description: "When the run was accepted.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("inputs_current")},
+		JSONType:    "boolean",
+		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
 		JSONType:    "object",
 		Description: "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.",
@@ -7564,6 +7569,11 @@ var listVerificationsResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("accepted_at")},
 		JSONType:    "string",
 		Description: "When the run was accepted.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("inputs_current")},
+		JSONType:    "boolean",
+		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("runs"), tools.DynamicField{}, tools.FixedField("test_source")},
@@ -10734,6 +10744,11 @@ var verifyChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("accepted_at")},
 		JSONType:    "string",
 		Description: "When the run was accepted.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("inputs_current")},
+		JSONType:    "boolean",
+		Description: "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("test_source")},
@@ -15995,6 +16010,7 @@ func MarshalGetVerificationResult(v *GetVerificationResult) ([]byte, error) {
 		CandidateCommit: &in.CandidateCommit,
 		SuiteCommit:     &in.SuiteCommit,
 		AcceptedAt:      &in.AcceptedAt,
+		InputsCurrent:   &in.InputsCurrent,
 	}
 	var testSourceValue toolhttp.TestSource
 	switch string(in.TestSource.Kind()) {
@@ -16079,6 +16095,7 @@ func UnmarshalGetVerificationResult(data []byte) (*GetVerificationResult, error)
 		CandidateCommit: *in.CandidateCommit,
 		SuiteCommit:     *in.SuiteCommit,
 		AcceptedAt:      *in.AcceptedAt,
+		InputsCurrent:   *in.InputsCurrent,
 	}
 	switch string(in.TestSource.Kind()) {
 	case "evaluator":
@@ -17813,6 +17830,7 @@ func MarshalVerifyChangeResult(v *VerifyChangeResult) ([]byte, error) {
 		CandidateCommit: &in.CandidateCommit,
 		SuiteCommit:     &in.SuiteCommit,
 		AcceptedAt:      &in.AcceptedAt,
+		InputsCurrent:   &in.InputsCurrent,
 	}
 	var testSourceValue toolhttp.TestSource
 	switch string(in.TestSource.Kind()) {
@@ -17897,6 +17915,7 @@ func UnmarshalVerifyChangeResult(data []byte) (*VerifyChangeResult, error) {
 		CandidateCommit: *in.CandidateCommit,
 		SuiteCommit:     *in.SuiteCommit,
 		AcceptedAt:      *in.AcceptedAt,
+		InputsCurrent:   *in.InputsCurrent,
 	}
 	switch string(in.TestSource.Kind()) {
 	case "evaluator":
@@ -21716,6 +21735,13 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 			); err != nil {
 				return err
 			}
+		case "inputs_current":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.",
+			); err != nil {
+				return err
+			}
 		case "request_revision":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -21756,6 +21782,7 @@ func validateVerifyChangeResultJSONValue(path string, value any, description str
 				"accepted_at",
 				"candidate_commit",
 				"change_id",
+				"inputs_current",
 				"request_revision",
 				"run_id",
 				"state",
@@ -26152,6 +26179,7 @@ func decodeVerificationStatusResultTransportToVerificationStatusResult(v *toolht
 		CandidateCommit: *v.CandidateCommit,
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
+		InputsCurrent:   *v.InputsCurrent,
 	}
 	switch string(v.TestSource.Kind()) {
 	case "evaluator":
@@ -26213,6 +26241,7 @@ func encodeVerificationStatusResultToVerificationStatusResultTransport(v *Verifi
 		CandidateCommit: &v.CandidateCommit,
 		SuiteCommit:     &v.SuiteCommit,
 		AcceptedAt:      &v.AcceptedAt,
+		InputsCurrent:   &v.InputsCurrent,
 	}
 	var testSourceValue toolhttp.TestSource
 	switch string(v.TestSource.Kind()) {

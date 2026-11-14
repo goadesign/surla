@@ -577,6 +577,10 @@ type VerifyChangeResponseBody struct {
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
@@ -600,6 +604,10 @@ type GetVerificationResponseBody struct {
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
@@ -3735,6 +3743,10 @@ type VerificationStatusResultResponseBody struct {
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
@@ -7049,6 +7061,7 @@ func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyCha
 		CandidateCommit: res.CandidateCommit,
 		SuiteCommit:     res.SuiteCommit,
 		AcceptedAt:      res.AcceptedAt,
+		InputsCurrent:   res.InputsCurrent,
 	}
 	if res.TestSource.Kind() != "" {
 		switch string(res.TestSource.Kind()) {
@@ -7116,6 +7129,7 @@ func NewGetVerificationResponseBody(res *surla.VerificationStatusResult) *GetVer
 		CandidateCommit: res.CandidateCommit,
 		SuiteCommit:     res.SuiteCommit,
 		AcceptedAt:      res.AcceptedAt,
+		InputsCurrent:   res.InputsCurrent,
 	}
 	if res.TestSource.Kind() != "" {
 		switch string(res.TestSource.Kind()) {

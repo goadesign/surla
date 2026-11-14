@@ -577,6 +577,10 @@ type VerifyChangeResponseBody struct {
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -600,6 +604,10 @@ type GetVerificationResponseBody struct {
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -3735,6 +3743,10 @@ type VerificationStatusResultResponseBody struct {
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
 	// When the run was accepted.
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
@@ -7712,6 +7724,7 @@ func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *
 		CandidateCommit: *body.CandidateCommit,
 		SuiteCommit:     *body.SuiteCommit,
 		AcceptedAt:      *body.AcceptedAt,
+		InputsCurrent:   *body.InputsCurrent,
 	}
 	switch string(body.TestSource.Kind()) {
 	case "evaluator":
@@ -7881,6 +7894,7 @@ func NewGetVerificationVerificationStatusResultOK(body *GetVerificationResponseB
 		CandidateCommit: *body.CandidateCommit,
 		SuiteCommit:     *body.SuiteCommit,
 		AcceptedAt:      *body.AcceptedAt,
+		InputsCurrent:   *body.InputsCurrent,
 	}
 	switch string(body.TestSource.Kind()) {
 	case "evaluator":
@@ -10361,6 +10375,9 @@ func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -10441,6 +10458,9 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 	}
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
@@ -15562,6 +15582,9 @@ func ValidateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -15642,6 +15665,9 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 	}
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", path))
+	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", path))
 	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", path))

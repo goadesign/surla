@@ -236,11 +236,13 @@ Card, run `surla preview -dir <module>`.
 
 ## Building
 
-You press **Build this change** in Decisions & Approval. Above the button the
-page says what starts: "Building starts a builder and, unless this project has
-stored verification settings, a test writer whose tests Surla runs on this
-machine outside the sandbox to check the builder’s work." **Stored
-verification settings** name a test suite of your own, an **evaluator**, at
+After confirming, you press **Build this change** at the top of Decisions &
+Approval. The saved agreement stays below the build under **Agreed:** and
+your request. Open **Agreement details** to review it or **Refine agreed
+answers and examples** to edit it. The build control explains which agents
+start and that Surla runs the tests on this machine with your permissions,
+so you should read them before approving. **Stored verification settings**
+name a test suite of your own, an **evaluator**, at
 one exact commit; you save them with `surla verification set <file>`, and
 they apply when the server starts again. Building always uses the agreed
 revision, including while a proposed revision waits.
@@ -356,6 +358,13 @@ checked that these tests build into the generated test program and declare
 every required scenario; it did not judge what they assert." Whether the
 tests check the right things is still yours to judge.
 
+When findings are sent back, the page names the test writer as the next
+actor. **Read findings** shows them under **What Surla told the test writer**;
+the test writer fixes them and reports again. After a matching check passes,
+**Review and approve** opens that exact saved result. An earlier check stays
+readable, but the builder needs to verify the current revision and tests
+before you can approve.
+
 ## Trying prompt wording on a live target
 
 When the application calls an AI model, the builder can try prompt wording
@@ -432,6 +441,13 @@ verification settings, the evaluator they name. Otherwise the line reads
 builder for a run of the agreed revision. A run that does not match stays
 readable in the Proof view.
 
+The opened change and the selected run also refresh this match when the
+agreement or selected tests change. While a read is pending or fails, the
+report and your unsaved edits stay visible, but approval waits for a fresh
+match. Proof shows **Check started** in your local time: it is the time the
+server accepted the run, not a completion time. Details retain the exact
+recorded timestamp.
+
 The server returns only the builder view of a report, to you and to the
 agents alike. An evaluator named in stored verification settings can declare
 **hidden scenarios**: scenarios tagged `holdout`, whose names, checks and logs
@@ -507,7 +523,7 @@ revision a build, a run or an approval belongs to.
 | --- | --- | --- |
 | The guide revises a confirmed change | The agreed revision stays in force with its answers, build, runs and approval. The page shows the proposed revision beside it, under "Waiting for you". Refining the agreed revision is blocked until you adopt or decline. | Nothing until you decide. |
 | You decline the proposed revision | Everything, exactly as it was. | Nothing. |
-| You adopt the proposed revision (answer its questions, then **Adopt this revision**) | Earlier runs stay readable for their revision. | The adopted revision has another `request_revision` and no approval. The build becomes "Built for an earlier revision" and the builder's `verify_change` for the old revision is refused: build again. |
+| You adopt the proposed revision (answer its questions, then **Adopt this revision**) | Earlier runs stay readable for their revision. | The adopted revision has another `request_revision` and no approval. The build is marked **Earlier revision** and the builder's `verify_change` for the old revision is refused: build again. |
 | You change answers or examples of the agreed revision (**Refine Confirmed Answers & Examples**) | A submit with no change keeps everything. | A change gives another `request_revision`, drops the approval, and needs a build of that revision. |
 | You build the same revision again (**Build again…**, which asks first) | The agreed revision. | Both assignments become unread, the test writer's work returns to Assigned without report or verdict, and its tests must be reported, checked and accepted again before verification. |
 | The test writer reports again | The build. | Its earlier verdict is cleared; Surla checks the report again. |
