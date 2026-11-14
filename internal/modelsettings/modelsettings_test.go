@@ -27,6 +27,11 @@ const (
 	urlSentinel   = "https://gateway.invalid/" + urlCredential + "/"
 )
 
+// realShapedKey has the shape of a real Anthropic key: a fixed prefix, a
+// long random part and a fixed end; it is not a credential.
+const realShapedKey = "sk-ant-api03-" + "sentinelRANDOMPART" +
+	"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" + "q7w3e9r1t5u" + "ZZAA"
+
 // sentinels lists every raw value a test holds.
 var sentinels = []string{keySentinel, tokenSentinel, headerSentinel, urlCredential, urlSentinel}
 
@@ -304,6 +309,40 @@ func TestProtectReplacesHeldValuesInExportedText(t *testing.T) {
 		assert.Equal(t, "unchanged "+keySentinel, Protect("unchanged "+keySentinel))
 		assert.Equal(t, "unchanged", Protect("unchanged", Settings{}))
 	})
+}
+
+// TestProtectExcerptDropsPiecesAtItsEdges cuts a key shaped like a real
+// one, a token and a base URL holding a path credential at every offset,
+// at the start of an excerpt that begins where its text was cut and at the
+// end of one that stops inside a value: no piece of the value survives,
+// only the text around it. An uncut start keeps text that merely looks
+// like a value's end, a whole value is still protected, and values that
+// overlap each other across the cut are both dropped.
+func TestProtectExcerptDropsPiecesAtItsEdges(t *testing.T) {
+	anthropic := mustNew(t, "anthropic", map[string]string{
+		"ANTHROPIC_API_KEY": realShapedKey, "ANTHROPIC_AUTH_TOKEN": tokenSentinel, "ANTHROPIC_BASE_URL": urlSentinel,
+	})
+	for name, value := range map[string]string{"key": realShapedKey, "token": tokenSentinel, "base URL": urlSentinel} {
+		t.Run(name, func(t *testing.T) {
+			for c := 1; c < len(value); c++ {
+				assert.Equal(t, "\nlater log lines\n", ProtectExcerpt(value[c:]+"\nlater log lines\n", true, anthropic),
+					"cut %d bytes into the value", c)
+				assert.Equal(t, "earlier log lines\n", ProtectExcerpt("earlier log lines\n"+value[:c], false, anthropic),
+					"log ending %d bytes into the value", c)
+			}
+		})
+	}
+	assert.Equal(t, "AA starts the log "+Redacted+"\n", ProtectExcerpt("AA starts the log "+realShapedKey+"\n", false, anthropic),
+		"an uncut start keeps its text, and a whole value is replaced")
+	assert.Equal(t, "url https://gateway.invalid\n", ProtectExcerpt("url "+urlSentinel+"\n", true, anthropic))
+
+	// The key's end overlaps the header's start in the text, so dropping
+	// the key's piece leaves a piece of the header, which is dropped too.
+	chained := mustNew(t, "openai", map[string]string{"OPENAI_API_KEY": "sentinel-chain-abcd", "OPENAI_CUSTOM_HEADERS": "abcd-efgh-sentinel"})
+	text := "sentinel-chain-abcd-efgh-sentinel tail"
+	for c := 1; c < len("sentinel-chain-abcd"); c++ {
+		assert.Equal(t, " tail", ProtectExcerpt(text[c:], true, chained), "cut %d bytes in", c)
+	}
 }
 
 // mustNew returns the settings New builds from values, or stops the test.

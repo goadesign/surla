@@ -556,6 +556,51 @@ func TestLiveStartFailureExportsProtectedDetail(t *testing.T) {
 	assert.Empty(t, dirs, "the failed start's folder, which held the suite's output, is removed once its group is empty")
 }
 
+// TestLiveStartFailureExportsNoKeyPieceAtTheCut hands over a key shaped
+// like a real one, then starts a live target whose executor stand-in
+// prints it followed by enough output that the exported tail's cut falls
+// 13 bytes into it: the executor_log_tail event, every span and the
+// diagnostics history hold no piece of the key.
+func TestLiveStartFailureExportsNoKeyPieceAtTheCut(t *testing.T) {
+	isolateProviderFamilies(t)
+	const key = "sk-ant-api03-sentinelRANDOMPART0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZq7w3e9r1t5uZZAA"
+	const exported = 8 << 10
+	filler := exported - (len(key) - 13)
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	cardsDir := t.TempDir()
+	// The stand-in is the executor: its standard error is the log, and it
+	// ends without a ready line.
+	script := `printf '%s' "$ANTHROPIC_API_KEY" >&2; head -c ` + strconv.Itoa(filler) + ` /dev/zero | tr '\000' y >&2; exit 1`
+	cp := newControlPlane(t, Options{
+		CardsDir: cardsDir, TracerProvider: provider,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live:         &LiveConfig{Command: []string{"/bin/sh", "-c", script, "executor"}, Env: os.Environ(), StartTimeout: time.Minute},
+	})
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": key}})
+
+	_, err := cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	assertServiceError(t, err, "live_target_failed")
+	var tail string
+	for _, span := range recorder.Ended() {
+		for _, event := range span.Events() {
+			for _, kv := range event.Attributes {
+				if kv.Key == "executor_log_tail" {
+					tail = kv.Value.AsString()
+				}
+			}
+		}
+		for i := 8; i+8 <= len(key); i++ {
+			assertSpanNeverContainsValue(t, span, key[i:i+8])
+		}
+	}
+	assert.Equal(t, strings.Repeat("y", filler), tail, "only the output after the key is exported")
+	history, err := os.ReadFile(filepath.Join(cardsDir, "traces.jsonl"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(history), "sentinelRANDOMPART")
+}
+
 // TestSavedFilesHoldNoHandedOverValue hands settings over and runs a live
 // target with a quiet suite: no file in the state the control plane keeps
 // holds a value, and stopping the target removes its folder.

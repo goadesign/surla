@@ -302,6 +302,59 @@ func Protect(text string, held ...Settings) string {
 	return strings.NewReplacer(args...).Replace(text)
 }
 
+// ProtectExcerpt is Protect for an excerpt of a longer text, such as the
+// end of a live target's log, where a held value may be cut in pieces that
+// Protect, which recognizes whole occurrences only, would leave as they are.
+// startCut says the excerpt starts where the longer text was cut; its end
+// may also stop inside a value a writer had not finished.
+//
+// It first trims the excerpt's edges: while the excerpt starts with a
+// non-empty proper suffix of a held secret or endpoint value (only when
+// startCut), it drops the longest such prefix; while it ends with a
+// non-empty proper prefix of one, it drops the longest such suffix. Then it
+// applies Protect. This leaves no piece of a held value: an occurrence the
+// cut splits begins the excerpt with a proper suffix of its value, which the
+// first trim removes whole, being at most as long as the longest such
+// prefix; an occurrence that a trim in turn splits now begins the excerpt
+// the same way and the next trim removes it; the end is symmetric. When the
+// trims stop, every occurrence still overlapping the excerpt lies wholly
+// inside it, where Protect replaces it. A trim drops at most one value's
+// length of other text, which only shortens the diagnostic.
+func ProtectExcerpt(excerpt string, startCut bool, held ...Settings) string {
+	values := protectedValues(held)
+	for startCut {
+		n := 0
+		for _, v := range values {
+			for k := len(v) - 1; k > n; k-- {
+				if strings.HasPrefix(excerpt, v[len(v)-k:]) {
+					n = k
+					break
+				}
+			}
+		}
+		if n == 0 {
+			break
+		}
+		excerpt = excerpt[n:]
+	}
+	for {
+		n := 0
+		for _, v := range values {
+			for k := len(v) - 1; k > n; k-- {
+				if strings.HasSuffix(excerpt, v[:k]) {
+					n = k
+					break
+				}
+			}
+		}
+		if n == 0 {
+			break
+		}
+		excerpt = excerpt[:len(excerpt)-n]
+	}
+	return Protect(excerpt, held...)
+}
+
 // Settings returns the names of p's request settings, in table order.
 func (p Provider) Settings() []string {
 	names := make([]string, len(p.settings))
@@ -356,6 +409,21 @@ func (Value) MarshalJSON() ([]byte, error) { return json.Marshal(Redacted) }
 
 // MarshalText returns Redacted.
 func (Value) MarshalText() ([]byte, error) { return []byte(Redacted), nil }
+
+// protectedValues returns the raw values Protect replaces in held: every
+// secret and endpoint, but no plain account or project name.
+func protectedValues(held []Settings) []string {
+	var values []string
+	for _, s := range held {
+		p, _ := Lookup(s.provider)
+		for name, v := range s.values {
+			if p.kind(name) != kindPlain {
+				values = append(values, v.raw())
+			}
+		}
+	}
+	return values
+}
 
 // kind returns how Protect treats the setting name of p; a name p does not
 // list is plain.

@@ -352,11 +352,12 @@ func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 
 // startError returns a *LiveStartError with the executor log's current tail,
 // in which every exact occurrence of a setting the target was given is
-// protected (modelsettings.Protect), whoever wrote the line. The log itself
-// is the suite's own output and stays as written.
+// protected, whoever wrote the line, and any piece of one that the tail's
+// start or end cuts is dropped (modelsettings.ProtectExcerpt). The log
+// itself is the suite's own output and stays as written.
 func (p *LiveProcess) startError(summary string, cause error) *LiveStartError {
-	detail := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail)
-	return &LiveStartError{Summary: summary, Detail: modelsettings.Protect(detail, p.settings...), Err: cause}
+	detail, cut := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail)
+	return &LiveStartError{Summary: summary, Detail: modelsettings.ProtectExcerpt(detail, cut, p.settings...), Err: cause}
 }
 
 // Dir returns the live directory, which Stop removes.
@@ -467,24 +468,25 @@ func decodeLiveLine(text string) (liveLine, error) {
 	return line, nil
 }
 
-// logTail returns at most n bytes from the end of the file at path, or a
-// note saying why it could not be read.
-func logTail(path string, n int64) string {
+// logTail returns at most n bytes from the end of the file at path and
+// whether it left earlier bytes out, or a note saying why it could not be
+// read.
+func logTail(path string, n int64) (string, bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Sprintf("(executor log unreadable: %v)", err)
+		return fmt.Sprintf("(executor log unreadable: %v)", err), false
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return fmt.Sprintf("(executor log unreadable: %v)", err)
+		return fmt.Sprintf("(executor log unreadable: %v)", err), false
 	}
 	start := max(info.Size()-n, 0)
 	b := make([]byte, info.Size()-start)
 	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Sprintf("(executor log unreadable: %v)", err)
+		return fmt.Sprintf("(executor log unreadable: %v)", err), false
 	}
-	return string(b)
+	return string(b), start > 0
 }
 
 // decodeLiveRequest reads live.json, rejecting unknown fields, trailing data

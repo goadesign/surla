@@ -154,6 +154,68 @@ func TestLiveStartDetailProtectsHeldSettings(t *testing.T) {
 	}
 }
 
+// TestStartErrorDropsValuePiecesTheTailCuts writes executor logs longer
+// than the exported tail, whose cut falls inside a held key (in its random
+// part and in its fixed prefix), a token and a base URL's path credential,
+// and a log a writer stopped inside a key. The Detail startError exports
+// holds no piece of any of them, only the log text around them.
+func TestStartErrorDropsValuePiecesTheTailCuts(t *testing.T) {
+	const key = "sk-ant-api03-sentinelRANDOMPART0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZq7w3e9r1t5uZZAA"
+	const token = "sentinel-cut-token-5d2c"
+	const baseURL = "https://gateway.invalid/sentinel-path-credential-7f3a/"
+	anthropic, err := modelsettings.New("anthropic", map[string]string{
+		"ANTHROPIC_API_KEY": key, "ANTHROPIC_AUTH_TOKEN": token, "ANTHROPIC_BASE_URL": baseURL,
+	})
+	require.NoError(t, err)
+	before := strings.Repeat("p", 99) + "\n"
+	for _, tc := range []struct {
+		name  string
+		value string
+		cut   int
+	}{
+		{name: "inside the key's random part", value: key, cut: 13},
+		{name: "inside the key's fixed prefix", value: key, cut: 5},
+		{name: "inside the token", value: token, cut: 10},
+		{name: "inside the base URL's path credential", value: baseURL, cut: strings.Index(baseURL, "sentinel") + 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The tail starts len(before)+cut bytes into the log: cut bytes
+			// into the value.
+			after := "\n" + strings.Repeat("y", maxLiveDetail-(len(tc.value)-tc.cut)-1)
+			detail := startErrorDetail(t, before+tc.value+after, anthropic)
+			assert.Equal(t, after, detail, "only the text after the value is exported")
+			assertNoPiece(t, detail, key, token, baseURL)
+		})
+	}
+	t.Run("log ending inside the key", func(t *testing.T) {
+		earlier := strings.Repeat("y", maxLiveDetail) + "\n"
+		detail := startErrorDetail(t, earlier+key[:71], anthropic)
+		assert.Equal(t, earlier[len(earlier)+71-maxLiveDetail:], detail, "the tail keeps the log's last bytes before the unfinished key")
+		assertNoPiece(t, detail, key, token, baseURL)
+	})
+}
+
+// startErrorDetail writes log as a live directory's executor log and
+// returns the Detail startError exports for a target given held.
+func startErrorDetail(t *testing.T, log string, held ...modelsettings.Settings) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "executor.log"), []byte(log), 0o600))
+	p := &LiveProcess{dir: dir, settings: held}
+	return p.startError("summary", nil).Detail
+}
+
+// assertNoPiece fails when text holds any eight bytes of a value's part
+// after its first eight, which are the parts a cut can leave.
+func assertNoPiece(t *testing.T, text string, values ...string) {
+	t.Helper()
+	for _, value := range values {
+		for i := 8; i+8 <= len(value); i++ {
+			assert.NotContains(t, text, value[i:i+8])
+		}
+	}
+}
+
 // writeSettingsReport writes, to path, whether each reported provider
 // variable is set in environ (ANTHROPIC_API_KEY reports "handed" when it is
 // the value tests hand over) and whether this process's arguments hold a
