@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -310,7 +311,7 @@ func TestTeamReminderPostFailures(t *testing.T) {
 // own bounded at 5 seconds per post that follows no redirect, to the same local
 // Chorus server the view reader uses.
 func TestTeamReminderProductionBinding(t *testing.T) {
-	deps, err := projectTeamDependencies(t.Context())
+	deps, err := projectTeamDependencies(t.Context(), os.Environ())
 	require.NoError(t, err)
 	sender, ok := deps.Sender.(teamChorusSender)
 	require.True(t, ok, "production binds %T", deps.Sender)
@@ -335,7 +336,7 @@ func TestTeamCommandsNeverType(t *testing.T) {
 		defer mu.Unlock()
 		calls = append(calls, slices.Clone(args))
 	}
-	commands := teamCommands{core: "recorded-core", app: "recorded-app", run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+	commands := teamCommands{core: "recorded-core", app: "recorded-app", run: func(_ context.Context, _ []string, _ string, args ...string) ([]byte, error) {
 		record(args)
 		switch {
 		case args[0] == "ls" && len(args) > 1:
@@ -349,7 +350,7 @@ func TestTeamCommandsNeverType(t *testing.T) {
 		}
 		return []byte(`{"address":"owned","state":"live","labels":{}}`), nil
 	}}
-	observations := teamObservations{commands: commands, stream: func(ctx context.Context, _ string, args []string, _ func(io.Reader) error) error {
+	observations := teamObservations{commands: commands, stream: func(ctx context.Context, _ []string, _ string, args []string, _ func(io.Reader) error) error {
 		record(args)
 		return errors.New("recorded stream ended")
 	}}

@@ -23,8 +23,10 @@ import (
 
 // Owns one local project's server identity, agent credentials, and one-use
 // browser access. Management credentials last for one listening server and
-// never authorize application decisions. This service is not exposed as agent
-// tools.
+// never authorize application decisions; besides this service, they may only
+// hand over the model provider request settings of the shell running surla
+// (the surla service's hand_over_model_settings). This service is not exposed
+// as agent tools.
 type Service interface {
 	// The CLI checks the answering server reports its expected project identity
 	// using the current server-lifetime management credential.

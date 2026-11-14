@@ -166,10 +166,13 @@ installed in `~/.local/bin`; an older Chorus is named with
 
 Surla itself calls no model, so it needs no model key; each coding agent
 uses its own sign-in. An application that calls a model needs a key only when
-the builder tries prompts on a live target. The page's **Live target** view
-chooses that model: a provider whose key is in the server's environment, or a
-model gateway. The server runs in a Herdr terminal, so its environment is the
-Herdr core's, not that of the shell where you run `surla`; see
+the builder tries prompts on a live target. Export the provider's key, such as
+`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, with any request settings it needs,
+in the shell where you run `surla`: `surla` hands them to the server, which
+holds them in memory until `surla stop`, and while no model is chosen, live
+targets then use `claude-sonnet-4-6` or `gpt-5.4-mini`. The page's
+**Live target** view changes that model to another provider whose settings
+were handed over, or to a model gateway; see
 [`surla` and `surla stop`](docs/REFERENCE.md#surla-serve).
 
 ## Start a project
