@@ -409,7 +409,8 @@ type (
 		// none when no live target runs; starting while one is built and started;
 		// running with its commit, address, start time and the prompts whose drafts
 		// are in force; not_confirmed_stopped when its processes could not be
-		// confirmed stopped.
+		// confirmed stopped; ended when a ready target ended unexpectedly and cleanup
+		// is confirmed.
 		LiveTarget LiveTarget
 	}
 	// GetStoryRefreshPayload defines the JSON payload for the surla.get_story_refresh tool.
@@ -849,6 +850,8 @@ type (
 	}
 	// StartLiveTargetPayload defines the JSON payload for the surla.start_live_target tool.
 	StartLiveTargetPayload = struct {
+		// Owned, confirmed change from list_builder_assignments.
+		ChangeID string
 		// Full commit ID to build, in the candidate repository's object format.
 		CandidateCommit string
 	}
@@ -1222,6 +1225,17 @@ type (
 		// the target answers with the same version, such as the same text sent again,
 		// keeps this time.
 		AcceptedAt string
+	}
+	// LiveTargetEnded is a nested type used by the generated JSON contract.
+	LiveTargetEnded = struct {
+		// The commit the ended target ran.
+		CandidateCommit string
+		// When that target became ready.
+		StartedAt string
+		// When the server observed that target ending.
+		EndedAt string
+		// Fixed explanation of what is known and the builder's next step.
+		Message string
 	}
 	// LiveTargetNone is a nested type used by the generated JSON contract.
 	LiveTargetNone = struct {

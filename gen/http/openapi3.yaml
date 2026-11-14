@@ -13013,7 +13013,7 @@ paths:
             tags:
                 - surla
             summary: configure_model surla
-            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider''s held request settings.'
+            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. With written tests, a direct provider is served by the executor''s loopback model gateway and the accepted test program receives only that gateway, never provider settings. The executor-owned gateway has no authentication: any local process, including another user''s, can use it while the target runs without receiving the provider key. With stored verification settings, the evaluator receives the choice and its chosen provider''s settings. A configured gateway is passed through unchanged.'
             operationId: surla#configure_model
             requestBody:
                 description: Request body for configure_model.
@@ -13068,7 +13068,7 @@ paths:
             tags:
                 - surla
             summary: hand_over_model_settings surla
-            description: 'The surla command, after it confirms the project server''s identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider''s requests. The project server holds them in memory only and forgets them when it stops. A live target''s test program, including a candidate commit''s test module that agents wrote, receives the chosen provider''s held settings; a verification with the operator''s stored evaluator receives every held provider''s settings; tests a separate agent wrote for a verification, and the check helper, receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider''s key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider''s default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command''s management credential may call this operation; it is never an MCP tool.'
+            description: 'The surla command, after it confirms the project server''s identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider''s requests. The project server holds them in memory only and forgets them when it stops. A live target using stored verification settings receives the chosen provider''s held settings; a verification with that evaluator receives every held provider''s settings. Accepted written tests receive no provider settings in verification or live targets: for a direct live model the executor serves an executor-owned loopback model gateway. It has no authentication: any local process, including another user''s, can use it while the target runs without receiving the provider key. The check helper receives none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider''s key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider''s default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command''s management credential may call this operation; it is never an MCP tool.'
             operationId: surla#hand_over_model_settings
             requestBody:
                 description: Request body for hand_over_model_settings.
@@ -13265,7 +13265,7 @@ paths:
             tags:
                 - surla
             summary: get_live_target surla
-            description: 'Report this server''s live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.'
+            description: 'Report this server''s live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; ended after an unexpected ending with confirmed cleanup, or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: an ended observation lasts until explicit stop, an accepted replacement, or server restart.'
             operationId: surla#get_live_target
             responses:
                 "200":
@@ -13304,7 +13304,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.
+            description: 'Build the candidate commit for the owner''s confirmed change and bind draft_override to this server''s one live target. Stored verification settings use the operator''s evaluator and need no build. Otherwise the change''s current revision must have a build with accepted tests: the candidate programs come from candidate_commit and the test program from the accepted tests commit. Written tests require a chosen model; with a direct provider the executor serves an executor-owned loopback model gateway and passes no provider setting to the program. That gateway has no authentication: any local process, including another user''s, can use it while the target runs without receiving the provider key. Card, tests, model and plan refusals preserve the running target. After those checks a replacement stops the old target and discards its drafts, even if the new startup fails. A target that ends unexpectedly is reported as ended after confirmed cleanup; a server restart leaves none.'
             operationId: surla#start_live_target
             requestBody:
                 description: Request body for start_live_target.
@@ -13315,6 +13315,7 @@ paths:
                             $ref: '#/components/schemas/StartLiveTargetPayload'
                         example:
                             candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+                            change_id: k1
             responses:
                 "200":
                     description: OK response.
@@ -13337,6 +13338,32 @@ paths:
                                 id: 123abc
                                 message: parameter 'p' must be an integer
                                 name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No owned Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'no_test_layout: The candidate or accepted tests lacks the required test layout.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: no_test_layout
                                 temporary: false
                                 timeout: false
                 "422":
@@ -20536,7 +20563,7 @@ components:
             properties:
                 live_target:
                     type: object
-                    description: none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.
+                    description: none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.
                     example:
                         candidate_commit: Aliquid rerum vel atque ducimus iusto sunt.
                         prompts:
@@ -20648,6 +20675,41 @@ components:
                             message: Maxime quis.
                           required:
                             - candidate_commit
+                            - message
+                            - state
+                        - type: object
+                          properties:
+                            candidate_commit:
+                                type: string
+                                description: The commit the ended target ran.
+                                example: Dignissimos dolorum ab quaerat minima.
+                            ended_at:
+                                type: string
+                                description: When the server observed that target ending.
+                                example: "1999-10-12T05:40:36Z"
+                                format: date-time
+                            message:
+                                type: string
+                                description: Fixed explanation of what is known and the builder's next step.
+                                example: Molestias natus dolorem.
+                            started_at:
+                                type: string
+                                description: When that target became ready.
+                                example: "1983-03-25T04:56:54Z"
+                                format: date-time
+                            state:
+                                type: string
+                                enum:
+                                    - ended
+                          example:
+                            candidate_commit: Dignissimos dolorum ab quaerat minima.
+                            ended_at: "1999-10-12T05:40:36Z"
+                            message: Molestias natus dolorem.
+                            started_at: "1983-03-25T04:56:54Z"
+                          required:
+                            - candidate_commit
+                            - started_at
+                            - ended_at
                             - message
                             - state
             description: This server's live target, as get_live_target reports it.
@@ -23199,10 +23261,17 @@ components:
                     description: Full commit ID to build, in the candidate repository's object format.
                     example: 4f0b3c1d2e5a6978877665544332211009988776
                     pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+                change_id:
+                    type: string
+                    description: Owned, confirmed change from list_builder_assignments.
+                    example: k1
+                    minLength: 1
             description: Request body for start_live_target.
             example:
                 candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+                change_id: k1
             required:
+                - change_id
                 - candidate_commit
         StartedBuild:
             type: object

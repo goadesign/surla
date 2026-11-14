@@ -354,7 +354,7 @@ unread, so it reads it again.
 | Verdict on the page | What happened | Who acts |
 | --- | --- | --- |
 | Needs changes | Surla found problems. The page shows their number; **Read findings** shows their text. | The test writer reads them in its assignment, fixes them and reports again. |
-| Accepted | Surla committed exactly the checked files on `surla/tests`, with your Git identity and the message `Add the tests Surla accepted for change <id>, report <n>`. The build details show that commit. The builder's assignment is marked unread too. | The builder can verify. |
+| Accepted | Surla committed exactly the checked files on `surla/tests`, with your Git identity and the message `Add the tests Surla accepted for change <id>, report <n>`. The build details show that commit. The builder's assignment is marked unread too. | The builder can verify or start a live target with the chosen model. |
 | Could not run | The check stopped for a cause the test writer cannot fix, such as a time limit, Git trouble, a sandbox that could not start, or dependencies that cannot be downloaded where Surla runs. The page shows the reason and your step. | You take the step; it says whether the test writer then reports again or you build again. |
 
 An acceptance always carries the same sentence, which the page shows: "Surla
@@ -372,12 +372,25 @@ before you can approve.
 ## Trying prompt wording on a live target
 
 When the application calls an AI model, the builder can try prompt wording
-before committing it. It calls `start_live_target` with a commit. The server
+before committing it. It calls `start_live_target` with the confirmed change's
+ID and a commit. The server
 builds that commit in its sandbox and starts it as the **live target**: a
 running copy of your application that only Surla started. Surla never
 changes prompts in an application you started or deployed. Without stored
-verification settings, the commit's own test module starts the copy, so the
-commit needs the test layout `surla init` makes but no accepted tests.
+verification settings, the test program at that build's accepted tests commit
+starts the copy. The current revision must have a build with accepted tests,
+and you choose a model before the builder starts it. With stored settings,
+the operator's evaluator starts it; no build is needed, but the change must
+still be owned and confirmed. A refused change, tests, commit or model check
+keeps the target already running and its prompt drafts.
+
+The test program runs on this computer outside the sandbox, with your access
+to files and the network; the application it starts runs inside the sandbox.
+The test writer's accepted program receives no provider settings. When you
+choose a direct provider, Surla serves that model to it through a loopback
+gateway in the live executor process. The evaluator in the stored verification settings still
+receives the chosen provider's settings. Running as you, these programs can
+still read keys your other programs hold.
 
 The builder then calls `draft_override`. A prompt template change
 (`target_kind: "prompt_template"`) goes to the live target in memory, without
@@ -400,6 +413,15 @@ server runs in a Herdr terminal, which has the environment of the Herdr core
 rather than of your shell, so `surla` hands the settings over itself; see
 [model provider settings](REFERENCE.md#model-provider-settings) and the
 [live target prompt contract](REFERENCE.md#live-target-prompt-contract).
+
+If the target ends by itself, Surla confirms its processes are stopped before
+showing **Ended unexpectedly**, its commit, when it started and when Surla
+observed the ending. The message says the exact cause is unavailable and
+names the builder's recovery step; it exposes no log or provider error. The
+notice survives page reloads until a new start is accepted, an explicit stop
+clears it, or Surla restarts. A refused new start keeps the notice. The page
+offers no Stop button for a target already ended. A stop whose cleanup cannot
+be confirmed remains **Not confirmed stopped**, and no replacement starts.
 
 ## Verifying the builder's commit
 
@@ -558,7 +580,7 @@ revision a build, a run or an approval belongs to.
 | You decline the proposed revision | Everything, exactly as it was. | Nothing. |
 | You adopt the proposed revision (answer its questions, then **Adopt this revision**) | Earlier runs stay readable for their revision. | The adopted revision has another `request_revision` and no approval. The build is marked **Earlier revision** and the builder's `verify_change` for the old revision is refused: build again. |
 | You change answers or examples of the agreed revision (**Refine Confirmed Answers & Examples**) | A submit with no change keeps everything. | A change gives another `request_revision`, drops the approval, and needs a build of that revision. |
-| You build the same revision again (**Build again…**, which asks first) | The agreed revision. | Both assignments become unread, the test writer's work returns to Assigned without report or verdict, and its tests must be reported, checked and accepted again before verification. |
+| You build the same revision again (**Build again…**, which asks first) | The agreed revision and any live target already running. | Both assignments become unread, the test writer's work returns to Assigned without report or verdict, and its tests must be reported, checked and accepted again before verification or a new live target. |
 | The test writer reports again | The build. | Its earlier verdict is cleared; Surla checks the report again. |
 | Surla says the tests branch and the project share no history | Commits you already merged. | Run `git worktree remove .surla-tests` and `git branch -D surla/tests` in the project folder, then build again. |
 
@@ -567,8 +589,9 @@ does to it, above **Adopt this revision** and, once you have edited an answer
 or an example, above **Refine Confirmed Answers & Examples**: the build stays
 on the earlier revision, and a build of the changed revision replaces both
 assignments and clears the test writer's report and verdict, so its tests
-must be reported, checked and accepted again before verification. With stored
-verification settings it says instead that a build of the changed revision
+must be reported, checked and accepted again before verification. The same
+acceptance is also required for a new live target; an existing one keeps
+running. With stored verification settings it says instead that a build of the changed revision
 updates the builder's assignment and that verification keeps using those
 settings.
 

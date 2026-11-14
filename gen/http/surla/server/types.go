@@ -109,6 +109,8 @@ type DraftOverrideRequestBody struct {
 // StartLiveTargetRequestBody is the type of the "surla" service
 // "start_live_target" endpoint HTTP request body.
 type StartLiveTargetRequestBody struct {
+	// Owned, confirmed change from list_builder_assignments.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Full commit ID to build, in the candidate repository's object format.
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
 }
@@ -570,7 +572,8 @@ type GetLiveTargetResponseBody struct {
 	// none when no live target runs; starting while one is built and started;
 	// running with its commit, address, start time and the prompts whose drafts
 	// are in force; not_confirmed_stopped when its processes could not be
-	// confirmed stopped.
+	// confirmed stopped; ended when a ready target ended unexpectedly and cleanup
+	// is confirmed.
 	LiveTarget LiveTargetResponseBody `form:"live_target" json:"live_target" xml:"live_target"`
 }
 
@@ -1560,6 +1563,98 @@ type DraftOverrideUpdateNotConfirmedResponseBody struct {
 // DraftOverrideForbiddenResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body for the "forbidden" error.
 type DraftOverrideForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetNotFoundResponseBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP response body for the "not_found" error.
+type StartLiveTargetNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetConflictResponseBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP response body for the "conflict" error.
+type StartLiveTargetConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetNoBuildResponseBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP response body for the "no_build" error.
+type StartLiveTargetNoBuildResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetTestsNotAcceptedResponseBody is the type of the "surla"
+// service "start_live_target" endpoint HTTP response body for the
+// "tests_not_accepted" error.
+type StartLiveTargetTestsNotAcceptedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetNoTestLayoutResponseBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP response body for the "no_test_layout"
+// error.
+type StartLiveTargetNoTestLayoutResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3696,6 +3791,18 @@ type LiveTargetNotConfirmedStoppedResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
+// LiveTargetEndedResponseBody is used to define fields on response body types.
+type LiveTargetEndedResponseBody struct {
+	// The commit the ended target ran.
+	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
+	// When that target became ready.
+	StartedAt string `form:"started_at" json:"started_at" xml:"started_at"`
+	// When the server observed that target ending.
+	EndedAt string `form:"ended_at" json:"ended_at" xml:"ended_at"`
+	// Fixed explanation of what is known and the builder's next step.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
 // VerificationRunningResponseBody is used to define fields on response body
 // types.
 type VerificationRunningResponseBody struct {
@@ -4868,6 +4975,7 @@ type LiveTargetResponseBody struct {
 	starting            *LiveTargetStartingResponseBody
 	running             *RunningLiveTargetResponseBody
 	notConfirmedStopped *LiveTargetNotConfirmedStoppedResponseBody
+	ended               *LiveTargetEndedResponseBody
 }
 
 // LiveTargetResponseBodyKind records which LiveTargetResponseBody branch is selected.
@@ -4882,6 +4990,8 @@ const (
 	LiveTargetResponseBodyKindRunning LiveTargetResponseBodyKind = "running"
 	// LiveTargetResponseBodyKindNotConfirmedStopped identifies the not_confirmed_stopped branch.
 	LiveTargetResponseBodyKindNotConfirmedStopped LiveTargetResponseBodyKind = "not_confirmed_stopped"
+	// LiveTargetResponseBodyKindEnded identifies the ended branch.
+	LiveTargetResponseBodyKindEnded LiveTargetResponseBodyKind = "ended"
 )
 
 // Kind returns the selected branch.
@@ -4985,6 +5095,30 @@ func (u *LiveTargetResponseBody) SetNotConfirmedStopped(v *LiveTargetNotConfirme
 	}
 }
 
+// NewLiveTargetResponseBodyEnded constructs LiveTargetResponseBody with the ended branch set.
+func NewLiveTargetResponseBodyEnded(v *LiveTargetEndedResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:  LiveTargetResponseBodyKindEnded,
+		ended: v,
+	}
+}
+
+// AsEnded returns the value when the ended branch is selected.
+func (u LiveTargetResponseBody) AsEnded() (_ *LiveTargetEndedResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindEnded {
+		return
+	}
+	return u.ended, true
+}
+
+// SetEnded selects the ended branch and stores v.
+func (u *LiveTargetResponseBody) SetEnded(v *LiveTargetEndedResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:  LiveTargetResponseBodyKindEnded,
+		ended: v,
+	}
+}
+
 // Validate ensures exactly one valid branch is selected.
 func (u LiveTargetResponseBody) Validate() error {
 	_, err := u.Value()
@@ -5001,6 +5135,7 @@ func (u LiveTargetResponseBody) Value() (any, error) {
 			string(LiveTargetResponseBodyKindStarting),
 			string(LiveTargetResponseBodyKindRunning),
 			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+			string(LiveTargetResponseBodyKindEnded),
 		})
 	case LiveTargetResponseBodyKindNone:
 		if u.none == nil {
@@ -5022,12 +5157,18 @@ func (u LiveTargetResponseBody) Value() (any, error) {
 			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
 		}
 		return u.notConfirmedStopped, nil
+	case LiveTargetResponseBodyKindEnded:
+		if u.ended == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.ended, nil
 	default:
 		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
 			string(LiveTargetResponseBodyKindNone),
 			string(LiveTargetResponseBodyKindStarting),
 			string(LiveTargetResponseBodyKindRunning),
 			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+			string(LiveTargetResponseBodyKindEnded),
 		})
 	}
 }
@@ -5111,6 +5252,12 @@ func (u *LiveTargetResponseBody) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		u.SetNotConfirmedStopped(v)
+	case string(LiveTargetResponseBodyKindEnded):
+		var v *LiveTargetEndedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetEnded(v)
 	default:
 		if raw.Type == "" {
 			return goa.MissingFieldError("state", "LiveTargetResponseBody")
@@ -5120,6 +5267,7 @@ func (u *LiveTargetResponseBody) UnmarshalJSON(data []byte) error {
 			string(LiveTargetResponseBodyKindStarting),
 			string(LiveTargetResponseBodyKindRunning),
 			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+			string(LiveTargetResponseBodyKindEnded),
 		})
 	}
 	return nil
@@ -7109,6 +7257,15 @@ func NewGetLiveTargetResponseBody(res *surla.LiveTargetStatus) *GetLiveTargetRes
 			u := body.LiveTarget
 			u.SetNotConfirmedStopped((*LiveTargetNotConfirmedStoppedResponseBody)(obj))
 			body.LiveTarget = u
+		case "ended":
+			actual, _ := res.LiveTarget.AsEnded()
+			var obj *LiveTargetEndedResponseBody
+			if actual != nil {
+				obj = marshalSurlaLiveTargetEndedToLiveTargetEndedResponseBody(actual)
+			}
+			u := body.LiveTarget
+			u.SetEnded((*LiveTargetEndedResponseBody)(obj))
+			body.LiveTarget = u
 		}
 	}
 	return body
@@ -8423,6 +8580,76 @@ func NewDraftOverrideUpdateNotConfirmedResponseBody(res *goa.ServiceError) *Draf
 // result of the "draft_override" endpoint of the "surla" service.
 func NewDraftOverrideForbiddenResponseBody(res *goa.ServiceError) *DraftOverrideForbiddenResponseBody {
 	body := &DraftOverrideForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetNotFoundResponseBody builds the HTTP response body from
+// the result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetNotFoundResponseBody(res *goa.ServiceError) *StartLiveTargetNotFoundResponseBody {
+	body := &StartLiveTargetNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetConflictResponseBody builds the HTTP response body from
+// the result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetConflictResponseBody(res *goa.ServiceError) *StartLiveTargetConflictResponseBody {
+	body := &StartLiveTargetConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetNoBuildResponseBody builds the HTTP response body from the
+// result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetNoBuildResponseBody(res *goa.ServiceError) *StartLiveTargetNoBuildResponseBody {
+	body := &StartLiveTargetNoBuildResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetTestsNotAcceptedResponseBody builds the HTTP response body
+// from the result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetTestsNotAcceptedResponseBody(res *goa.ServiceError) *StartLiveTargetTestsNotAcceptedResponseBody {
+	body := &StartLiveTargetTestsNotAcceptedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetNoTestLayoutResponseBody builds the HTTP response body
+// from the result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetNoTestLayoutResponseBody(res *goa.ServiceError) *StartLiveTargetNoTestLayoutResponseBody {
+	body := &StartLiveTargetNoTestLayoutResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -9917,6 +10144,7 @@ func NewDraftOverridePayload(body *DraftOverrideRequestBody) *surla.DraftOverrid
 // payload.
 func NewStartLiveTargetPayload(body *StartLiveTargetRequestBody) *surla.StartLiveTargetPayload {
 	v := &surla.StartLiveTargetPayload{
+		ChangeID:        *body.ChangeID,
 		CandidateCommit: *body.CandidateCommit,
 	}
 
@@ -10244,8 +10472,16 @@ func ValidateDraftOverrideRequestBody(body *DraftOverrideRequestBody) (err error
 // ValidateStartLiveTargetRequestBody runs the validations defined on
 // StartLiveTargetRequestBody
 func ValidateStartLiveTargetRequestBody(body *StartLiveTargetRequestBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
 	if body.CandidateCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
 	}
 	if body.CandidateCommit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *body.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))

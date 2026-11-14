@@ -103,7 +103,7 @@ func TestStarterPlanReadsTheCommittedLayout(t *testing.T) {
 			"candidate commit "+candidate+" changes hand-written files in the test module eval since base commit "+tests+" (eval/go.mod);"+
 				" tests in eval belong to the test writer, not the builder;"+
 				" renaming the service module is the user's to do on their own branch between changes, not during a build:"+
-				" restore eval to base commit "+tests+" (git restore --source="+tests+" --staged --worktree -- ':(top,literal)eval/go.mod'), commit, and call verify_change again")
+				" restore eval to base commit "+tests+" (git restore --source="+tests+" --staged --worktree -- ':(top,literal)eval/go.mod'), commit, and call verify_change or start_live_target again")
 	})
 
 	t.Run("committed layout wins over working files", func(t *testing.T) {

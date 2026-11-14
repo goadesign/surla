@@ -59,9 +59,13 @@ can run against it.
     and reports that it found no price;
   - `prompt_override_reaches_model`: checks that `override_prompt` rejects a
     missing or wrong key and that the next question's model request carries the
-    new prompt text. Its `--live` mode starts the
-  `[[.Name]]` for the Surla project server's `start_live_target`, planning with the model
-  the Surla project server was started with. Its program,
+    new prompt text.
+
+  Without stored verification settings, a live target uses the tests Surla
+  accepted for that build. Their `--live` mode starts `[[.Name]]` for that
+  change, using the model chosen in the Live target view through Surla's model
+  gateway, without receiving provider settings. A changed model choice applies
+  to targets started afterwards; a running target keeps its model. Its program,
   `eval/gen/cmd/[[.Name]]-evals`, is generated with the rest of `eval/gen/`
   from `eval/design/` and calls `eval/acceptance`: its `Name`, `Hooks`,
   `New`, `Live` and `LiveThroughGateway`. When a build runs with a test
@@ -126,8 +130,11 @@ For each change:
    when the project has no stored verification settings) and checks again.
    `read_check_output` returns the captured output, page by page, for the
    `op_id` in either result.
-4. The builder commits, then passes the new commit ID as `candidate_commit` to
-   `start_live_target` and `verify_change`.
+4. The builder commits, then passes the new commit ID as `candidate_commit`
+   with the confirmed change's `change_id` to `start_live_target`, and also
+   its `request_revision` to `verify_change`. Without stored verification
+   settings, both use the tests Surla accepted for that build; choose a model
+   in the Live target view before the builder starts a target.
 5. Without stored verification settings, `verify_change` is refused until
    Surla has accepted the test writer's tests. When a verification passes, you
    review its result and approve it on the views page; Surla merges and
@@ -182,8 +189,12 @@ build of the change, each finished flow of its Story is a test the build
 requires, and the test writer adds the missing methods beside `PricesCookie`.
 
 To try prompt wording on a running `[[.Name]]` before it is verified, the
-builder calls `start_live_target` with the full candidate commit ID, then
+builder calls `start_live_target` with the confirmed change's `change_id` and
+the full candidate commit ID, then
 `draft_override` with `prompt_id` `[[.Name]].helper.system`. To keep a draft,
 the builder writes the text into `internal/helper/planner.go`, runs
 `check_project`, commits, and calls `verify_change` with the new commit ID and
-the confirmed Change Card's `request_revision`.
+the confirmed Change Card's `request_revision`. Without stored verification
+settings, wait for Surla to accept the build's tests and choose a model in
+the Live target view before starting the target. With stored settings, the
+operator's evaluator starts it without accepted test-writer tests.

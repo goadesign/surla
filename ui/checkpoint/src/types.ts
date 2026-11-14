@@ -170,7 +170,7 @@ export interface LivePromptItem {
 }
 
 export interface LiveTargetStatus {
-  live_target: ({ "state": "none" } | { "candidate_commit": string; "since": string; "state": "starting" } | { "candidate_commit": string; "prompts": LivePromptItem[]; "started_at": string; "state": "running"; "url": string } | { "candidate_commit": string; "message": string; "state": "not_confirmed_stopped" });
+  live_target: ({ "state": "none" } | { "candidate_commit": string; "since": string; "state": "starting" } | { "candidate_commit": string; "prompts": LivePromptItem[]; "started_at": string; "state": "running"; "url": string } | { "candidate_commit": string; "message": string; "state": "not_confirmed_stopped" } | { "candidate_commit": string; "ended_at": string; "message": string; "started_at": string; "state": "ended" });
 }
 
 export interface ModelConfigResult {
@@ -1514,6 +1514,39 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
                 "type": "string",
                 "enum": [
                   "not_confirmed_stopped"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "candidate_commit",
+              "started_at",
+              "ended_at",
+              "message",
+              "state"
+            ],
+            "properties": {
+              "candidate_commit": {
+                "type": "string"
+              },
+              "ended_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "message": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ended"
                 ]
               }
             },

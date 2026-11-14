@@ -655,6 +655,13 @@ func ValidateGetLiveTargetResultTransport(body *GetLiveTargetResultTransport) (e
 						err = goa.MergeErrors(err, err2)
 					}
 				}
+			case "ended":
+				actual, _ := body.LiveTarget.AsEnded()
+				if actual != nil {
+					if err2 := ValidateLiveTargetEndedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
 			}
 		}
 
@@ -1371,8 +1378,16 @@ func ValidateReviseChangeResultTransport(body *ReviseChangeResultTransport) (err
 
 // ValidateStartLiveTargetPayloadTransport runs the validations defined on StartLiveTargetPayloadTransport.
 func ValidateStartLiveTargetPayloadTransport(body *StartLiveTargetPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
 	if body.CandidateCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
 	}
 	if body.CandidateCommit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *body.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
@@ -2059,6 +2074,29 @@ func ValidateLivePromptItemTransport(body *LivePromptItemTransport) (err error) 
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateLiveTargetEndedTransport runs the validations defined on LiveTargetEndedTransport.
+func ValidateLiveTargetEndedTransport(body *LiveTargetEndedTransport) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if body.EndedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ended_at", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	if body.EndedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.ended_at", *body.EndedAt, goa.FormatDateTime))
 	}
 	return
 }

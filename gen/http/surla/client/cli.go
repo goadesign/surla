@@ -257,7 +257,10 @@ func BuildStartLiveTargetPayload(surlaStartLiveTargetBody *string) (*surla.Start
 		}
 		err = json.Unmarshal([]byte(*surlaStartLiveTargetBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"candidate_commit\": \"4f0b3c1d2e5a6978877665544332211009988776\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"candidate_commit\": \"4f0b3c1d2e5a6978877665544332211009988776\",\n      \"change_id\": \"k1\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", body.ChangeID, utf8.RuneCountInString(body.ChangeID), 1, true))
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", body.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 		if err != nil {
@@ -265,6 +268,7 @@ func BuildStartLiveTargetPayload(surlaStartLiveTargetBody *string) (*surla.Start
 		}
 	}
 	v := &surla.StartLiveTargetPayload{
+		ChangeID:        body.ChangeID,
 		CandidateCommit: body.CandidateCommit,
 	}
 

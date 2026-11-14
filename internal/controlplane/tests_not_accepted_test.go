@@ -23,9 +23,10 @@ var notAcceptedStates = []testWriterAssignment{
 
 // TestTestsNotAcceptedEndsWithBuilderStep verifies that the refusal keeps each
 // state's own first clause and ends, in all four states, with the one step the
-// builder can take, which names the acceptance and get_builder_assignment.
+// builder can take: keep watching Chorus, read its assignment and retry
+// verification or the live target after acceptance.
 func TestTestsNotAcceptedEndsWithBuilderStep(t *testing.T) {
-	step := "; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"
+	step := "; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again"
 	firstClauses := map[string]string{
 		testsAssigned:    "their state is assigned: the test writer writes the required tests and reports them finished" + step,
 		testsReported:    "their state is reported: Surla is checking the test writer's report" + step,
@@ -37,6 +38,8 @@ func TestTestsNotAcceptedEndsWithBuilderStep(t *testing.T) {
 			var refusal *goa.ServiceError
 			require.ErrorAs(t, refuseTestsNotAccepted(saved), &refusal)
 			assert.Equal(t, "tests_not_accepted", refusal.Name)
+			assert.Contains(t, refusal.Message, "keep your Chorus watcher running")
+			assert.Contains(t, refusal.Message, "start_live_target")
 			assert.True(t, strings.HasSuffix(refusal.Message, firstClauses[saved.State]), refusal.Message)
 			assert.True(t, strings.HasPrefix(refusal.Message, "the tests of this build are not accepted; "), refusal.Message)
 		})

@@ -425,12 +425,13 @@ var DraftOverrideResult = Type("DraftOverrideResult", func() {
 
 // StartLiveTargetPayload names the candidate commit a CP3 live target runs.
 var StartLiveTargetPayload = Type("StartLiveTargetPayload", func() {
-	Description("Candidate commit to build and run as this server's live CP3 target.")
+	Description("Owned, confirmed change and candidate commit to build and run as this server's live CP3 target.")
+	Attribute("change_id", String, "Owned, confirmed change from list_builder_assignments.", func() { MinLength(1) })
 	Attribute("candidate_commit", String, "Full commit ID to build, in the candidate repository's object format.", func() {
 		Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$")
 		Example("4f0b3c1d2e5a6978877665544332211009988776")
 	})
-	Required("candidate_commit")
+	Required("change_id", "candidate_commit")
 })
 
 // LiveTargetResult describes the live CP3 target a server now runs.
@@ -491,23 +492,35 @@ var LiveTargetNotConfirmedStopped = Type("LiveTargetNotConfirmedStopped", func()
 	Required("candidate_commit", "message")
 })
 
+// LiveTargetEnded is the last ready target that ended unexpectedly after
+// the server confirmed that all its processes stopped.
+var LiveTargetEnded = Type("LiveTargetEnded", func() {
+	Description("The last ready target ended unexpectedly and its processes are confirmed stopped. This in-memory observation lasts until an explicit stop, an accepted replacement, or a server restart. It contains no address, prompt, credential or provider detail.")
+	Attribute("candidate_commit", String, "The commit the ended target ran.")
+	Attribute("started_at", String, "When that target became ready.", func() { Format(FormatDateTime) })
+	Attribute("ended_at", String, "When the server observed that target ending.", func() { Format(FormatDateTime) })
+	Attribute("message", String, "Fixed explanation of what is known and the builder's next step.")
+	Required("candidate_commit", "started_at", "ended_at", "message")
+})
+
 // LiveTargetStatus is this server's live target in exactly one state.
 var LiveTargetStatus = Type("LiveTargetStatus", func() {
 	Description("This server's live target, as get_live_target reports it.")
-	OneOf("live_target", "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.", func() {
+	OneOf("live_target", "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped; ended when a ready target ended unexpectedly and cleanup is confirmed.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
 		Attribute("none", LiveTargetNone)
 		Attribute("starting", LiveTargetStarting)
 		Attribute("running", RunningLiveTarget)
 		Attribute("not_confirmed_stopped", LiveTargetNotConfirmedStopped)
+		Attribute("ended", LiveTargetEnded)
 	})
 	Required("live_target")
 })
 
 // ModelNone is the model connection when no model is chosen.
 var ModelNone = Type("ModelNone", func() {
-	Description("No model is chosen: live targets start without a model setting.")
+	Description("No model is chosen. A written-tests live target requires a model choice; a target using stored verification settings may start without one.")
 })
 
 // ModelDirect is a direct model provider and model name.
@@ -841,7 +854,7 @@ var _ = Service("surla", func() {
 		Description("Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
 		Payload(DraftOverridePayload)
 		Result(DraftOverrideResult)
-		Error("no_live_target", ErrorResult, "No live target is running, so nothing changed. Call start_live_target with a candidate commit first.")
+		Error("no_live_target", ErrorResult, "No live target is running, so nothing changed. Call start_live_target with an owned confirmed change_id and a candidate commit first.")
 		Error("prompt_not_found", ErrorResult, "The live target has no prompt with this ID; nothing changed.")
 		Error("invalid_prompt", ErrorResult, "The live target rejected the template because it does not render; nothing changed.")
 		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
@@ -861,14 +874,24 @@ var _ = Service("surla", func() {
 	})
 
 	Method("start_live_target", func() {
-		Description("Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.")
+		Description("Build the candidate commit for the owner's confirmed change and bind draft_override to this server's one live target. Stored verification settings use the operator's evaluator and need no build. Otherwise the change's current revision must have a build with accepted tests: the candidate programs come from candidate_commit and the test program from the accepted tests commit. Written tests require a chosen model; with a direct provider the executor serves an executor-owned loopback model gateway and passes no provider setting to the program. That gateway has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. Card, tests, model and plan refusals preserve the running target. After those checks a replacement stops the old target and discards its drafts, even if the new startup fails. A target that ends unexpectedly is reported as ended after confirmed cleanup; a server restart leaves none.")
+		Error("not_found", ErrorResult, "No owned Change Card exists with this change_id.")
+		Error("conflict", ErrorResult, "The change is not confirmed, a required commit is unavailable, the project folder was replaced, or the candidate changes hand-written test-module files or shares no history with the accepted tests.")
+		Error("no_build", ErrorResult, "The current change revision has no usable build.")
+		Error("tests_not_accepted", ErrorResult, "The current build has no accepted tests; the message names who acts next.")
+		Error("no_test_layout", ErrorResult, "The candidate or accepted tests lacks the required test layout.")
 		Payload(StartLiveTargetPayload)
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. Without stored verification settings, the commit's own test module starts it, so the commit needs the test layout surla init makes. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.")
+		Tool("start_live_target", "Start a live target for change_id from list_builder_assignments and candidate_commit so draft_override can try prompt text. The change must be owned and confirmed. Without stored verification settings its current build must have accepted tests, which start the target, and a model must be chosen. A refusal naming the user's step means tell the user. Refused preflight preserves a running target; an accepted replacement discards its drafts even if startup then fails. Commit prompt text to preserve it.")
 		HTTP(func() {
 			POST("/live-target")
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
+			Response("no_build", StatusConflict)
+			Response("tests_not_accepted", StatusConflict)
+			Response("no_test_layout", StatusConflict)
 			Response(StatusOK)
 			Response("live_target_unavailable", StatusNotImplemented)
 			Response("live_target_failed", StatusUnprocessableEntity)
@@ -888,9 +911,9 @@ var _ = Service("surla", func() {
 	})
 
 	Method("get_live_target", func() {
-		Description("Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.")
+		Description("Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; ended after an unexpected ending with confirmed cleanup, or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: an ended observation lasts until explicit stop, an accepted replacement, or server restart.")
 		Result(LiveTargetStatus)
-		Tool("get_live_target", "Report this server's live target. It changes nothing. It answers none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted (never the text); or not_confirmed_stopped, with what to do next.")
+		Tool("get_live_target", "Report this server's live target. It changes nothing. It answers none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted (never the text); ended with commit, start and observed end times and a safe next step, or not_confirmed_stopped, with what to do next.")
 		HTTP(func() {
 			GET("/live-target")
 			Response(StatusOK)
@@ -985,7 +1008,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("configure_model", func() {
-		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request settings.")
+		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. With written tests, a direct provider is served by the executor's loopback model gateway and the accepted test program receives only that gateway, never provider settings. The executor-owned gateway has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. With stored verification settings, the evaluator receives the choice and its chosen provider's settings. A configured gateway is passed through unchanged.")
 		Payload(ConfigureModelPayload)
 		Result(ModelConfigResult)
 		Error("unprocessable", ErrorResult, "The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider's key variable and how to hand it over.")
@@ -1007,7 +1030,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("hand_over_model_settings", func() {
-		Description("The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target's test program, including a candidate commit's test module that agents wrote, receives the chosen provider's held settings; a verification with the operator's stored evaluator receives every held provider's settings; tests a separate agent wrote for a verification, and the check helper, receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.")
+		Description("The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target using stored verification settings receives the chosen provider's held settings; a verification with that evaluator receives every held provider's settings. Accepted written tests receive no provider settings in verification or live targets: for a direct live model the executor serves an executor-owned loopback model gateway. It has no authentication: any local process, including another user's, can use it while the target runs without receiving the provider key. The check helper receives none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.")
 		Payload(HandOverModelSettingsPayload)
 		Result(ModelSettingsResult)
 		Error("unprocessable", ErrorResult, "A provider's settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.")

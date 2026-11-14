@@ -3669,6 +3669,44 @@ func ValidateGetLiveTargetResultLivePromptItemTransport(value *GetLiveTargetResu
 	return err
 }
 
+// GetLiveTargetResultLiveTargetEndedTransport stores JSON fields until they have been validated.
+type GetLiveTargetResultLiveTargetEndedTransport struct {
+	// The commit the ended target ran.
+	CandidateCommit *string `json:"candidate_commit"`
+	// When that target became ready.
+	StartedAt *string `json:"started_at"`
+	// When the server observed that target ending.
+	EndedAt *string `json:"ended_at"`
+	// Fixed explanation of what is known and the builder's next step.
+	Message *string `json:"message"`
+}
+
+// ValidateGetLiveTargetResultLiveTargetEndedTransport checks decoded JSON before it becomes a service value.
+func ValidateGetLiveTargetResultLiveTargetEndedTransport(value *GetLiveTargetResultLiveTargetEndedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if value.EndedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ended_at", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if value.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *value.StartedAt, goa.FormatDateTime))
+	}
+	if value.EndedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.ended_at", *value.EndedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
 // GetLiveTargetResultLiveTargetNoneTransport stores JSON fields until they have been validated.
 type GetLiveTargetResultLiveTargetNoneTransport struct {
 }
@@ -3777,7 +3815,8 @@ type GetLiveTargetResultTransport struct {
 	// none when no live target runs; starting while one is built and started;
 	// running with its commit, address, start time and the prompts whose drafts
 	// are in force; not_confirmed_stopped when its processes could not be
-	// confirmed stopped.
+	// confirmed stopped; ended when a ready target ended unexpectedly and cleanup
+	// is confirmed.
 	LiveTarget *GetLiveTargetResultliveTargetTransport `json:"live_target"`
 }
 
@@ -3813,6 +3852,13 @@ func ValidateGetLiveTargetResultTransport(value *GetLiveTargetResultTransport) (
 				actual, _ := value.LiveTarget.AsNotConfirmedStopped()
 				if actual != nil {
 					if err2 := ValidateGetLiveTargetResultLiveTargetNotConfirmedStoppedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "ended":
+				actual, _ := value.LiveTarget.AsEnded()
+				if actual != nil {
+					if err2 := ValidateGetLiveTargetResultLiveTargetEndedTransport(actual); err2 != nil {
 						err = goa.MergeErrors(err, err2)
 					}
 				}
@@ -9087,6 +9133,8 @@ func ValidateReviseChangeResultUnverifiedApprovalItemTransport(value *ReviseChan
 
 // StartLiveTargetPayloadTransport stores JSON fields until they have been validated.
 type StartLiveTargetPayloadTransport struct {
+	// Owned, confirmed change from list_builder_assignments.
+	ChangeID *string `json:"change_id"`
 	// Full commit ID to build, in the candidate repository's object format.
 	CandidateCommit *string `json:"candidate_commit"`
 }
@@ -9096,8 +9144,16 @@ func ValidateStartLiveTargetPayloadTransport(value *StartLiveTargetPayloadTransp
 	if value == nil {
 		return goa.MissingFieldError("body", "JSON value")
 	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
 	if value.CandidateCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.ChangeID != nil {
+		if utf8.RuneCountInString(*value.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *value.ChangeID, utf8.RuneCountInString(*value.ChangeID), 1, true))
+		}
 	}
 	if value.CandidateCommit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
@@ -10560,6 +10616,7 @@ type GetLiveTargetResultliveTargetTransport struct {
 	Starting            *GetLiveTargetResultLiveTargetStartingTransport
 	Running             *GetLiveTargetResultRunningLiveTargetTransport
 	NotConfirmedStopped *GetLiveTargetResultLiveTargetNotConfirmedStoppedTransport
+	Ended               *GetLiveTargetResultLiveTargetEndedTransport
 }
 
 // GetLiveTargetResultliveTargetTransportKind identifies the selected branch of GetLiveTargetResultliveTargetTransport.
@@ -10570,6 +10627,7 @@ const (
 	GetLiveTargetResultliveTargetTransportKindStarting            GetLiveTargetResultliveTargetTransportKind = "starting"
 	GetLiveTargetResultliveTargetTransportKindRunning             GetLiveTargetResultliveTargetTransportKind = "running"
 	GetLiveTargetResultliveTargetTransportKindNotConfirmedStopped GetLiveTargetResultliveTargetTransportKind = "not_confirmed_stopped"
+	GetLiveTargetResultliveTargetTransportKindEnded               GetLiveTargetResultliveTargetTransportKind = "ended"
 )
 
 // Kind returns the selected branch.
@@ -10653,6 +10711,25 @@ func (u *GetLiveTargetResultliveTargetTransport) SetNotConfirmedStopped(value *G
 	u.NotConfirmedStopped = value
 }
 
+// NewGetLiveTargetResultliveTargetTransportEnded creates GetLiveTargetResultliveTargetTransport with its ended branch selected.
+func NewGetLiveTargetResultliveTargetTransportEnded(value *GetLiveTargetResultLiveTargetEndedTransport) GetLiveTargetResultliveTargetTransport {
+	return GetLiveTargetResultliveTargetTransport{kind: GetLiveTargetResultliveTargetTransportKindEnded, Ended: value}
+}
+
+// AsEnded returns the ended branch when it is selected.
+func (u GetLiveTargetResultliveTargetTransport) AsEnded() (_ *GetLiveTargetResultLiveTargetEndedTransport, ok bool) {
+	if u.kind != GetLiveTargetResultliveTargetTransportKindEnded {
+		return
+	}
+	return u.Ended, true
+}
+
+// SetEnded selects the ended branch.
+func (u *GetLiveTargetResultliveTargetTransport) SetEnded(value *GetLiveTargetResultLiveTargetEndedTransport) {
+	u.kind = GetLiveTargetResultliveTargetTransportKindEnded
+	u.Ended = value
+}
+
 // Validate checks that one complete branch is selected.
 func (u GetLiveTargetResultliveTargetTransport) Validate() error {
 	switch u.kind {
@@ -10676,10 +10753,15 @@ func (u GetLiveTargetResultliveTargetTransport) Validate() error {
 			return goa.MissingFieldError("value", "GetLiveTargetResultliveTargetTransport")
 		}
 		return nil
+	case GetLiveTargetResultliveTargetTransportKindEnded:
+		if u.Ended == nil {
+			return goa.MissingFieldError("value", "GetLiveTargetResultliveTargetTransport")
+		}
+		return nil
 	case "":
 		return goa.MissingFieldError("state", "GetLiveTargetResultliveTargetTransport")
 	default:
-		return goa.InvalidEnumValueError("state", u.kind, []any{string(GetLiveTargetResultliveTargetTransportKindNone), string(GetLiveTargetResultliveTargetTransportKindStarting), string(GetLiveTargetResultliveTargetTransportKindRunning), string(GetLiveTargetResultliveTargetTransportKindNotConfirmedStopped)})
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(GetLiveTargetResultliveTargetTransportKindNone), string(GetLiveTargetResultliveTargetTransportKindStarting), string(GetLiveTargetResultliveTargetTransportKindRunning), string(GetLiveTargetResultliveTargetTransportKindNotConfirmedStopped), string(GetLiveTargetResultliveTargetTransportKindEnded)})
 	}
 }
 
@@ -10698,6 +10780,8 @@ func (u GetLiveTargetResultliveTargetTransport) MarshalJSON() ([]byte, error) {
 		value = u.Running
 	case GetLiveTargetResultliveTargetTransportKindNotConfirmedStopped:
 		value = u.NotConfirmedStopped
+	case GetLiveTargetResultliveTargetTransportKindEnded:
+		value = u.Ended
 	default:
 		return nil, fmt.Errorf("unexpected GetLiveTargetResultliveTargetTransport branch %q", u.kind)
 	}
@@ -13321,6 +13405,15 @@ func EncodeGetLiveTargetResult(in *surla.LiveTargetStatus) ([]byte, error) {
 			u := liveTargetValue
 			u.SetNotConfirmedStopped((*GetLiveTargetResultLiveTargetNotConfirmedStoppedTransport)(obj))
 			liveTargetValue = u
+		case "ended":
+			actual, _ := in.LiveTarget.AsEnded()
+			var obj *GetLiveTargetResultLiveTargetEndedTransport
+			if actual != nil {
+				obj = encodeLiveTargetEndedToGetLiveTargetResultLiveTargetEndedTransport(actual)
+			}
+			u := liveTargetValue
+			u.SetEnded((*GetLiveTargetResultLiveTargetEndedTransport)(obj))
+			liveTargetValue = u
 		}
 		body.LiveTarget = &liveTargetValue
 	}
@@ -14222,6 +14315,7 @@ func DecodeStartLiveTargetPayload(data []byte) (out *surla.StartLiveTargetPayloa
 	}
 	{
 		out = &surla.StartLiveTargetPayload{
+			ChangeID:        *body.ChangeID,
 			CandidateCommit: *body.CandidateCommit,
 		}
 	}
@@ -15681,6 +15775,17 @@ func encodeLivePromptItemToGetLiveTargetResultLivePromptItemTransport(v *surla.L
 		PromptID:   &v.PromptID,
 		Version:    &v.Version,
 		AcceptedAt: &v.AcceptedAt,
+	}
+
+	return res
+}
+
+func encodeLiveTargetEndedToGetLiveTargetResultLiveTargetEndedTransport(v *surla.LiveTargetEnded) *GetLiveTargetResultLiveTargetEndedTransport {
+	res := &GetLiveTargetResultLiveTargetEndedTransport{
+		CandidateCommit: &v.CandidateCommit,
+		StartedAt:       &v.StartedAt,
+		EndedAt:         &v.EndedAt,
+		Message:         &v.Message,
 	}
 
 	return res

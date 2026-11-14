@@ -481,7 +481,8 @@ type (
 		// none when no live target runs; starting while one is built and started;
 		// running with its commit, address, start time and the prompts whose drafts
 		// are in force; not_confirmed_stopped when its processes could not be
-		// confirmed stopped.
+		// confirmed stopped; ended when a ready target ended unexpectedly and cleanup
+		// is confirmed.
 		LiveTarget *LiveTarget `json:"live_target"`
 	}
 	// GetStoryRefreshPayloadTransport is the internal JSON transport type for GetStoryRefreshPayload.
@@ -1014,6 +1015,8 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	StartLiveTargetPayloadTransport struct {
+		// Owned, confirmed change from list_builder_assignments.
+		ChangeID *string `json:"change_id"`
 		// Full commit ID to build, in the candidate repository's object format.
 		CandidateCommit *string `json:"candidate_commit"`
 	}
@@ -1471,6 +1474,20 @@ type (
 		// the target answers with the same version, such as the same text sent again,
 		// keeps this time.
 		AcceptedAt *string `json:"accepted_at"`
+	}
+	// LiveTargetEndedTransport is the internal JSON transport type for LiveTargetEndedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetEndedTransport struct {
+		// The commit the ended target ran.
+		CandidateCommit *string `json:"candidate_commit"`
+		// When that target became ready.
+		StartedAt *string `json:"started_at"`
+		// When the server observed that target ending.
+		EndedAt *string `json:"ended_at"`
+		// Fixed explanation of what is known and the builder's next step.
+		Message *string `json:"message"`
 	}
 	// LiveTargetNoneTransport is the internal JSON transport type for LiveTargetNoneTransport.
 	// It lives in the toolset-local http package and is used only for JSON

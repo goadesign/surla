@@ -24,11 +24,12 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	genpromptsclient "github.com/goadesign/surla/internal/targetprompt/gen/http/prompts/client"
 	genprompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
+	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
 // A control plane runs at most one live CP3 target: a candidate commit built
-// the way CP4 builds it and started by the operator's evaluator suite in its
+// the way CP4 builds it and started by the accepted tests or stored evaluator in its
 // --live mode (see verifyrun.LaunchLive). draft_override sends prompt text to
 // it through the one operation Surla expects a target to serve
 // (design/targetprompt), authenticated with a key minted for that target.
@@ -110,6 +111,8 @@ type (
 		// Since is when its start began while it starts and when it became
 		// ready while it runs, so a new target of the same commit differs.
 		Since string `json:"since"`
+		// EndedAt is the observed ending time, empty for a live target.
+		EndedAt string `json:"ended_at,omitempty"`
 		// Prompts pairs each prompt identifier with its version in force, in
 		// the read's order.
 		Prompts [][2]string `json:"prompts"`
@@ -152,9 +155,13 @@ type (
 		// shown is the target get_live_target reports and shownPhase its
 		// state. Every transition writes them while holding liveMu, so they
 		// follow owned and bound; a read takes bindMu alone. shown is nil
-		// exactly when shownPhase is livePhaseNone.
+		// exactly when shownPhase is livePhaseNone. A retained ended observation
+		// is separate from shown and contains no launch resources.
 		shown      *liveTarget
 		shownPhase livePhase
+		// ended retains public observation values only after confirmed cleanup.
+		// bindMu guards it; it never retains a process, key or provider setting.
+		ended *gensurla.LiveTargetEnded
 	}
 )
 
@@ -182,27 +189,36 @@ const (
 	// msgNoLiveTarget is draft_override's explanation when no live target
 	// runs: Surla changes prompts only in a live target it started, so the
 	// enabling step is start_live_target.
-	msgNoLiveTarget = "No live target is running, so nothing changed. Call start_live_target with a candidate commit first; draft_override then sends prompt text to that target."
+	msgNoLiveTarget = "No live target is running, so nothing changed. Call start_live_target with change_id from list_builder_assignments and a candidate commit first; draft_override then sends prompt text to that target."
+	// msgLiveModelRequired names the user's step before written tests can run.
+	msgLiveModelRequired = "No model is chosen for a written-tests live target. Ask the user to choose a model under Live target on the views page, then call start_live_target again."
+	// msgLiveEnded records only confirmed facts; process output cannot establish a cause.
+	msgLiveEnded = "The live connection ended unexpectedly; the exact cause is unavailable. The builder can check the program's startup and start a live target again from a corrected commit."
 )
 
-// StartLiveTarget builds the candidate commit with the operator's
-// verification plan and runs it as this server's live target, stopping the
-// running one first. The build belongs to the server: it continues if the
+// StartLiveTarget checks the owner's confirmed change and accepted tests,
+// then starts its candidate commit as this server's live target. Refusals
+// preserve the running target; an accepted replacement stops it first. The build belongs to the server: it continues if the
 // caller disconnects and ends when the server closes or StartTimeout passes.
 // Starts are serialized, and none starts once Close has begun.
 func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiveTargetPayload) (*gensurla.LiveTargetResult, error) {
-	if _, ok := PrincipalFromContext(ctx); !ok {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if !c.liveConfigured {
+	if _, none := c.verifier.(noVerification); !c.liveConfigured || none {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
 	ctx, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
 		trace.WithAttributes(attribute.String("candidate_commit", p.CandidateCommit)))
 	defer span.End()
-	verCfg, err := c.livePlan(ctx, p.CandidateCommit)
+	verCfg, err := c.livePlan(ctx, principal, p.ChangeID, p.CandidateCommit)
 	if err != nil {
 		return nil, err
+	}
+
+	if verCfg.Plan.Tests == verify.TestsWritten && !c.hasLiveModel() {
+		return nil, gensurla.MakeLiveTargetUnavailable(errors.New(msgLiveModelRequired))
 	}
 
 	c.liveMu.Lock()
@@ -210,15 +226,26 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if c.serverCtx.Err() != nil {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("the server is shutting down, so it starts no live target"))
 	}
-	if err := c.stopOwnedLocked(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "stop previous live target failed")
-		return nil, gensurla.MakeLiveTargetFailed(errors.New(msgStopFailed))
+	// A queued start uses the current confirmed revision, accepted tests and
+	// model settings. Every refusal precedes the previous target's cleanup.
+	verCfg, err = c.livePlan(ctx, principal, p.ChangeID, p.CandidateCommit)
+	if err != nil {
+		return nil, err
+	}
+	env, settings, err := c.liveLaunch(verCfg.Plan.Tests == verify.TestsWritten)
+	if err != nil {
+		return nil, err
 	}
 	key, err := newLiveKey()
 	if err != nil {
 		return nil, err
 	}
+	if err := c.stopOwnedLocked(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "stop previous live target failed")
+		return nil, gensurla.MakeLiveTargetFailed(errors.New(msgStopFailed))
+	}
+	c.show(nil, livePhaseNone)
 	plan := verCfg.Plan
 	timeout := c.liveTimeout
 	if timeout <= 0 {
@@ -229,7 +256,6 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		cmd = verCfg.Command
 	}
 	launchedAt := time.Now()
-	env, settings := c.liveLaunch()
 	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, cmd, env, settings)
 	if err != nil {
 		span.RecordError(err)
@@ -251,6 +277,9 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		case errors.Is(err, context.DeadlineExceeded):
 			summary = fmt.Sprintf("The live target did not become ready within the configured start timeout (%s). "+
 				"Check the evaluator suite's startup, or raise the verification configuration's timeout.", timeout)
+			if plan.Tests == verify.TestsWritten {
+				summary = fmt.Sprintf("The live test program did not become ready within the configured start timeout (%s). Check the service startup at this commit; otherwise tell the user so the test writer can correct its acceptance package and report again. Then call start_live_target again.", timeout)
+			}
 		}
 		if start := (*verifyrun.LiveStartError)(nil); errors.As(err, &start) {
 			span.AddEvent("live target start failed", trace.WithAttributes(attribute.String("executor_log_tail", start.Detail)))
@@ -283,38 +312,28 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	}, nil
 }
 
-// livePlan returns the configuration of a live copy of candidateCommit,
-// which takes nothing else. With the stored evaluator, the operator's plan,
-// whose program keeps the server's environment. Otherwise the candidate
-// commit's own test module, the builder's tree: its generated entry point
-// built from the same commit, written by agents, so its program gets only the
-// live copy's named environment (verify.LiveProgramEnv). It needs no build
-// and no accepted tests, and the test writer's code never runs in it. It
-// refuses with live_target_unavailable when this control plane runs no
-// verification, and live_target_failed when the repository does not hold the
-// commit or the commit lacks the test layout `surla init` makes.
-func (c *ControlPlane) livePlan(ctx context.Context, candidateCommit string) (VerificationConfig, error) {
-	switch v := c.verifier.(type) {
-	case storedVerification:
-		cfg := *v.cfg
-		cfg.Plan.CandidateCommit = candidateCommit
-		return cfg, nil
-	case writtenTestVerification:
-		plan, err := c.starterPlanAt(ctx, candidateCommit, candidateCommit, builderActs)
-		var refusal *layoutRefusal
-		if errors.As(err, &refusal) {
-			return VerificationConfig{}, gensurla.MakeLiveTargetFailed(refusal)
-		}
-		if err != nil {
-			return VerificationConfig{}, err
-		}
-		cfg := *v.runs
-		plan.ReportDir = cfg.Plan.ReportDir
-		cfg.Plan = plan
-		return cfg, nil
-	default:
-		return VerificationConfig{}, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
+// livePlan authorizes the confirmed change and selects its current revision
+// and tests together. Both live targets and verification use testsChoice and
+// verificationPlanForTests, so builder edits never replace accepted test code.
+func (c *ControlPlane) livePlan(
+	ctx context.Context,
+	principal Principal,
+	changeID, candidateCommit string,
+) (VerificationConfig, error) {
+	c.mu.RLock()
+	if c.serverCtx.Err() != nil {
+		c.mu.RUnlock()
+		return VerificationConfig{}, gensurla.MakeLiveTargetUnavailable(errors.New("the server is shutting down, so it starts no live target"))
 	}
+	record, err := c.confirmedCard(principal, changeID)
+	if err != nil {
+		c.mu.RUnlock()
+		return VerificationConfig{}, err
+	}
+	revision := record.card.RequestRevision
+	testsCommit, _, err := c.testsChoice(principal, changeID, revision)
+	c.mu.RUnlock()
+	return c.verificationPlanForTests(ctx, candidateCommit, revision, testsCommit, err)
 }
 
 // StopLiveTarget stops the running live target, if any.
@@ -327,10 +346,17 @@ func (c *ControlPlane) StopLiveTarget(ctx context.Context) (*gensurla.StopLiveTa
 	c.liveMu.Lock()
 	defer c.liveMu.Unlock()
 	running := c.owned != nil
+	c.bindMu.RLock()
+	hadEnded := c.ended != nil
+	c.bindMu.RUnlock()
 	if err := c.stopOwnedLocked(); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "stop live target failed")
 		return nil, gensurla.MakeLiveTargetStopFailed(errors.New(msgStopFailed))
+	}
+	c.show(nil, livePhaseNone)
+	if !running && hadEnded {
+		return &gensurla.StopLiveTargetResult{Stopped: false, Message: "No live target was running; the ended notice was cleared."}, nil
 	}
 	if !running {
 		return &gensurla.StopLiveTargetResult{Stopped: false, Message: "No live target was running."}, nil
@@ -395,22 +421,36 @@ func (c *ControlPlane) closeLive() error {
 	return c.stopOwnedLocked()
 }
 
-// watchLive handles a live target that ended on its own: it unbinds it and
-// stops it, so later drafts get no_live_target and stop reports that nothing
-// runs. A target that cannot be confirmed stopped stays owned.
+// watchLive publishes an unexpected ending only after confirmed process
+// cleanup. The retained projection contains no launch resources or secrets.
 func (c *ControlPlane) watchLive(lt *liveTarget) {
 	<-lt.proc.Done()
+	endedAt := time.Now()
 	c.liveMu.Lock()
 	defer c.liveMu.Unlock()
 	if c.owned != lt {
 		return
 	}
-	if err := c.stopOwnedLocked(); err != nil {
-		_, span := c.tracer("surla/controlplane").Start(context.Background(), "controlplane.live_target_ended")
+	_, span := c.tracer("surla/controlplane").Start(context.Background(), "controlplane.live_target_ended",
+		trace.WithAttributes(attribute.String("candidate_commit", lt.commit),
+			attribute.String("started_at", liveTime(lt.readyAt)), attribute.String("ended_at", liveTime(endedAt))))
+	defer span.End()
+	if err := c.stopTargetLocked(lt); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "stop ended live target failed")
-		span.End()
+		return
 	}
+	c.owned = nil
+	c.bindMu.Lock()
+	c.shown, c.shownPhase = nil, livePhaseNone
+	c.ended = &gensurla.LiveTargetEnded{
+		CandidateCommit: lt.commit,
+		StartedAt:       liveTime(lt.readyAt),
+		EndedAt:         liveTime(endedAt),
+		Message:         msgLiveEnded,
+	}
+	c.bindMu.Unlock()
+	span.AddEvent("live target cleanup confirmed", trace.WithAttributes(attribute.String("reason", "unknown")))
 }
 
 // stopOwnedLocked unbinds the owned target and stops it, clearing it only
@@ -422,6 +462,18 @@ func (c *ControlPlane) stopOwnedLocked() error {
 	if lt == nil {
 		return nil
 	}
+	if err := c.stopTargetLocked(lt); err != nil {
+		return err
+	}
+	c.owned = nil
+	c.show(nil, livePhaseNone)
+	return nil
+}
+
+// stopTargetLocked unbinds and confirms process cleanup, publishing a failed
+// cleanup immediately. Its caller owns the successful transition: explicit
+// stops publish none, spontaneous endings publish ended atomically. liveMu is held.
+func (c *ControlPlane) stopTargetLocked(lt *liveTarget) error {
 	c.bindMu.Lock()
 	if c.bound == lt {
 		c.bound = nil
@@ -431,8 +483,6 @@ func (c *ControlPlane) stopOwnedLocked() error {
 		c.show(lt, livePhaseNotStopped)
 		return err
 	}
-	c.owned = nil
-	c.show(nil, livePhaseNone)
 	return nil
 }
 
@@ -442,6 +492,7 @@ func (c *ControlPlane) show(lt *liveTarget, phase livePhase) {
 	c.bindMu.Lock()
 	defer c.bindMu.Unlock()
 	c.shown, c.shownPhase = lt, phase
+	c.ended = nil
 }
 
 // recordDraft keeps, on lt while it is still the bound target, the version
@@ -462,11 +513,27 @@ func (c *ControlPlane) recordDraft(lt *liveTarget, promptID, version string) {
 	lt.drafts[promptID] = liveDraft{version: version, acceptedAt: time.Now()}
 }
 
-// boundLive returns the target draft_override sends to, or nil.
-func (c *ControlPlane) boundLive() *liveTarget {
+// boundLive returns the bound target or the refusal from the same state read.
+func (c *ControlPlane) boundLive() (*liveTarget, error) {
 	c.bindMu.RLock()
 	defer c.bindMu.RUnlock()
-	return c.bound
+	if c.bound != nil {
+		return c.bound, nil
+	}
+	if c.ended != nil {
+		return nil, gensurla.MakeLiveTargetEnded(errors.New(c.ended.Message))
+	}
+	if c.shown != nil && c.shownPhase == livePhaseRunning {
+		select {
+		case <-c.shown.proc.Done():
+			// Output has ended while cleanup is still being confirmed. Drafts
+			// already know the connection ended; the public stopped observation
+			// is published only after the process owner confirms cleanup.
+			return nil, gensurla.MakeLiveTargetEnded(errors.New(msgLiveEnded))
+		default:
+		}
+	}
+	return nil, gensurla.MakeNoLiveTarget(errors.New(msgNoLiveTarget))
 }
 
 // liveTargetState returns the shown target as get_live_target reports it,
@@ -474,6 +541,10 @@ func (c *ControlPlane) boundLive() *liveTarget {
 func (c *ControlPlane) liveTargetState() gensurla.LiveTarget {
 	c.bindMu.RLock()
 	defer c.bindMu.RUnlock()
+	if c.ended != nil {
+		ended := *c.ended
+		return gensurla.NewLiveTargetEnded(&ended)
+	}
 	lt := c.shown
 	switch c.shownPhase {
 	case livePhaseStarting:
@@ -509,6 +580,9 @@ func (c *ControlPlane) liveTargetState() gensurla.LiveTarget {
 func (c *ControlPlane) liveTargetVersion() liveTargetVersion {
 	state := c.liveTargetState()
 	v := liveTargetVersion{State: string(state.Kind())}
+	if ended, ok := state.AsEnded(); ok {
+		v.Commit, v.Since, v.EndedAt = ended.CandidateCommit, ended.StartedAt, ended.EndedAt
+	}
 	if starting, ok := state.AsStarting(); ok {
 		v.Commit, v.Since = starting.CandidateCommit, starting.Since
 	}

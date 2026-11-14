@@ -56,7 +56,7 @@ func helper(role, dir string) int {
 	case "execute":
 		err = Execute(dir, fakeRun, os.Stdout, os.Stderr)
 	case "live":
-		err = Live(dir, fakePrepare, os.Stdout, os.Stderr)
+		err = Live(dir, fakePrepare, fakeLiveProvider, os.Stdout, os.Stderr)
 	default:
 		err = fmt.Errorf("unknown role %q", role)
 	}

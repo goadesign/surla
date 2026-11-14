@@ -288,6 +288,21 @@ function LiveTargetBody({ target }: { target: LiveTargetCase }) {
       );
     case "running":
       return <RunningBody target={target} />;
+    case "ended":
+      return (
+        <>
+          <p>
+            <Badge variant="warning">Ended unexpectedly</Badge>
+          </p>
+          <p id="surla-live-ended" className="surla-live-wrap">
+            Commit <code>{target.candidate_commit}</code>, started <Clock iso={target.started_at} />;
+            {" "}observed ended <Clock iso={target.ended_at} />.
+          </p>
+          <p id="surla-live-message" className="surla-live-wrap">
+            {target.message}
+          </p>
+        </>
+      );
     case "not_confirmed_stopped":
       return (
         <>
@@ -407,7 +422,13 @@ function ModelSection({
         </p>
       )}
       <p id="surla-model-note">
-        The choice applies to live targets started afterwards. A running live target keeps its
+        The program that starts a live target runs on this computer outside Surla’s sandbox, with
+        your access to files and the network; the service itself runs inside the sandbox. With
+        stored verification settings it is your stored evaluator, which gets the chosen provider’s
+        settings. Otherwise it is the test writer’s tests Surla accepted, as in verification, and
+        Surla gives it no provider setting: with a direct provider, Surla serves the chosen model
+        to it. Running as you, it can still read keys your other programs hold.
+        {" "}The choice applies to live targets started afterwards. A running live target keeps its
         model, and verification is not affected.
       </p>
       <form id="surla-model-form" onSubmit={submit}>
@@ -510,7 +531,7 @@ function Clock({ iso }: { iso: string }) {
 function describeConnection(connection: ModelConnection["connection"]): string {
   switch (connection.kind) {
     case "none":
-      return "No model is chosen: live targets start without a model setting.";
+      return "No model is chosen. Without stored verification settings, choose a model before the builder starts a live target. With stored settings, the evaluator may supply its own model.";
     case "direct":
       return "Live targets started from now on use " + connection.provider + " / " + connection.model_name + ".";
     case "gateway":
@@ -586,6 +607,11 @@ function announce(before: LiveTargetCase, after: LiveTargetCase): string {
         : "A live target is starting from commit " + after.candidate_commit.slice(0, 7) + ".";
     case "not_confirmed_stopped":
       return before.state === "not_confirmed_stopped" ? "" : "The live target could not be confirmed stopped.";
+    case "ended":
+      return before.state === "ended" && before.candidate_commit === after.candidate_commit &&
+        before.started_at === after.started_at && before.ended_at === after.ended_at
+        ? ""
+        : "The live target for commit " + after.candidate_commit.slice(0, 7) + " ended unexpectedly.";
     case "running": {
       if (before.state !== "running" || before.started_at !== after.started_at) {
         return "The live target for commit " + after.candidate_commit.slice(0, 7) + " is running.";

@@ -337,7 +337,7 @@ interface WorkspaceSubjectDescriptor {
   detail?: string;
 }
 
-// liveTargetKey names a live target read's case, commit and start, so the
+// liveTargetKey names a live target read's case, commit, start and end, so the
 // page can tell when the state a message described has changed.
 function liveTargetKey(target: LiveTargetStatus): string {
   const live = target.live_target;
@@ -348,6 +348,8 @@ function liveTargetKey(target: LiveTargetStatus): string {
       return "starting " + live.candidate_commit + " " + live.since;
     case "running":
       return "running " + live.candidate_commit + " " + live.started_at;
+    case "ended":
+      return "ended " + live.candidate_commit + " " + live.started_at + " " + live.ended_at;
     case "not_confirmed_stopped":
       return "not_confirmed_stopped " + live.candidate_commit;
   }
@@ -3031,8 +3033,8 @@ export function bootstrapViewsPage() {
 
   // handleApprove asks the server to record approval of run's passed report
   // for the exact card revision shown. A stale revision uses the editor's
-  // recovery; a project without promotion settings shows approval as
-  // unavailable with the server's reason.
+  // recovery. Approval can be recorded without promotion settings; a configured
+  // promotion target also checks its release inputs before approval.
   function handleApprove(run: VerificationStatusResult) {
     const current = runsById.get(run.run_id);
     const card = activeEditor?.card;

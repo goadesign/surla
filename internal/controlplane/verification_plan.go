@@ -158,7 +158,7 @@ const (
 // tests_not_accepted can take in every state. Only an acceptance makes the
 // builder's assignment unread, so the project server's Chorus reminder reaches
 // the builder exactly then.
-const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"
+const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again"
 
 // Error says what is refused, why and who acts.
 func (r *layoutRefusal) Error() string {
@@ -211,7 +211,7 @@ func (r *layoutRefusal) Error() string {
 		}
 		return fmt.Sprintf("candidate commit %s changes hand-written files in the test module %s since base commit %s (%s);"+
 			" tests in %s belong to the test writer, not the builder%s:"+
-			" restore %s to base commit %s (%s), commit, and call verify_change again",
+			" restore %s to base commit %s (%s), commit, and call verify_change or start_live_target again",
 			r.commit, r.testModule, r.baseCommit, list, r.testModule, renameNote, r.testModule, r.baseCommit, strings.Join(cmds, " && "))
 	}
 	step := "the builder commits the layout surla init makes and verifies again"
@@ -256,9 +256,20 @@ func (c *ControlPlane) verificationPlan(
 	c.mu.RLock()
 	testsCommit, _, err := c.testsChoice(principal, changeID, revision)
 	c.mu.RUnlock()
+	return c.verificationPlanForTests(ctx, candidateCommit, revision, testsCommit, err)
+}
+
+// verificationPlanForTests completes the shared plan from testsChoice's
+// snapshot. Live starts select the confirmed card and tests in one c.mu read;
+// both entry points map the same refusal and build exactly those inputs.
+func (c *ControlPlane) verificationPlanForTests(
+	ctx context.Context,
+	candidateCommit, revision, testsCommit string,
+	err error,
+) (VerificationConfig, error) {
 	var notAccepted testsNotAccepted
 	if errors.As(err, &notAccepted) {
-		// verify_change's caller is the builder, so it reads the builder's step.
+		// Both verification and live starts are builder operations.
 		return VerificationConfig{}, refuseTestsNotAccepted(notAccepted.saved)
 	}
 	if err != nil {
@@ -295,7 +306,7 @@ func (c *ControlPlane) verificationPlan(
 // testsChoice returns the commit and source of the tests that judge changeID
 // at revision for principal, which its caller has already authorized as the
 // change's owner. It is the only function that chooses which tests a
-// verification run uses, which tests approve_merge requires a report to have
+// verification or live target uses, which tests approve_merge requires a report to have
 // run, and which tests a saved approval must still match on read. Callers hold
 // c.mu (for reading or writing); it takes no lock.
 //
@@ -344,8 +355,7 @@ func (c *ControlPlane) testsChoice(
 // bound workspace, and returns the plan that builds candidateCommit's
 // programs and runs testsCommit's generated entry point, written by agents
 // (verify.TestsWritten, the one place written tests are marked).
-// Verification passes the accepted tests' commit; a live copy passes the
-// candidate commit twice. A project folder that is no longer the directory
+// Verification and live targets pass the accepted tests' commit. A project folder that is no longer the directory
 // this control plane bound or is outside any git repository, a commit the
 // repository does not hold, a commit lacking the layout, a candidate commit
 // that shares no history with testsCommit, or a candidate commit that changes

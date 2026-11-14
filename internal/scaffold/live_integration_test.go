@@ -61,7 +61,8 @@ const published = "v0.0.0-20261110163737-d9beac313142"
 // and verify_change of C2 for the same card passes. A second card skips CP3
 // and verifies C1 directly. Each card is proposed with a fixed analysis, as a
 // coding agent would send it. It needs the network and, for the sandbox,
-// macOS.
+// macOS. The two journeys are subtests so each can run with its own process
+// deadline while the default full run retains the shared fixture and sequence.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "shop")
 	name, err := scaffold.Init(t.Context(), scaffold.Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, scaffold.RunCommand, designeval.NewEvaluator())
@@ -102,48 +103,54 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	card := confirmCard(t, cp, alice, "starter-live-prompt")
 
-	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
-	require.NoError(t, err)
-	before := askLive(t, started.URL)
-	assert.True(t, strings.HasPrefix(before, "SYSTEM="), before)
+	if !t.Run("draft_commit_and_verify", func(t *testing.T) {
+		started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: card.ChangeID, CandidateCommit: commit})
+		require.NoError(t, err)
+		before := askLive(t, started.URL)
+		assert.True(t, strings.HasPrefix(before, "SYSTEM="), before)
 
-	promptID := name + ".helper.system"
-	const text = "You answer questions about item prices. [drafted]"
-	drafted, err := cp.DraftOverride(alice, &gensurla.DraftOverridePayload{
-		TargetKind: controlplane.TargetKindPromptTemplate, PromptID: &promptID, NewContent: text,
+		promptID := name + ".helper.system"
+		const text = "You answer questions about item prices. [drafted]"
+		drafted, err := cp.DraftOverride(alice, &gensurla.DraftOverridePayload{
+			TargetKind: controlplane.TargetKindPromptTemplate, PromptID: &promptID, NewContent: text,
+		})
+		require.NoError(t, err)
+		assert.True(t, drafted.AppliedInStore)
+		assert.Equal(t, "SYSTEM="+text, askLive(t, started.URL), "the next model request carries the drafted text")
+		afterDraft, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: card.ChangeID})
+		require.NoError(t, err)
+		assert.Equal(t, card.RequestRevision, afterDraft.RequestRevision, "a runtime draft never changes the card")
+		assert.Equal(t, controlplane.StatusConfirmed, afterDraft.Status)
+
+		// The builder keeps the accepted text by writing it into source and
+		// committing C2; the draft itself is never what CP4 verifies.
+		planner := filepath.Join(dir, "internal", "helper", "planner.go")
+		src, err := os.ReadFile(planner)
+		require.NoError(t, err)
+		start := strings.Index(string(src), "systemPrompt = `")
+		end := strings.Index(string(src)[start+len("systemPrompt = `"):], "`")
+		require.True(t, start >= 0 && end >= 0, "the starter declares its system prompt as a raw string")
+		end += start + len("systemPrompt = `")
+		edited := string(src[:start]) + "systemPrompt = `" + text + "`" + string(src[end+1:])
+		require.NoError(t, os.WriteFile(planner, []byte(edited), 0o600))
+		c2 := commitAll(t, dir)
+
+		restarted, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{ChangeID: card.ChangeID, CandidateCommit: c2})
+		require.NoError(t, err, "starting C2 replaces the C1 target")
+		assert.Equal(t, "SYSTEM="+text, askLive(t, restarted.URL), "C2 carries the committed text without any draft")
+		stopped, err := cp.StopLiveTarget(alice)
+		require.NoError(t, err)
+		assert.True(t, stopped.Stopped)
+
+		assertVerified(t, cp, alice, runsDir, card, c2, "the committed text verifies for the same card")
+	}) {
+		return
+	}
+
+	t.Run("verify_without_live", func(t *testing.T) {
+		skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
+		assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
 	})
-	require.NoError(t, err)
-	assert.True(t, drafted.AppliedInStore)
-	assert.Equal(t, "SYSTEM="+text, askLive(t, started.URL), "the next model request carries the drafted text")
-	afterDraft, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: card.ChangeID})
-	require.NoError(t, err)
-	assert.Equal(t, card.RequestRevision, afterDraft.RequestRevision, "a runtime draft never changes the card")
-	assert.Equal(t, controlplane.StatusConfirmed, afterDraft.Status)
-
-	// The builder keeps the accepted text by writing it into source and
-	// committing C2; the draft itself is never what CP4 verifies.
-	planner := filepath.Join(dir, "internal", "helper", "planner.go")
-	src, err := os.ReadFile(planner)
-	require.NoError(t, err)
-	start := strings.Index(string(src), "systemPrompt = `")
-	end := strings.Index(string(src)[start+len("systemPrompt = `"):], "`")
-	require.True(t, start >= 0 && end >= 0, "the starter declares its system prompt as a raw string")
-	end += start + len("systemPrompt = `")
-	edited := string(src[:start]) + "systemPrompt = `" + text + "`" + string(src[end+1:])
-	require.NoError(t, os.WriteFile(planner, []byte(edited), 0o600))
-	c2 := commitAll(t, dir)
-
-	restarted, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: c2})
-	require.NoError(t, err, "starting C2 replaces the C1 target")
-	assert.Equal(t, "SYSTEM="+text, askLive(t, restarted.URL), "C2 carries the committed text without any draft")
-	stopped, err := cp.StopLiveTarget(alice)
-	require.NoError(t, err)
-	assert.True(t, stopped.Stopped)
-
-	assertVerified(t, cp, alice, runsDir, card, c2, "the committed text verifies for the same card")
-
-	skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
-	assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
 }
 
 // keepRun copies a failed run's directory to $SURLA_TEST_KEEP_RUNS, when it

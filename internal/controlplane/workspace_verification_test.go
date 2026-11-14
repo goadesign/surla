@@ -1,8 +1,8 @@
 // This file checks which tests verification runs and live copies use in a
 // project without stored verification settings: a run uses the tests Surla
 // accepted for the change's build, at their commit, and a live copy uses the
-// candidate commit's own test module. Both read the layout `surla init` makes
-// from a real git repository, and both refuse a commit that lacks it.
+// same accepted tests against its candidate commit. Both read the layout
+// `surla init` makes from a real git repository and refuse a commit lacking it.
 package controlplane
 
 import (
@@ -60,21 +60,25 @@ var shopLayout = map[string]string{
 	"eval/gen/cmd/shop-evals/main.go": "package main\n\nfunc main() {}\n",
 }
 
-// TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn verifies
-// what a project without stored verification settings saves for each consumer
-// of a commit's layout, on the server that accepted the tests and on one
-// reopened from the same card store: a live copy of a candidate needs no
-// build and runs that candidate's own generated entry point; verify_change is
-// refused until the user built the revision and Surla accepted its tests,
-// then runs the accepted commit's entry point against the later candidate;
-// and every result says where the tests came from. The live target is this
-// test binary and the run's supervisor a shell that exits at once, so no Go
-// build runs.
-func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testing.T) {
+// TestVerificationAndLiveTargetsUseTheAcceptedTests verifies both consumers of
+// the committed layout use the accepted test writer's commit, including after
+// reopening the card store. Live starts share verification's build and accepted-
+// tests refusals; the candidate's own test module never replaces accepted tests.
+// The test binary acts as the live target and no Go build runs.
+func TestVerificationAndLiveTargetsUseTheAcceptedTests(t *testing.T) {
 	self, err := os.Executable()
 	require.NoError(t, err)
 	root := realTempDir(t)
 	repo := newLayoutRepo(t, filepath.Join(root, "repo"))
+	// A builder regeneration changes its generated test entry point. The
+	// live plan must still select the earlier accepted test writer's commit.
+	gitForLayoutTest(t, filepath.Dir(filepath.Dir(repo.workspace)), "checkout", "-q", "--detach", repo.candidate)
+	writeTree(t, repo.workspace, map[string]string{
+		"eval/gen/cmd/shop-evals/main.go": "package main\n\n// This candidate-owned entry point must not run.\nfunc main() {}\n",
+	})
+	gitForLayoutTest(t, filepath.Dir(filepath.Dir(repo.workspace)), "add", "services/shop/eval/gen/cmd/shop-evals/main.go")
+	gitForLayoutTest(t, filepath.Dir(filepath.Dir(repo.workspace)), "commit", "-q", "-m", "Regenerate candidate test entry point")
+	repo.candidate = strings.TrimSpace(gitForLayoutTest(t, filepath.Dir(filepath.Dir(repo.workspace)), "rev-parse", "HEAD"))
 	runsDir := filepath.Join(root, "ops", "runs")
 	options := func() Options {
 		return Options{
@@ -104,29 +108,23 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 	// can reopen the card store.
 	first := newBuildControlPlane(t, options())
 
-	started, err := first.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: repo.candidate})
-	require.NoError(t, err, "a live copy needs no build")
-	assert.Equal(t, repo.candidate, started.CandidateCommit)
-	liveDirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(filepath.Join(root, "ops", "cards")))
-	require.NoError(t, err)
-	require.Len(t, liveDirs, 1)
-	var live verifyrun.LiveRequest
-	readJSONFile(t, filepath.Join(liveDirs[0], "live.json"), &live)
-	wantLive := layoutPlan(repo, repo.candidate, repo.candidate)
-	wantLive.WorkDir = filepath.Join(liveDirs[0], "work")
-	assert.Equal(t, wantLive, withoutReport(live.Plan), "the live copy runs the candidate's own tests")
-	_, err = first.StopLiveTarget(builder)
-	require.NoError(t, err)
-
 	card := confirmedChange(t, first, "chg")
 	verifyPayload := &gensurla.VerifyChangePayload{ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: repo.candidate}
+	livePayload := &gensurla.StartLiveTargetPayload{ChangeID: "chg", CandidateCommit: repo.candidate}
 	_, err = first.VerifyChange(builder, verifyPayload)
+	assertRefusalSays(t, err, "no_build", "change \"chg\" has no build with a test writer")
+	_, err = first.StartLiveTarget(builder, livePayload)
 	assertRefusalSays(t, err, "no_build", "change \"chg\" has no build with a test writer")
 	_, err = first.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	require.NoError(t, err)
 	_, err = first.VerifyChange(builder, verifyPayload)
 	assertRefusalSays(t, err, "tests_not_accepted", "the tests of this build are not accepted; their state is assigned")
+	_, err = first.StartLiveTarget(builder, livePayload)
+	assertRefusalSays(t, err, "tests_not_accepted", "the tests of this build are not accepted; their state is assigned")
 	acceptTests(t, first, "chg", repo.tests)
+	gateway := "127.0.0.1:9090"
+	_, err = first.ConfigureModel(user, &gensurla.ConfigureModelPayload{GatewayAddr: &gateway})
+	require.NoError(t, err)
 
 	for _, server := range []struct {
 		name string
@@ -143,6 +141,22 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 	} {
 		t.Run(server.name, func(t *testing.T) {
 			cp := server.open(t)
+			_, err := cp.ConfigureModel(user, &gensurla.ConfigureModelPayload{GatewayAddr: &gateway})
+			require.NoError(t, err)
+			started, err := cp.StartLiveTarget(builder, livePayload)
+			require.NoError(t, err)
+			assert.Equal(t, repo.candidate, started.CandidateCommit)
+			liveDirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(filepath.Join(root, "ops", "cards")))
+			require.NoError(t, err)
+			require.Len(t, liveDirs, 1)
+			var live verifyrun.LiveRequest
+			readJSONFile(t, filepath.Join(liveDirs[0], "live.json"), &live)
+			wantLive := layoutPlan(repo, repo.candidate, repo.tests)
+			assert.Empty(t, live.Plan.RequestRevision, "live requests do not persist a verification revision")
+			wantLive.WorkDir = filepath.Join(liveDirs[0], "work")
+			assert.Equal(t, wantLive, withoutReport(live.Plan), "the live copy runs accepted tests, not candidate-owned eval code")
+			_, err = cp.StopLiveTarget(builder)
+			require.NoError(t, err)
 			run, err := cp.VerifyChange(builder, verifyPayload)
 			require.NoError(t, err)
 			assert.Equal(t, repo.candidate, run.CandidateCommit)
@@ -170,8 +184,8 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 // verify_change in a project without stored verification settings, before
 // any run starts: called directly, over HTTP (409, the refusal's name, a
 // message that ends with its step) and through the MCP tool as the builder,
-// whose result is an error holding the reason and the step. Where a live copy
-// would read the same commit, start_live_target refuses it too.
+// whose result is an error holding the reason and the step. The live-target
+// entry point uses the same plan refusals and accepts no rejected plan.
 func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 	root := realTempDir(t)
 	repo := newLayoutRepo(t, filepath.Join(root, "repo"))
@@ -200,7 +214,6 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 		refusal   string
 		reason    string
 		step      string
-		live      bool
 	}{
 		{
 			name: "no build", build: noBuild, candidate: repo.candidate,
@@ -219,18 +232,18 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 		{
 			name: "tests not accepted", build: assigned, candidate: repo.candidate,
 			refusal: "tests_not_accepted", reason: "the tests of this build are not accepted; their state is assigned",
-			step: "the test writer writes the required tests and reports them finished; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
+			step: "the test writer writes the required tests and reports them finished; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again",
 		},
 		{
 			name: "unknown candidate commit", build: accepted, tests: repo.tests, candidate: unknown,
 			refusal: "conflict", reason: "the candidate commit " + unknown + " is not in the project's repository",
-			step: "commit it and try again", live: true,
+			step: "commit it and try again",
 		},
 		{
 			name: "candidate without its command package", build: accepted, tests: repo.tests, candidate: repo.noProgram,
 			refusal: "no_test_layout",
 			reason:  "commit " + repo.noProgram + " does not have the test layout surla init makes (it has no folder services/shop/cmd/shop)",
-			step:    "the builder commits the layout surla init makes and verifies again", live: true,
+			step:    "the builder commits the layout surla init makes and verifies again",
 		},
 		{
 			name: "accepted tests without their entry point", build: accepted, tests: repo.noEntry, candidate: repo.candidate,
@@ -246,19 +259,19 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 		{
 			name: "project folder outside any git repository", workspace: plain, build: accepted, tests: repo.tests, candidate: repo.candidate,
 			refusal: "no_test_layout", reason: "the project folder " + plain + " is not inside a git repository, so it has no commits to verify",
-			step: "make the project folder a git repository and commit it", live: true,
+			step: "make the project folder a git repository and commit it",
 		},
 		{
 			name: "candidate modifies hand-written file in test module", build: accepted, tests: repo.tests, candidate: repo.modifiedTestFile,
 			refusal: "conflict",
 			reason:  "candidate commit " + repo.modifiedTestFile + " changes hand-written files in the test module services/shop/eval since base commit " + repo.tests + " (services/shop/eval/acceptance/hooks.go); tests in services/shop/eval belong to the test writer, not the builder",
-			step:    "restore services/shop/eval to base commit " + repo.tests + " (git restore --source=" + repo.tests + " --staged --worktree -- ':(top,literal)services/shop/eval/acceptance/hooks.go'), commit, and call verify_change again",
+			step:    "restore services/shop/eval to base commit " + repo.tests + " (git restore --source=" + repo.tests + " --staged --worktree -- ':(top,literal)services/shop/eval/acceptance/hooks.go'), commit, and call verify_change or start_live_target again",
 		},
 		{
 			name: "candidate adds hand-written file in test module", build: accepted, tests: repo.tests, candidate: repo.addedTestFile,
 			refusal: "conflict",
 			reason:  "candidate commit " + repo.addedTestFile + " changes hand-written files in the test module services/shop/eval since base commit " + repo.tests + " (services/shop/eval/acceptance/helper.go); tests in services/shop/eval belong to the test writer, not the builder",
-			step:    "restore services/shop/eval to base commit " + repo.tests + " (git rm -f -- ':(top,literal)services/shop/eval/acceptance/helper.go'), commit, and call verify_change again",
+			step:    "restore services/shop/eval to base commit " + repo.tests + " (git rm -f -- ':(top,literal)services/shop/eval/acceptance/helper.go'), commit, and call verify_change or start_live_target again",
 		},
 		{
 			name: "candidate shares no history with accepted tests", build: accepted, tests: repo.tests, candidate: repo.orphanCandidate,
@@ -325,11 +338,8 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, runs, "no run is accepted")
 
-			if !tc.live {
-				return
-			}
-			_, err = cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: tc.candidate})
-			assertRefusalSays(t, err, "live_target_failed", tc.reason)
+			_, err = cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{ChangeID: "chg", CandidateCommit: tc.candidate})
+			assertRefusalSays(t, err, tc.refusal, tc.reason)
 			assert.Nil(t, cp.owned, "no live copy is started")
 		})
 	}
@@ -388,18 +398,18 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 	}{
 		{
 			name: "reported", tw: testWriterAssignment{State: testsReported, Findings: []string{}},
-			want: "reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
+			want: "reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again",
 		},
 		{
 			name: "needs changes", tw: testWriterAssignment{State: testsNeedChanges, Findings: []string{"refund_over_limit is missing"}, CheckedAt: time.Now()},
-			want: "needs changes: the test writer fixes Surla's findings and reports again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
+			want: "needs changes: the test writer fixes Surla's findings and reports again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again",
 		},
 		{
 			name: "could not run", tw: testWriterAssignment{
 				State: testsCouldNotRun, Findings: []string{}, Reason: "git could not write the tests branch",
 				Step: "Free disk space, then report again.", CheckedAt: time.Now(),
 			},
-			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
+			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again",
 		},
 	}
 	for _, tc := range cases {
@@ -454,7 +464,7 @@ func TestTestsNotAcceptedIsWordedForEachReader(t *testing.T) {
 		err    error
 		want   string
 	}{
-		{"builder", verifyErr, "the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"},
+		{"builder", verifyErr, "the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify or call start_live_target again"},
 		{"user", approveErr, "the tests of this build are not accepted; their state is reported: Surla is checking the test writer's report; the builder verifies again after its verdict"},
 	} {
 		t.Run(tc.reader, func(t *testing.T) {
@@ -534,8 +544,8 @@ func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 
 // TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange verifies
 // the test-module guard across the builder's full workflow:
-//   - start_live_target and stored verification are not guarded when the
-//     candidate modifies hand-written files in <testModule>;
+//   - stored verification does not apply this guard; written-test live starts
+//     share verification's guard, covered by the refusal table above;
 //   - regenerating <testModule>/gen/... and <testModule>/AGENTS_QUICKSTART.md
 //     is allowed, whereas a sibling path starting with "gen" outside gen/
 //     (<testModule>/genx/notgen.go) is refused;
@@ -551,8 +561,6 @@ func TestTestWriterReadsOnlyTheRunsOfAnAssignedChange(t *testing.T) {
 //   - squashing the project branch history after tests were accepted refuses
 //     with stepNoCommonBase addressed to the user.
 func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *testing.T) {
-	self, err := os.Executable()
-	require.NoError(t, err)
 	root := realTempDir(t)
 	repoDir := filepath.Join(root, "repo")
 	repo := newLayoutRepo(t, repoDir)
@@ -563,7 +571,6 @@ func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *test
 		RunsDir:         runsDir,
 		SurlaVersion:    testSurlaVersion,
 		WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
-		Live:            &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
 	})
 	user := asCaller("alice@example.com", CallerUser)
 	builder := asCaller("alice@example.com", CallerBuilder)
@@ -574,15 +581,9 @@ func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *test
 		return strings.TrimSpace(gitForLayoutTest(t, repoDir, "rev-parse", "HEAD"))
 	}
 
-	// 0. start_live_target (livePlan, candidateCommit == testsCommit) and
-	// storedVerification are not guarded when the candidate modified
-	// eval/acceptance/hooks.go.
-	liveStarted, err := cp.StartLiveTarget(builder, &gensurla.StartLiveTargetPayload{CandidateCommit: repo.modifiedTestFile})
-	require.NoError(t, err, "start_live_target runs the candidate's own tests and is not guarded")
-	assert.Equal(t, repo.modifiedTestFile, liveStarted.CandidateCommit)
-	_, err = cp.StopLiveTarget(builder)
-	require.NoError(t, err)
-
+	// Stored verification still uses the operator's evaluator and permits
+	// candidate changes to the test module. The refusal table above covers
+	// written-test live targets, which share verification's accepted-test guard.
 	storedRunsDir := filepath.Join(root, "stored-runs")
 	storedPlan := layoutPlan(repo, "", repo.tests)
 	storedPlan.ReportDir = realTempDir(t)
@@ -711,7 +712,7 @@ func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *test
 		"candidate commit "+badCommit+" changes hand-written files in the test module services/shop/eval since base commit "+m1+
 			" (services/shop/eval/acceptance/helper.go, services/shop/eval/acceptance/hooks.go, services/shop/eval/acceptance/story_test.go);"+
 			" tests in services/shop/eval belong to the test writer, not the builder:"+
-			" restore services/shop/eval to base commit "+m1+" ("+wantCmd+"), commit, and call verify_change again")
+			" restore services/shop/eval to base commit "+m1+" ("+wantCmd+"), commit, and call verify_change or start_live_target again")
 
 	// Execute the refusal message's exact recovery command from repo.workspace
 	// (the nested project folder services/shop), commit, and verify again.
@@ -740,7 +741,7 @@ func TestVerifyChangeTestModuleGuardAcrossRegenerationMergeAndNextChange(t *test
 	})
 	wantRestoreDeleted := "git restore --source=" + m1 + " --staged --worktree -- ':(top,literal)services/shop/eval/acceptance/hooks.go'"
 	assertRefusalSays(t, err, "conflict",
-		"restore services/shop/eval to base commit "+m1+" ("+wantRestoreDeleted+"), commit, and call verify_change again")
+		"restore services/shop/eval to base commit "+m1+" ("+wantRestoreDeleted+"), commit, and call verify_change or start_live_target again")
 	cmd = exec.Command("sh", "-c", wantRestoreDeleted)
 	cmd.Dir = repo.workspace
 	out, runErr = cmd.CombinedOutput()
@@ -821,7 +822,7 @@ func TestVerifyChangeTestModuleFileLimitBelowAtAndAbove(t *testing.T) {
 				idx := strings.Index(msg, marker)
 				require.NotEqual(t, -1, idx, msg)
 				rest := msg[idx+len(marker):]
-				end := strings.Index(rest, "), commit, and call verify_change again")
+				end := strings.Index(rest, "), commit, and call verify_change or start_live_target again")
 				require.NotEqual(t, -1, end, msg)
 				return rest[:end]
 			}

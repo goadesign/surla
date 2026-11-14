@@ -211,7 +211,7 @@ func (c *Client) PreviewArchitecture(ctx context.Context, p *PreviewArchitecture
 
 // DraftOverride calls the "draft_override" endpoint of the "surla" service.
 // DraftOverride may return the following errors:
-//   - "no_live_target" (type *goa.ServiceError): No live target is running, so nothing changed. Call start_live_target with a candidate commit first.
+//   - "no_live_target" (type *goa.ServiceError): No live target is running, so nothing changed. Call start_live_target with an owned confirmed change_id and a candidate commit first.
 //   - "prompt_not_found" (type *goa.ServiceError): The live target has no prompt with this ID; nothing changed.
 //   - "invalid_prompt" (type *goa.ServiceError): The live target rejected the template because it does not render; nothing changed.
 //   - "live_target_ended" (type *goa.ServiceError): The live target is no longer running; start it again with start_live_target.
@@ -231,6 +231,11 @@ func (c *Client) DraftOverride(ctx context.Context, p *DraftOverridePayload) (re
 // StartLiveTarget calls the "start_live_target" endpoint of the "surla"
 // service.
 // StartLiveTarget may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No owned Change Card exists with this change_id.
+//   - "conflict" (type *goa.ServiceError): The change is not confirmed, a required commit is unavailable, the project folder was replaced, or the candidate changes hand-written test-module files or shares no history with the accepted tests.
+//   - "no_build" (type *goa.ServiceError): The current change revision has no usable build.
+//   - "tests_not_accepted" (type *goa.ServiceError): The current build has no accepted tests; the message names who acts next.
+//   - "no_test_layout" (type *goa.ServiceError): The candidate or accepted tests lacks the required test layout.
 //   - "live_target_unavailable" (type *goa.ServiceError): This server has no verification configuration, so it cannot build or run a live target.
 //   - "live_target_failed" (type *goa.ServiceError): The live target could not be built or started; the message says which step failed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.

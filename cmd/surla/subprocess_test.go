@@ -167,6 +167,12 @@ func TestMain(m *testing.M) {
 				bindFixtureTeamEffects(&runtime)
 				return runWithRuntime(append([]string{"serve"}, args...), io.Discard, runtime)
 			}
+		case "test-live-model-executor":
+			runHelper = runLiveModelPipelineExecutor
+		case "--live":
+			if len(os.Args) > 2 && os.Args[2] == "--model-pipeline-suite" {
+				runHelper = runLiveModelPipelineSuite
+			}
 		case "verify-run":
 			runHelper = runVerifyRun
 		case "check-run":

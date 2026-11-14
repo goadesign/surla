@@ -37,9 +37,10 @@ const ordersSystemPrompt = "orders.refund.system"
 // root and authenticated MCP endpoint, against this repository's committed
 // HEAD, the way examples/orders/README.md describes it. The operator stores
 // verification settings for examples/orders with surla verification set. A
-// draft with no live copy is refused with no_live_target. start_live_target
-// builds HEAD's orders binaries as verification does and starts them through
-// the Orders evaluator suite's --live mode: simulated commerce and payments,
+// draft with no live copy is refused with no_live_target. The guide proposes
+// a change and the user confirms it; start_live_target names that agreed
+// change, builds HEAD's orders binaries as verification does and starts
+// them through the Orders evaluator suite's --live mode: simulated commerce and payments,
 // a Temporal dev server and the evaluator's scripted model. draft_override
 // then replaces the refund agent's system prompt through Surla's generated
 // prompt client with the key Surla minted, which the copy requires; text that
@@ -95,7 +96,32 @@ func TestOrdersLiveCopyAppliesADraftThroughTheProjectServer(t *testing.T) {
 	refused := ordersDraftRefusal(t, ctx, client, ordersSystemPrompt, "Answer in one sentence.")
 	assert.Contains(t, refused, "start_live_target", "with no live copy, the refusal names the step that enables drafts")
 
-	args, err := gensurla.EncodeStartLiveTargetPayload(&gensurla.StartLiveTargetPayload{CandidateCommit: head})
+	args, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
+		ChangeID: "orders-refund-wording", Prompt: "Answer refund questions in one sentence.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary:     "Keep the existing refund decisions and answer customers in one sentence.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario: "Refund question", InputSummary: "Ask for a refund on an eligible order.",
+				ExpectedOutcome: "Preserve the refund decision and answer in one sentence.", VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"Existing refund eligibility decisions remain unchanged."},
+		},
+	})
+	require.NoError(t, err)
+	proposed, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, ctx, client, "propose_change", args))
+	require.NoError(t, err)
+	args, err = gensurla.EncodeConfirmIntentPayload(&gensurla.ConfirmIntentPayload{
+		ChangeID: proposed.ChangeID, RequestRevision: proposed.RequestRevision,
+		Answers: map[string]string{}, Examples: proposed.Examples,
+	})
+	require.NoError(t, err)
+	card, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, ctx, client, "confirm_intent", args))
+	require.NoError(t, err)
+	require.Equal(t, controlplane.StatusConfirmed, card.Status)
+	args, err = gensurla.EncodeStartLiveTargetPayload(&gensurla.StartLiveTargetPayload{
+		ChangeID: card.ChangeID, CandidateCommit: head,
+	})
 	require.NoError(t, err)
 	started, err := gensurla.DecodeLiveTargetResult(trustedSuiteCall(t, ctx, client, "start_live_target", args))
 	require.NoError(t, err)

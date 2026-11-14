@@ -857,6 +857,71 @@ func EncodeStartLiveTargetError(encoder func(context.Context, http.ResponseWrite
 			return encodeError(ctx, w, v)
 		}
 		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartLiveTargetNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "conflict":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartLiveTargetConflictResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "no_build":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartLiveTargetNoBuildResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "tests_not_accepted":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartLiveTargetTestsNotAcceptedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "no_test_layout":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartLiveTargetNoTestLayoutResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
 		case "live_target_unavailable":
 			var res *goa.ServiceError
 			errors.As(v, &res)
@@ -4190,6 +4255,20 @@ func marshalSurlaLivePromptItemToLivePromptItemResponseBody(v *surla.LivePromptI
 func marshalSurlaLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedResponseBody(v *surla.LiveTargetNotConfirmedStopped) *LiveTargetNotConfirmedStoppedResponseBody {
 	res := &LiveTargetNotConfirmedStoppedResponseBody{
 		CandidateCommit: v.CandidateCommit,
+		Message:         v.Message,
+	}
+
+	return res
+}
+
+// marshalSurlaLiveTargetEndedToLiveTargetEndedResponseBody builds a value of
+// type *LiveTargetEndedResponseBody from a value of type
+// *surla.LiveTargetEnded.
+func marshalSurlaLiveTargetEndedToLiveTargetEndedResponseBody(v *surla.LiveTargetEnded) *LiveTargetEndedResponseBody {
+	res := &LiveTargetEndedResponseBody{
+		CandidateCommit: v.CandidateCommit,
+		StartedAt:       v.StartedAt,
+		EndedAt:         v.EndedAt,
 		Message:         v.Message,
 	}
 
