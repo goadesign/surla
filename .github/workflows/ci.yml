@@ -180,6 +180,7 @@ jobs:
             ./internal/abspath \
             ./internal/diff \
             ./internal/genpublish \
+            ./internal/gitenv \
             ./internal/goldenpath \
             ./internal/modelsettings \
             ./internal/procgroup \
