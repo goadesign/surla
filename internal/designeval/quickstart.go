@@ -15,7 +15,7 @@ import (
 )
 
 // quickstartPath is the root file Goa-AI's agent generator writes for coding
-// agents, the only generated file outside gen/.
+// agents, the only file generation writes outside gen/.
 const quickstartPath = "AGENTS_QUICKSTART.md"
 
 // surlaQuickstart is the "surla-quickstart" Goa plugin that runs after
