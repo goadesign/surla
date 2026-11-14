@@ -150,7 +150,7 @@ func (c *ControlPlane) ApproveMerge(
 		if errors.Is(err, verify.ErrStaleReport) {
 			if target != nil && !maps.Equal(expectedArtifacts, report.Binding.Artifacts) {
 				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
-					"%w: publish the binaries the run built into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings",
+					"%w: publish the binaries the run built, whose folder the run's Proof view shows, into the release folder that the promotion settings name, in a folder named after the commit, or remove the promotion settings",
 					err,
 				))
 			}

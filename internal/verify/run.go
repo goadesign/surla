@@ -229,6 +229,13 @@ func Run(ctx context.Context, p Plan, environ []string) (Report, error) {
 	return runPrepared(ctx, p, prep, environ)
 }
 
+// CandidateBinariesDir names the output folder Prepare owns inside the run's
+// work directory. Run readers use the same location to identify the binaries
+// retained after verification; callers supply the recorded absolute WorkDir.
+func CandidateBinariesDir(workDir string) string {
+	return filepath.Join(workDir, "candidate-bin")
+}
+
 // Prepare runs the trusted preparation Run starts with: it checks the plan,
 // clones the candidate at its exact commit and builds its binaries into
 // WorkDir/candidate-bin, then clones the suite at its exact commit and builds
@@ -273,7 +280,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory %s must be missing or empty", p.WorkDir))
 	}
 	evidenceDir := filepath.Join(p.WorkDir, "evidence")
-	candidateBinDir := filepath.Join(p.WorkDir, "candidate-bin")
+	candidateBinDir := CandidateBinariesDir(p.WorkDir)
 	suiteBinDir := filepath.Join(p.WorkDir, "suite-bin")
 	tmpDir := filepath.Join(p.WorkDir, "tmp")
 	for _, dir := range []string{evidenceDir, candidateBinDir, suiteBinDir, tmpDir} {

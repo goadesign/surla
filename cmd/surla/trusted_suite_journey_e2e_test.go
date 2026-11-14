@@ -38,7 +38,9 @@ import (
 const journeyOwnerWait = defaultProjectVerifyTimeout + 2*time.Minute
 
 // trustedSuiteCommit commits only the harmless evaluator comment and returns
-// the full candidate commit ID; Git identity is local to the parent test.
+// the full candidate commit ID. Its git commands run with testGitEnv: no
+// inherited GIT_* variable, so they act only on the repository at dir, and
+// the fixed test identity.
 func trustedSuiteCommit(t *testing.T, dir string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
@@ -49,11 +51,13 @@ func trustedSuiteCommit(t *testing.T, dir string) string {
 	} {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
+		cmd.Env = testGitEnv()
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, string(out))
 	}
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "HEAD^{commit}")
 	cmd.Dir = dir
+	cmd.Env = testGitEnv()
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))

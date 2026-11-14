@@ -501,7 +501,8 @@ func writeListedRun(t *testing.T, runsDir, owner string, card *gensurla.ChangeCa
 		RunID: runID, Owner: owner, ChangeID: card.ChangeID, AcceptedAt: accepted,
 		Plan: verify.Plan{
 			CandidateCommit: commit, RequestRevision: card.RequestRevision, SuiteCommit: spec.SuiteCommit, ReportDir: reportDir,
-			Tests: verify.TestsEvaluator,
+			WorkDir: filepath.Join(dir, "work"),
+			Tests:   verify.TestsEvaluator,
 		},
 	})
 	require.NoError(t, err)

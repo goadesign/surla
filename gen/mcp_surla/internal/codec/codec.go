@@ -4864,6 +4864,15 @@ type GetVerificationResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *GetVerificationResulttestSourceTransport `json:"test_source"`
@@ -4894,6 +4903,9 @@ func ValidateGetVerificationResultTransport(value *GetVerificationResultTranspor
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -4902,6 +4914,11 @@ func ValidateGetVerificationResultTransport(value *GetVerificationResultTranspor
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*value.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *value.CandidateBinariesDir, utf8.RuneCountInString(*value.CandidateBinariesDir), 1, true))
+		}
 	}
 	if value.TestSource != nil {
 
@@ -6286,6 +6303,15 @@ type ListVerificationsResultVerificationStatusResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *ListVerificationsResulttestSourceTransport `json:"test_source"`
@@ -6316,6 +6342,9 @@ func ValidateListVerificationsResultVerificationStatusResultTransport(value *Lis
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -6324,6 +6353,11 @@ func ValidateListVerificationsResultVerificationStatusResultTransport(value *Lis
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*value.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *value.CandidateBinariesDir, utf8.RuneCountInString(*value.CandidateBinariesDir), 1, true))
+		}
 	}
 	if value.TestSource != nil {
 
@@ -9282,6 +9316,15 @@ type VerifyChangeResultTransport struct {
 	SuiteCommit *string `json:"suite_commit"`
 	// When the run was accepted.
 	AcceptedAt *string `json:"accepted_at"`
+	// Whether this run's agreed revision and selected tests match the current
+	// Change Card and usable build or stored evaluator. This observation does not
+	// establish the current candidate working tree, deployment or approval.
+	InputsCurrent *bool `json:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *VerifyChangeResulttestSourceTransport `json:"test_source"`
@@ -9312,6 +9355,9 @@ func ValidateVerifyChangeResultTransport(value *VerifyChangeResultTransport) (er
 	if value.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if value.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -9320,6 +9366,11 @@ func ValidateVerifyChangeResultTransport(value *VerifyChangeResultTransport) (er
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*value.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *value.CandidateBinariesDir, utf8.RuneCountInString(*value.CandidateBinariesDir), 1, true))
+		}
 	}
 	if value.TestSource != nil {
 
@@ -13428,12 +13479,14 @@ func EncodeGetVerificationResult(in *surla.VerificationStatusResult) ([]byte, er
 	var body *GetVerificationResultTransport
 	{
 		body = &GetVerificationResultTransport{
-			RunID:           &in.RunID,
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-			CandidateCommit: &in.CandidateCommit,
-			SuiteCommit:     &in.SuiteCommit,
-			AcceptedAt:      &in.AcceptedAt,
+			RunID:                &in.RunID,
+			ChangeID:             &in.ChangeID,
+			RequestRevision:      &in.RequestRevision,
+			CandidateCommit:      &in.CandidateCommit,
+			SuiteCommit:          &in.SuiteCommit,
+			AcceptedAt:           &in.AcceptedAt,
+			InputsCurrent:        &in.InputsCurrent,
+			CandidateBinariesDir: in.CandidateBinariesDir,
 		}
 		var testSourceValue GetVerificationResulttestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -14266,12 +14319,14 @@ func EncodeVerifyChangeResult(in *surla.VerificationStatusResult) ([]byte, error
 	var body *VerifyChangeResultTransport
 	{
 		body = &VerifyChangeResultTransport{
-			RunID:           &in.RunID,
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-			CandidateCommit: &in.CandidateCommit,
-			SuiteCommit:     &in.SuiteCommit,
-			AcceptedAt:      &in.AcceptedAt,
+			RunID:                &in.RunID,
+			ChangeID:             &in.ChangeID,
+			RequestRevision:      &in.RequestRevision,
+			CandidateCommit:      &in.CandidateCommit,
+			SuiteCommit:          &in.SuiteCommit,
+			AcceptedAt:           &in.AcceptedAt,
+			InputsCurrent:        &in.InputsCurrent,
+			CandidateBinariesDir: in.CandidateBinariesDir,
 		}
 		var testSourceValue VerifyChangeResulttestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -18675,12 +18730,14 @@ func encodeVerificationScenarioToVerifyChangeResultVerificationScenarioTransport
 
 func encodeVerificationStatusResultToListVerificationsResultVerificationStatusResultTransport(v *surla.VerificationStatusResult) *ListVerificationsResultVerificationStatusResultTransport {
 	res := &ListVerificationsResultVerificationStatusResultTransport{
-		RunID:           &v.RunID,
-		ChangeID:        &v.ChangeID,
-		RequestRevision: &v.RequestRevision,
-		CandidateCommit: &v.CandidateCommit,
-		SuiteCommit:     &v.SuiteCommit,
-		AcceptedAt:      &v.AcceptedAt,
+		RunID:                &v.RunID,
+		ChangeID:             &v.ChangeID,
+		RequestRevision:      &v.RequestRevision,
+		CandidateCommit:      &v.CandidateCommit,
+		SuiteCommit:          &v.SuiteCommit,
+		AcceptedAt:           &v.AcceptedAt,
+		InputsCurrent:        &v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	var testSourceValue ListVerificationsResulttestSourceTransport
 	switch string(v.TestSource.Kind()) {

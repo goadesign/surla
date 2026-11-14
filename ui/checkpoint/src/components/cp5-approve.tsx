@@ -10,6 +10,8 @@ import { Alert, Button, Card } from "./shadcn";
 export interface ApproveResultControlProps {
   // run is the displayed verification run; only a passed report is offered.
   run: VerificationStatusResult;
+  // inputsKnown is false while the owner observation is stale or unreadable.
+  inputsKnown: boolean;
   // card is the Change Card the page shows for run's change, or null when it
   // is not loaded.
   card: ChangeCardResult | null;
@@ -31,6 +33,7 @@ export interface ApproveResultControlProps {
 // explains, rather than hides, why approval cannot be sent for this run.
 export function ApproveResultControl({
   run,
+  inputsKnown,
   card,
   busy,
   available,
@@ -51,6 +54,10 @@ export function ApproveResultControl({
   } else if (card.request_revision !== run.request_revision) {
     blocked =
       "This result verified a different revision of the Change Card than the one shown. Verify the shown revision, then approve its result.";
+  } else if (!inputsKnown) {
+    blocked = "The current agreement and tests have not been confirmed for this result. Refresh the result before approving.";
+  } else if (!run.inputs_current) {
+    blocked = "This saved result used an earlier agreement or test selection. The builder checks the current agreement and tests again; then you can approve that result.";
   }
   return (
     <Card
@@ -60,7 +67,7 @@ export function ApproveResultControl({
       aria-labelledby="surla-cp5-approve-title"
       aria-busy={busy ? "true" : undefined}
     >
-      <h3 id="surla-cp5-approve-title">Approve this result</h3>
+      <h3 id="surla-cp5-approve-title" tabIndex={-1}>Approve this result</h3>
       <p>
         Approval records that this passed result may be promoted for the Change Card revision
         shown. It does not merge or deploy anything.
@@ -95,6 +102,12 @@ export function ApproveResultControl({
         <Alert id="surla-cp5-approve-error" variant="destructive" role="alert" tabIndex={-1}>
           <strong>Approval was not recorded. </strong>
           {error}
+          {run.candidate_binaries_dir !== undefined ? (
+            <p id="surla-cp5-binaries-dir">
+              <strong>Binaries built by this run: </strong>
+              <code>{run.candidate_binaries_dir}</code>
+            </p>
+          ) : null}
         </Alert>
       ) : null}
     </Card>

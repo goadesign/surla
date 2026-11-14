@@ -424,8 +424,10 @@ export interface VerificationScenario {
 
 export interface VerificationStatusResult {
   accepted_at: string;
+  candidate_binaries_dir?: string;
   candidate_commit: string;
   change_id: string;
+  inputs_current: boolean;
   request_revision: string;
   run_id: string;
   state: ({ "type": "running"; "value": VerificationRunning } | { "type": "completed"; "value": VerificationCompleted } | { "type": "not_completed"; "value": VerificationNotCompleted });
@@ -2899,6 +2901,7 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "candidate_commit",
       "suite_commit",
       "accepted_at",
+      "inputs_current",
       "test_source",
       "state"
     ],
@@ -2907,11 +2910,17 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
         "type": "string",
         "format": "date-time"
       },
+      "candidate_binaries_dir": {
+        "type": "string"
+      },
       "candidate_commit": {
         "type": "string"
       },
       "change_id": {
         "type": "string"
+      },
+      "inputs_current": {
+        "type": "boolean"
       },
       "request_revision": {
         "type": "string"

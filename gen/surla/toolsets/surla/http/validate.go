@@ -803,6 +803,9 @@ func ValidateGetVerificationResultTransport(body *GetVerificationResultTransport
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -811,6 +814,11 @@ func ValidateGetVerificationResultTransport(body *GetVerificationResultTransport
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -1448,6 +1456,9 @@ func ValidateVerifyChangeResultTransport(body *VerifyChangeResultTransport) (err
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -1456,6 +1467,11 @@ func ValidateVerifyChangeResultTransport(body *VerifyChangeResultTransport) (err
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 
@@ -2729,6 +2745,9 @@ func ValidateVerificationStatusResultTransport(body *VerificationStatusResultTra
 	if body.AcceptedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.TestSource == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_source", "body"))
 	}
@@ -2737,6 +2756,11 @@ func ValidateVerificationStatusResultTransport(body *VerificationStatusResultTra
 	}
 	if body.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*body.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *body.CandidateBinariesDir, utf8.RuneCountInString(*body.CandidateBinariesDir), 1, true))
+		}
 	}
 	if body.TestSource != nil {
 

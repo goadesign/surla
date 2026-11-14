@@ -677,6 +677,8 @@ var VerificationStatusResult = Type("VerificationStatusResult", func() {
 	Attribute("candidate_commit", String, "Candidate commit the run builds and verifies.")
 	Attribute("suite_commit", String, "Commit of the tests the run uses: the operator's evaluator, or the tests accepted for the change's build.")
 	Attribute("accepted_at", String, "When the run was accepted.", func() { Format(FormatDateTime) })
+	Attribute("inputs_current", Boolean, "Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.")
+	Attribute("candidate_binaries_dir", String, "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.", func() { MinLength(1) })
 	OneOf("test_source", "Where the run's tests came from, recorded when the run started: evaluator, or written_tests with their commit and a notice.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "source")
@@ -688,7 +690,7 @@ var VerificationStatusResult = Type("VerificationStatusResult", func() {
 		Attribute("completed", VerificationCompleted)
 		Attribute("not_completed", VerificationNotCompleted)
 	})
-	Required("run_id", "change_id", "request_revision", "candidate_commit", "suite_commit", "accepted_at", "test_source", "state")
+	Required("run_id", "change_id", "request_revision", "candidate_commit", "suite_commit", "accepted_at", "inputs_current", "test_source", "state")
 })
 
 // OperatorEvaluatorTests is a run whose tests are the operator's evaluator.
