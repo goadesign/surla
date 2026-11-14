@@ -22,7 +22,7 @@ import { countsPhrase, storyCounts } from "./story";
 
 export interface CP1EditorProps {
   card: ChangeCardResult;
-  // buildSection follows the saved summary before the long editable fields.
+  // buildSection leads a confirmed card so the current work appears first.
   buildSection: React.ReactNode;
   // buildRevisionNotice explains the effect of changing the agreed revision.
   buildRevisionNotice: string | null;
@@ -207,20 +207,71 @@ export function CP1EditorView({
     }
   }
 
+  const savedAgreement = (
+    <>
+      {card.status === "confirmed" && ambiguities.length > 0 ? (
+        <div id="surla-confirmed-decisions" role="region" aria-label="Confirmed Decisions">
+          <p>
+            <strong>Confirmed Decisions:</strong>
+          </p>
+          <ul>
+            {ambiguities.map((amb) => (
+              <li key={amb.id}>
+                <strong>{amb.question}</strong>{" "}
+                <code>{card.answers?.[amb.id] ?? ""}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <p>
+        <strong>
+          {card.status === "confirmed" && ambiguities.length > 0
+            ? "Initial Proposal Summary: "
+            : "Summary: "}
+        </strong>
+        {card.summary}
+      </p>
+      <p>
+        <strong>Requested change: </strong>
+        {card.prompt}
+      </p>
+      {card.confirmed_by ? (
+        <p>
+          <strong>
+            {card.confirmed_by.startsWith("uid:")
+              ? "Agreed by (operating system user): "
+              : "Agreed by (recorded user identity): "}
+          </strong>
+          <code>{card.confirmed_by}</code>
+        </p>
+      ) : null}
+      <details className="surla-details">
+        <summary>Details</summary>
+        <p>
+          change_id: <code>{card.change_id}</code> · status: <code>{card.status}</code> ·
+          request_revision: <code>{card.request_revision}</code>
+        </p>
+      </details>
+    </>
+  );
+
   return (
     <CP1DraftContext.Provider value={ctxValue}>
+      {card.status === "confirmed" ? buildSection : null}
+
       <Card className="surla-meta">
         <div className="surla-region-header">
           <div className="surla-region-title-group">
             <h2>
               {card.status === "confirmed"
-                ? "Confirmed Change Decision"
+                ? "Agreed: " + card.prompt
                 : "Review & Confirm Change Intent"}
             </h2>
           </div>
           <div className="surla-toolbar-actions">
             <Badge variant={card.status === "confirmed" ? "success" : "warning"}>
-              {card.status === "confirmed" ? "Confirmed" : "Needs confirmation"}
+              {card.status === "confirmed" ? "Agreed" : "Needs confirmation"}
             </Badge>
             {card.approval ? <Badge variant="success">Approval recorded</Badge> : null}
             {card.unverified_approval ? <Badge variant="warning">Approval unverified</Badge> : null}
@@ -235,49 +286,15 @@ export function CP1EditorView({
             ) : null}
           </div>
         </div>
-        {card.status === "confirmed" && ambiguities.length > 0 ? (
-          <div id="surla-confirmed-decisions" role="region" aria-label="Confirmed Decisions">
-            <p>
-              <strong>Confirmed Decisions:</strong>
-            </p>
-            <ul>
-              {ambiguities.map((amb) => (
-                <li key={amb.id}>
-                  <strong>{amb.question}</strong>{" "}
-                  <code>{card.answers?.[amb.id] ?? ""}</code>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <p>
-          <strong>
-            {card.status === "confirmed" && ambiguities.length > 0
-              ? "Initial Proposal Summary: "
-              : "Summary: "}
-          </strong>
-          {card.summary}
-        </p>
-        <p>
-          <strong>Requested change: </strong>
-          {card.prompt}
-        </p>
-        {card.confirmed_by ? (
-          <p>
-            <strong>Confirmed by: </strong>
-            {card.confirmed_by}
-          </p>
-        ) : null}
-        <details className="surla-details">
-          <summary>Details</summary>
-          <p>
-            change_id: <code>{card.change_id}</code> · status: <code>{card.status}</code> ·
-            request_revision: <code>{card.request_revision}</code>
-          </p>
-        </details>
+        {card.status === "confirmed" ? (
+          <details className="surla-details" id="surla-agreement-details">
+            <summary>Agreement details</summary>
+            {savedAgreement}
+          </details>
+        ) : savedAgreement}
       </Card>
 
-      {buildSection}
+      {card.status !== "confirmed" ? buildSection : null}
 
       {card.approval ? (
         <Card
@@ -556,211 +573,258 @@ export function CP1EditorView({
         </Card>
       ) : null}
 
-      {openUINode}
-
-      <Card
-        id="surla-cp1-form-card"
-        className="surla-card"
-        aria-busy={rpcInFlight ? "true" : undefined}
+      <RefinementDisclosure
+        confirmed={card.status === "confirmed"}
+        keepOpen={draftDirty || proposalWaiting || preservedDraft !== null || formError !== null}
       >
-        <h3>{"Open Questions (" + ambiguities.length + ")"}</h3>
-        {ambiguities.length > 0 ? (
-          <ul>
-            {ambiguities.map((amb) => {
-              const selected = Object.prototype.hasOwnProperty.call(draftAnswers, amb.id)
-                ? draftAnswers[amb.id]
-                : "";
-              const saved =
-                card.answers && Object.prototype.hasOwnProperty.call(card.answers, amb.id)
-                  ? card.answers[amb.id]
+        {openUINode}
+
+        <Card
+          id="surla-cp1-form-card"
+          className="surla-card"
+          aria-busy={rpcInFlight ? "true" : undefined}
+        >
+          <h3>
+            {(card.status === "confirmed" ? "Your answers (" : "Open Questions (") +
+              ambiguities.length + ")"}
+          </h3>
+          {ambiguities.length > 0 ? (
+            <ul>
+              {ambiguities.map((amb) => {
+                const selected = Object.prototype.hasOwnProperty.call(draftAnswers, amb.id)
+                  ? draftAnswers[amb.id]
                   : "";
-              const answerBadge = !selected
-                ? ""
-                : card.status === "confirmed" && selected === saved
-                ? " [Confirmed answer: " + selected + "]"
-                : " [Selected draft answer: " + selected + "]";
-              return (
-                <li key={amb.id}>
-                  <div>
-                    <strong>{amb.question}</strong>
-                    {answerBadge}
-                  </div>
-                  <div role="group" aria-label={amb.question}>
-                    {amb.options.map((opt) => (
-                      <Button
-                        key={opt}
-                        variant="pill"
-                        disabled={rpcInFlight}
-                        data-ambiguity-id={amb.id}
-                        data-option={opt}
-                        aria-pressed={selected === opt ? "true" : "false"}
-                        onClick={() => onSetAnswer(amb.id, opt)}
-                      >
-                        {opt}
-                      </Button>
-                    ))}
-                  </div>
-                  <details className="surla-details">
-                    <summary>Details</summary>
-                    <p>
-                      <code>{amb.id}</code>
-                      {" (options: " + amb.options.join(", ") + ")"}
-                    </p>
-                  </details>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p>No open domain questions.</p>
-        )}
+                const saved =
+                  card.answers && Object.prototype.hasOwnProperty.call(card.answers, amb.id)
+                    ? card.answers[amb.id]
+                    : "";
+                const answerBadge = !selected
+                  ? ""
+                  : card.status === "confirmed" && selected === saved
+                  ? ""
+                  : " [Selected draft answer: " + selected + "]";
+                return (
+                  <li key={amb.id}>
+                    <div>
+                      <strong>{amb.question}</strong>
+                      {answerBadge}
+                    </div>
+                    <div role="group" aria-label={amb.question}>
+                      {amb.options.map((opt) => (
+                        <Button
+                          key={opt}
+                          variant="pill"
+                          disabled={rpcInFlight}
+                          data-ambiguity-id={amb.id}
+                          data-option={opt}
+                          aria-pressed={selected === opt ? "true" : "false"}
+                          onClick={() => onSetAnswer(amb.id, opt)}
+                        >
+                          {opt}
+                        </Button>
+                      ))}
+                    </div>
+                    <details className="surla-details">
+                      <summary>Details</summary>
+                      <p>
+                        <code>{amb.id}</code>
+                        {" (options: " + amb.options.join(", ") + ")"}
+                      </p>
+                    </details>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p>No open domain questions.</p>
+          )}
 
-        <h3>{"Concrete Examples (" + draftExamples.length + ")"}</h3>
-        <ul className="surla-compact-list">
-          {draftExamples.map((ex, idx) => (
-            <li key={ex.id} className="surla-example-card" data-example-index={String(idx)}>
-              <div>
-                <strong>{ex.scenario}</strong>
-                {" — Input: " + ex.input_summary + " -> Expected: " + ex.expected_outcome + " "}
-                <Badge>
-                  {ex.verification_kind === "deterministic"
-                    ? "Deterministic check"
-                    : "Model-judged check"}
-                </Badge>
-              </div>
-              <div className="surla-field-row">
-                <FieldTextarea
-                  exampleId={ex.id}
-                  field="scenario"
-                  label="Scenario"
-                  value={ex.scenario}
-                  disabled={rpcInFlight}
-                  onChangeValue={(v) => onSetExampleField(ex.id, "scenario", v)}
-                />
-                <FieldTextarea
-                  exampleId={ex.id}
-                  field="input_summary"
-                  label="Input"
-                  value={ex.input_summary}
-                  disabled={rpcInFlight}
-                  onChangeValue={(v) => onSetExampleField(ex.id, "input_summary", v)}
-                />
-                <FieldTextarea
-                  exampleId={ex.id}
-                  field="expected_outcome"
-                  label="Expected result"
-                  value={ex.expected_outcome}
-                  disabled={rpcInFlight}
-                  onChangeValue={(v) => onSetExampleField(ex.id, "expected_outcome", v)}
-                />
-                <Button
-                  variant="pill"
-                  disabled={rpcInFlight}
-                  data-example-id={ex.id}
-                  data-field="verification_kind"
-                  onClick={() =>
-                    onSetExampleField(
-                      ex.id,
-                      "verification_kind",
-                      ex.verification_kind === "deterministic" ? "model_judged" : "deterministic"
-                    )
-                  }
-                >
-                  {"Kind: " + ex.verification_kind}
-                </Button>
-              </div>
-              <details className="surla-details">
-                <summary>Details</summary>
-                <p>
-                  <code>{ex.id}</code>
-                  {" [" + ex.verification_kind + "]"}
-                </p>
-              </details>
-            </li>
-          ))}
-        </ul>
-
-        <h3>{"Preserved Contract Invariants (" + card.preserved_behaviors.length + ")"}</h3>
-        {card.preserved_behaviors.length > 0 ? (
-          <ul>
-            {card.preserved_behaviors.map((pb, idx) => (
-              <li key={String(idx)}>{pb}</li>
+          <h3>{"Concrete Examples (" + draftExamples.length + ")"}</h3>
+          <ul className="surla-compact-list">
+            {draftExamples.map((ex, idx) => (
+              <li key={ex.id} className="surla-example-card" data-example-index={String(idx)}>
+                <div>
+                  <strong>{ex.scenario}</strong>
+                  {" — Input: " + ex.input_summary + " -> Expected: " + ex.expected_outcome + " "}
+                  <Badge>
+                    {ex.verification_kind === "deterministic"
+                      ? "Deterministic check"
+                      : "Model-judged check"}
+                  </Badge>
+                </div>
+                <div className="surla-field-row">
+                  <FieldTextarea
+                    exampleId={ex.id}
+                    field="scenario"
+                    label="Scenario"
+                    value={ex.scenario}
+                    disabled={rpcInFlight}
+                    onChangeValue={(v) => onSetExampleField(ex.id, "scenario", v)}
+                  />
+                  <FieldTextarea
+                    exampleId={ex.id}
+                    field="input_summary"
+                    label="Input"
+                    value={ex.input_summary}
+                    disabled={rpcInFlight}
+                    onChangeValue={(v) => onSetExampleField(ex.id, "input_summary", v)}
+                  />
+                  <FieldTextarea
+                    exampleId={ex.id}
+                    field="expected_outcome"
+                    label="Expected result"
+                    value={ex.expected_outcome}
+                    disabled={rpcInFlight}
+                    onChangeValue={(v) => onSetExampleField(ex.id, "expected_outcome", v)}
+                  />
+                  <Button
+                    variant="pill"
+                    disabled={rpcInFlight}
+                    data-example-id={ex.id}
+                    data-field="verification_kind"
+                    onClick={() =>
+                      onSetExampleField(
+                        ex.id,
+                        "verification_kind",
+                        ex.verification_kind === "deterministic" ? "model_judged" : "deterministic"
+                      )
+                    }
+                  >
+                    {"Kind: " + ex.verification_kind}
+                  </Button>
+                </div>
+                <details className="surla-details">
+                  <summary>Details</summary>
+                  <p>
+                    <code>{ex.id}</code>
+                    {" [" + ex.verification_kind + "]"}
+                  </p>
+                </details>
+              </li>
             ))}
           </ul>
-        ) : (
-          <p>None declared.</p>
-        )}
 
-        <div
-          id="surla-confirm-story"
-          className="surla-panel-section"
-          role="region"
-          aria-label="Story of this change"
-        >
-          <p>
-            {stories.length === 0
-              ? "This change has no Story."
-              : "This change's Story has " + countsPhrase(storyCounts(stories)) + "."}{" "}
-            Only complete flows are tested end to end; drafts do not block confirming.
-          </p>
-          <Button id="surla-confirm-open-story" onClick={onOpenStory}>
-            Show the Story
-          </Button>
-        </div>
+          <h3>{"Preserved Contract Invariants (" + card.preserved_behaviors.length + ")"}</h3>
+          {card.preserved_behaviors.length > 0 ? (
+            <ul>
+              {card.preserved_behaviors.map((pb, idx) => (
+                <li key={String(idx)}>{pb}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>None declared.</p>
+          )}
 
-        {proposalWaiting ? (
-          <p id="surla-confirm-blocked">
-            A proposed revision waits above. Adopt or decline it before refining the agreed
-            revision.
-          </p>
-        ) : null}
-        {card.status === "confirmed" && draftDirty && !proposalWaiting && buildRevisionNotice !== null ? (
-          <p id="surla-confirm-build-consequence">{buildRevisionNotice}</p>
-        ) : null}
-        <div className="surla-field-row">
-          <Button
-            id="surla-confirm-submit"
-            variant={card.status === "needs_confirmation" || draftDirty ? "primary" : "default"}
-            disabled={rpcInFlight || proposalWaiting}
-            aria-describedby={proposalWaiting ? "surla-confirm-blocked" :
-              card.status === "confirmed" && draftDirty && buildRevisionNotice !== null
-                ? "surla-confirm-build-consequence" : undefined}
-            onClick={onSubmitConfirm}
+          <div
+            id="surla-confirm-story"
+            className="surla-panel-section"
+            role="region"
+            aria-label="Story of this change"
           >
-            {card.status === "needs_confirmation"
-              ? "Confirm Intent & Lock Examples"
-              : "Refine Confirmed Answers & Examples"}
-          </Button>
-          <Button
-            id="surla-discard-draft"
-            disabled={rpcInFlight}
-            onClick={onDiscardDraft}
-          >
-            Discard Unsaved Edits
-          </Button>
-        </div>
+            <p>
+              {stories.length === 0
+                ? "This change has no Story."
+                : "This change's Story has " + countsPhrase(storyCounts(stories)) + "."}{" "}
+              Only complete flows are tested end to end; drafts do not block confirming.
+            </p>
+            <Button id="surla-confirm-open-story" onClick={onOpenStory}>
+              Show the Story
+            </Button>
+          </div>
 
-        <div id="surla-confirm-feedback">
-          {formError ? (
-            <Alert id="surla-confirm-error" variant="destructive" role="alert" tabIndex={-1}>
-              <strong>Change Card request failed: </strong>
-              <p>{formError}</p>
-              Your edited answers and examples remain in this form. Click{" "}
-              <strong>Load Latest Card</strong> to inspect the current saved Change Card alongside
-              your unsaved edits.
-              <div className="surla-field-row">
-                <Button
-                  id="surla-load-latest-card"
-                  disabled={rpcInFlight}
-                  onClick={onLoadLatestCard}
-                >
-                  Load Latest Card
-                </Button>
-              </div>
-            </Alert>
+          {proposalWaiting ? (
+            <p id="surla-confirm-blocked">
+              A proposed revision waits above. Adopt or decline it before refining the agreed
+              revision.
+            </p>
           ) : null}
-        </div>
-      </Card>
+          {card.status === "confirmed" && draftDirty && !proposalWaiting && buildRevisionNotice !== null ? (
+            <p id="surla-confirm-build-consequence">{buildRevisionNotice}</p>
+          ) : null}
+          <div className="surla-field-row">
+            <Button
+              id="surla-confirm-submit"
+              variant={card.status === "needs_confirmation" || draftDirty ? "primary" : "default"}
+              disabled={rpcInFlight || proposalWaiting}
+              aria-describedby={proposalWaiting ? "surla-confirm-blocked" :
+                card.status === "confirmed" && draftDirty && buildRevisionNotice !== null
+                  ? "surla-confirm-build-consequence" : undefined}
+              onClick={onSubmitConfirm}
+            >
+              {card.status === "needs_confirmation"
+                ? "Confirm Intent & Lock Examples"
+                : "Refine Confirmed Answers & Examples"}
+            </Button>
+            <Button
+              id="surla-discard-draft"
+              disabled={rpcInFlight}
+              onClick={onDiscardDraft}
+            >
+              Discard Unsaved Edits
+            </Button>
+          </div>
+
+          <div id="surla-confirm-feedback">
+            {formError ? (
+              <Alert id="surla-confirm-error" variant="destructive" role="alert" tabIndex={-1}>
+                <strong>Change Card request failed: </strong>
+                <p>{formError}</p>
+                Your edited answers and examples remain in this form. Click{" "}
+                <strong>Load Latest Card</strong> to inspect the current saved Change Card alongside
+                your unsaved edits.
+                <div className="surla-field-row">
+                  <Button
+                    id="surla-load-latest-card"
+                    disabled={rpcInFlight}
+                    onClick={onLoadLatestCard}
+                  >
+                    Load Latest Card
+                  </Button>
+                </div>
+              </Alert>
+            ) : null}
+          </div>
+        </Card>
+      </RefinementDisclosure>
     </CP1DraftContext.Provider>
+  );
+}
+
+// RefinementDisclosure keeps confirmed edits out of the main reading path while
+// preserving the native disclosure and its mounted fields across refreshes.
+// Active drafts and recovery paths stay visible until the user resolves them.
+function RefinementDisclosure({
+  confirmed,
+  keepOpen,
+  children,
+}: {
+  confirmed: boolean;
+  keepOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    if (keepOpen && detailsRef.current) {
+      detailsRef.current.open = true;
+    }
+  }, [confirmed, keepOpen]);
+
+  if (!confirmed) {
+    return <>{children}</>;
+  }
+  return (
+    <details
+      ref={detailsRef}
+      id="surla-refine-agreement"
+      onToggle={(event) => {
+        if (keepOpen && !event.currentTarget.open) {
+          event.currentTarget.open = true;
+        }
+      }}
+    >
+      <summary>Refine agreed answers and examples</summary>
+      {children}
+    </details>
   );
 }
