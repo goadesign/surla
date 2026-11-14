@@ -1956,6 +1956,11 @@ type VerificationStatusResult struct {
 	// Change Card and usable build or stored evaluator. This observation does not
 	// establish the current candidate working tree, deployment or approval.
 	InputsCurrent bool
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource TestSource
@@ -6494,6 +6499,11 @@ type jsonVerificationStatusResultTransport struct {
 	// Change Card and usable build or stored evaluator. This observation does not
 	// establish the current candidate working tree, deployment or approval.
 	InputsCurrent *bool `json:"inputs_current"`
+	// Absolute folder containing the binaries built by this completed run.
+	// Returned only to the user when promotion settings are configured, so the
+	// user can publish these exact binaries before approval. Agents never receive
+	// this private path.
+	CandidateBinariesDir *string `json:"candidate_binaries_dir,omitempty"`
 	// Where the run's tests came from, recorded when the run started: evaluator,
 	// or written_tests with their commit and a notice.
 	TestSource *jsonTestSourceTransport `json:"test_source"`
@@ -6535,6 +6545,11 @@ func validatejsonVerificationStatusResultTransport(value *jsonVerificationStatus
 	}
 	if value.AcceptedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *value.AcceptedAt, goa.FormatDateTime))
+	}
+	if value.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*value.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_binaries_dir", *value.CandidateBinariesDir, utf8.RuneCountInString(*value.CandidateBinariesDir), 1, true))
+		}
 	}
 	if value.TestSource != nil {
 
@@ -8019,6 +8034,11 @@ func validateVerificationStatusResultOriginal(value *VerificationStatusResult) (
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "value"))
 	}
 	err = goa.MergeErrors(err, goa.ValidateFormat("value.accepted_at", value.AcceptedAt, goa.FormatDateTime))
+	if value.CandidateBinariesDir != nil {
+		if utf8.RuneCountInString(*value.CandidateBinariesDir) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.candidate_binaries_dir", *value.CandidateBinariesDir, utf8.RuneCountInString(*value.CandidateBinariesDir), 1, true))
+		}
+	}
 
 	if err2 := value.TestSource.Validate(); err2 != nil {
 		err = goa.MergeErrors(err, err2)
@@ -21911,13 +21931,14 @@ func EncodeVerificationStatusResult(in *VerificationStatusResult) ([]byte, error
 	var body *jsonVerificationStatusResultTransport
 	{
 		body = &jsonVerificationStatusResultTransport{
-			RunID:           &in.RunID,
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-			CandidateCommit: &in.CandidateCommit,
-			SuiteCommit:     &in.SuiteCommit,
-			AcceptedAt:      &in.AcceptedAt,
-			InputsCurrent:   &in.InputsCurrent,
+			RunID:                &in.RunID,
+			ChangeID:             &in.ChangeID,
+			RequestRevision:      &in.RequestRevision,
+			CandidateCommit:      &in.CandidateCommit,
+			SuiteCommit:          &in.SuiteCommit,
+			AcceptedAt:           &in.AcceptedAt,
+			InputsCurrent:        &in.InputsCurrent,
+			CandidateBinariesDir: in.CandidateBinariesDir,
 		}
 		var testSourceValue jsonTestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -22001,13 +22022,14 @@ func ValidateVerificationStatusResultValue(in *VerificationStatusResult) error {
 	var body *jsonVerificationStatusResultTransport
 	{
 		body = &jsonVerificationStatusResultTransport{
-			RunID:           &in.RunID,
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-			CandidateCommit: &in.CandidateCommit,
-			SuiteCommit:     &in.SuiteCommit,
-			AcceptedAt:      &in.AcceptedAt,
-			InputsCurrent:   &in.InputsCurrent,
+			RunID:                &in.RunID,
+			ChangeID:             &in.ChangeID,
+			RequestRevision:      &in.RequestRevision,
+			CandidateCommit:      &in.CandidateCommit,
+			SuiteCommit:          &in.SuiteCommit,
+			AcceptedAt:           &in.AcceptedAt,
+			InputsCurrent:        &in.InputsCurrent,
+			CandidateBinariesDir: in.CandidateBinariesDir,
 		}
 		var testSourceValue jsonTestSourceTransport
 		switch string(in.TestSource.Kind()) {
@@ -22095,13 +22117,14 @@ func DecodeVerificationStatusResult(data []byte) (out *VerificationStatusResult,
 	}
 	{
 		out = &VerificationStatusResult{
-			RunID:           *body.RunID,
-			ChangeID:        *body.ChangeID,
-			RequestRevision: *body.RequestRevision,
-			CandidateCommit: *body.CandidateCommit,
-			SuiteCommit:     *body.SuiteCommit,
-			AcceptedAt:      *body.AcceptedAt,
-			InputsCurrent:   *body.InputsCurrent,
+			RunID:                *body.RunID,
+			ChangeID:             *body.ChangeID,
+			RequestRevision:      *body.RequestRevision,
+			CandidateCommit:      *body.CandidateCommit,
+			SuiteCommit:          *body.SuiteCommit,
+			AcceptedAt:           *body.AcceptedAt,
+			InputsCurrent:        *body.InputsCurrent,
+			CandidateBinariesDir: body.CandidateBinariesDir,
 		}
 		switch string(body.TestSource.Kind()) {
 		case "evaluator":
@@ -23202,13 +23225,14 @@ func decodeVerificationScenarioTransportToVerificationScenario(v *jsonVerificati
 
 func decodeVerificationStatusResultTransportToVerificationStatusResult(v *jsonVerificationStatusResultTransport) *VerificationStatusResult {
 	res := &VerificationStatusResult{
-		RunID:           *v.RunID,
-		ChangeID:        *v.ChangeID,
-		RequestRevision: *v.RequestRevision,
-		CandidateCommit: *v.CandidateCommit,
-		SuiteCommit:     *v.SuiteCommit,
-		AcceptedAt:      *v.AcceptedAt,
-		InputsCurrent:   *v.InputsCurrent,
+		RunID:                *v.RunID,
+		ChangeID:             *v.ChangeID,
+		RequestRevision:      *v.RequestRevision,
+		CandidateCommit:      *v.CandidateCommit,
+		SuiteCommit:          *v.SuiteCommit,
+		AcceptedAt:           *v.AcceptedAt,
+		InputsCurrent:        *v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	switch string(v.TestSource.Kind()) {
 	case "evaluator":
@@ -24396,13 +24420,14 @@ func encodeVerificationScenarioToVerificationScenarioTransport(v *VerificationSc
 
 func encodeVerificationStatusResultToVerificationStatusResultTransport(v *VerificationStatusResult) *jsonVerificationStatusResultTransport {
 	res := &jsonVerificationStatusResultTransport{
-		RunID:           &v.RunID,
-		ChangeID:        &v.ChangeID,
-		RequestRevision: &v.RequestRevision,
-		CandidateCommit: &v.CandidateCommit,
-		SuiteCommit:     &v.SuiteCommit,
-		AcceptedAt:      &v.AcceptedAt,
-		InputsCurrent:   &v.InputsCurrent,
+		RunID:                &v.RunID,
+		ChangeID:             &v.ChangeID,
+		RequestRevision:      &v.RequestRevision,
+		CandidateCommit:      &v.CandidateCommit,
+		SuiteCommit:          &v.SuiteCommit,
+		AcceptedAt:           &v.AcceptedAt,
+		InputsCurrent:        &v.InputsCurrent,
+		CandidateBinariesDir: v.CandidateBinariesDir,
 	}
 	var testSourceValue jsonTestSourceTransport
 	switch string(v.TestSource.Kind()) {
@@ -32357,6 +32382,13 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 			); err != nil {
 				return err
 			}
+		case "candidate_binaries_dir":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.",
+			); err != nil {
+				return err
+			}
 		case "candidate_commit":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -32416,6 +32448,7 @@ func validateVerificationListResultJSONValue3(path string, value any, descriptio
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"accepted_at",
+				"candidate_binaries_dir",
 				"candidate_commit",
 				"change_id",
 				"inputs_current",
@@ -37228,6 +37261,11 @@ func checkVerificationListResultVerificationStatusResultValue(in *VerificationSt
 		}
 		if !utf8.ValidString(string(in.AcceptedAt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "accepted_at", false))
+		}
+		if in.CandidateBinariesDir != nil {
+			if !utf8.ValidString(string(*in.CandidateBinariesDir)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "candidate_binaries_dir", false))
+			}
 		}
 		if branch1, ok := in.TestSource.AsEvaluator(); ok {
 			_ = branch1

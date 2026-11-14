@@ -424,6 +424,7 @@ export interface VerificationScenario {
 
 export interface VerificationStatusResult {
   accepted_at: string;
+  candidate_binaries_dir?: string;
   candidate_commit: string;
   change_id: string;
   inputs_current: boolean;
@@ -2909,6 +2910,9 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       "accepted_at": {
         "type": "string",
         "format": "date-time"
+      },
+      "candidate_binaries_dir": {
+        "type": "string"
       },
       "candidate_commit": {
         "type": "string"

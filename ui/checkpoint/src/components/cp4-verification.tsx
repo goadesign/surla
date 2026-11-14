@@ -278,6 +278,12 @@ export function VerificationView({
       <p id="surla-cp4-started">
         Check started <time dateTime={run.accepted_at}>{localStartTime(run.accepted_at)}</time>.
       </p>
+      {run.candidate_binaries_dir !== undefined ? (
+        <p id="surla-cp4-binaries-dir">
+          <strong>Binaries built by this run: </strong>
+          <code>{run.candidate_binaries_dir}</code>
+        </p>
+      ) : null}
       <p id="surla-cp4-inputs" role="status">
         {!inputsKnown
           ? "Whether this saved result matches the current agreement and selected tests is not known. Check status to read it again."

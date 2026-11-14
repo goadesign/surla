@@ -3411,6 +3411,7 @@ paths:
                                 change_id: Culpa voluptas voluptas.
                                 runs:
                                     - accepted_at: "1984-07-01T17:36:31Z"
+                                      candidate_binaries_dir: baf
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                                       inputs_current: true
@@ -3484,6 +3485,7 @@ paths:
                                       test_source:
                                         source: evaluator
                                     - accepted_at: "1984-07-01T17:36:31Z"
+                                      candidate_binaries_dir: baf
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                                       inputs_current: true
@@ -3557,6 +3559,7 @@ paths:
                                       test_source:
                                         source: evaluator
                                     - accepted_at: "1984-07-01T17:36:31Z"
+                                      candidate_binaries_dir: baf
                                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                                       inputs_current: true
@@ -3703,6 +3706,7 @@ paths:
                                 $ref: '#/components/schemas/VerificationStatusResult'
                             example:
                                 accepted_at: "1996-01-07T22:40:11Z"
+                                candidate_binaries_dir: k5
                                 candidate_commit: Molestiae totam nam nobis quidem reprehenderit quae.
                                 change_id: Sunt ut sit omnis nobis.
                                 inputs_current: true
@@ -13996,6 +14000,7 @@ paths:
                                 $ref: '#/components/schemas/VerificationStatusResult'
                             example:
                                 accepted_at: "1971-11-20T13:11:41Z"
+                                candidate_binaries_dir: "n"
                                 candidate_commit: Dicta reprehenderit.
                                 change_id: Dolor optio et non.
                                 inputs_current: false
@@ -28621,6 +28626,7 @@ components:
                     description: Verification runs for change_id in newest-first order.
                     example:
                         - accepted_at: "1984-07-01T17:36:31Z"
+                          candidate_binaries_dir: baf
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                           inputs_current: true
@@ -28694,6 +28700,7 @@ components:
                           test_source:
                             source: evaluator
                         - accepted_at: "1984-07-01T17:36:31Z"
+                          candidate_binaries_dir: baf
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                           inputs_current: true
@@ -28767,6 +28774,7 @@ components:
                           test_source:
                             source: evaluator
                         - accepted_at: "1984-07-01T17:36:31Z"
+                          candidate_binaries_dir: baf
                           candidate_commit: Consequatur quisquam non et est reprehenderit.
                           change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                           inputs_current: true
@@ -28844,6 +28852,7 @@ components:
                 change_id: Culpa voluptas voluptas.
                 runs:
                     - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_binaries_dir: baf
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                       inputs_current: true
@@ -28917,6 +28926,7 @@ components:
                       test_source:
                         source: evaluator
                     - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_binaries_dir: baf
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                       inputs_current: true
@@ -28990,6 +29000,7 @@ components:
                       test_source:
                         source: evaluator
                     - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_binaries_dir: baf
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
                       inputs_current: true
@@ -29179,6 +29190,11 @@ components:
                     description: When the run was accepted.
                     example: "1996-01-07T22:40:11Z"
                     format: date-time
+                candidate_binaries_dir:
+                    type: string
+                    description: Absolute folder containing the binaries built by this completed run. Returned only to the user when promotion settings are configured, so the user can publish these exact binaries before approval. Agents never receive this private path.
+                    example: k5
+                    minLength: 1
                 candidate_commit:
                     type: string
                     description: Candidate commit the run builds and verifies.
@@ -29283,6 +29299,7 @@ components:
             description: One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.
             example:
                 accepted_at: "1996-01-07T22:40:11Z"
+                candidate_binaries_dir: k5
                 candidate_commit: Molestiae totam nam nobis quidem reprehenderit quae.
                 change_id: Sunt ut sit omnis nobis.
                 inputs_current: true
