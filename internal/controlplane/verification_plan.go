@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	goa "goa.design/goa/v3/pkg"
@@ -115,6 +116,12 @@ const (
 	// makes.
 	refusedNoLayout
 )
+
+// testsNotAcceptedBuilderStep is the one step a builder refused with
+// tests_not_accepted can take in every state. Only an acceptance makes the
+// builder's assignment unread, so the project server's Chorus reminder reaches
+// the builder exactly then.
+const testsNotAcceptedBuilderStep = "keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again"
 
 // Error says what is refused, why and who acts.
 func (r *layoutRefusal) Error() string {
@@ -392,20 +399,21 @@ func refuseNoBuild(changeID, revision string, build buildFile, found bool) error
 
 // refuseTestsNotAccepted is verify_change's tests_not_accepted refusal of a
 // build whose tests are not accepted: it names the test writer's state in the
-// state's own words, then who acts, and ends with the step.
+// state's own words, then who acts, and ends with the builder's step.
 func refuseTestsNotAccepted(saved testWriterAssignment) error {
-	var state, step string
+	var state, who string
 	switch saved.State {
 	case testsAssigned:
-		state, step = "assigned", "the test writer writes the required tests and reports them finished; verify again once Surla accepts them"
+		state, who = "assigned", "the test writer writes the required tests and reports them finished"
 	case testsReported:
-		state, step = "reported", "Surla is checking the test writer's report; verify again after its verdict"
+		state, who = "reported", "Surla is checking the test writer's report"
 	case testsNeedChanges:
-		state, step = "needs changes", "the test writer fixes Surla's findings and reports again; verify again once Surla accepts them"
+		state, who = "needs changes", "the test writer fixes Surla's findings and reports again"
 	case testsCouldNotRun:
-		state, step = "could not run", "Surla's check could not run ("+saved.Reason+"); the user's step: "+saved.Step
+		// The saved step is a sentence; its full stop would end the refusal early.
+		state, who = "could not run", "Surla's check could not run ("+saved.Reason+"); the user's step: "+strings.TrimSuffix(saved.Step, ".")
 	}
-	return gensurla.MakeTestsNotAccepted(fmt.Errorf("the tests of this build are not accepted; their state is %s: %s", state, step))
+	return gensurla.MakeTestsNotAccepted(fmt.Errorf("the tests of this build are not accepted; their state is %s: %s; your step: %s", state, who, testsNotAcceptedBuilderStep))
 }
 
 // refuseNoTestLayout is verify_change's no_test_layout refusal of a commit

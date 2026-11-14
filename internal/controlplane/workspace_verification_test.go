@@ -210,7 +210,7 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 		{
 			name: "tests not accepted", build: assigned, candidate: repo.candidate,
 			refusal: "tests_not_accepted", reason: "the tests of this build are not accepted; their state is assigned",
-			step: "the test writer writes the required tests and reports them finished; verify again once Surla accepts them",
+			step: "the test writer writes the required tests and reports them finished; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 		{
 			name: "unknown candidate commit", build: accepted, tests: repo.tests, candidate: unknown,
@@ -361,18 +361,18 @@ func TestVerifyChangeSaysWhoActsUntilTheTestsAreAccepted(t *testing.T) {
 	}{
 		{
 			name: "reported", tw: testWriterAssignment{State: testsReported, Findings: []string{}},
-			want: "reported: Surla is checking the test writer's report; verify again after its verdict",
+			want: "reported: Surla is checking the test writer's report; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 		{
 			name: "needs changes", tw: testWriterAssignment{State: testsNeedChanges, Findings: []string{"refund_over_limit is missing"}, CheckedAt: time.Now()},
-			want: "needs changes: the test writer fixes Surla's findings and reports again; verify again once Surla accepts them",
+			want: "needs changes: the test writer fixes Surla's findings and reports again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 		{
 			name: "could not run", tw: testWriterAssignment{
 				State: testsCouldNotRun, Findings: []string{}, Reason: "git could not write the tests branch",
 				Step: "Free disk space, then report again.", CheckedAt: time.Now(),
 			},
-			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again.",
+			want: "could not run: Surla's check could not run (git could not write the tests branch); the user's step: Free disk space, then report again; your step: keep your Chorus watcher running; Surla messages you there when the tests are accepted; then read get_builder_assignment and verify again",
 		},
 	}
 	for _, tc := range cases {

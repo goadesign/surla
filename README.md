@@ -131,8 +131,12 @@ The server also follows its registered roles in memory. Its user-only team API
 reports terminal state, watcher availability and unread assignments. The views
 page's **Team** view shows those facts and offers **Start agents** and each
 role's **Show pane** action. Roles that need you also appear above every view.
-Failed refreshes retain the facts and label them as last read. Automatic reminder delivery is currently
-unavailable. See [Team supervision](docs/REFERENCE.md#team-supervision).
+Failed refreshes retain the facts and label them as last read. When a builder or
+test writer has an unread assignment, for example after Surla accepts the tests,
+the server sends it one fixed Chorus direct message asking it to read its
+assignments. A role that stays idle with an unread assignment for 90 seconds
+needs you, and the page names the step. See [Team
+supervision](docs/REFERENCE.md#team-supervision).
 `surla stop` shuts that project down in order. Subfolders and physical path
 aliases find the same project; moving the folder starts a new, empty project.
 The guide drafts the Story and Change Card; only your browser session confirms

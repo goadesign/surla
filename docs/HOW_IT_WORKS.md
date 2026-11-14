@@ -16,8 +16,11 @@ request does not automatically clear an older build's unread assignments. Only t
 The views page's **Team** view shows these separate observations and offers
 **Start agents** and role-specific **Show pane** controls. A role that needs you
 appears above every view. Failed reads retain facts labeled as last read;
-unknown observations remain unknown. Automatic reminder delivery is unavailable
-in the executable binding.
+unknown observations remain unknown. When a builder or test writer has an
+unread assignment, the server sends that role one fixed Chorus direct message
+asking it to read its assignments; nothing is typed into a terminal. A role
+that stays idle with an unread assignment for 90 seconds needs you, and the
+page asks you to show its pane and tell it to read.
 
 After confirming a change, choose **Build this change** beside its summary.
 The page shows the saved build's revision, assignment reads, required Story test

@@ -147,11 +147,15 @@ prefix, bounded to 256 KiB, then closes before channels or inboxes. A one-byte
 reader prevents JSON decoder read-ahead into conversation data. An oversized,
 incomplete or reordered prefix yields an unknown watcher; a large conversation
 after a valid prefix remains usable. Conditional reads use the response's ETag
-header. The executable binds readers and leaves the sender explicitly
-unavailable pending receiver verification. Project observation spans bypass the
-control plane's principal-scoped history, keeping periodic team observations out of
-bounded user diagnostics. See [Team supervision](REFERENCE.md#team-supervision) for
-the user contract and current delivery limitation.
+header. The same adapter sends each reminder as two tool calls posted to
+Chorus's `/mcp` endpoint, written as Chorus's dashboard writes them: `who`
+registers Surla's own handle in the team, then `send` hands one fixed direct
+message to the role. The sender has its own client, bounded at 5 seconds per
+post and 2 MiB read per response, and decodes only whether each call failed.
+The supervisor alone owns the per-generation latches, in memory. Project
+observation spans bypass the control plane's principal-scoped history, keeping
+periodic team observations out of bounded user diagnostics. See [Team
+supervision](REFERENCE.md#team-supervision) for the user contract.
 
 Surla's control plane records its own operation diagnostics through
 OpenTelemetry. `controlplane.New` opens existing safe trace history while

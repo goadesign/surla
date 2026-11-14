@@ -591,8 +591,10 @@ credentials cannot call them, and none appears in agent MCP discovery.
 Each role has required `role`, `handle`, `state`, `attention`, `watcher` and
 `assignment` values. Terminal `state` is `not_started`, `ended`, `starting`,
 `needs_you`, `working`, `waiting`, `error` or `unknown`. Attention is `none`,
-`permission`, `question`, `auth`, `silent` or `unknown`. A running agent that
-reports nothing for 60 seconds needs the user; this changes display state only.
+`permission`, `question`, `auth`, `silent`, `assignment` or `unknown`. A running
+agent that reports nothing for 60 seconds needs the user (`silent`), and so
+does a role that has been `waiting` with an unread assignment for 90 seconds
+(`assignment`); these change display state only.
 A missing Herdr heartbeat or event for 45 seconds makes every role unknown
 until fresh snapshots arrive. Watcher state is `held`, `gone` after 90 seconds
 of known absence, or `unknown`.
@@ -602,13 +604,33 @@ assignments. The existing `wait_for_changes` version
 also covers every public team fact, so no second waiting request is needed.
 The views page does not draw these facts yet.
 
-The executable currently leaves reminder delivery unavailable until positive
-identification of the agent's own foreground program and exact text delivery to a status-reporting agent are verified. The reminder policy permits
-only fixed text to an idle/done agent with positively reported foreground
-arguments, a fresh ownership check and an unread assignment or a watcher gone
-past the grace period. No reminder is eligible in the first 90 seconds after
-server start. Unknown facts never authorize input. Missing foreground information
-continues to count as running for pane safety, but cannot authorize a reminder.
+**Reminders.** Each version of an assignment that a role has not read is a
+generation: a new build gives each of its roles one, every verdict gives the
+test writer one, and an acceptance also gives the builder one. For each
+generation the server sends the role one fixed Chorus direct message, for
+example: `Surla: you have an unread assignment. Use
+list_builder_assignments and get_builder_assignment to read it. Surla reads no
+replies.` It first registers its own handle, `surla-` followed by the first 12
+characters of the project ID, in the team's swarm with the role "Surla server.
+Sends reminders only. Reads no replies." A message is sent only after a
+complete assignment read, and only when the last Chorus view read succeeded and
+has listed the role's handle without a break for 60 seconds, so a role that has
+just joined can act on its first message. Neither the watcher fact nor the
+terminal state gates a message: Chorus keeps it until the role's next watcher,
+`read` or `send`. The message names nothing about the work and never changes
+what is owed. Each post is bounded at 5 seconds and 2 MiB read, and no byte of
+a response is kept. Every attempt records one `surla.team.reminder` span with
+outcome `sent` or `failed`; a failed one has error status, `team.post` (`who`
+or `send`) and `team.failure` (`connection`, `timeout`, `http_status`,
+`rpc_error`, `tool_error` or `response`), and no caller sees an error. A
+generation is never tried twice, whatever the outcome. Nothing about reminders
+is saved, so after a restart a role that still has an unread assignment gets
+one message again 60 seconds after its handle is listed. A `sent` outcome means
+Chorus accepted the message, not that the agent read it. Whenever the agent
+stays idle with the assignment unread for 90 seconds, the role reaches
+`needs_you` with attention `assignment`, and the views page asks you to show
+its pane and tell it to read its assignments and to keep its Chorus watcher
+running. Surla never types into a terminal.
 Supervision never reads screen text or retains status messages or titles,
 issues no explicit service-start command and never takes focus without a user action.
 
