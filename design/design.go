@@ -1041,7 +1041,7 @@ var _ = Service("surla", func() {
 		Result(GenerateCodeResult)
 		Error("unprocessable", ErrorResult, "The selected local module is absent, replaced, or invalid; correct its local files and call again.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
-		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module. Return sorted module-relative files_written and warnings. This compiles the design only; run check_project to build and test the application before verification. Fix a rejected design and call again on the same server.")
+		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module outside a build that runs with a test writer: during such a build (without stored verification settings) eval/, eval/design/ included, belongs to the test writer, and Surla regenerates eval/gen/ at build start and on each report. Return sorted module-relative files_written and warnings. This compiles the design only; run check_project to build and test the application before verification. Fix a rejected design and call again on the same server.")
 		HTTP(func() {
 			POST("/workspace/generate")
 			Response(StatusOK)
