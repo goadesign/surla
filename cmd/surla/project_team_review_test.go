@@ -275,15 +275,31 @@ func TestOlderProjectServerNamesRestartStep(t *testing.T) {
 	require.EqualError(t, err, "this project’s server was started by another version; run surla stop, then surla")
 }
 
+// testBuildIdentity hashes this test binary's executable once per test process, as
+// project.BuildIdentity reads a running surla's once. Hashing the whole binary takes
+// long enough under the race detector to miss a test's bounded wait, so no request
+// handler or deadline may include it.
+var testBuildIdentity = sync.OnceValues(func() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(self)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+})
+
 // testBuild is the build identity of this test binary: the SHA-256 of its executable.
+// Call it on the test's goroutine before starting a fake server or a deadline, and
+// give handlers the returned value: require must not run on a handler's goroutine.
 func testBuild(t *testing.T) string {
 	t.Helper()
-	self, err := os.Executable()
+	build, err := testBuildIdentity()
 	require.NoError(t, err)
-	raw, err := os.ReadFile(self)
-	require.NoError(t, err)
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
+	return build
 }
 
 // serveFixtureIdentity answers the project's identity at its saved address while the card

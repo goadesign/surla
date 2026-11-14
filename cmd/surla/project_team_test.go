@@ -330,12 +330,13 @@ func TestStartOpensViewsWhenTeamFails(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 			url := state.Origin() + "/views#link=" + strings.Repeat("a", 64)
+			build := testBuild(t)
 			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/project/identity":
 					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
-						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner, "build": testBuild(t),
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner, "build": build,
 					}))
 				case "/project/team":
 					assert.Nil(t, tc.programs, "a team whose programs did not start is not requested")
