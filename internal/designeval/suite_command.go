@@ -23,6 +23,12 @@ import (
 // with a scripted model.
 const suiteCommandEnvironment = "scripted-model"
 
+// storyTableRootName is the EvalName of the root a test module's Story table
+// registers (storyScenarioRoot in story_scenarios.go, which the generation
+// program does not compile), by which the test-program section tells whether
+// the module has one.
+const storyTableRootName = "Story table (design/story_tests.go)"
+
 // suiteCommandSource is the body of the generated suite command, after Goa's
 // header and imports. It is executed as a Go template with suiteCommandData.
 // It builds the module's one evaluation suite from the generated tests
@@ -99,6 +105,9 @@ type suiteCommandData struct {
 	Command string
 	// Environment is suiteCommandEnvironment.
 	Environment string
+	// StoryTests is set when the design registers a Story table's root, so
+	// the section says what the table declares.
+	StoryTests bool
 }
 
 // surlaSuiteCommand returns the "surla-suite-command" Goa plugin that runs
@@ -122,14 +131,16 @@ func surlaSuiteCommand(acceptance bool) func(string, []eval.Root, []*codegen.Fil
 		if !ok || len(suites) != 1 || !acceptance {
 			return files, nil
 		}
-		return suiteCommandFiles(genpkg, service, suites[0], files)
+		storyTests := slices.ContainsFunc(roots, func(r eval.Root) bool { return r.EvalName() == storyTableRootName })
+		return suiteCommandFiles(genpkg, service, suites[0], storyTests, files)
 	}
 }
 
 // suiteCommandFiles adds the program and the quickstart section of service's
-// test module, whose one evaluation suite is suite, to files.
+// test module, whose one evaluation suite is suite, to files. storyTests says
+// whether the module's design holds a Story table.
 func suiteCommandFiles(
-	genpkg, service string, suite *evalexpr.SuiteExpr, files []*codegen.File,
+	genpkg, service string, suite *evalexpr.SuiteExpr, storyTests bool, files []*codegen.File,
 ) ([]*codegen.File, error) {
 	suiteFile := path.Join(codegen.Gendir, "evals", suite.Name, "suite.go")
 	if !slices.ContainsFunc(files, func(f *codegen.File) bool { return filepath.ToSlash(f.Path) == suiteFile }) {
@@ -140,6 +151,7 @@ func suiteCommandFiles(
 		Suite:       suite.Name,
 		Command:     SuiteCommandPackage(service),
 		Environment: suiteCommandEnvironment,
+		StoryTests:  storyTests,
 	}
 	imports := []*codegen.ImportSpec{
 		codegen.SimpleImport("context"),

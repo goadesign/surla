@@ -18,6 +18,7 @@ package testwriter
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,9 +93,9 @@ type (
 		// copy is the working copy that was judged.
 		copy WorkingCopy
 		// tree is the git tree that was built and described: the copy's
-		// files, as a commit would hold them, with the generated folder
-		// written again from the Story. It is set exactly when Findings is
-		// empty; Record commits it.
+		// files, as a commit would hold them, with the Story table and the
+		// generated folder written again from the Story. It is set exactly
+		// when Findings is empty; Record commits it.
 		tree string
 	}
 
@@ -139,7 +140,8 @@ type (
 const (
 	// FindingGeneration means the required tests could not be generated from
 	// the Story with the copy's suite module, for example because its design
-	// does not compile or does not declare exactly one evaluation suite.
+	// does not compile, does not declare exactly one evaluation suite, or a
+	// folder stands where Surla writes the module's Story table.
 	FindingGeneration FindingKind = "generation"
 	// FindingDependencies means the suite module's dependencies could not be
 	// downloaded from its go.mod and go.sum, and the cause may be in the
@@ -203,17 +205,22 @@ var ErrNoCommonBase = errors.New("the tests branch and the project share no hist
 var (
 	// ErrGeneration marks a failure of the generator itself: while it
 	// prepared or removed its own files, started its sandbox or read its
-	// output, or because ctx ended or the platform has no sandbox. It wraps
-	// the evaluator's error, from which designeval.GenerationDiagnostic
-	// derives the caller-safe text.
+	// output, or because ctx ended or the platform has no sandbox; or Story
+	// flows that map to the same scenario or hook. It wraps the evaluator's
+	// error, from which designeval.GenerationDiagnostic derives the
+	// caller-safe text.
 	ErrGeneration = errors.New("generate the required tests")
-	// ErrWriteGenerated marks a failure to replace the test module's
-	// generated folder after generation succeeded, for example because the
-	// disk is full or the module cannot be written. Its text names files
-	// only inside the module, apart from absolute paths that
-	// WithoutAbsolutePaths removes.
+	// ErrWriteGenerated marks a failure to write the test module's Story
+	// table, or to replace its generated folder after generation succeeded,
+	// for example because the disk is full or the module cannot be written.
+	// Its text names files only inside the module, apart from absolute paths
+	// that WithoutAbsolutePaths removes.
 	ErrWriteGenerated = errors.New("write the generated folder")
 )
+
+// errTableIsFolder reports a folder at the path of the test module's Story
+// table, which writeStoryTests cannot replace.
+var errTableIsFolder = errors.New("a folder is at the Story table's path")
 
 // ErrDependencies reports that the test module's dependencies could not be
 // downloaded where Surla runs, for a cause that is not in the author's
@@ -286,13 +293,16 @@ func WithoutAbsolutePaths(text string) string {
 }
 
 // Prepare writes the required tests for stories into the working copy: it
-// runs the design evaluator's story generator on the copy's suite module and
-// replaces the module's gen/ folder (and its AGENTS_QUICKSTART.md) with the
-// result. It returns the required scenarios, one per finished flow, named by
-// the generator. The project folder is not touched: the module is opened one
-// real folder at a time from the project folder through the copy, and a
-// symbolic link on the way is refused, naming it, before anything is read or
-// written.
+// renders the copy's suite module's Story table (designeval.StoryTestsPath)
+// from stories, runs the design evaluator's generator on the module with it,
+// and writes the table and replaces the module's gen/ folder (and its
+// AGENTS_QUICKSTART.md) with the result. The table is a source file of the module's design, so the test
+// writer's own regeneration of the module keeps the required tests. It
+// returns the required scenarios, one per finished flow, named as
+// designeval.StoryScenarios names them. The project folder is not touched:
+// the module is opened one real folder at a time from the project folder
+// through the copy, and a symbolic link on the way is refused, naming it,
+// before anything is read or written.
 //
 // A failure the copy's author can fix is an *AuthorError carrying the finding
 // Check would give, worded relative to the copy; a symbolic link on the way
@@ -323,12 +333,12 @@ func (c *Checker) Prepare(
 // Check judges the working copy against stories without trusting its author.
 // It snapshots the copy's files as a commit would hold them into a private
 // folder, compares them with the copy's base (copyBase), writes the suite
-// module's generated folder there again from the stories (so the author
-// cannot change what is required), downloads the module's dependencies,
-// compiles the generated suite command in the verify/candidate build sandbox,
-// lists the scenarios it declares by running its --describe in the candidate
-// sandbox, reading standard output alone, and compares them with the required
-// ones by the generator's own names.
+// module's Story table there again from the stories (so the author cannot
+// change what is required) and generates its folder with it, downloads the
+// module's dependencies, compiles the generated suite command in the
+// verify/candidate build sandbox, lists the scenarios it declares by running
+// its --describe in the candidate sandbox, reading standard output alone, and
+// compares them with the required ones by the generator's own names.
 //
 // The verdict is accepted, or carries findings for the first step the
 // author's files failed: each file changed outside the test module, the
@@ -635,18 +645,6 @@ func outsideModule(changed []changedPath, modulePath, base string) []Finding {
 	return findings
 }
 
-// generatedSuites counts the evaluation suites whose packages a generation
-// wrote: the files gen/evals/<suite>/suite.go.
-func generatedSuites(files map[string][]byte) int {
-	n := 0
-	for p := range files {
-		if path.Base(p) == "suite.go" && path.Dir(path.Dir(p)) == "gen/evals" {
-			n++
-		}
-	}
-	return n
-}
-
 // isFailure reports whether err from generating, building or running the
 // author's code says nothing about the author's work: ctx ended or the
 // platform has no sandbox.
@@ -748,22 +746,31 @@ func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
 	return next, nil
 }
 
-// generate writes the generated folder of the suite module again from
-// stories and returns the required scenarios. The module is at the slash path
-// modulePath below the copy's root, and the copy's root is the slash path
-// copyDir below the real folder top. Prepare runs it on the working copy (top
-// is the project folder and copyDir the copy's folder in it) and Check on its
-// snapshot (top is the snapshot and copyDir is "."). A cause the module's
-// author can fix is an *AuthorError whose finding gives paths relative to the
-// copy's root, in Prepare as in Check: the module cannot be opened, including
-// through a symbolic link, or read; its generation failed while working on
-// the module's own files; its design does not declare exactly one evaluation
-// suite; or no program was generated at s.Command. A failure of the generator
-// that is not the author's wraps ErrGeneration, and a failure to write the
-// generated folder ErrWriteGenerated. A generation that fails while loading
-// the module's dependencies is the author's unless they cannot be downloaded
-// for a cause outside the changes the author made to wc, which is an error
-// wrapping ErrDependencies (loadFailure).
+// generate renders the suite module's Story table (designeval.StoryTestsPath)
+// from stories, generates the module with that table in place of whatever
+// the author left at its path, so the author's version never counts, then
+// writes the table (writeStoryTests) and the generated folder, and returns the
+// required scenarios. A generation that fails writes neither, so a working
+// copy whose preparation failed stays as it was and a later build can still
+// bring it forward; only a link at the table's path is replaced first,
+// because a module snapshot holds only regular files. The module is at the
+// slash path modulePath below the copy's root, and the copy's root is the
+// slash path copyDir below the real folder top. Prepare runs it on the
+// working copy (top is the project folder and copyDir the copy's folder in
+// it) and Check on its snapshot (top is the snapshot and copyDir is "."). A
+// cause the module's author can fix is an *AuthorError whose finding
+// gives paths relative to the copy's root, in Prepare as in Check: the module
+// cannot be opened, including through a symbolic link, or read; its design
+// package cannot be named; a folder is at the table's path; its generation
+// failed while working on the module's own files, which includes a design that
+// does not declare exactly one evaluation suite, a rule of the table; or no
+// program was generated at s.Command. A failure of the generator that is not
+// the author's, or stories whose flows collide, wraps ErrGeneration, and a
+// failure to write the table or the generated folder ErrWriteGenerated. A
+// generation that fails while loading the module's dependencies is the
+// author's unless they cannot be downloaded for a cause outside the changes
+// the author made to wc, which is an error wrapping ErrDependencies
+// (loadFailure).
 func (c *Checker) generate(
 	ctx context.Context, wc WorkingCopy, top, copyDir, modulePath string, s Suite,
 	stories []designeval.StorySummary,
@@ -777,6 +784,33 @@ func (c *Checker) generate(
 		return nil, author(err, fmt.Sprintf("The suite module %s could not be opened: %v", modulePath, err))
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
+	table, required, err := designeval.StoryTests(root.FS(), stories)
+	switch {
+	case errors.Is(err, designeval.ErrDesignPackage):
+		return nil, author(err, fmt.Sprintf("Surla could not write the tests the Story requires into %s/%s: %v. "+
+			"Keep design/ holding the Go files of one package, then report again.", modulePath, designeval.StoryTestsPath, err))
+	case err != nil:
+		return nil, fmt.Errorf("%w: %w", ErrGeneration, err)
+	}
+	writeTable := func() error {
+		err := writeStoryTests(root, table)
+		if errors.Is(err, errTableIsFolder) {
+			return author(err, fmt.Sprintf("%s/%s is a folder. Surla writes the tests the Story requires in that file: "+
+				"delete the folder, then report again.", modulePath, designeval.StoryTestsPath))
+		}
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrWriteGenerated, err)
+		}
+		return nil
+	}
+	// A module snapshot holds only regular files, so a link the author left
+	// at the table's path is replaced before the module is read, and a
+	// folder there is the author's to delete.
+	if info, err := root.Lstat(designeval.StoryTestsPath); err == nil && (info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
+		if err := writeTable(); err != nil {
+			return nil, err
+		}
+	}
 	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(copyRoot, filepath.FromSlash(modulePath)), root)
 	if _, ok := files["go.mod"]; err == nil && !ok {
 		err = errors.New("it has no go.mod")
@@ -784,7 +818,8 @@ func (c *Checker) generate(
 	if err != nil {
 		return nil, author(err, fmt.Sprintf("The suite module could not be read: %v", err))
 	}
-	gen, err := c.evaluator.GenerateWithStories(ctx, files, stories)
+	files[designeval.StoryTestsPath] = string(table)
+	generated, err := c.evaluator.Generate(ctx, files)
 	if err != nil {
 		if isFailure(ctx, err) || !designeval.FailedOnModule(err) {
 			return nil, fmt.Errorf("%w: %w", ErrGeneration, err)
@@ -807,21 +842,52 @@ func (c *Checker) generate(
 		}
 		return nil, author(cause, designeval.GenerationDiagnostic(err))
 	}
-	if suites := generatedSuites(gen.Files); suites != 1 {
-		return nil, author(nil, fmt.Sprintf("The test module must declare exactly one evaluation suite, but its design "+
-			"declares %d: keep exactly one Suite(...) in %s/design, then report again.", suites, modulePath))
-	}
 	program := path.Join(strings.TrimPrefix(s.Command, "./"), "main.go")
-	if _, ok := gen.Files[program]; !ok {
+	if _, ok := generated[program]; !ok {
 		return nil, author(nil, fmt.Sprintf("Surla generated no test program at %s, because the test module is not "+
 			"a Surla test module: its go.mod must declare the module path <service module>/%s, as surla init writes it, "+
 			"and it must keep its %s package, which provides Name, Hooks, New, Live and LiveThroughGateway.",
 			s.Command, designeval.TestModuleDir, designeval.AcceptancePackage))
 	}
-	if err := publish(ctx, root, gen.Files); err != nil {
+	if err := writeTable(); err != nil {
 		return nil, err
 	}
-	return gen.Included, nil
+	if err := publish(ctx, root, generated); err != nil {
+		return nil, err
+	}
+	return required, nil
+}
+
+// writeStoryTests replaces the Story table of the module open at root with
+// table. It writes a new file beside it and renames that file over the
+// table's path, so a symbolic link there is replaced, never followed, and the
+// path never lacks a table. A folder at the path is errTableIsFolder, the
+// author's to delete; any other failure leaves the old table, removes the new
+// file when it can, and is the caller's to report.
+func writeStoryTests(root *os.Root, table []byte) (err error) {
+	tmp := path.Join(path.Dir(designeval.StoryTestsPath), ".story_tests-"+rand.Text()+".tmp")
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return fmt.Errorf("write %s: %w", designeval.StoryTestsPath, err)
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, root.Remove(tmp))
+		}
+	}()
+	if _, err := f.Write(table); err != nil {
+		return errors.Join(fmt.Errorf("write %s: %w", designeval.StoryTestsPath, err), f.Close())
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", designeval.StoryTestsPath, err)
+	}
+	if err := root.Rename(tmp, designeval.StoryTestsPath); err != nil {
+		if info, statErr := root.Lstat(designeval.StoryTestsPath); statErr == nil && info.IsDir() {
+			return fmt.Errorf("%w: %w", errTableIsFolder, err)
+		}
+		return fmt.Errorf("write %s: %w", designeval.StoryTestsPath, err)
+	}
+	return nil
 }
 
 // listScenarios builds the suite command of the module at the slash path

@@ -305,8 +305,21 @@ func TestManagementClientRefreshesOnlyChangedRefusals(t *testing.T) {
 }
 
 // TestManagementWaitsForRecord bounds file availability without contacting the saved port.
+//
+// The deadlines express contracts, not latency. Without a record the wait must end at the
+// short client deadline and report that management access was never published. With a record
+// that appears while the client waits, the client must make exactly one request and succeed;
+// its deadline is only a hang detector, so it is far above the 50 ms record poll, one file
+// write, and one HTTP round trip even on a loaded race-detector runner.
 func TestManagementWaitsForRecord(t *testing.T) {
-	for _, available := range []bool{false, true} {
+	for _, tc := range []struct {
+		available bool
+		deadline  time.Duration
+	}{
+		{available: false, deadline: 150 * time.Millisecond},
+		{available: true, deadline: 10 * time.Second},
+	} {
+		available := tc.available
 		t.Run(fmt.Sprint(available), func(t *testing.T) {
 			isolateServeWorkspace(t)
 			state, err := fixtureProjectState("")
@@ -321,7 +334,7 @@ func TestManagementWaitsForRecord(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 			state.Record.Port = server.Listener.Addr().(*net.TCPAddr).Port
-			ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), tc.deadline)
 			defer cancel()
 			waitContext := &recordWaitContext{Context: ctx, waiting: make(chan struct{})}
 			done := make(chan error, 1)
@@ -329,7 +342,7 @@ func TestManagementWaitsForRecord(t *testing.T) {
 			if available {
 				select {
 				case <-waitContext.waiting:
-				case <-time.After(time.Second):
+				case <-time.After(5 * time.Second):
 					t.Fatal("file availability wait was not entered")
 				}
 				assert.Zero(t, requests.Load())
@@ -344,8 +357,8 @@ func TestManagementWaitsForRecord(t *testing.T) {
 					assert.ErrorContains(t, err, "has not published management access")
 					assert.Zero(t, requests.Load())
 				}
-			case <-time.After(time.Second):
-				t.Fatal("missing record wait was not bounded")
+			case <-time.After(tc.deadline + 5*time.Second):
+				t.Fatal("record wait was not bounded")
 			}
 		})
 	}
