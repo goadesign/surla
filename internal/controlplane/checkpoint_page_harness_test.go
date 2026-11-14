@@ -160,6 +160,11 @@ func (ps *pageServer) act(name string, action func()) {
 // quickly, so tests observe several waits and changes within seconds.
 func pageControlPlane(t *testing.T, opts Options) *ControlPlane {
 	t.Helper()
+	if opts.Verification == nil && opts.WrittenTestRuns == nil {
+		cfg := verificationConfig(t)
+		cfg.Plan.SuiteCommit = strings.Repeat("2", 40)
+		opts.Verification = cfg
+	}
 	cp := newControlPlane(t, opts)
 	cp.changesWait = 400 * time.Millisecond
 	cp.changesPoll = 20 * time.Millisecond
@@ -341,17 +346,17 @@ type (
 		lists map[string][]string
 	}
 
-	// pageTarget is a promotion target whose inputs a test action changes
-	// while the server answers; absent makes the project have none.
+	// pageTarget is a promotion target whose staged artifacts a test action
+	// changes while the server answers; absent makes the project have none.
 	pageTarget struct {
 		// mu guards every field.
 		mu sync.Mutex
 		// report is the report LoadReport returns.
 		report verify.Report
-		// inputs is what CurrentInputs returns.
-		inputs PromotionInputs
-		// inputsErr, when set, is what CurrentInputs fails with.
-		inputsErr error
+		// artifacts is what CurrentArtifacts returns.
+		artifacts map[string]string
+		// artifactsErr, when set, is what CurrentArtifacts fails with.
+		artifactsErr error
 		// absent makes resolve report no promotion target.
 		absent bool
 	}
@@ -413,11 +418,11 @@ func (p *pageTarget) LoadReport(context.Context, string) (verify.Report, error) 
 	return p.report, nil
 }
 
-// CurrentInputs returns the inputs, or the failure, a test action chose.
-func (p *pageTarget) CurrentInputs(context.Context, string) (PromotionInputs, error) {
+// CurrentArtifacts returns the binary digests, or the failure, a test action chose.
+func (p *pageTarget) CurrentArtifacts(context.Context, string) (map[string]string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.inputs, p.inputsErr
+	return p.artifacts, p.artifactsErr
 }
 
 // resolve is Options.ResolvePromotionTarget: the target, or none while absent.

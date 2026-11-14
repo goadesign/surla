@@ -82,7 +82,7 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cp, card, cfg := verificationSetup(t)
 	commit := strings.Repeat("a", 40)
-	inputs := PromotionInputs{SuiteID: "orders_acceptance", SuiteCommit: cfg.Plan.SuiteCommit, Environment: "sim",
+	spec := reportSpec{SuiteID: "orders_acceptance", SuiteCommit: cfg.Plan.SuiteCommit, Environment: "sim",
 		Artifacts: map[string]string{"orders": "d1"}}
 
 	// writeRun saves a finished run as its supervisor would.
@@ -113,7 +113,7 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 	}
 
 	t.Run("completed returns only the builder view", func(t *testing.T) {
-		report := failingReport(t, card.RequestRevision, commit, inputs)
+		report := failingReport(t, card.RequestRevision, commit, spec)
 		b, err := json.Marshal(report)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cfg.Plan.ReportDir, report.Digest+".json"), b, 0o600))
@@ -257,7 +257,7 @@ func TestListVerifications(t *testing.T) {
 	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com", CallerID: "bob@example.com", Kind: CallerUser})
 	cp, card, cfg := verificationSetup(t)
 	commit := strings.Repeat("a", 40)
-	inputs := PromotionInputs{
+	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: cfg.Plan.SuiteCommit, Environment: "sim",
 		Artifacts: map[string]string{"orders": "d1"},
 	}
@@ -286,7 +286,7 @@ func TestListVerifications(t *testing.T) {
 	})
 
 	t.Run("lists owner runs newest-first with sub-second accepted_at, builder projection, and a waiting proposal", func(t *testing.T) {
-		report := failingReport(t, card.RequestRevision, commit, inputs)
+		report := failingReport(t, card.RequestRevision, commit, spec)
 		b, err := json.Marshal(report)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cfg.Plan.ReportDir, report.Digest+".json"), b, 0o600))

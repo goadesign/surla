@@ -1889,6 +1889,8 @@ func EncodeApproveMergeRequest(encoder func(*http.Request) goahttp.Encoder) func
 // DecodeApproveMergeResponse may return the following errors:
 //   - "not_found" (type *goa.ServiceError): http.StatusNotFound
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "no_build" (type *goa.ServiceError): http.StatusConflict
+//   - "tests_not_accepted" (type *goa.ServiceError): http.StatusConflict
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
@@ -1944,19 +1946,57 @@ func DecodeApproveMergeResponse(decoder func(*http.Response) goahttp.Decoder, re
 			}
 			return nil, NewApproveMergeNotFound(&body)
 		case http.StatusConflict:
-			var (
-				body ApproveMergeConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "conflict":
+				var (
+					body ApproveMergeConflictResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+				}
+				err = ValidateApproveMergeConflictResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+				}
+				return nil, NewApproveMergeConflict(&body)
+			case "no_build":
+				var (
+					body ApproveMergeNoBuildResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+				}
+				err = ValidateApproveMergeNoBuildResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+				}
+				return nil, NewApproveMergeNoBuild(&body)
+			case "tests_not_accepted":
+				var (
+					body ApproveMergeTestsNotAcceptedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+				}
+				err = ValidateApproveMergeTestsNotAcceptedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+				}
+				return nil, NewApproveMergeTestsNotAccepted(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "approve_merge", resp.StatusCode, string(body))
 			}
-			err = ValidateApproveMergeConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
-			}
-			return nil, NewApproveMergeConflict(&body)
 		case http.StatusUnprocessableEntity:
 			var (
 				body ApproveMergeUnprocessableResponseBody
@@ -5246,6 +5286,47 @@ func unmarshalApprovalItemResponseBodyToSurlaApprovalItem(v *ApprovalItemRespons
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+	switch string(v.TestSource.Kind()) {
+	case "evaluator":
+		actual, _ := v.TestSource.AsEvaluator()
+		var obj *surla.OperatorEvaluatorTests
+		if actual != nil {
+			obj = unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(actual)
+		}
+		u := res.TestSource
+		u.SetEvaluator((*surla.OperatorEvaluatorTests)(obj))
+		res.TestSource = u
+	case "written_tests":
+		actual, _ := v.TestSource.AsWrittenTests()
+		var obj *surla.AgentWrittenTests
+		if actual != nil {
+			obj = unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(actual)
+		}
+		u := res.TestSource
+		u.SetWrittenTests((*surla.AgentWrittenTests)(obj))
+		res.TestSource = u
+	}
+
+	return res
+}
+
+// unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests
+// builds a value of type *surla.OperatorEvaluatorTests from a value of type
+// *OperatorEvaluatorTestsResponseBody.
+func unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(v *OperatorEvaluatorTestsResponseBody) *surla.OperatorEvaluatorTests {
+	res := &surla.OperatorEvaluatorTests{}
+
+	return res
+}
+
+// unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests builds a
+// value of type *surla.AgentWrittenTests from a value of type
+// *AgentWrittenTestsResponseBody.
+func unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(v *AgentWrittenTestsResponseBody) *surla.AgentWrittenTests {
+	res := &surla.AgentWrittenTests{
+		Commit: *v.Commit,
+		Notice: *v.Notice,
+	}
 
 	return res
 }
@@ -5625,27 +5706,6 @@ func unmarshalLiveTargetNotConfirmedStoppedResponseBodyToSurlaLiveTargetNotConfi
 	res := &surla.LiveTargetNotConfirmedStopped{
 		CandidateCommit: *v.CandidateCommit,
 		Message:         *v.Message,
-	}
-
-	return res
-}
-
-// unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests
-// builds a value of type *surla.OperatorEvaluatorTests from a value of type
-// *OperatorEvaluatorTestsResponseBody.
-func unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests(v *OperatorEvaluatorTestsResponseBody) *surla.OperatorEvaluatorTests {
-	res := &surla.OperatorEvaluatorTests{}
-
-	return res
-}
-
-// unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests builds a
-// value of type *surla.AgentWrittenTests from a value of type
-// *AgentWrittenTestsResponseBody.
-func unmarshalAgentWrittenTestsResponseBodyToSurlaAgentWrittenTests(v *AgentWrittenTestsResponseBody) *surla.AgentWrittenTests {
-	res := &surla.AgentWrittenTests{
-		Commit: *v.Commit,
-		Notice: *v.Notice,
 	}
 
 	return res

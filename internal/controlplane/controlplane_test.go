@@ -889,9 +889,9 @@ func TestUnchangedConfirmationFromAnotherSessionKeepsRevision(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-	inputs := PromotionInputs{SuiteID: "suite", SuiteCommit: strings.Repeat("b", 40), Environment: "sim", Artifacts: map[string]string{"app": "artifact"}}
-	target := &promotionTargetStub{inputs: inputs}
-	cp := newControlPlane(t, Options{PromotionTarget: target, TracerProvider: provider})
+	spec := reportSpec{SuiteID: "suite", SuiteCommit: strings.Repeat("b", 40), Environment: "sim", Artifacts: map[string]string{"app": "artifact"}}
+	target := &promotionTargetStub{artifacts: spec.Artifacts}
+	cp := newControlPlane(t, Options{Verification: verificationConfig(t), PromotionTarget: target, TracerProvider: provider})
 	auth := fixtureCredentials(map[string]Principal{
 		"guide":  {ID: "owner", CallerID: "guide", Kind: CallerGuide},
 		"first":  {ID: "owner", CallerID: "session-one", Kind: CallerUser},
@@ -921,7 +921,7 @@ func TestUnchangedConfirmationFromAnotherSessionKeepsRevision(t *testing.T) {
 	}
 	confirmed := send("first", raw)
 	first := WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "session-one", Kind: CallerUser})
-	target.report = passingReport(t, confirmed.RequestRevision, strings.Repeat("c", 40), inputs)
+	target.report = passingReport(t, confirmed.RequestRevision, strings.Repeat("c", 40), spec)
 	approved, err := cp.ApproveMerge(first, &gensurla.ApproveMergePayload{ChangeID: confirmed.ChangeID, RequestRevision: confirmed.RequestRevision, CandidateCommit: strings.Repeat("c", 40), ReportDigest: target.report.Digest})
 	require.NoError(t, err)
 	require.NotNil(t, approved.Approval)

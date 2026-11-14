@@ -60,6 +60,12 @@ const (
 	// operatorPrivateDirValue is the extended attribute value for private Surla
 	// directories.
 	operatorPrivateDirValue = "dir-v1"
+	// storedPromotionSettingsStep tells the operator how to inspect, replace or
+	// remove stored promotion settings when the project server cannot load them.
+	storedPromotionSettingsStep = "see them with surla promotion show, store them again with surla promotion set <file>, or remove them with surla promotion remove if this project needs no approvals; then run surla"
+	// storedVerificationSettingsStep tells the operator how to inspect, replace or
+	// remove stored verification settings when the project server cannot load them.
+	storedVerificationSettingsStep = "see them with surla verification show, store them again with surla verification set <file>, or remove them with surla verification remove if this project uses the tests written for each change; then run surla"
 )
 
 // configureProjectWorkspace resolves the bound workspace, operator-owned storage
@@ -89,14 +95,14 @@ func configureProjectWorkspace(state *project.State) (workspaceServeConfig, erro
 	if raw, err := state.ReadSettings("promotion"); err == nil {
 		var file promotionFile
 		if err := decodeSettings(raw, &file); err != nil {
-			return workspaceServeConfig{}, err
+			return workspaceServeConfig{}, fmt.Errorf("%w: %s", err, storedPromotionSettingsStep)
 		}
 		if err := validatePromotionFile(file); err != nil {
-			return workspaceServeConfig{}, err
+			return workspaceServeConfig{}, fmt.Errorf("%w: %s", err, storedPromotionSettingsStep)
 		}
 		file.ReportDir = reports
 		if err := validateWorkspaceDirSeparation("release_dir", file.ReleaseDir, protected...); err != nil {
-			return workspaceServeConfig{}, err
+			return workspaceServeConfig{}, fmt.Errorf("%w: %s", err, storedPromotionSettingsStep)
 		}
 		ws.promotionTarget = &releaseTarget{cfg: file}
 		ws.resolvePromotionTarget = func(context.Context, string) (controlplane.PromotionTarget, error) { return ws.promotionTarget, nil }
@@ -106,11 +112,11 @@ func configureProjectWorkspace(state *project.State) (workspaceServeConfig, erro
 	if raw, err := state.ReadSettings("verification"); err == nil {
 		var file verificationFile
 		if err := decodeSettings(raw, &file); err != nil {
-			return workspaceServeConfig{}, err
+			return workspaceServeConfig{}, fmt.Errorf("%w: %s", err, storedVerificationSettingsStep)
 		}
 		config, err := verificationConfig(file, ws.runsDir, reports)
 		if err != nil {
-			return workspaceServeConfig{}, err
+			return workspaceServeConfig{}, fmt.Errorf("%w: %s", err, storedVerificationSettingsStep)
 		}
 		ws.verification = config
 		return ws, nil
@@ -151,22 +157,14 @@ func decodePromotionFileAtBase(path, baseDir string) (promotionFile, error) {
 // validatePromotionFile enforces the settings contract at both operator-file and stored-snapshot ingress.
 func validatePromotionFile(f promotionFile) error {
 	var missing []string
-	for _, field := range []struct{ name, value string }{
-		{"release_dir", f.ReleaseDir}, {"suite_id", f.SuiteID},
-		{"suite_commit", f.SuiteCommit}, {"environment", f.Environment},
-	} {
-		if field.value == "" {
-			missing = append(missing, field.name)
-		}
+	if f.ReleaseDir == "" {
+		missing = append(missing, "release_dir")
 	}
 	if len(f.Binaries) == 0 {
 		missing = append(missing, "binaries")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("promotion configuration is missing %s", strings.Join(missing, ", "))
-	}
-	if !verify.IsCommitID(f.SuiteCommit) {
-		return fmt.Errorf("suite_commit %q must be a full commit ID (40 or 64 lowercase hex characters)", f.SuiteCommit)
 	}
 	seen := make(map[string]bool, len(f.Binaries))
 	for _, name := range f.Binaries {

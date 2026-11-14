@@ -18,11 +18,11 @@ import (
 // matching inputs keep the approval and the draft, changed inputs remove it
 // while keeping the draft, and a failed read keeps both and can be retried.
 func TestCheckpointUIRefreshesApprovalWithoutDiscardingEdits(t *testing.T) {
-	inputs := PromotionInputs{
+	spec := reportSpec{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
 	}
-	target := &pageTarget{inputs: inputs}
+	target := &pageTarget{artifacts: spec.Artifacts}
 	cp := pageControlPlane(t, Options{ResolvePromotionTarget: target.resolve})
 	guide := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: "guide", Kind: CallerGuide})
 	user := WithPrincipal(context.Background(), Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser})
@@ -33,7 +33,7 @@ func TestCheckpointUIRefreshesApprovalWithoutDiscardingEdits(t *testing.T) {
 	})
 	require.NoError(t, err)
 	commit := strings.Repeat("1", 40)
-	report := passingReport(t, confirmed.RequestRevision, commit, inputs)
+	report := passingReport(t, confirmed.RequestRevision, commit, spec)
 	target.update(func(p *pageTarget) { p.report = report })
 	_, err = cp.ApproveMerge(user, &gensurla.ApproveMergePayload{
 		ChangeID: confirmed.ChangeID, RequestRevision: confirmed.RequestRevision,
@@ -43,8 +43,7 @@ func TestCheckpointUIRefreshesApprovalWithoutDiscardingEdits(t *testing.T) {
 	ps := startPageServer(t, cp)
 	ps.act("inputs-changed", func() {
 		target.update(func(p *pageTarget) {
-			p.inputs = PromotionInputs{SuiteID: inputs.SuiteID, SuiteCommit: inputs.SuiteCommit, Environment: inputs.Environment,
-				Artifacts: map[string]string{"orders": strings.Repeat("c", 64)}}
+			p.artifacts = map[string]string{"orders": strings.Repeat("c", 64)}
 		})
 	})
 	runPageScript(t, ps, nil, `

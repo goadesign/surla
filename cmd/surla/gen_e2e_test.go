@@ -177,7 +177,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	// The operator stores verification and promotion after initialization; a
 	// server restart adopts them.
 	writeStarterVerification(t, workspace, dir, initialized.ModulePath, initialized.Commit)
-	promotion := writeStarterPromotion(t, workspace, initialized.ServiceName, initialized.Commit)
+	promotion := writeStarterPromotion(t, workspace, initialized.ServiceName)
 	state, err := fixtureProjectState(workspace)
 	require.NoError(t, err)
 	// init_project's real published child and its descendants find this same project record.

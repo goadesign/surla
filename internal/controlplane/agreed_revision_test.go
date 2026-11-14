@@ -44,11 +44,12 @@ var (
 // and source untouched on disk; after the user adopts the proposal, each of
 // those operations refuses the earlier revision.
 func TestARevisionOfAnAgreedChangeWaitsAndTheAgreedRevisionStaysInForce(t *testing.T) {
-	target := &pageTarget{inputs: agreedInputs()}
+	spec := agreedReportSpec()
+	target := &pageTarget{artifacts: spec.Artifacts}
 	cp := newControlPlane(t, Options{Verification: verificationConfig(t), ResolvePromotionTarget: target.resolve})
 	agreed := agreeChange(t, cp, "chg")
 	commit := strings.Repeat("1", 40)
-	report := passingReport(t, agreed.RequestRevision, commit, agreedInputs())
+	report := passingReport(t, agreed.RequestRevision, commit, spec)
 	target.update(func(p *pageTarget) { p.report = report })
 	approved, err := cp.ApproveMerge(agreedUser, &gensurla.ApproveMergePayload{
 		ChangeID: "chg", RequestRevision: agreed.RequestRevision, CandidateCommit: commit, ReportDigest: report.Digest,
@@ -162,7 +163,7 @@ func TestAProposalIsReplacedByTheNextRevisionAndAStaleOneIsRefused(t *testing.T)
 // revision in force under a new request_revision, the slot is empty, and no
 // approval carries over. A missing answer refuses the adoption.
 func TestAdoptingMakesTheProposalTheRevisionInForce(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newControlPlane(t, Options{Verification: verificationConfig(t)})
 	saveCard(t, cp, &gensurla.ApprovalItem{
 		ApprovedBy: agreedOwner, ReportDigest: strings.Repeat("d", 64), CandidateCommit: strings.Repeat("c", 40),
 		SuiteID: "orders", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
@@ -201,7 +202,7 @@ func TestAdoptingMakesTheProposalTheRevisionInForce(t *testing.T) {
 // file equals the one before the revision except for its saved time, and a
 // second decline or one naming the agreed revision is refused.
 func TestDecliningRestoresTheAgreedChangeExactly(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newControlPlane(t, Options{Verification: verificationConfig(t)})
 	saveCard(t, cp, &gensurla.ApprovalItem{
 		ApprovedBy: agreedOwner, ReportDigest: strings.Repeat("d", 64), CandidateCommit: strings.Repeat("c", 40),
 		SuiteID: "orders", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
@@ -216,7 +217,7 @@ func TestDecliningRestoresTheAgreedChangeExactly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, agreed.RequestRevision, declined.RequestRevision)
 	assert.Nil(t, declined.ProposedRevision)
-	assert.NotNil(t, declined.UnverifiedApproval, "the agreed revision keeps its approval")
+	assert.NotNil(t, declined.Approval, "the agreed revision keeps its approval")
 	after := savedSections(t, cp, "chg")
 	delete(before, "saved_at")
 	delete(after, "saved_at")
@@ -759,10 +760,10 @@ func refundTaxQuestion() *gensurla.CP1AnalysisAmbiguity {
 	return &gensurla.CP1AnalysisAmbiguity{Question: "Does the limit include tax?", Options: []string{"with_tax", "without_tax"}}
 }
 
-// agreedInputs are the promotion inputs these tests' target reports.
-func agreedInputs() PromotionInputs {
-	return PromotionInputs{
-		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
+// agreedReportSpec is the report specification these tests assemble.
+func agreedReportSpec() reportSpec {
+	return reportSpec{
+		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("b", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
 	}
 }

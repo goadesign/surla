@@ -311,7 +311,7 @@ func (c *ControlPlane) declineRevision(principal Principal, p *gensurla.DeclineR
 // waits. Callers must not hold c.mu, because currentCard may ask a slow
 // promotion target.
 func (c *ControlPlane) changeResult(ctx context.Context, record storedChangeCard) (*gensurla.ChangeCardResult, error) {
-	card, err := c.currentCard(ctx, record.card)
+	card, err := c.currentCard(ctx, record)
 	if err != nil {
 		return nil, err
 	}

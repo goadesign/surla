@@ -56,17 +56,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -160,17 +162,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -220,17 +224,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -376,17 +382,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -543,11 +551,10 @@ type (
 		// Opaque value for change detection. Compare it only for equality; the
 		// returned fields contain the facts this operation makes readable.
 		Version string
-		// Whether approve_merge can record approvals on this server. It is false when
-		// no promotion target is configured, or when the server could not resolve its
-		// promotion target; approve_merge then refuses every approval. To configure
-		// one, store the project's promotion settings with surla promotion set, then
-		// restart Surla.
+		// Whether approve_merge can record approvals on this server. It is true
+		// whenever Checkpoint 4 verification is configured and any stored promotion
+		// settings could be resolved; it is false when verification is not configured
+		// or when resolving the promotion target returns an error.
 		ApprovalAvailable bool
 	}
 	// ListTestWriterAssignmentsPayload defines the JSON payload for the surla.list_test_writer_assignments tool.
@@ -671,17 +678,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -809,17 +818,19 @@ type (
 		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it is verified
-		// against the promotion target's current inputs on this read. It is absent
-		// before approve_merge succeeds, whenever the target's suite, environment or
-		// binary digests have changed since, and whenever current inputs cannot be
+		// Checkpoint 5 approval of this revision, present while suite_commit is still
+		// the tests' commit chosen for this revision and (when a promotion target is
+		// configured) the promotion target's current binary digests still equal
+		// artifacts on this read. It is absent before approve_merge succeeds, whenever
+		// the chosen tests' commit or the staged binary digests have changed since,
+		// and whenever a configured promotion target's staged binaries cannot be
 		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
-		// Saved Checkpoint 5 approval of this revision when current promotion inputs
-		// could not be verified on this read (because no promotion target is
-		// configured or the target could not report its current inputs). At most one
-		// of approval or unverified_approval is set. It is never saved to disk or
-		// hashed into request_revision.
+		// Saved Checkpoint 5 approval of this revision when suite_commit still matches
+		// the chosen tests' commit and promotion settings are configured, but the
+		// staged binaries could not be verified on this read. At most one of approval
+		// or unverified_approval is set. It is never saved to disk or hashed into
+		// request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 		// The revision the guide proposed beside this confirmed revision, while it
 		// waits for the user to adopt or decline it; absent otherwise. This card's own
@@ -941,17 +952,23 @@ type (
 		ReportDigest string
 		// Candidate commit the report was checked against.
 		CandidateCommit string
-		// Evaluator suite the promotion target requires.
+		// Suite identifier the tests at suite_commit declared in the report (shown,
+		// not compared).
 		SuiteID string
-		// Evaluator suite commit the promotion target requires.
+		// Commit of the tests the report ran: the operator's stored evaluator, or the
+		// tests Surla accepted for the change's build.
 		SuiteCommit string
-		// Dependency profile the promotion target requires, such as sim.
+		// Dependency profile the tests at suite_commit declared in the report, such as
+		// sim or scripted-model (shown, not compared).
 		Environment string
 		// SHA-256 digest of each candidate binary the promotion target measured, keyed
-		// by binary name.
+		// by binary name; empty when no promotion settings are configured.
 		Artifacts map[string]string
-		// Number of declared evaluator scenarios, every one of which passed.
+		// Number of declared scenarios in the report, every one of which passed.
 		ScenarioCount int
+		// Where the tests at suite_commit came from, derived on each read: evaluator,
+		// or written_tests with their commit and a notice.
+		TestSource ApprovalTestSource
 	}
 	// BuildNotStarted is a nested type used by the generated JSON contract.
 	BuildNotStarted = struct {
@@ -1496,7 +1513,7 @@ type (
 		// Recorded promotion approval from the Change Card.
 		Approval *ApprovalItem
 		// Explanation of why the recorded approval could not be verified against
-		// current promotion inputs and how to recover.
+		// current release binaries and how to recover.
 		Reason string
 	}
 	// VerificationCheck is a nested type used by the generated JSON contract.

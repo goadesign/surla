@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,16 +144,16 @@ func TestCardFilesStayInsideTheDirectory(t *testing.T) {
 // writes nothing to the directory a new control plane now holds.
 func TestRequestsFinishingAfterCloseDoNotWrite(t *testing.T) {
 	dir := t.TempDir()
-	inputs := PromotionInputs{
-		SuiteID: "orders_acceptance", SuiteCommit: "suite-1", Environment: "sim",
+	spec := reportSpec{
+		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
 		Artifacts: map[string]string{"orders": "d1"},
 	}
-	target := &promotionTargetStub{inputs: inputs, loading: make(chan struct{}), release: make(chan struct{})}
-	cp, err := New(Options{CardsDir: dir, PromotionTarget: target})
+	target := &promotionTargetStub{artifacts: spec.Artifacts, loading: make(chan struct{}), release: make(chan struct{})}
+	cp, err := New(Options{CardsDir: dir, Verification: verificationConfig(t), PromotionTarget: target})
 	require.NoError(t, err)
 	card := saveCard(t, cp, nil)
 	const commit = "0123456789abcdef0123456789abcdef01234567"
-	target.report = passingReport(t, card.RequestRevision, commit, inputs)
+	target.report = passingReport(t, card.RequestRevision, commit, spec)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	approved := make(chan error, 1)
 	go func() {
@@ -272,24 +273,42 @@ func TestAFailedSaveKeepsThePreviousCard(t *testing.T) {
 	assert.Equal(t, card, got)
 }
 
-// TestASavedApprovalNeedsAPromotionTarget saves an approved card and reads it
-// from a control plane without a promotion target, which cannot check the
-// approval against current inputs and so reports it in UnverifiedApproval
-// rather than Approval.
+// TestASavedApprovalNeedsAPromotionTarget OnlyWhenConfigured saves an approved
+// card and verifies that without promotion settings it is returned in Approval,
+// while with promotion settings whose release binaries cannot be read it is
+// returned in UnverifiedApproval without mutating the saved card on disk.
 func TestASavedApprovalNeedsAPromotionTarget(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	recorded := &gensurla.ApprovalItem{
 		ApprovedBy: "alice@example.com", ReportDigest: strings.Repeat("d", 64), CandidateCommit: strings.Repeat("c", 40),
 		SuiteID: "orders", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
 		Artifacts: map[string]string{"orders": strings.Repeat("e", 64)}, ScenarioCount: 5,
 	}
+	expectedApproval := *recorded
+	expectedApproval.TestSource = gensurla.NewApprovalTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{})
+
+	// Without promotion settings, the saved approval is valid as long as the
+	// chosen tests' commit matches.
+	cpNoTarget := newControlPlane(t, Options{Verification: verificationConfig(t)})
+	saveCard(t, cpNoTarget, recorded)
+	gotNoTarget, err := cpNoTarget.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	assert.Equal(t, &expectedApproval, gotNoTarget.Approval)
+	assert.Nil(t, gotNoTarget.UnverifiedApproval)
+
+	// With promotion settings whose release binaries cannot be read, the card
+	// is served with unverified_approval while the saved record on disk is
+	// untouched.
+	target := &promotionTargetStub{artifactsErr: errors.New("missing release directory")}
+	cp := newControlPlane(t, Options{Verification: verificationConfig(t), PromotionTarget: target})
 	approved := saveCard(t, cp, recorded)
-	got, err := cp.GetChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser}), &gensurla.GetChangePayload{ChangeID: "chg"})
+	got, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Nil(t, got.Approval)
 	require.NotNil(t, got.UnverifiedApproval)
-	assert.Equal(t, recorded, got.UnverifiedApproval.Approval)
-	assert.Contains(t, got.UnverifiedApproval.Reason, "surla promotion set")
+	assert.Equal(t, &expectedApproval, got.UnverifiedApproval.Approval)
+	assert.Contains(t, got.UnverifiedApproval.Reason, "Check current approval")
+	assert.Contains(t, got.UnverifiedApproval.Reason, "surla promotion remove")
 	saved, ok, err := cp.cards.load("chg")
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -298,6 +317,60 @@ func TestASavedApprovalNeedsAPromotionTarget(t *testing.T) {
 	approved.Approval = nil
 	approved.UnverifiedApproval = got.UnverifiedApproval
 	assert.Equal(t, approved, got, "the rest of the card is served with unverified_approval")
+}
+
+// TestSavedCardInTodaysUntaggedFormWithApprovalDecodes verifies that a card
+// file written in today's untagged form with an Approval record (and no
+// TestSource field) decodes and is returned by get_change only while the
+// chooser gives its SuiteCommit.
+func TestSavedCardInTodaysUntaggedFormWithApprovalDecodes(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	suiteCommit := strings.Repeat("b", 40)
+	candidateCommit := strings.Repeat("c", 40)
+	reportDigest := strings.Repeat("d", 64)
+	artifactDigest := strings.Repeat("e", 64)
+	confirmedBy := "alice@example.com"
+	base := &gensurla.ChangeCardResult{
+		ChangeID: "chg", Status: StatusConfirmed, Prompt: "Refunds up to $50 are instant.",
+		Summary: "Refunds up to $50 are instant.", Ambiguities: []*gensurla.AmbiguityQuestion{},
+		Answers: map[string]string{}, PreservedBehaviors: []string{}, ConfirmedBy: &confirmedBy,
+		Examples: []*gensurla.ExampleItem{{
+			ID: "chg-check-01", Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
+			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+		}},
+	}
+	rev, err := computeCanonicalRevision(base, "alice@example.com", "")
+	require.NoError(t, err)
+	rawFile := `{"card":{"ChangeID":"chg","Status":"confirmed","Prompt":"Refunds up to $50 are instant.",` +
+		`"Summary":"Refunds up to $50 are instant.","Ambiguities":[],"Answers":{},` +
+		`"Examples":[{"ID":"chg-check-01","Scenario":"Refund at the limit","InputSummary":"Order total $50.00","ExpectedOutcome":"Instant store credit","VerificationKind":"deterministic"}],` +
+		`"PreservedBehaviors":[],"ConfirmedBy":"alice@example.com","RequestRevision":"` + rev + `",` +
+		`"Approval":{"ApprovedBy":"alice@example.com","ReportDigest":"` + reportDigest + `","CandidateCommit":"` + candidateCommit + `",` +
+		`"SuiteID":"orders","SuiteCommit":"` + suiteCommit + `","Environment":"sim","Artifacts":{"orders":"` + artifactDigest + `"},"ScenarioCount":5}},` +
+		`"owner":"alice@example.com","design_source":"","saved_at":"2026-11-01T10:00:00Z"}`
+
+	cfg := verificationConfig(t)
+	cfg.Plan.SuiteCommit = suiteCommit
+	target := &promotionTargetStub{artifacts: map[string]string{"orders": artifactDigest}}
+	cp := newControlPlane(t, Options{Verification: cfg, PromotionTarget: target})
+	require.NoError(t, os.WriteFile(cp.cards.path("chg"), []byte(rawFile), 0o600))
+
+	got, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	require.NotNil(t, got.Approval, "returned while the chooser gives its SuiteCommit")
+	assert.Equal(t, &gensurla.ApprovalItem{
+		ApprovedBy: "alice@example.com", ReportDigest: reportDigest, CandidateCommit: candidateCommit,
+		SuiteID: "orders", SuiteCommit: suiteCommit, Environment: "sim",
+		Artifacts: map[string]string{"orders": artifactDigest}, ScenarioCount: 5,
+		TestSource: gensurla.NewApprovalTestSourceEvaluator(&gensurla.OperatorEvaluatorTests{}),
+	}, got.Approval)
+
+	// When the chooser gives another commit, the saved approval is hidden.
+	cp.verifier.(storedVerification).cfg.Plan.SuiteCommit = strings.Repeat("9", 40)
+	hidden, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	assert.Nil(t, hidden.Approval)
+	assert.Nil(t, hidden.UnverifiedApproval)
 }
 
 // TestCurrentSavedCardRoundTripExcludesResponseOnlyApproval verifies that cardStore.save
