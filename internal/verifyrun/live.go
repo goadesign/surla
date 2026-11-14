@@ -179,7 +179,9 @@ func LeftoverLiveDirs(root string) ([]string, error) {
 // executor's environment; LaunchLive replaces its TMPDIR and key and drops
 // every provider family from it. For written tests settings reach only
 // the executor's standard input as NUL-terminated NAME=value entries; the
-// executor serves that model through a private gateway. An operator's
+// executor serves that model through its loopback gateway, which has no
+// authentication: any local process can use it while this target runs,
+// without receiving the provider key. An operator's
 // evaluator keeps the environment delivery of its settings. Neither path
 // writes settings in arguments or live.json. command runs this program. When
 // LaunchLive fails, no process was started and the directory it created is

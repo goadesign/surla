@@ -118,12 +118,14 @@ type Service interface {
 	// change's current revision must have a build with accepted tests: the
 	// candidate programs come from candidate_commit and the test program from the
 	// accepted tests commit. Written tests require a chosen model; with a direct
-	// provider the executor serves a private loopback model gateway and passes no
-	// provider setting to the program. Card, tests, model and plan refusals
-	// preserve the running target. After those checks a replacement stops the old
-	// target and discards its drafts, even if the new startup fails. A target that
-	// ends unexpectedly is reported as ended after confirmed cleanup; a server
-	// restart leaves none.
+	// provider the executor serves an executor-owned loopback model gateway and
+	// passes no provider setting to the program. That gateway has no
+	// authentication: any local process, including another user's, can use it
+	// while the target runs without receiving the provider key. Card, tests, model
+	// and plan refusals preserve the running target. After those checks a
+	// replacement stops the old target and discards its drafts, even if the new
+	// startup fails. A target that ends unexpectedly is reported as ended after
+	// confirmed cleanup; a server restart leaves none.
 	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
 	// Stop this server's live CP3 target, if one runs, and unbind draft_override
 	// from it. Stopping when none runs is not an error.
@@ -185,10 +187,12 @@ type Service interface {
 	// live targets started afterwards receive: a direct provider and model name,
 	// whose request settings the surla command handed to the project server with
 	// hand_over_model_settings, or a running gRPC model gateway. With written
-	// tests, a direct provider is served by the executor's private loopback model
-	// gateway and the accepted test program receives only that gateway, never
-	// provider settings. A stored evaluator receives the choice and its chosen
-	// provider's settings. A configured gateway is passed through unchanged.
+	// tests, a direct provider is served by the executor's loopback model gateway
+	// and the accepted test program receives only that gateway, never provider
+	// settings. The executor-owned gateway has no authentication: any local
+	// process, including another user's, can use it while the target runs without
+	// receiving the provider key. A stored evaluator receives the choice and its
+	// chosen provider's settings. A configured gateway is passed through unchanged.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Report the model choice live targets started afterwards receive: none, a
 	// direct provider and model name, or a model gateway address. It starts as
@@ -206,17 +210,19 @@ type Service interface {
 	// operator's stored evaluator receives the chosen provider's held settings; a
 	// verification with that evaluator receives every held provider's settings.
 	// Accepted written tests receive no provider settings in verification or live
-	// targets: for a direct live model the executor serves a private loopback
-	// model gateway. The check helper receives none. An absent provider attribute
-	// keeps what is held for that provider. A present one replaces everything held
-	// for it and must include the provider's key variable; an empty one is
-	// refused, because it is neither a way to keep nor a way to forget. A request
-	// with neither attribute changes nothing and reports what is held. When no
-	// model is chosen and a provider is now held, live targets use that provider's
-	// default model, anthropic before openai; any other choice stays. The result
-	// names the held variables and the model choice, never a value. Only the surla
-	// command's management credential may call this operation; it is never an MCP
-	// tool.
+	// targets: for a direct live model the executor serves an executor-owned
+	// loopback model gateway. It has no authentication: any local process,
+	// including another user's, can use it while the target runs without receiving
+	// the provider key. The check helper receives none. An absent provider
+	// attribute keeps what is held for that provider. A present one replaces
+	// everything held for it and must include the provider's key variable; an
+	// empty one is refused, because it is neither a way to keep nor a way to
+	// forget. A request with neither attribute changes nothing and reports what is
+	// held. When no model is chosen and a provider is now held, live targets use
+	// that provider's default model, anthropic before openai; any other choice
+	// stays. The result names the held variables and the model choice, never a
+	// value. Only the surla command's management credential may call this
+	// operation; it is never an MCP tool.
 	HandOverModelSettings(context.Context, *HandOverModelSettingsPayload) (res *ModelSettingsResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the

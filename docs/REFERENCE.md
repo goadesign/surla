@@ -1172,6 +1172,12 @@ held, it ignores `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_CUSTOM_HEADERS`; handing
 them over does not make them apply to a written-tests live target's provider.
 Surla preserves that SDK precedence rather than parsing those values itself.
 
+Choose a base URL whose endpoint you control. If a held base URL names a
+loopback port where nothing listens, another local process can bind that port
+before the next provider request and receive its credentials. The live test
+program, or a sandboxed service whose network rules allow that bind, can do
+this too.
+
 An absent provider keeps what the server holds for it. A present one replaces
 everything held for it and must include its key, so an empty map is refused.
 While no model is chosen, live targets then use the default model of the
@@ -1734,7 +1740,10 @@ the target declares the same method in its own Goa design and implements it:
   provider setting or `SURLA_LIVE_MODEL_PROVIDER`/`SURLA_LIVE_MODEL_NAME`.
   For a direct provider, the executor receives that provider's held settings
   over standard input, applies them after preparation, constructs the
-  provider and serves a model gateway on `127.0.0.1:<port>`. For a chosen
+  provider and serves an executor-owned model gateway on `127.0.0.1:<port>`.
+  This gateway has no authentication: any local process, including one run by
+  another user, can use it while the target runs without receiving the provider
+  key. For a chosen
   gateway, its address passes through unchanged. The program uses
   `LiveThroughGateway` in either case.
 - An evaluator named in stored verification settings keeps its existing
