@@ -537,8 +537,8 @@ type BuildCopyNotContained struct {
 	Step BuildStartStep
 }
 
-// This project uses its stored evaluator, so this start uses no test-writer
-// working copy.
+// This project has stored verification settings, so this start uses no
+// test-writer working copy.
 type BuildCopyNotUsed struct {
 }
 
@@ -553,7 +553,7 @@ type BuildStartStep string
 type BuildTeamAmbiguousSpace struct {
 	// Number of spaces matching this project.
 	Count int
-	// Choose the project's space, then start the team agents.
+	// Close the duplicate Herdr spaces, then start the agents.
 	Step BuildStartStep
 }
 
@@ -1453,8 +1453,8 @@ type StartBuildResult struct {
 	Build *StartedBuild
 	// The team's immediate outcome after the build was saved.
 	Team Team
-	// The test-writer working copy after this start's refresh; not_used with a
-	// stored evaluator.
+	// The test-writer working copy after this start's refresh; not_used with
+	// stored verification settings.
 	WorkingCopy WorkingCopy
 }
 
@@ -2723,7 +2723,7 @@ func validatejsonBuildStartStepTransport(value jsonBuildStartStepTransport) (err
 type jsonBuildTeamAmbiguousSpaceTransport struct {
 	// Number of spaces matching this project.
 	Count *buildTeamAmbiguousSpaceIntTransport `json:"count"`
-	// Choose the project's space, then start the team agents.
+	// Close the duplicate Herdr spaces, then start the agents.
 	Step *jsonBuildStartStepTransport `json:"step"`
 }
 
@@ -5067,8 +5067,8 @@ type jsonStartBuildResultTransport struct {
 	Build *jsonStartedBuildTransport `json:"build"`
 	// The team's immediate outcome after the build was saved.
 	Team *jsonTeamTransport `json:"team"`
-	// The test-writer working copy after this start's refresh; not_used with a
-	// stored evaluator.
+	// The test-writer working copy after this start's refresh; not_used with
+	// stored verification settings.
 	WorkingCopy *jsonWorkingCopyTransport `json:"working_copy"`
 }
 
@@ -26295,7 +26295,7 @@ func validateBuildTeamAmbiguousSpaceJSONValue(path string, value any, descriptio
 		case "step":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Choose the project's space, then start the team agents.",
+				typed[key], "Close the duplicate Herdr spaces, then start the agents.",
 			); err != nil {
 				return err
 			}
@@ -31752,7 +31752,7 @@ func validateStartBuildResultJSONValue(path string, value any, description strin
 		case "working_copy":
 			if err := validateStartBuildResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The test-writer working copy after this start's refresh; not_used with a stored evaluator.",
+				typed[key], "The test-writer working copy after this start's refresh; not_used with stored verification settings.",
 			); err != nil {
 				return err
 			}

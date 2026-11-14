@@ -21,7 +21,7 @@ import (
 // verbs are the shell-quoted project directory and the service name. The
 // commands end at `surla`, which starts the project's server and opens its
 // views page; the operator tools come after them.
-const initNextSteps = `Created the %[2]s service and its starter evaluator suite (eval/).
+const initNextSteps = `Created the %[2]s service, its Story (design/story.go) and its starter evaluator suite (eval/).
 
 Next, make the first commit and start Surla in the project:
   cd %[1]s

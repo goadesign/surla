@@ -372,6 +372,7 @@ func TestStartBuildTeamWarningsKeepTheSavedBuild(t *testing.T) {
 		{"busy", gensurla.MakeWindowBusy(errors.New("fixture busy")), gensurla.TeamKindWindowBusy},
 		{"ambiguous", fmt.Errorf("fixture: %w", &genproject.TeamSpaceConflict{Name: "ambiguous_space", Count: 2}), gensurla.TeamKindAmbiguousSpace},
 		{"unavailable", gensurla.MakeTeamUnavailable(errors.New("fixture unavailable")), gensurla.TeamKindUnavailable},
+		{"unavailable herdr", gensurla.MakeTeamUnavailable(&genproject.TeamUnavailable{Name: "team_unavailable", Cause: "herdr"}), gensurla.TeamKindUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &teamServiceFixture{start: func(context.Context) (*gensurla.ProjectTeam, error) { return nil, tc.err }}
@@ -383,6 +384,9 @@ func TestStartBuildTeamWarningsKeepTheSavedBuild(t *testing.T) {
 			if ambiguous, ok := result.Team.AsAmbiguousSpace(); ok {
 				assert.Equal(t, 2, ambiguous.Count)
 				assert.Equal(t, "Close the duplicate Herdr spaces, then start the agents.", string(ambiguous.Step))
+			}
+			if unavailable, ok := result.Team.AsUnavailable(); ok && tc.name == "unavailable herdr" {
+				assert.Equal(t, "Herdr did not complete a team command. Open the Herdr app, then start the team agents for this saved build.", string(unavailable.Step))
 			}
 			assert.Equal(t, []string{"register", "start"}, f.calls)
 			assert.Equal(t, result.Build, mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg"))

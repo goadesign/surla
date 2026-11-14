@@ -932,8 +932,8 @@ type StartBuildResponseBody struct {
 	Build *StartedBuildResponseBody `form:"build" json:"build" xml:"build"`
 	// The team's immediate outcome after the build was saved.
 	Team TeamResponseBody `form:"team" json:"team" xml:"team"`
-	// The test-writer working copy after this start's refresh; not_used with a
-	// stored evaluator.
+	// The test-writer working copy after this start's refresh; not_used with
+	// stored verification settings.
 	WorkingCopy WorkingCopyResponseBody `form:"working_copy" json:"working_copy" xml:"working_copy"`
 }
 
@@ -4042,7 +4042,7 @@ type BuildTeamWindowBusyResponseBody struct {
 type BuildTeamAmbiguousSpaceResponseBody struct {
 	// Number of spaces matching this project.
 	Count int `form:"count" json:"count" xml:"count"`
-	// Choose the project's space, then start the team agents.
+	// Close the duplicate Herdr spaces, then start the agents.
 	Step string `form:"step" json:"step" xml:"step"`
 }
 

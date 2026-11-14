@@ -357,7 +357,8 @@ func (c *ControlPlane) buildStartDeadline(ctx context.Context) (context.Context,
 
 // buildTeamOutcome preserves a saved build when its team cannot become ready.
 // Outside error messages never become user steps: the team returns typed
-// conditions, and this boundary owns the action shown by start_build.
+// conditions, and this boundary owns the action shown by start_build. A team
+// failure keeps its typed cause, which selects the cause's own step.
 func buildTeamOutcome(team *gensurla.ProjectTeam, err error) gensurla.Team {
 	if err == nil {
 		return gensurla.NewTeamReady(team)
@@ -375,7 +376,38 @@ func buildTeamOutcome(team *gensurla.ProjectTeam, err error) gensurla.Team {
 			Step: "Close the open Herdr dialog, then start the team agents.",
 		})
 	}
+	cause := ""
+	var failure *genproject.TeamUnavailable
+	if errors.As(err, &failure) {
+		cause = failure.Cause
+	}
 	return gensurla.NewTeamUnavailable(&gensurla.BuildTeamUnavailable{
-		Step: "Check that Herdr is available, then start the team agents for this saved build.",
+		Step: gensurla.BuildStartStep(buildTeamStep(cause)),
 	})
+}
+
+// buildTeamStep is a saved build's step for one team failure cause, as the
+// surla command and the views page each give one: what could not be used,
+// its repair, and then Start agents, which starts the team for the saved
+// build without building again. An unknown cause, including none, names
+// surla, which prints the step for the cause. Each step fits BuildStartStep.
+func buildTeamStep(cause string) string {
+	const retry = "then start the team agents for this saved build."
+	switch cause {
+	case "stopping":
+		return "The project server is stopping. Run surla in the project folder to start it again; " +
+			"that also starts the team agents for this saved build."
+	case "herdr":
+		return "Herdr did not complete a team command. Open the Herdr app, " + retry
+	case "roster_folder":
+		return "Herdr's launcher roster folder could not be written. Make data/chorus-launcher/rosters " +
+			"in Herdr's app folder (~/.config/herdr-app unless HERDR_APP_HOME is set) writable by this account, " + retry
+	case "project_state":
+		return "This project's private state could not be read or written. " +
+			"Run surla in the project folder to see which folder to repair, " + retry
+	case "role_folder":
+		return "A team role's working folder could not be read. Make sure this account can open " +
+			"the project folder and its build working folders, " + retry
+	}
+	return "The project team could not be prepared. Run surla in the project folder to see the step, " + retry
 }

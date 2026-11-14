@@ -57,9 +57,10 @@ type approveSummary struct {
 
 // usage is the text `surla help`, `surla -h` and `surla --help`
 // print. Each subcommand prints its own flags with `surla <subcommand> -h`.
-const usage = `Surla checks changes to a Goa/Goa-AI service design before code is
-written, and checks the built service against an evaluator suite before it is
-promoted.
+const usage = `Surla runs a team of coding agents on a Goa/Goa-AI service. You agree each
+change before code is written; one agent builds it and another writes its
+tests, which Surla checks and runs against the built service before you
+approve the result.
 
 Usage:
 
@@ -73,8 +74,10 @@ Commands:
   verification    set, show or remove this project's verification settings
   promotion       set, show or remove this project's promotion settings
 
-Running surla starts or attaches to this folder's project and opens its views.
-The server runs in its own parentless Herdr terminal.
+Running surla starts or attaches to this folder's project server, starts Chorus
+and the Herdr app when they are not running, prepares the project's team of
+agents in Herdr and opens the views page. The server runs in its own
+parentless Herdr terminal.
 
 Other commands:
   preview         print the architecture, agent policies and tool contracts a design
@@ -175,7 +178,9 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 
 // writeCheckpointStatus writes the Change Cards directory and the on/off
 // status of checkpoints CP1–CP5 to w for the project server, naming how CP4
-// verifies: the stored evaluator, or the tests accepted for each change.
+// verifies (with stored verification settings, or with the tests accepted for
+// each change) and whether CP5 approval also checks release binaries, which
+// only stored promotion settings add. Approval is on whenever CP4 is.
 func writeCheckpointStatus(w io.Writer, opts controlplane.Options) {
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on")
@@ -190,7 +195,7 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options) {
 	}
 	switch {
 	case opts.Verification != nil:
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in %s, reports in %s, evaluator suite commit %s)\n",
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on with stored verification settings (runs in %s, reports in %s, evaluator suite commit %s)\n",
 			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
 	case opts.WrittenTestRuns != nil:
 		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build (runs in %s, reports in %s)\n",
@@ -199,10 +204,14 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options) {
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
 			" (use surla verification set, or run surla verify on the CLI)")
 	}
-	if opts.PromotionTarget == nil {
-		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)")
-	} else {
-		fmt.Fprintln(w, "surla: CP5 (approve_merge): on")
+	switch {
+	case opts.Verification == nil && opts.WrittenTestRuns == nil:
+		fmt.Fprintln(w, "surla: CP5 (approve_merge): off, because CP4 is off"+
+			" (use surla verification set, or run surla approve on the CLI)")
+	case opts.PromotionTarget == nil:
+		fmt.Fprintln(w, "surla: CP5 (approve_merge): on; no promotion settings are stored, so approval checks no release binaries")
+	default:
+		fmt.Fprintln(w, "surla: CP5 (approve_merge): on; approval also checks the release binaries the promotion settings name")
 	}
 }
 

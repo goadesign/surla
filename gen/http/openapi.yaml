@@ -9711,7 +9711,7 @@ definitions:
                                 - ambiguous_space
                         step:
                             type: string
-                            description: Choose the project's space, then start the team agents.
+                            description: Close the duplicate Herdr spaces, then start the agents.
                             example: "4"
                             minLength: 1
                             maxLength: 512
@@ -9736,7 +9736,7 @@ definitions:
                         - state
             working_copy:
                 type: object
-                description: The test-writer working copy after this start's refresh; not_used with a stored evaluator.
+                description: The test-writer working copy after this start's refresh; not_used with stored verification settings.
                 example:
                     commit: ec29a5a9f72070759902c1221b387505217f3ffa
                     state: dirty
