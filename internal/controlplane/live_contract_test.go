@@ -454,7 +454,7 @@ func TestLiveWithoutVerificationKeepsItsUnavailableRefusal(t *testing.T) {
 	cp, err := New(Options{CardsDir: t.TempDir(), Live: &LiveConfig{Command: []string{"unused"}}})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{
+	_, err = cp.StartLiveTarget(asCaller("alice@example.com", CallerBuilder), &gensurla.StartLiveTargetPayload{
 		ChangeID: "unknown", CandidateCommit: strings.Repeat("a", 40),
 	})
 	assert.Equal(t, "live_target_unavailable", goaErrorName(err))
