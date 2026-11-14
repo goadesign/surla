@@ -596,13 +596,13 @@ func commitScaffold(ctx context.Context, staging, logs string, run Runner) (stri
 }
 
 // commandEnv returns os.Environ() without the variables that would make git
-// act on another repository, work tree, index or object store
-// (gitenv.WithoutRedirects) and with isolated Go/Git non-interactive settings
-// appended, while preserving the operator's Git identity and commit signing
-// configuration. Beyond the redirects it drops GIT_TEMPLATE_DIR, because the
-// first commit runs git init, which would copy an inherited template folder
-// into the new repository; and the five variables it sets again below, so
-// each holds only its isolated value.
+// act on another repository, work tree, index, object store or reference
+// store (gitenv.WithoutRedirects) and with isolated Go/Git non-interactive
+// settings appended, while preserving the operator's Git identity and commit
+// signing configuration. Beyond the redirects it drops GIT_TEMPLATE_DIR as a
+// second guard: the first commit's git init already passes --template=, which
+// ignores an inherited template folder. It also drops the five variables it
+// sets again below, so each holds only its isolated value.
 func commandEnv(logDir string) []string {
 	env := gitenv.WithoutRedirects(os.Environ(),
 		"GIT_TEMPLATE_DIR",

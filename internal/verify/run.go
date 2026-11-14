@@ -576,12 +576,17 @@ func (r *runner) excerpt(label string) string {
 // label ("candidate" or "suite"). These steps fetch checksum-verified modules
 // and official toolchains and compile or execute no checked-out code; the
 // sandboxed build afterwards runs with no network. Evidence files and the
-// build home are named by label so the two builds never share them.
+// build home are named by label so the two builds never share them. Go runs
+// git to fetch a module straight from version control, so both commands run
+// without the variables that point git at another repository
+// (gitenv.WithoutRedirects); the user's module, proxy, protocol and
+// credential settings stay.
 func (r *runner) prepareBuild(ctx context.Context, label, moduleDir, workDir string) (buildToolchain, error) {
-	if err := r.run(ctx, "go-mod-download-"+label, moduleDir, nil, "go", "mod", "download"); err != nil {
+	env := gitenv.WithoutRedirects(os.Environ())
+	if err := r.run(ctx, "go-mod-download-"+label, moduleDir, env, "go", "mod", "download"); err != nil {
 		return buildToolchain{}, fmt.Errorf("download %s modules: %w", label, err)
 	}
-	if err := r.run(ctx, "go-env-"+label, moduleDir, nil, "go", "env", "GOROOT", "GOMODCACHE"); err != nil {
+	if err := r.run(ctx, "go-env-"+label, moduleDir, env, "go", "env", "GOROOT", "GOMODCACHE"); err != nil {
 		return buildToolchain{}, fmt.Errorf("resolve %s toolchain: %w", label, err)
 	}
 	out, err := os.ReadFile(filepath.Join(r.evidenceDir, "go-env-"+label+".stdout"))

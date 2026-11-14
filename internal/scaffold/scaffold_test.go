@@ -555,10 +555,13 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_KEY_6", "filter.rot.clean")
 	t.Setenv("GIT_CONFIG_VALUE_6", "sh -c 'touch "+hookMarker+"; exit 1'")
 	// Every variable that would point git at another repository, work tree,
-	// index or object store names the poison repository.
+	// index or object store names the poison repository; GIT_DIR and
+	// GIT_WORK_TREE, the ones git's hooks export, are set by name too, so
+	// this test holds even if the shared list lost them.
 	for _, name := range gitenv.Redirects() {
 		t.Setenv(name, filepath.Join(poisonRepo, ".git"))
 	}
+	t.Setenv("GIT_DIR", filepath.Join(poisonRepo, ".git"))
 	t.Setenv("GIT_WORK_TREE", poisonRepo)
 	t.Setenv("GIT_TEMPLATE_DIR", tmplDir)
 

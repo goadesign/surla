@@ -7,6 +7,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// redirectNames are the variables git documents as choosing the repository,
+// work tree, index, object store or reference store it uses, or the
+// namespace, prefix or discovery bounds it applies, written out here so that
+// a name dropped from the package's list fails the tests below.
+var redirectNames = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_REFERENCE_BACKEND", "GIT_NAMESPACE",
+	"GIT_REPLACE_REF_BASE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+	"GIT_PREFIX", "GIT_SUPER_PREFIX", "GIT_SHALLOW_FILE", "GIT_QUARANTINE_PATH",
+}
+
 // TestWithoutRedirectsDropsOnlyRedirectsAndTheCallersNames checks that every
 // redirect, before and after the other entries, and every name the caller
 // adds is removed, and that the rest of the environment stays in order,
@@ -25,7 +36,7 @@ func TestWithoutRedirectsDropsOnlyRedirectsAndTheCallersNames(t *testing.T) {
 		"GIT_DIRECTORY=not a redirect",
 	}
 	var redirected []string
-	for _, name := range Redirects() {
+	for _, name := range redirectNames {
 		redirected = append(redirected, name+"=/elsewhere")
 	}
 	environ := slices.Concat(redirected[:1], kept, redirected[1:], []string{"GIT_TEMPLATE_DIR=/templates"})
@@ -42,6 +53,13 @@ func TestWithoutRedirectsDropsOnlyRedirectsAndTheCallersNames(t *testing.T) {
 			assert.Equal(t, c.want, WithoutRedirects(environ, c.also...))
 		})
 	}
+}
+
+// TestRedirectsNamesEachRedirectOnce checks that Redirects returns exactly
+// the documented redirects, so tests that point each of them elsewhere cover
+// all of them.
+func TestRedirectsNamesEachRedirectOnce(t *testing.T) {
+	assert.ElementsMatch(t, redirectNames, Redirects())
 }
 
 // TestRedirectsReturnsACopy checks that a caller changing the returned list

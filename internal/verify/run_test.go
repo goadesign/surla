@@ -180,30 +180,16 @@ func TestCheckoutRecordsTheExactCommitInEitherObjectFormat(t *testing.T) {
 
 // TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits runs
 // a verification in a process whose environment points git at another
-// repository, work tree and index, as git does for the commands its hooks run.
-// The checkout must clone the plan's repository at its commit (Run then stops
-// at the plan's absent module, after the checkout) and leave every file of the
-// other repository as it was.
+// repository, work tree, index and reference store (pointGitAt). The checkout
+// must clone the plan's repository at its commit, with its file in the work
+// tree (Run then stops at the plan's absent module, after the checkout), and
+// leave every file of the other repository as it was.
 func TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits(t *testing.T) {
-	repo, decoy := t.TempDir(), t.TempDir()
+	repo, decoy, workDir := t.TempDir(), t.TempDir(), t.TempDir()
 	head := commitOneFile(t, repo)
 	commitOneFile(t, decoy)
-	files := func() map[string]string {
-		got := map[string]string{}
-		require.NoError(t, filepath.WalkDir(decoy, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			raw, err := os.ReadFile(path)
-			got[path] = string(raw)
-			return err
-		}))
-		return got
-	}
-	before := files()
-	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
-	t.Setenv("GIT_WORK_TREE", decoy)
-	t.Setenv("GIT_INDEX_FILE", filepath.Join(decoy, ".git", "index"))
+	before := filesUnder(t, decoy)
+	pointGitAt(t, decoy)
 
 	_, err := Run(t.Context(), Plan{
 		CandidateRepo:   repo,
@@ -212,14 +198,55 @@ func TestRunChecksOutOnlyThePlansRepositoryWhateverGitEnvironmentItInherits(t *t
 		Binaries:        map[string]string{"orders": "./cmd/orders"},
 		SuiteCommit:     head,
 		SuiteCommand:    "./cmd/suite",
-		WorkDir:         t.TempDir(),
+		WorkDir:         workDir,
 		Tests:           TestsEvaluator,
 	})
 	var stage *StageError
 	require.ErrorAs(t, err, &stage)
 	assert.Equal(t, "The candidate commit does not contain the configured module.", stage.Summary,
 		"the checkout itself succeeded: %v", err)
-	assert.Equal(t, before, files(), "the inherited repository is untouched")
+	checkedOut, err := os.ReadFile(filepath.Join(workDir, "candidate", "f"))
+	require.NoError(t, err, "the checkout holds the plan's file")
+	assert.Equal(t, repo, string(checkedOut), "the checkout holds the plan repository's content")
+	assert.Equal(t, before, filesUnder(t, decoy), "the inherited repository is untouched")
+}
+
+// TestPrepareBuildFetchesModulesWhateverGitEnvironmentItInherits downloads, as
+// a verification does before its sandboxed build, the modules of a module
+// whose dependency is fetched straight from version control (GOPROXY=direct;
+// the user's own url.<base>.insteadOf maps it onto a local repository), in a
+// process whose git environment points at another repository (pointGitAt).
+// Go runs git for that fetch, so the download must succeed and leave every
+// file of the other repository as it was.
+func TestPrepareBuildFetchesModulesWhateverGitEnvironmentItInherits(t *testing.T) {
+	dep, decoy, moduleDir := t.TempDir(), t.TempDir(), t.TempDir()
+	git(t, dep, "init", "--quiet")
+	require.NoError(t, os.WriteFile(filepath.Join(dep, "go.mod"), []byte("module example.invalid/dep.git\n\ngo 1.21\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dep, "dep.go"), []byte("package dep\n"), 0o600))
+	git(t, dep, "add", ".")
+	git(t, dep, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "dep")
+	git(t, dep, "tag", "v1.0.0")
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "go.mod"),
+		[]byte("module example.invalid/main\n\ngo 1.21\n\nrequire example.invalid/dep.git v1.0.0\n"), 0o600))
+	commitOneFile(t, decoy)
+	before := filesUnder(t, decoy)
+	modCache := filepath.Join(t.TempDir(), "modcache")
+	t.Setenv("GOPROXY", "direct")
+	t.Setenv("GOSUMDB", "off")
+	t.Setenv("GOTOOLCHAIN", "local")
+	// -modcacherw lets the test's folder cleanup remove the module cache.
+	t.Setenv("GOFLAGS", "-mod=mod -modcacherw")
+	t.Setenv("GOMODCACHE", modCache)
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "url.file://"+dep+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", "https://example.invalid/dep")
+	pointGitAt(t, decoy)
+
+	r := &runner{evidenceDir: t.TempDir()}
+	toolchain, err := r.prepareBuild(t.Context(), "candidate", moduleDir, t.TempDir())
+	require.NoError(t, err, "the dependency is fetched with the user's Git settings")
+	assert.Equal(t, modCache, toolchain.modCache)
+	assert.Equal(t, before, filesUnder(t, decoy), "the inherited repository is untouched")
 }
 
 // TestRunClonesARemoteRepositoryThroughTheUsersGitSettings runs a
@@ -235,6 +262,9 @@ func TestRunClonesARemoteRepositoryThroughTheUsersGitSettings(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "url.file://"+repo+".insteadOf")
 	t.Setenv("GIT_CONFIG_VALUE_0", remote)
+	// The file:// stand-in must not depend on the developer's own protocol
+	// settings (protocol.file.allow, GIT_PROTOCOL_FROM_USER).
+	t.Setenv("GIT_ALLOW_PROTOCOL", "file")
 
 	_, err := Run(t.Context(), Plan{
 		CandidateRepo:   remote,
@@ -333,10 +363,36 @@ func git(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-// commitOneFile makes dir a git repository with one commit of one file and
-// returns the commit's ID. It runs git with the test process's environment,
-// so callers make their repositories before pointing that environment
-// elsewhere.
+// pointGitAt points the test process's git environment at the repository in
+// decoy, as git does for the commands its hooks run and as a user can by hand:
+// its repository, work tree, index and reference store.
+func pointGitAt(t *testing.T, decoy string) {
+	t.Helper()
+	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
+	t.Setenv("GIT_WORK_TREE", decoy)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(decoy, ".git", "index"))
+	t.Setenv("GIT_REFERENCE_BACKEND", "files://"+filepath.Join(decoy, ".git"))
+}
+
+// filesUnder returns the content of every file under dir, by path.
+func filesUnder(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	require.NoError(t, filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		files[path] = string(raw)
+		return err
+	}))
+	return files
+}
+
+// commitOneFile makes dir a git repository with one commit of one file, whose
+// content is dir itself, and returns the commit's ID. It runs git with the
+// test process's environment, so callers make their repositories before
+// pointing that environment elsewhere.
 func commitOneFile(t *testing.T, dir string) string {
 	t.Helper()
 	git(t, dir, "init", "--quiet")
