@@ -470,6 +470,9 @@ export function bootstrapViewsPage() {
   // in this closure: never in browser storage or a cookie, so a reload or a
   // closed tab ends it.
   let session: string | null = null;
+  // projectName is the physical folder's base name from the authenticated
+  // exchange, fixed for this page session and never derived from a team ID.
+  let projectName: string | null = null;
   let sessionState: SessionState = "starting";
   let signedOutReason: SignedOutReason = "no-link";
   let signedOutMessage = "";
@@ -757,6 +760,7 @@ export function bootstrapViewsPage() {
       return;
     }
     session = outcome.result.session;
+    projectName = outcome.result.project_name;
     sessionState = "active";
     rootEl.dataset.session = "active";
     activeResult = { kind: "changes" };
@@ -1935,9 +1939,52 @@ export function bootstrapViewsPage() {
     });
   }
 
-  // syncNoticeRegion keeps the session notice and role attention visible on
+  // projectTitle owns the tab's next-step contract using only page facts.
+  // Recovery outranks retained observations; saved run history does not prove
+  // that the current change can be built or approved.
+  function projectTitle(): string {
+    if (projectName === null) return "Surla";
+    let step: string;
+    if (sessionState !== "active") {
+      step = "Reopen project";
+    } else if (waitTroubleShown) {
+      step = "Reconnecting";
+    } else if (listError !== null) {
+      step = "Retry reading changes";
+    } else if (teamReadError !== null) {
+      step = "Refresh Team";
+    } else if (lastOpenAttempt !== null && cardLoadErrors.has(lastOpenAttempt)) {
+      step = "Retry opening change";
+    } else {
+      const attention = ["guide", "builder", "test_writer"].map((role) =>
+        teamSnapshot?.roles.find((item) => item.role === role && item.state === "needs_you")
+      ).find((role) => role !== undefined);
+      if (attention !== undefined) {
+        step = teamAttentionText(attention);
+      } else if (activeEditor !== null) {
+        const ed = activeEditor;
+        if (ed.incomingCard !== null || ed.card.proposed_revision !== undefined) {
+          step = "Review proposed change";
+        } else if (ed.card.status === "needs_confirmation") {
+          step = "Confirm change";
+        } else if (isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)) {
+          step = "Refine change";
+        } else {
+          step = "Review change";
+        }
+      } else if (changeList === null) {
+        step = "Opening project";
+      } else {
+        step = changeList.changes.length === 0 ? "Ask guide to propose a change" : "Open a change";
+      }
+    }
+    return step + ": " + projectName;
+  }
+
+  // syncNoticeRegion keeps the tab title, session notice and role attention visible on
   // every view. Announcements are emitted only by the event/read handlers.
   function syncNoticeRegion() {
+    document.title = projectTitle();
     flushSync(() => {
       noticeRoot.render(
         <>

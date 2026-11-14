@@ -85,6 +85,9 @@ type ExchangeBrowserLinkPayload struct {
 type ExchangeBrowserLinkResult struct {
 	// User session kept only in the page's memory.
 	Session string
+	// Base name of the physical project folder, without its path, for this page
+	// session.
+	ProjectName string
 }
 
 // ProjectIdentity is the result type of the project service identity method.
