@@ -649,8 +649,11 @@ func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
 			trustedSuiteCall(t, ctx, j.builder, "get_verification", args))
 		require.NoError(t, err)
 	}
+	if stopped, ended := run.State.AsNotCompleted(); ended {
+		t.Fatalf("the run ended without a report: %s at stage %s: %s", stopped.Kind, stopped.Stage, stopped.Summary)
+	}
 	completed, ok := run.State.AsCompleted()
-	require.True(t, ok, "the run ends with a report: %+v", run.State)
+	require.True(t, ok, "the run ends with a report: %s", run.State.Kind())
 	require.True(t, completed.Report.Passed,
 		"the builder's commit passes the accepted tests: %+v", completed.Report)
 	scenarios := make([]string, 0, len(completed.Report.Scenarios))
