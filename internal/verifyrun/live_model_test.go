@@ -25,9 +25,15 @@ import (
 )
 
 type (
+	// testLiveCounter supplies a native counter independently of completions.
+	testLiveCounter struct {
+		*testLiveProvider
+		err error
+	}
 	// testLiveProvider supplies deterministic provider outcomes to the wrapper.
 	testLiveProvider struct {
 		completeErr error
+		mode        string
 		streamErr   error
 		stream      model.Streamer
 	}
@@ -40,11 +46,26 @@ type (
 
 // Complete returns successful canonical output or the requested failure.
 func (p *testLiveProvider) Complete(context.Context, *model.Request) (*model.Response, error) {
+	if strings.Contains(p.mode, "panic") {
+		panic("sentinel-gateway-key")
+	}
+	if p.mode == "gateway-serve-ends" {
+		go runLiveModel(grpc.NewServer(), stoppedLiveListener{})
+	}
 	return &model.Response{}, p.completeErr
 }
 
 // Stream returns the requested raw stream, including typed-nil error cases.
-func (p *testLiveProvider) Stream(context.Context, *model.Request) (model.Streamer, error) {
+func (p *testLiveProvider) Stream(ctx context.Context, _ *model.Request) (model.Streamer, error) {
+	if p.mode == "gateway-stream-panic" {
+		go func() { panic("sentinel-gateway-key") }()
+	}
+	if p.mode == "gateway-hold" {
+		if err := os.WriteFile(filepath.Join(os.TempDir(), "gateway-call"), []byte("stream started"), 0o600); err != nil {
+			return nil, err
+		}
+		return heldLiveStream{ctx: ctx}, nil
+	}
 	return p.stream, p.streamErr
 }
 
@@ -72,7 +93,10 @@ func fakeLiveProvider(name, _ string, settings []modelsettings.Settings) (model.
 	if name == "" {
 		return nil, errors.New("provider missing")
 	}
-	return &testLiveProvider{stream: testLiveStream{err: io.EOF}}, nil
+	if os.Getenv(liveFakeEnv) == "gateway-constructor-fails" {
+		return nil, errors.New("sentinel-gateway-key")
+	}
+	return &testLiveProvider{stream: testLiveStream{err: io.EOF}, mode: os.Getenv(liveFakeEnv)}, nil
 }
 
 // TestLiveSettingsInput rejects incomplete, unknown, duplicate and invalid
@@ -198,20 +222,8 @@ func TestLiveModelFailureCrossesTheRealGateway(t *testing.T) {
 		completeErr: model.NewProviderError("anthropic", "complete", 400,
 			model.ProviderErrorKindInvalidRequest, "invalid", secret, "rid-1", false, errors.New(secret)),
 	}}
-	server, err := gateway.NewServer(gateway.WithProvider(provider))
-	require.NoError(t, err)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	rpc := grpc.NewServer()
-	gateway.RegisterGRPCServer(rpc, server)
-	go func() { rpc.Serve(listener) }()
-	t.Cleanup(rpc.Stop)
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
-	client, err := gateway.NewGRPCClient(conn)
-	require.NoError(t, err)
-	_, err = client.Complete(t.Context(), &model.Request{})
+	client := startLiveTestGateway(t, provider)
+	_, err := client.Complete(t.Context(), &model.Request{})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), secret)
 	var got *model.ProviderError
@@ -244,4 +256,109 @@ func TestWrittenLivePreparationMessagesUseStructuredStages(t *testing.T) {
 		assert.NotContains(t, message, "suite.Command")
 		assert.NotContains(t, message, "verification configuration")
 	}
+}
+
+// TestLiveStreamCreationPreservesRejectedOutput covers a provider that returns
+// both its partial stream and a rejection. Closing the partial stream must not
+// turn that rejection into a generic provider failure, even when cleanup fails.
+func TestLiveStreamCreationPreservesRejectedOutput(t *testing.T) {
+	usage := model.TokenUsage{InputTokens: 7, OutputTokens: 2}
+	rejected, err := model.RestoreOutputValidationError(model.OutputValidationToolArguments,
+		errors.New("unsafe-key-sentinel"), model.ResponseEvidence{}, &usage)
+	require.NoError(t, err)
+	rejected, err = model.RestoreCorrectableOutputValidationError(rejected, "Return tool arguments matching the schema.")
+	require.NoError(t, err)
+	for _, closeErr := range []error{nil, errors.New("unsafe-close-key-sentinel")} {
+		name := "close succeeds"
+		if closeErr != nil {
+			name = "close fails"
+		}
+		t.Run(name, func(t *testing.T) {
+			provider := &liveProvider{name: "anthropic", inner: &testLiveProvider{
+				stream: testLiveStream{closeErr: closeErr}, streamErr: rejected,
+			}}
+			stream, err := provider.Stream(t.Context(), &model.Request{})
+			assert.Nil(t, stream)
+			assertLiveOutputRejection(t, err, rejected)
+
+			client := startLiveTestGateway(t, provider)
+			remote, err := client.Stream(t.Context(), &model.Request{})
+			if err == nil {
+				_, err = remote.Recv()
+				assert.NoError(t, remote.Close())
+			}
+			assertLiveOutputRejection(t, err, rejected)
+		})
+	}
+	t.Run("canceled cleanup", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		provider := &liveProvider{name: "anthropic", inner: &testLiveProvider{
+			stream: testLiveStream{}, streamErr: rejected,
+		}}
+		stream, err := provider.Stream(ctx, &model.Request{})
+		assert.Nil(t, stream)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Equal(t, &usage, model.UsageFromError(err))
+	})
+}
+
+// assertLiveOutputRejection verifies classification and bounded correction
+// survive without retaining the original unsafe error or cleanup cause.
+func assertLiveOutputRejection(t *testing.T, err error, original *model.OutputValidationError) {
+	t.Helper()
+	var rejected *model.OutputValidationError
+	require.ErrorAs(t, err, &rejected)
+	assert.Equal(t, original.Kind(), rejected.Kind())
+	assert.Equal(t, original.Evidence(), rejected.Evidence())
+	assert.Equal(t, original.Usage(), rejected.Usage())
+	assert.Equal(t, original.RecoveryCorrection(), rejected.RecoveryCorrection())
+	for cause := err; cause != nil; cause = errors.Unwrap(cause) {
+		assert.NotContains(t, cause.Error(), "sentinel")
+	}
+}
+
+// startLiveTestGateway reaches the production error wrapper through the real
+// generated gRPC consumer and stops its server without a graceful stream wait.
+func startLiveTestGateway(t *testing.T, provider model.Provider) model.Client {
+	t.Helper()
+	server, err := gateway.NewServer(gateway.WithProvider(provider))
+	require.NoError(t, err)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	rpc := grpc.NewServer()
+	gateway.RegisterGRPCServer(rpc, server)
+	go func() { rpc.Serve(listener) }()
+	t.Cleanup(rpc.Stop)
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
+	client, err := gateway.NewGRPCClient(conn)
+	require.NoError(t, err)
+	return client
+}
+
+// CountTokens supplies a successful count or the configured provider failure.
+func (c *testLiveCounter) CountTokens(context.Context, *model.Request) (model.TokenCount, error) {
+	return model.TokenCount{Model: "fixture", InputTokens: 3, Exact: true}, c.err
+}
+
+// TestLiveNativeCounterUsesTheSameProtectedBoundary guards the counting path
+// that bypasses gateway completion middleware, for both success and failure.
+func TestLiveNativeCounterUsesTheSameProtectedBoundary(t *testing.T) {
+	counter := &testLiveCounter{testLiveProvider: &testLiveProvider{}}
+	client := startLiveTestGateway(t, &liveProvider{inner: counter, name: "anthropic"})
+	count, err := client.CountTokens(t.Context(), &model.Request{})
+	require.NoError(t, err)
+	assert.Equal(t, 3, count.InputTokens)
+	assert.True(t, count.Exact)
+	counter.err = model.NewProviderError("anthropic", "count", 400,
+		model.ProviderErrorKindInvalidRequest, "invalid", "key-sentinel", "count-request", false, errors.New("key-sentinel"))
+	_, err = client.CountTokens(t.Context(), &model.Request{})
+	require.Error(t, err)
+	var provider *model.ProviderError
+	require.ErrorAs(t, err, &provider)
+	assert.Equal(t, 400, provider.HTTPStatus())
+	assert.Equal(t, "count-request", provider.RequestID())
+	assert.NotContains(t, err.Error(), "key-sentinel")
 }

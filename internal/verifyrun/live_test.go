@@ -84,7 +84,11 @@ func fakePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
 	if err != nil {
 		return verify.Prepared{}, err
 	}
-	return verify.Prepared{SuiteBin: self, ArtifactFlags: []string{"--artifact", "app=/nonexistent"}}, nil
+	flags := []string{"--artifact", "app=/nonexistent"}
+	if mode := os.Getenv(liveFakeEnv); strings.HasPrefix(mode, "gateway-") {
+		flags = append(flags, "--gateway-test="+mode)
+	}
+	return verify.Prepared{SuiteBin: self, ArtifactFlags: flags}, nil
 }
 
 // fakeSuiteLive acts as `<suite> --live`: it writes the environment it was
@@ -123,6 +127,14 @@ func fakeSuiteLive() int {
 		return 2
 	}
 	mode := os.Getenv(liveFakeEnv)
+	for _, argument := range os.Args {
+		if value, ok := strings.CutPrefix(argument, "--gateway-test="); ok {
+			mode = value
+		}
+	}
+	if mode == "gateway-before-panic" {
+		return callFakeLiveModel(mode)
+	}
 	switch mode {
 	case "leak":
 		for _, kv := range os.Environ() {
@@ -162,7 +174,12 @@ func fakeSuiteLive() int {
 	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"url": "http://127.0.0.1:4100"}); err != nil {
 		return 2
 	}
-	if mode == "target-ends" {
+	if strings.HasPrefix(mode, "gateway-") && mode != "gateway-ready" && mode != "gateway-ends" {
+		if result := callFakeLiveModel(mode); result != 0 {
+			return result
+		}
+	}
+	if mode == "target-ends" || mode == "gateway-ends" {
 		time.Sleep(time.Second)
 		return 2
 	}
@@ -178,7 +195,19 @@ func liveHost(root string) int {
 	if err != nil {
 		return 2
 	}
-	p, err := startLive(context.Background(), root, evaluatorPlan, "secret-key", []string{self}, os.Environ())
+	plan := evaluatorPlan
+	env := os.Environ()
+	var settings []modelsettings.Settings
+	if strings.HasPrefix(os.Getenv(liveFakeEnv), "gateway-") {
+		plan.Tests = verify.TestsWritten
+		env = append(env, verify.LiveModelProviderEnv+"=anthropic", verify.LiveModelNameEnv+"=fixture")
+		held, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "sentinel-gateway-key"})
+		if err != nil {
+			return 2
+		}
+		settings = append(settings, held)
+	}
+	p, err := startLiveWith(context.Background(), root, plan, "secret-key", []string{self}, env, settings...)
 	if err != nil {
 		fmt.Println("start-error", err)
 		return 2
@@ -529,6 +558,7 @@ func TestLiveTargetDiesWithItsHostAtEveryStage(t *testing.T) {
 		{mode: "prepare-hangs"},
 		{mode: "suite-hangs"},
 		{mode: "ready", ready: true},
+		{mode: "gateway-ready", ready: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.mode, func(t *testing.T) {
@@ -555,8 +585,15 @@ func TestLiveTargetDiesWithItsHostAtEveryStage(t *testing.T) {
 			}
 			dir := onlyLiveDir(t, root)
 			pgid, pids := recordedPIDs(t, dir, 2)
+			address := ""
+			if tc.mode == "gateway-ready" {
+				address = gatewayAddress(t, dir)
+			}
 			require.NoError(t, host.Process.Signal(syscall.SIGKILL))
 			requireGroupGone(t, pgid)
+			if address != "" {
+				assertGatewayPortClosed(t, address)
+			}
 			for _, pid := range pids {
 				assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH, "process %d outlived its host", pid)
 			}

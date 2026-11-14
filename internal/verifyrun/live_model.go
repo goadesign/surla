@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strings"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/features/model/gateway"
 	"goa.design/goa-ai/runtime/agent/model"
 	"google.golang.org/grpc"
@@ -104,15 +106,7 @@ func serveLiveModel(provider model.Provider, name string) (string, error) {
 	}
 	rpc := grpc.NewServer()
 	gateway.RegisterGRPCServer(rpc, server)
-	go func() {
-		// The group ends even if Serve returns nil: without its gateway the
-		// accepted target cannot continue using the model it was started with.
-		if err := rpc.Serve(listener); err != nil {
-			endGroup()
-			return
-		}
-		endGroup()
-	}()
+	go runLiveModel(rpc, listener)
 	return listener.Addr().String(), nil
 }
 
@@ -130,7 +124,17 @@ func (p *liveProvider) Stream(ctx context.Context, req *model.Request) (model.St
 	stream, err := p.inner.Stream(ctx, req)
 	if err != nil {
 		if !nilLiveStream(stream) {
-			err = errors.Join(err, stream.Close())
+			closeErr := stream.Close()
+			if ctx.Err() != nil {
+				err = errors.Join(err, closeErr, ctx.Err())
+			} else if closeErr != nil {
+				if liveOutputRejection(err) != nil {
+					trace.SpanFromContext(ctx).AddEvent("model.stream_cleanup_failed",
+						trace.WithAttributes(attribute.String("exception.message", liveModelError(p.name, closeErr).Error())))
+				} else {
+					err = errors.Join(err, closeErr)
+				}
+			}
 		}
 		return nil, liveModelError(p.name, err)
 	}
@@ -257,18 +261,39 @@ func nilLiveStream(stream model.Streamer) bool {
 	}
 }
 
-// liveOutputRejection follows one cause chain, never promoting one branch of
-// a joined provider/cleanup failure into an exact rejected-output result.
+// liveOutputRejection recognizes the gateway's exact rejection contract: all
+// joined leaves must resolve to the same rejection. A provider or cleanup
+// failure alongside it cannot become a rejected-output result.
 func liveOutputRejection(err error) *model.OutputValidationError {
-	for err != nil {
-		if rejected, ok := err.(*model.OutputValidationError); ok {
-			return rejected
+	if err == nil {
+		return nil
+	}
+	if rejected, ok := err.(*model.OutputValidationError); ok {
+		return rejected
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expected *model.OutputValidationError
+		for _, child := range joined.Unwrap() {
+			actual := liveOutputRejection(child)
+			if actual == nil || (expected != nil && expected != actual) {
+				return nil
+			}
+			expected = actual
 		}
-		wrapped, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return nil
-		}
-		err = wrapped.Unwrap()
+		return expected
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return liveOutputRejection(wrapped.Unwrap())
 	}
 	return nil
+}
+
+// runLiveModel ends the executor's whole group whenever the gateway stops
+// serving. The reason changes no cleanup action and never reaches the service.
+func runLiveModel(rpc *grpc.Server, listener net.Listener) {
+	if err := rpc.Serve(listener); err != nil {
+		endGroup()
+		return
+	}
+	endGroup()
 }

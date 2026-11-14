@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +39,8 @@ func TestLiveProviderConstructorsUseHeldSettingsWithoutSDKSpans(t *testing.T) {
 			previous := otel.GetTracerProvider()
 			otel.SetTracerProvider(tracer)
 			t.Cleanup(func() { otel.SetTracerProvider(previous); assert.NoError(t, tracer.Shutdown(context.Background())) })
-			var refuse atomic.Bool
+			var refuse atomic.Int32
+			var breakStream atomic.Bool
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
@@ -55,9 +57,9 @@ func TestLiveProviderConstructorsUseHeldSettingsWithoutSDKSpans(t *testing.T) {
 				}
 				w.Header().Set("request-id", "request-123")
 				w.Header().Set("x-request-id", "request-123")
-				if refuse.Load() {
+				if status := refuse.Load(); status != 0 {
 					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusBadRequest)
+					w.WriteHeader(int(status))
 					io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","code":"invalid","message":"key-sentinel token-sentinel header-sentinel pw-sentinel path-sentinel"}}`)
 					return
 				}
@@ -67,7 +69,11 @@ func TestLiveProviderConstructorsUseHeldSettingsWithoutSDKSpans(t *testing.T) {
 				assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 				if body.Stream {
 					w.Header().Set("Content-Type", "text/event-stream")
-					io.WriteString(w, liveSDKStream(family.Name))
+					if breakStream.Load() {
+						io.WriteString(w, liveSDKBrokenStream(family.Name))
+					} else {
+						io.WriteString(w, liveSDKStream(family.Name))
+					}
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
@@ -106,7 +112,7 @@ func TestLiveProviderConstructorsUseHeldSettingsWithoutSDKSpans(t *testing.T) {
 			}
 			require.NotNil(t, stream.Response())
 			assert.NoError(t, stream.Close())
-			refuse.Store(true)
+			refuse.Store(http.StatusBadRequest)
 			_, err = provider.Complete(t.Context(), request)
 			var providerErr *model.ProviderError
 			require.ErrorAs(t, err, &providerErr)
@@ -117,6 +123,29 @@ func TestLiveProviderConstructorsUseHeldSettingsWithoutSDKSpans(t *testing.T) {
 				_, err = counter.CountTokens(t.Context(), request)
 				assert.Error(t, err)
 			}
+			refuse.Store(0)
+			breakStream.Store(true)
+			stream, err = provider.Stream(t.Context(), request)
+			require.NoError(t, err)
+			chunks := 0
+			for {
+				_, err = stream.Recv()
+				if err != nil {
+					break
+				}
+				chunks++
+			}
+			assert.Greater(t, chunks, 0, "the provider fails after delivering a chunk")
+			assert.NotEqual(t, io.EOF, err)
+			stream.Close()
+			refuse.Store(http.StatusTooManyRequests)
+			_, err = provider.Complete(t.Context(), request)
+			assert.ErrorIs(t, err, model.ErrRateLimited)
+			server.Close()
+			closedContext, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			_, err = provider.Complete(closedContext, request)
+			assert.Error(t, err, "the local provider port is closed")
 			assert.GreaterOrEqual(t, calls.Load(), int32(3))
 			assert.Empty(t, recorder.Ended(), "provider SDKs must create no spans carrying request settings")
 		})
@@ -148,4 +177,15 @@ func liveSDKStream(family string) string {
 		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}`,
 		``, `event: message_stop`, `data: {"type":"message_stop"}`, ``, ``,
 	}, "\n")
+}
+
+// liveSDKBrokenStream reports an API error after one visible response chunk,
+// exercising the SDK decoder's asynchronous failure path for both families.
+func liveSDKBrokenStream(family string) string {
+	if family == "openai" {
+		return "data: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"answer\",\"logprobs\":[]}\n\n" +
+			"data: {\"type\":\"error\",\"sequence_number\":2,\"code\":\"server_error\",\"message\":\"key-sentinel token-sentinel header-sentinel path-sentinel pw-sentinel\"}\n\n"
+	}
+	prefix, _, _ := strings.Cut(liveSDKStream(family), "event: content_block_stop")
+	return prefix + "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"key-sentinel token-sentinel header-sentinel path-sentinel pw-sentinel\"}}\n\n"
 }
