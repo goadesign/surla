@@ -730,6 +730,15 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	if body.RequiredTests == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
 	}
+	if body.Answers == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answers", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
 	if body.Progress != nil {
 		if err2 := ValidateTestWriterProgressTransport(body.Progress); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -745,6 +754,20 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	for _, e := range body.RequiredTests {
 		if e != nil {
 			if err2 := ValidateRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Answers {
+		if e != nil {
+			if err2 := ValidateConfirmedAnswerTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := ValidateExampleItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -1943,6 +1966,20 @@ func ValidateChangeListItemTransport(body *ChangeListItemTransport) (err error) 
 	}
 	if body.SavedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.saved_at", *body.SavedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateConfirmedAnswerTransport runs the validations defined on ConfirmedAnswerTransport.
+func ValidateConfirmedAnswerTransport(body *ConfirmedAnswerTransport) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if body.Answer == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("answer", "body"))
 	}
 	return
 }

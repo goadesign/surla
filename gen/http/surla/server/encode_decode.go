@@ -4795,3 +4795,16 @@ func marshalSurlaRequiredTestToRequiredTestResponseBody(v *surla.RequiredTest) *
 
 	return res
 }
+
+// marshalSurlaConfirmedAnswerToConfirmedAnswerResponseBody builds a value of
+// type *ConfirmedAnswerResponseBody from a value of type
+// *surla.ConfirmedAnswer.
+func marshalSurlaConfirmedAnswerToConfirmedAnswerResponseBody(v *surla.ConfirmedAnswer) *ConfirmedAnswerResponseBody {
+	res := &ConfirmedAnswerResponseBody{
+		ID:       v.ID,
+		Question: v.Question,
+		Answer:   v.Answer,
+	}
+
+	return res
+}

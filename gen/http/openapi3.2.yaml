@@ -174,7 +174,7 @@ paths:
             tags:
                 - surla
             summary: get_test_writer_assignment surla
-            description: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.
+            description: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the user's confirmed answers, confirmation examples and preserved behaviors of that revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change what the build saved. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.
             operationId: surla#get_test_writer_assignment
             parameters:
                 - name: change_id
@@ -195,12 +195,44 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/TestWriterAssignment'
                             example:
+                                answers:
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
+                                    - answer: Ipsum repellendus adipisci.
+                                      id: Autem facilis doloribus quo vero accusantium eos.
+                                      question: Sit eius quasi.
                                 change_id: Odio qui dolore.
                                 design_source: Repellendus excepturi dignissimos vitae.
+                                examples:
+                                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                                      scenario: Facilis sed tempore.
+                                      verification_kind: model_judged
+                                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                                      scenario: Facilis sed tempore.
+                                      verification_kind: model_judged
+                                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                                      scenario: Facilis sed tempore.
+                                      verification_kind: model_judged
                                 findings:
                                     - Et voluptatibus accusamus.
                                     - Sed ipsum assumenda assumenda vero porro.
                                 in_force: false
+                                preserved_behaviors:
+                                    - Occaecati ut molestiae earum nobis cumque.
+                                    - Provident voluptatem sed sint asperiores.
                                 progress:
                                     read: true
                                     report: 7108203204833819401
@@ -3149,7 +3181,7 @@ paths:
             tags:
                 - surla
             summary: start_build surla
-            description: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.
+            description: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design and the agreed revision's confirmed answers, examples and preserved behaviors. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.
             operationId: surla#start_build
             parameters:
                 - name: change_id
@@ -13390,6 +13422,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ProjectIdentity'
                             example:
+                                build: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
                                 directory: Nihil accusamus qui.
                                 owner: Officiis laborum cum quo suscipit ducimus.
                                 project_id: Sunt iure praesentium temporibus aspernatur minus.
@@ -13524,18 +13557,14 @@ paths:
                                 temporary: false
                                 timeout: false
                 "503":
-                    description: 'team_unavailable: A bounded Herdr operation or roster write failed; run surla again.'
+                    description: 'team_unavailable: A bounded Herdr operation, roster write or project state access failed; its cause selects the recovery step.'
                     content:
-                        application/vnd.goa.error:
+                        application/json:
                             schema:
-                                $ref: '#/components/schemas/Error'
+                                $ref: '#/components/schemas/TeamUnavailable'
                             example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: team_unavailable
-                                temporary: false
-                                timeout: false
+                                cause: herdr
+                                name: Aut velit ea sunt placeat possimus.
     /sandbox/draft:
         post:
             tags:
@@ -19900,6 +19929,30 @@ components:
                 - request_revision
                 - answers
                 - examples
+        ConfirmedAnswer:
+            type: object
+            properties:
+                answer:
+                    type: string
+                    description: The option the user confirmed, exactly as confirmed.
+                    example: Ipsum repellendus adipisci.
+                id:
+                    type: string
+                    description: Question identifier on the Change Card.
+                    example: Autem facilis doloribus quo vero accusantium eos.
+                question:
+                    type: string
+                    description: The question as the user answered it.
+                    example: Sit eius quasi.
+            description: One question of the change as agreed at the built revision, with the option the user confirmed for it.
+            example:
+                answer: Ipsum repellendus adipisci.
+                id: Autem facilis doloribus quo vero accusantium eos.
+                question: Sit eius quasi.
+            required:
+                - id
+                - question
+                - answer
         DeclineRevisionPayload:
             type: object
             properties:
@@ -20642,6 +20695,11 @@ components:
         ProjectIdentity:
             type: object
             properties:
+                build:
+                    type: string
+                    description: SHA-256 of the surla executable the server started from, read when it started; it tells any two builds apart, including two local builds of one commit. The CLI attaches only to its own build. Servers built before this field omit it, and surla stop must still reach them, so it is not required.
+                    example: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
+                    pattern: ^[0-9a-f]{64}$
                 directory:
                     type: string
                     description: Physical project folder.
@@ -20655,6 +20713,7 @@ components:
                     description: Stable private project identifier.
                     example: Sunt iure praesentium temporibus aspernatur minus.
             example:
+                build: abc3f3ab0f874118bc769bb01139c34aebe02aa847eaa41a9118f2870d3ec5c9
                 directory: Nihil accusamus qui.
                 owner: Officiis laborum cum quo suscipit ducimus.
                 project_id: Sunt iure praesentium temporibus aspernatur minus.
@@ -25308,6 +25367,29 @@ components:
             required:
                 - name
                 - count
+        TeamUnavailable:
+            type: object
+            properties:
+                cause:
+                    type: string
+                    description: 'What could not be used: stopping (the server is shutting down), herdr (a Herdr command failed), roster_folder (Herdr''s launcher roster folder could not be written), project_state (the project''s private record or an agent credential could not be read or written), or role_folder (a role''s working folder could not be read).'
+                    example: herdr
+                    enum:
+                        - stopping
+                        - herdr
+                        - roster_folder
+                        - project_state
+                        - role_folder
+                name:
+                    type: string
+                    description: Error name.
+                    example: Aut velit ea sunt placeat possimus.
+            example:
+                cause: herdr
+                name: Aut velit ea sunt placeat possimus.
+            required:
+                - name
+                - cause
         TestFindings:
             type: object
             properties:
@@ -25363,6 +25445,24 @@ components:
         TestWriterAssignment:
             type: object
             properties:
+                answers:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ConfirmedAnswer'
+                    description: Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.
+                    example:
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
+                        - answer: Ipsum repellendus adipisci.
+                          id: Autem facilis doloribus quo vero accusantium eos.
+                          question: Sit eius quasi.
                 change_id:
                     type: string
                     description: Change Card the tests are for.
@@ -25371,6 +25471,27 @@ components:
                     type: string
                     description: The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.
                     example: Repellendus excepturi dignissimos vitae.
+                examples:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ExampleItem'
+                    description: The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.
+                    example:
+                        - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                          id: Consequatur voluptatibus soluta sequi reiciendis.
+                          input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                          scenario: Facilis sed tempore.
+                          verification_kind: model_judged
+                        - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                          id: Consequatur voluptatibus soluta sequi reiciendis.
+                          input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                          scenario: Facilis sed tempore.
+                          verification_kind: model_judged
+                        - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                          id: Consequatur voluptatibus soluta sequi reiciendis.
+                          input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                          scenario: Facilis sed tempore.
+                          verification_kind: model_judged
                 findings:
                     type: array
                     items:
@@ -25384,6 +25505,15 @@ components:
                     type: boolean
                     description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.'
                     example: false
+                preserved_behaviors:
+                    type: array
+                    items:
+                        type: string
+                        example: Occaecati ut molestiae earum nobis cumque.
+                    description: The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.
+                    example:
+                        - Occaecati ut molestiae earum nobis cumque.
+                        - Provident voluptatem sed sint asperiores.
                 progress:
                     $ref: '#/components/schemas/TestWriterProgress'
                 request_revision:
@@ -26510,14 +26640,46 @@ components:
                     type: string
                     description: 'Folder to write the tests in: your own working copy of the project.'
                     example: Ut voluptatum vel totam.
-            description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
+            description: 'The test writer''s assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user''s confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla''s check of each report is the judge.'
             example:
+                answers:
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
+                    - answer: Ipsum repellendus adipisci.
+                      id: Autem facilis doloribus quo vero accusantium eos.
+                      question: Sit eius quasi.
                 change_id: Odio qui dolore.
                 design_source: Repellendus excepturi dignissimos vitae.
+                examples:
+                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                      scenario: Facilis sed tempore.
+                      verification_kind: model_judged
+                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                      scenario: Facilis sed tempore.
+                      verification_kind: model_judged
+                    - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
+                      id: Consequatur voluptatibus soluta sequi reiciendis.
+                      input_summary: Voluptate libero voluptatem molestias nesciunt dolore.
+                      scenario: Facilis sed tempore.
+                      verification_kind: model_judged
                 findings:
                     - Et voluptatibus accusamus.
                     - Sed ipsum assumenda assumenda vero porro.
                 in_force: false
+                preserved_behaviors:
+                    - Occaecati ut molestiae earum nobis cumque.
+                    - Provident voluptatem sed sint asperiores.
                 progress:
                     read: true
                     report: 7108203204833819401
@@ -27643,6 +27805,9 @@ components:
                 - design_source
                 - stories
                 - required_tests
+                - answers
+                - examples
+                - preserved_behaviors
         TestWriterAssignmentItem:
             type: object
             properties:

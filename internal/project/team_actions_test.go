@@ -124,6 +124,21 @@ func TestTeamShowPaneOverlayAndOwnership(t *testing.T) {
 	}
 }
 
+// TestShowPaneHerdrFailureNamesRetry gives a failed Show pane the Herdr step without
+// sending the user to start agents that are already running: the step retries the
+// action the user took.
+func TestShowPaneHerdrFailureNamesRetry(t *testing.T) {
+	o, _, _ := newSupervisionFixture(t)
+	host := o.server.team.dependencies.Host.(*teamFixture)
+	o.server.team.dependencies.Host = failingOverlays{host}
+	err := o.server.ShowPane(t.Context(), "builder")
+	var page *goa.ServiceError
+	require.ErrorAs(t, err, &page)
+	assert.Equal(t, "team_unavailable", page.Name)
+	assert.Contains(t, page.Message, "open the Herdr app, then try again")
+	assert.NotContains(t, page.Message, "start the agents")
+}
+
 // TestTeamUserStartReusesPreparation proves the same space, registry, roster
 // and declared management refusals serve the user's action without a new flow.
 func TestTeamUserStartReusesPreparation(t *testing.T) {
@@ -196,7 +211,7 @@ func TestUserTeamErrorBoundary(t *testing.T) {
 		err  error
 	}{
 		{"window_busy", genproject.MakeWindowBusy(errors.New("private peer output"))},
-		{"team_unavailable", genproject.MakeTeamUnavailable(errors.New("private peer output"))},
+		{"team_unavailable", &genproject.TeamUnavailable{Name: "team_unavailable", Cause: "herdr"}},
 		{"team_unavailable", errors.New("private peer output")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -204,6 +219,7 @@ func TestUserTeamErrorBoundary(t *testing.T) {
 			require.ErrorAs(t, userTeamError(tc.err), &failure)
 			assert.Equal(t, tc.name, failure.Name)
 			assert.NotContains(t, failure.Message, "private peer output")
+			assert.NotContains(t, failure.Message, "check Herdr")
 		})
 	}
 }
@@ -216,7 +232,7 @@ func TestTeamUnavailableStepIsBounded(t *testing.T) {
 	otel.SetTracerProvider(provider)
 	t.Cleanup(func() { otel.SetTracerProvider(previous); assert.NoError(t, provider.Shutdown(context.Background())) })
 	ctx, span := otel.Tracer("test").Start(t.Context(), "test")
-	err := teamUnavailable(ctx, "overlays")
+	err := teamUnavailable(ctx, "overlays", "herdr")
 	span.End()
 	assert.Error(t, err)
 	spans := exporter.GetSpans()
@@ -233,5 +249,66 @@ func TestTeamUnavailableStepIsBounded(t *testing.T) {
 		for _, attribute := range event.Attributes {
 			assert.NotContains(t, attribute.Value.AsString(), "/Users/")
 		}
+	}
+}
+
+// failingOverlays stands in for a Herdr window whose status command fails.
+type failingOverlays struct{ *teamFixture }
+
+// Overlays reports a failed Herdr status command.
+func (failingOverlays) Overlays(context.Context) ([]string, error) {
+	return nil, errors.New("fixture Herdr status failed")
+}
+
+// TestTeamFailureNamesItsCause gives each team failure the cause that selects its
+// step, so neither the CLI nor the page reduces every failure to checking Herdr.
+func TestTeamFailureNamesItsCause(t *testing.T) {
+	for _, tc := range []struct {
+		name, cause, page string
+		damage            func(*State, *TeamDependencies)
+	}{
+		{
+			name: "herdr command", cause: "herdr", page: "open the Herdr app",
+			damage: func(_ *State, deps *TeamDependencies) {
+				deps.Host = failingOverlays{&teamFixture{}}
+			},
+		},
+		{
+			name: "roster folder", cause: "roster_folder", page: "data/chorus-launcher/rosters",
+			damage: func(state *State, deps *TeamDependencies) {
+				file := filepath.Join(state.Dir, "not-a-folder")
+				require.NoError(t, os.WriteFile(file, nil, 0o600))
+				deps.RosterDirectory = filepath.Join(file, "rosters")
+			},
+		},
+		{
+			name: "agent credential", cause: "project_state", page: "run surla in the project folder",
+			damage: func(state *State, _ *TeamDependencies) {
+				for handle := range state.Record.Agents {
+					require.NoError(t, os.Chmod(state.AgentFile(handle), 0o644))
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := testState(t)
+			deps := fixtureTeamDependencies(state)
+			server, err := NewServer(state, func() {}, deps)
+			require.NoError(t, err)
+			_, err = server.EnsureTeam(teamContext(state))
+			require.NoError(t, err, "the first start registers the guide")
+			tc.damage(state, &deps)
+			server, err = NewServer(state, func() {}, deps)
+			require.NoError(t, err)
+			_, err = server.EnsureTeam(teamContext(state))
+			var unavailable *genproject.TeamUnavailable
+			require.ErrorAs(t, err, &unavailable)
+			assert.Equal(t, "team_unavailable", unavailable.Name)
+			assert.Equal(t, tc.cause, unavailable.Cause)
+			var page *goa.ServiceError
+			require.ErrorAs(t, userTeamError(err), &page)
+			assert.Contains(t, page.Message, tc.page)
+			assert.NotContains(t, page.Message, "check Herdr")
+		})
 	}
 }

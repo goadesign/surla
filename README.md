@@ -158,8 +158,9 @@ agent policies, and tool contracts. It reports the design's declarations; it
 does not check that they satisfy the requested behavior.
 
 Choose **Build this change** beside a confirmed change's summary. Starting a
-build saves the agreed Story and design, prepares the roles and
-returns the team's next step. A project with stored verification settings adds
+build saves the agreed Story and design, with the answers, examples and
+preserved behaviors you confirmed, prepares the roles and returns the team's
+next step. A project with stored verification settings adds
 only the builder. A starter project also gets a separate test writer, whose Git
 working copy receives one required test entry per finished Story flow. Draft
 flows stay editable and require no test. A busy or unavailable window leaves

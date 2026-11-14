@@ -71,6 +71,20 @@ type (
 	}
 )
 
+// freePortAttempts bounds how many free ports Initialize asks the kernel for while each
+// offer is a port another project saved. The kernel offers ports across its ephemeral
+// range, so even many saved ports rarely take a second try; the bound only ends the loop.
+const freePortAttempts = 20
+
+var (
+	// errNotPrivateFolder refuses a state folder that is a link, can be opened by another
+	// account, or belongs to another account; stateFolderError names its repair.
+	errNotPrivateFolder = errors.New("project state directory must be private and owned by this account")
+	// errNotPrivateFile refuses a state file that is a link, can be read by another account,
+	// or belongs to another account; stateFileError names its repair.
+	errNotPrivateFile = errors.New("project state file must be private and owned by this account")
+)
+
 // Discover finds the nearest existing physical project record, or prepares a new project folder.
 // It never considers the Git root. Call Initialize only after StartLock.
 func Discover(root, directory string) (*State, error) {
@@ -84,12 +98,12 @@ func Discover(root, directory string) (*State, error) {
 		err := readJSON(filepath.Join(dir, "project.json"), &record)
 		if err == nil {
 			if err := validateRecord(record, candidate); err != nil {
-				return nil, err
+				return nil, stateFileError(dir, candidate, err)
 			}
 			return &State{Dir: dir, Record: record}, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
+			return nil, recordReadError(dir, candidate, err)
 		}
 		if filepath.Dir(candidate) == candidate {
 			break
@@ -162,14 +176,14 @@ func Open(dir string) (*State, error) {
 // StartLock bounds waiting for a concurrent start and keeps start/attach/stop decisions serialized.
 func (s *State) StartLock(ctx context.Context) (*Lock, error) {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("project state folder %s could not be created: %w; make %s a folder this account can write, then run surla again", s.Dir, err, filepath.Dir(s.Dir))
 	}
 	if err := privateDirectory(s.Dir); err != nil {
-		return nil, err
+		return nil, stateFolderError(s.Dir, err)
 	}
 	f, err := os.OpenFile(filepath.Join(s.Dir, "start.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return nil, err
+		return nil, stateFolderError(s.Dir, err)
 	}
 	for {
 		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
@@ -194,37 +208,73 @@ func (l *Lock) Close() error {
 
 // Initialize creates the owner and fixed port once under StartLock.
 func (s *State) Initialize(owner string) (bool, error) {
+	return s.initialize(owner, freeLoopbackPort)
+}
+
+// initialize is Initialize with the source of free ports, which tests replace.
+func (s *State) initialize(owner string, freePort func() (int, error)) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var record Record
 	err := readJSON(filepath.Join(s.Dir, "project.json"), &record)
 	if err == nil {
 		if err := validateRecord(record, s.Record.Directory); err != nil {
-			return false, err
+			return false, stateFileError(s.Dir, s.Record.Directory, err)
 		}
 		s.Record = record
 		return false, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return false, err
+		return false, recordReadError(s.Dir, s.Record.Directory, err)
 	}
 	id, err := randomCredential()
 	if err != nil {
 		return false, err
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	others, err := s.otherProjects()
 	if err != nil {
 		return false, err
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	if err := ln.Close(); err != nil {
-		return false, err
+	saved := make(map[int]bool, len(others))
+	for _, other := range others {
+		saved[other.Record.Port] = true
+	}
+	port := 0
+	for attempt := 0; port == 0; attempt++ {
+		if attempt == freePortAttempts {
+			return false, fmt.Errorf("no free loopback port that another Surla project has not saved was found in %d tries; run surla again", freePortAttempts)
+		}
+		offered, err := freePort()
+		if err != nil {
+			return false, err
+		}
+		if !saved[offered] {
+			port = offered
+		}
 	}
 	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Agents: map[string]agentRecord{}}
 	if err := s.save(); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// ProjectsSharingPort returns the other projects of this account, under the same operator
+// folder, that saved this project's port. Only projects created before new projects
+// avoided saved ports can share one; the CLI names such a project when its server holds
+// the port. A record that cannot be read is skipped, as otherProjects explains.
+func (s *State) ProjectsSharingPort() ([]*State, error) {
+	others, err := s.otherProjects()
+	if err != nil {
+		return nil, err
+	}
+	sharing := make([]*State, 0, len(others))
+	for _, other := range others {
+		if other.Record.Port == s.Record.Port {
+			sharing = append(sharing, other)
+		}
+	}
+	return sharing, nil
 }
 
 // Address is the sole permitted HTTP authority, reused after every server restart.
@@ -294,6 +344,91 @@ func (s *State) RemoveSettings(kind string) error {
 		return nil
 	}
 	return err
+}
+
+// otherProjects reads the saved records of the other projects in this project's operator
+// folder, where Discover places every project of this account. A record that cannot be
+// read is skipped rather than failing this project: its own project cannot start until
+// it is repaired, and Discover reports it, with its path, in that project's folder. An
+// operator folder this account cannot list is reported with that folder's repair.
+func (s *State) otherProjects() ([]*State, error) {
+	root := filepath.Dir(s.Dir)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, stateFolderError(root, err)
+	}
+	others := make([]*State, 0, len(entries))
+	for _, entry := range entries {
+		dir := filepath.Join(root, entry.Name())
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "project-") || dir == s.Dir {
+			continue
+		}
+		var record Record
+		if err := readJSON(filepath.Join(dir, "project.json"), &record); err != nil {
+			continue
+		}
+		others = append(others, &State{Dir: dir, Record: record})
+	}
+	return others, nil
+}
+
+// freeLoopbackPort briefly binds and releases a loopback port the kernel reports free.
+// The answer is a snapshot: another process can take the port before the server binds it.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		return 0, err
+	}
+	return port, nil
+}
+
+// recordReadError explains why the record of the project folder project, kept in its
+// private state folder dir, could not be read. A permission error can come from a folder
+// above the record rather than from the record: when dir, or the operator folder that
+// holds every project's state folder, is closed to this account or belongs to another
+// account, the record's repair cannot be applied (chmod on a file inside a folder this
+// account cannot search fails too), so that folder is named with its own repair. The
+// folder's message does not claim a project exists, since a closed folder hides whether
+// it holds a record.
+func recordReadError(dir, project string, err error) error {
+	if !errors.Is(err, os.ErrPermission) {
+		return stateFileError(dir, project, err)
+	}
+	folderErr := privateDirectory(dir)
+	switch {
+	case folderErr == nil:
+		return stateFileError(dir, project, err)
+	case errors.Is(folderErr, os.ErrPermission):
+		return stateFolderError(filepath.Dir(dir), folderErr)
+	default:
+		return stateFolderError(dir, folderErr)
+	}
+}
+
+// stateFileError names the record of the project folder project, kept in its private
+// state folder dir, and the step that repairs it: a record this account cannot read
+// gets its permissions back, and a damaged one is restored, or its folder set aside so
+// the project folder starts again as a new, empty project. Discovery walks up through
+// parent folders, so project can be a parent of the folder where surla runs; the step
+// names project as the folder to run surla in, since a run in a subfolder would create
+// a new project for that subfolder instead.
+func stateFileError(dir, project string, err error) error {
+	path := filepath.Join(dir, "project.json")
+	if errors.Is(err, errNotPrivateFile) || errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.ELOOP) {
+		return fmt.Errorf("the record of the Surla project in %s cannot be read: %s: %w; make it a regular file of this account that only this account can read and write (chmod 600 %s, and chown it to this account if another account owns it), then run surla again", project, path, err, path)
+	}
+	return fmt.Errorf("the record of the Surla project in %s is damaged: %s: %w; restore it from a backup and run surla again, or move the folder %s out of %s and run surla in %s to start that project folder again as a new, empty Surla project", project, path, err, dir, filepath.Dir(dir), project)
+}
+
+// stateFolderError names a private Surla state folder this account cannot use and its
+// repair: either one project's state folder or the operator folder that holds them all,
+// which must both be folders of this account that only this account can open.
+func stateFolderError(dir string, err error) error {
+	return fmt.Errorf("the Surla state folder %s cannot be used: %w; make it a folder of this account that only this account can open (chmod 700 %s, and chown -R it to this account if another account owns it), then run surla again", dir, err, dir)
 }
 
 // projectDirectory derives one private state folder from the canonical folder identity.
@@ -375,7 +510,7 @@ func privateDirectory(path string) error {
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || !info.IsDir() || info.Mode().Perm() != 0o700 || int(st.Uid) != os.Geteuid() {
-		return fmt.Errorf("project state directory must be private and owned by this account")
+		return errNotPrivateFolder
 	}
 	return nil
 }
@@ -393,7 +528,7 @@ func readPrivate(path string) (raw []byte, err error) {
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || int(st.Uid) != os.Geteuid() {
-		return nil, errors.New("project state file must be private and owned by this account")
+		return nil, errNotPrivateFile
 	}
 	return io.ReadAll(f)
 }

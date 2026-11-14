@@ -314,8 +314,9 @@ judges the build again.
   - **Output:** `BuilderAssignmentList` (`assignments`, most recently started first) or one `BuilderAssignment` (`change_id`, `request_revision`, `in_force`, `read`, `written_tests`). `written_tests.state` is `not_used`, `not_yet_accepted`, or `accepted` with its commit and verdict time.
   - The builder works in the control plane's active workspace, which may be the child project made by `init_project`. Reading an assignment marks it read; listing changes nothing. `not_found` means there is no usable build, and names the build-again step.
 - **`list_test_writer_assignments`** (`GET /assignments/test-writer`) and **`get_test_writer_assignment`** (`GET /assignments/test-writer/{change_id}`; test writer only)
-  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `findings`, `working_folder`, `design_source`, `stories` and `required_tests`. `findings` holds the text of Surla's findings when `progress` is `needs_changes`, as many as its `finding_count`, and is empty otherwise; the list carries only their number.
+  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `findings`, `working_folder`, `design_source`, `stories`, `required_tests`, `answers`, `examples` and `preserved_behaviors`. `findings` holds the text of Surla's findings when `progress` is `needs_changes`, as many as its `finding_count`, and is empty otherwise; the list carries only their number.
   - Only builds started with a test writer have its assignment. `working_folder` is the project's folder inside the linked working copy, not necessarily the repository checkout's root. Surla writes the test module's generated code, with the required tests, when the build starts and again at each report, so the test writer never regenerates it: `generate_code` is the builder's, and `surla gen` without the Story would drop the required tests. After changing the test module's design, the test writer reports, and Surla generates the module again. It checks its work with `go build ./...` in `eval/` of `working_folder`, which fails naming any required method not yet written, before `report_tests_finished`. The saved design and Story stay paired with the built revision after later changes.
+  - `answers` pairs each question of the agreed revision with the option the user confirmed (`id`, `question`, `answer`), in question order; `examples` and `preserved_behaviors` are that revision's confirmation examples and preserved behaviors, exactly as confirmed. The build saves them when it starts, so a revision proposed or adopted later does not change them. The test writer may not read the change with `get_change`, so these fields are how its tests learn what the user agreed; its tests must hold the service to them as well as to the Story's flows. For example, when the user answered `without_tax` to "Does the limit include tax?", a test checks that a refund of an order of $50.00 before tax is instant. Surla's check of a report confirms the required tests, not what they assert.
   - `required_tests` holds one entry per finished flow (`story`, `flow_key`, `scenario`, `hook`): flow `refund-over-limit` requires scenario `refund_over_limit` and method `RefundOverLimit`. Unfinished flows require none; the test program must still build when the list is empty. Reading an assignment marks it read; listing changes nothing. No successful full assignment returns an empty working folder.
 - **`report_tests_finished`** (`POST /assignments/test-writer/{change_id}/finished`; test writer only)
   - **Input:** `change_id`, `request_revision` → **Output:** `TestWriterAssignmentItem`.
@@ -510,8 +511,9 @@ Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum
 Run `surla` in a project folder to start or attach to its server and open the
 views page and prepare its guide team in Herdr. Before creating state or starting
 anything, Surla requires `herdr-core`, `herdr-app`, Chorus v0.11.0 or newer, and
-the platform browser opener. Missing programs name their install command; an
-older Chorus names `chorus update -yes`. Install
+the platform browser opener. Missing programs name their install command, and a
+Herdr or Chorus program installed in `~/.local/bin` but missing from PATH names
+that folder to add to PATH; an older Chorus names `chorus update -yes`. Install
 [Herdr core](https://herdr.dev/core/) with
 `curl -fsSL https://releases.herdr.dev/core/install.sh | sh`, the
 [Herdr app](https://herdr.dev/) with
@@ -665,7 +667,7 @@ control characters removed. For example:
 
 ```text
 surla: the project server stopped while starting, and its last lines were:
-  surla: project port is occupied: listen tcp 127.0.0.1:52011: bind: address already in use
+  surla: project port 52011 is occupied: listen tcp 127.0.0.1:52011: bind: address already in use; stop the program listening on it, then run surla
 ```
 
 If the terminal's output cannot be read or holds no printable text, the error

@@ -214,7 +214,7 @@ func (runtime projectRuntime) operatorRoot(initialWorkspaceRoot string, extraDir
 		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", phys, initialWorkspaceRoot)
 	}
 	if err := markOperatorPrivateDir(phys); err != nil {
-		return "", fmt.Errorf("prepare operator storage root %s: %w", phys, err)
+		return "", operatorRootError(phys, err)
 	}
 	evalPhys, err := abspath.Eval(phys)
 	if err != nil {
@@ -228,9 +228,22 @@ func (runtime projectRuntime) operatorRoot(initialWorkspaceRoot string, extraDir
 		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", evalPhys, initialWorkspaceRoot)
 	}
 	if err := validateOperatorPrivateDir(evalPhys); err != nil {
-		return "", err
+		return "", operatorRootError(evalPhys, err)
 	}
 	return evalPhys, nil
+}
+
+// operatorRootError names the operator storage root dir that operatorRoot could not
+// prepare. When dir exists but is not a folder of this account that only this account
+// can open, it also names the step that repairs it; `surla` reads every project's state
+// below dir, so no project can start until then. Other failures (dir could not be
+// created, or its marker written) keep only the cause, since that step would not
+// repair them.
+func operatorRootError(dir string, err error) error {
+	if validErr := validateOperatorPrivateDir(dir); validErr == nil || errors.Is(validErr, os.ErrNotExist) {
+		return fmt.Errorf("prepare operator storage root %s: %w", dir, err)
+	}
+	return fmt.Errorf("prepare operator storage root %s: %w; make it a folder of this account that only this account can open (chmod 700 %s, and chown -R it to this account if another account owns it), then run surla again", dir, err, dir)
 }
 
 // withinAnyDir checks physical containment in the supplied existing roots.

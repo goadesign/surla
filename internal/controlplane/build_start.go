@@ -128,6 +128,8 @@ func (c *ControlPlane) StartBuild(
 		ChangeID: p.ChangeID, RequestRevision: p.RequestRevision, StartedAt: time.Now().UTC(),
 		Roles: buildRolesBuilderOnly, Stories: cloneStorySummaries(record.stories),
 		DesignSource: record.designSource, TestWriter: testWriterAssignment{State: testsAssigned},
+		Answers: confirmedAnswers(record.card), Examples: record.card.Examples,
+		PreservedBehaviors: append([]string{}, record.card.PreservedBehaviors...),
 	}
 	var folders BuildFolders = BuilderOnly{BuilderFolder: workspace}
 	if copy != nil {
@@ -225,6 +227,17 @@ func (c *ControlPlane) saveBuildPreparation(
 		return heldBuild{}, err
 	}
 	return heldBuild{file: current, inForce: buildInForce(current, record), storedEvaluator: c.storedEvaluator()}, nil
+}
+
+// confirmedAnswers pairs each question of the confirmed card with the answer
+// the user confirmed for it, in question order. confirm_intent confirmed the
+// card only with one declared option for every question and no other answer.
+func confirmedAnswers(card *gensurla.ChangeCardResult) []*gensurla.ConfirmedAnswer {
+	answers := make([]*gensurla.ConfirmedAnswer, len(card.Ambiguities))
+	for i, q := range card.Ambiguities {
+		answers[i] = &gensurla.ConfirmedAnswer{ID: q.ID, Question: q.Question, Answer: card.Answers[q.ID]}
+	}
+	return answers
 }
 
 // preparationFailure returns the reason and the user's step saved when a
