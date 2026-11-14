@@ -182,11 +182,11 @@ func writeCheckpointStatus(w io.Writer, opts controlplane.Options) {
 	fmt.Fprintln(w, "surla: CP2 (preview_architecture): on")
 	if (opts.Verification != nil || opts.WrittenTestRuns != nil) && opts.Live != nil {
 		root := controlplane.LiveRoot(opts.CardsDir)
-		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
+		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit for a confirmed change_id (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
 	} else {
 		fmt.Fprintln(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off"+
-			" (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
+			" (use surla verification set, then call start_live_target with the confirmed change_id and a commit; or edit the prompt's source text, commit, and verify the commit)")
 	}
 	switch {
 	case opts.Verification != nil:
@@ -524,9 +524,11 @@ func isSHA256Hex(s string) bool {
 
 // projectServeOptions derives private stores and process helpers from the
 // initialized project and environ, the server's environment after serve
-// removed every provider family from it. Live targets start from environ; the
-// model choice and provider settings come later, from hand_over_model_settings
-// and configure_model. No caller supplies project identity or storage paths.
+// removed every provider family from it. Live executors start from environ;
+// the model choice and provider settings come later, from hand_over_model_settings
+// and configure_model. Written-test programs use the executor's model gateway;
+// only a stored evaluator receives the provider settings. No caller supplies
+// project identity or storage paths.
 func projectServeOptions(state *project.State, environ []string) (controlplane.Options, error) {
 	ws, err := configureProjectWorkspace(state)
 	if err != nil {

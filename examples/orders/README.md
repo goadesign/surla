@@ -179,8 +179,10 @@ One change then goes like this:
 
 Surla changes the refund agent's prompts only in a live target: a copy of
 Orders it builds and runs itself, never an Orders process you started. Once a
-build has added the builder, the builder calls `start_live_target` with a
-commit. The server builds `orders` and `orders-worker` from that commit as
+build has added the builder, the builder calls `start_live_target` with the
+confirmed change's `change_id` and a full candidate commit ID. This walkthrough
+uses the stored Orders evaluator, so no accepted test-writer tests or chosen
+model are needed. The server builds `orders` and `orders-worker` from that commit as
 verification does, and the evaluator suite's `--live` mode starts them with
 simulated commerce and payments, a Temporal dev server, and the evaluator's
 scripted model. `draft_override` then sends new text for
@@ -190,7 +192,9 @@ Surla minted for it, and returns the accepted text's `sha256:` version; the
 [live target prompt contract](../../docs/REFERENCE.md#live-target-prompt-contract).
 A draft with no live target running is refused with `no_live_target`. The
 views page's Live target view shows the running target and the prompts its
-drafts changed.
+drafts changed. If it ends unexpectedly, the view retains its commit, launch
+and observed-end times, and recovery message after confirming process cleanup.
+`draft_override` then refuses with `live_target_ended`; no draft is sent.
 
 Drafts are not verified and end with the live target. To keep a wording, the
 builder edits the agent's `SystemPrompt` in `design/orders.go`, regenerates,

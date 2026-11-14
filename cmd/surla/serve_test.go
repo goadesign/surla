@@ -225,7 +225,7 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with the confirmed change_id and a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (use surla verification set, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
@@ -242,7 +242,7 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 surla: saving Change Cards in /var/lib/surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with the confirmed change_id and a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): on
 `,
@@ -269,7 +269,7 @@ surla: CP5 (approve_merge): on
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit for a confirmed change_id (live targets in ` + liveRoot + `)
 surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept and may hold what its test program printed: remove it once its processes have stopped
 surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
@@ -294,7 +294,7 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit for a confirmed change_id (live targets in ` + liveRoot + `)
 surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept and may hold what its test program printed: remove it once its processes have stopped
 surla: CP4 (verify_change, get_verification, list_verifications): on with the tests accepted for each change's build (runs in /work/ops/runs, reports in /work/ops/reports)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
@@ -319,7 +319,7 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 surla: saving Change Cards in /srv/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, decline_revision, get_change): on
 surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (use surla verification set, then call start_live_target with the confirmed change_id and a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): on with the stored evaluator (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
