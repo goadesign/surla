@@ -48,7 +48,7 @@ func TestViewsPageVerificationTestSource(t *testing.T) {
 			state: gensurla.NewStateRunning(&gensurla.VerificationRunning{
 				StartedAt: "2026-10-31T12:34:56Z",
 			}),
-			heading: "Verification in progress",
+			heading: "The check is running",
 		},
 		{
 			name: "passed",
@@ -62,14 +62,14 @@ func TestViewsPageVerificationTestSource(t *testing.T) {
 					},
 				},
 			}),
-			heading: "Verification passed",
+			heading: "The check passed: 1 of 1 scenarios.",
 		},
 		{
 			name: "not_completed",
 			state: gensurla.NewStateNotCompleted(&gensurla.VerificationNotCompleted{
 				Kind: "execution_failed", Stage: "suite", Summary: "The checks could not finish.",
 			}),
-			heading: "Verification could not finish",
+			heading: "The check could not finish",
 		},
 	}
 	for _, source := range sources {
@@ -89,6 +89,8 @@ func TestViewsPageVerificationTestSource(t *testing.T) {
 					RequestRevision: card.RequestRevision, CandidateCommit: strings.Repeat("1", 40),
 					SuiteCommit: suiteCommit, AcceptedAt: "2026-10-31T12:34:56Z",
 					TestSource: source.source, State: state.state,
+					// These saved source-disclosure fixtures do not claim a current selection.
+					InputsCurrent: false,
 				}
 				svc := newPageVerifications(cp)
 				svc.set(run)
@@ -105,9 +107,10 @@ await until(() => page.$("#surla-cp1-editor").dataset.changeId === input.change,
 page.$("#surla-nav-cp4").click();
 await until(() => page.$("#surla-result-view").dataset.runId === input.run, "the saved run did not open");
 expect(page.text("#surla-cp4-title") === input.heading, "the run's status changed");
+expect(page.text("#surla-cp4-started").startsWith("Check started ") && !page.text("#surla-cp4-started").includes("finished"), "request acceptance was mislabeled as completion");
 const notice = page.$("#surla-cp4-test-source");
 if (input.notice) {
-  expect(notice && notice.textContent === input.notice, "the server's written-test notice is missing or changed");
+  expect(notice && notice.tagName === "P" && !notice.getAttribute("role") && notice.textContent === input.notice, "the server's written-test notice is missing or changed");
   expect(!notice.closest("details") && !notice.hidden, "the source notice is hidden behind a disclosure");
   expect(!page.text("#surla-cp4-details").includes("Evaluator"), "written tests are labeled as the evaluator");
 } else {
@@ -121,6 +124,7 @@ if (input.state === "passed") {
   const suite = fields.find((field) => field.textContent === input.suiteLabel);
   expect(suite && suite.nextElementSibling.textContent === "accepted_checks", "the source suite label or value is wrong");
   expect(page.text("#surla-cp4-verification").includes("holdout-1"), "the anonymous scenario outcome disappeared");
+  expect(!page.$(".surla-verification-counts"), "a passing report repeated the outcome counts");
 } else if (input.state === "not_completed") {
   expect(page.text("#surla-cp4-verification").includes("Stopped during: Running the checks."), "the stopped stage misrepresents the checks");
 }
@@ -144,7 +148,7 @@ const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-empty-proof", "the change did not open");
 page.$("#surla-nav-cp4").click();
 await until(() => page.$("#surla-cp4-empty"), "the empty proof state did not appear");
-expect(page.text("#surla-cp4-empty").includes("The builder starts checks for a confirmed change"), "the empty state does not explain who starts checks");
+expect(page.text("#surla-cp4-empty").includes("Once the tests are accepted, the builder finishes the code and asks Surla to check it"), "the empty state does not explain who starts checks");
 expect(!page.text("#surla-cp4-empty").includes("verify_change"), "the browser user is directed to the builder-only operation");
 page.close();
 `)

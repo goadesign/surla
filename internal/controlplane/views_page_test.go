@@ -109,7 +109,7 @@ await control(origin, "hold", { key: "POST /changes/confirm" });
 page.$("#surla-confirm-submit").click();
 expect(page.$("#surla-confirm-submit").disabled && page.$("#surla-cp1-form-card").getAttribute("aria-busy") === "true", "confirming showed no busy state");
 await control(origin, "release", { key: "POST /changes/confirm" });
-await until(() => page.$("#surla-cp1-editor").textContent.includes("Confirmed Change Decision"), "confirming did not show the confirmed card");
+await until(() => page.$("#surla-cp1-editor").textContent.includes("Agreed: Route refunds to a manager."), "confirming did not show the confirmed card");
 const confirmed = await readCard("chg-first");
 expect(confirmed.status === "confirmed" && confirmed.confirmed_by === input.owner, "the saved change does not record the user as who confirmed: " + confirmed.confirmed_by);
 expect(page.doc.activeElement === page.$("#surla-cp1-editor"), "confirming did not move focus to the result");
@@ -330,6 +330,8 @@ func TestViewsPageApprovesAPassedResult(t *testing.T) {
 		target.update(func(p *pageTarget) { p.report = report })
 		svc := newPageVerifications(cp)
 		run := passedRun(confirmed, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", commit, report.Digest)
+		// The fixture models the owner observing this confirmed revision and selected tests.
+		run.InputsCurrent = true
 		svc.set(run)
 		svc.list(confirmed.ChangeID, run.RunID)
 		ps := startPageServer(t, svc)
@@ -338,7 +340,7 @@ const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-approve", "the change did not open");
 page.$("#surla-nav-cp4").click();
 await until(() => page.$("#surla-cp5-approve"), "a passed result offered no approval control");
-expect(page.text("#surla-result-view").includes("Verification passed") && page.text("#surla-result-view").includes("holdout-1"), "the run's result is not shown");
+expect(page.text("#surla-result-view").includes("The check passed: 2 of 2 scenarios.") && page.text("#surla-result-view").includes("holdout-1"), "the run's result is not shown");
 checkControl(page, page.$("#surla-cp5-approve"), "approve control");
 await control(origin, "hold", { key: "POST /changes/approve" });
 page.$("#surla-cp5-approve").click();
@@ -391,6 +393,8 @@ again.close();
 		writeReportFile(t, reportDir, report)
 		svc := newPageVerifications(cp)
 		run := passedRun(confirmed, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", commit, report.Digest)
+		// The fixture models the owner observing this confirmed revision and selected tests.
+		run.InputsCurrent = true
 		run.TestSource = gensurla.NewTestSourceWrittenTests(&gensurla.AgentWrittenTests{Commit: spec.SuiteCommit, Notice: writtenTestsNotice})
 		svc.set(run)
 		svc.list(confirmed.ChangeID, run.RunID)
@@ -398,8 +402,12 @@ again.close();
 		const nextCommit = "4444444444444444444444444444444444444444"
 		ps.act("accept-new-tests", func() {
 			acceptTests(t, cp, confirmed.ChangeID, nextCommit)
+			// The same saved report now has an owner observation of older tests.
+			stale := *run
+			stale.InputsCurrent = false
+			svc.set(&stale)
 		})
-		runPageScript(t, ps, map[string]any{"suiteCommit": spec.SuiteCommit, "nextCommit": nextCommit}, viewsPageScriptHelpers+`
+		runPageScript(t, ps, map[string]any{"suiteCommit": spec.SuiteCommit}, viewsPageScriptHelpers+`
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-written-approve", "the change did not open");
 page.$("#surla-nav-cp4").click();
@@ -412,10 +420,11 @@ const reads = page.sent("GET", "/changes/chg-written-approve").length;
 await control(origin, "act", { key: "accept-new-tests" });
 await until(() => page.sent("GET", "/changes/chg-written-approve").length > reads && !page.$("#surla-cp5-approval"), "accepting another tests commit did not automatically hide the approval and merge sentence without clicking refresh");
 page.$("#surla-nav-cp4").click();
-await until(() => page.$("#surla-cp5-approve"), "after the approval was hidden, Approve this result was not offered again");
+await until(() => page.$("#surla-cp5-approve") && page.$("#surla-cp5-approve").disabled && page.text("#surla-cp4-inputs").includes("does not match"), "the older tests report did not remain visible with approval disabled");
+const approvals = page.sent("POST", "/changes/approve").length;
 page.$("#surla-cp5-approve").click();
-await until(() => page.$("#surla-cp5-approve-error"), "pressing Approve this result on a report with old tests did not show the refusal");
-expect(page.text("#surla-cp5-approve-error").includes("the report ran the tests at " + input.suiteCommit) && page.text("#surla-cp5-approve-error").includes("are at " + input.nextCommit), "the refusal did not explain that the accepted tests changed: " + page.text("#surla-cp5-approve-error"));
+expect(page.sent("POST", "/changes/approve").length === approvals && !page.$("#surla-cp5-approve-error"), "a saved report with old tests submitted another approval");
+expect(page.text("#surla-cp4-details").includes(input.suiteCommit) && page.text("#surla-cp4-title") === "The check passed: 2 of 2 scenarios.", "the stale observation changed the saved passing report or its tests commit");
 page.close();
 `)
 	})
@@ -433,6 +442,7 @@ page.close();
 		require.NoError(t, err)
 		svc := newPageVerifications(cp)
 		run := passedRun(confirmed, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", commit, strings.Repeat("3", 64))
+		run.InputsCurrent = false // This server has no selected verification inputs.
 		svc.set(run)
 		svc.list(confirmed.ChangeID, run.RunID)
 		ps := startPageServer(t, svc)
@@ -461,6 +471,8 @@ page.close();
 		require.NoError(t, err)
 		svc := newPageVerifications(cp)
 		run := passedRun(confirmed, "dddddddddddddddddddddddddddddddd", commit, strings.Repeat("3", 64))
+		// The fixture models the owner observing this confirmed revision and selected tests.
+		run.InputsCurrent = true
 		svc.set(run)
 		svc.list(confirmed.ChangeID, run.RunID)
 		ps := startPageServer(t, svc)
@@ -492,6 +504,8 @@ page.close();
 		require.NoError(t, err)
 		svc := newPageVerifications(cp)
 		run := passedRun(confirmed, "cccccccccccccccccccccccccccccccc", commit, strings.Repeat("3", 64))
+		// The fixture models the owner observing this confirmed revision and selected tests.
+		run.InputsCurrent = true
 		svc.set(run)
 		svc.list(confirmed.ChangeID, run.RunID)
 		ps := startPageServer(t, svc)
@@ -510,10 +524,13 @@ page.close();
 const page = await openPage(origin, { link: input.link });
 await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-stale", "the change did not open");
 page.$("#surla-nav-cp4").click();
-await until(() => page.$("#surla-cp5-approve"), "no approval control");
-page.setHidden(true);
-await control(origin, "act", { key: "refine" });
+await until(() => page.$("#surla-cp5-approve") && !page.$("#surla-cp5-approve").disabled, "no current approval control");
+// The owner can save a new revision after this page submits a current result.
+await control(origin, "hold", { key: "POST /changes/approve" });
+await control(origin, "reply", { key: "POST /changes/approve", status: 409, body: { name: "conflict", id: "x", message: "request_revision mismatch", temporary: false, timeout: false, fault: false } });
 page.$("#surla-cp5-approve").click();
+await control(origin, "act", { key: "refine" });
+await control(origin, "release", { key: "POST /changes/approve" });
 await until(() => page.$("#surla-confirm-error"), "a stale approval did not show the editor's recovery");
 expect(page.text("#surla-confirm-error").includes("request_revision mismatch") && page.$("#surla-load-latest-card"), "stale approval did not show the server's refusal and offer Load Latest Card: " + page.text("#surla-confirm-error"));
 expect(page.doc.activeElement === page.$("#surla-confirm-error"), "the refusal did not take focus");
