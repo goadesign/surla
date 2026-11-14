@@ -103,6 +103,11 @@ Each finished flow requires one test. Unfinished flows require none: they
 stay in the saved Story, editable in the source, and do not stop the
 finished flows from being built and checked. The test writer's assignment
 lists every flow of the saved Story and one required test per finished flow.
+The build also saves, from the same revision, each question with the answer
+the user confirmed, the confirmation examples and the preserved behaviors,
+and the assignment returns them: the test writer may not read the change,
+and its tests must hold the service to them as well as to the flows. Surla's
+check of a report confirms the required tests, not what the tests assert.
 
 One rule, `mapStoryFlows` in
 [`internal/designeval/eval.go`](../internal/designeval/eval.go), names each

@@ -68,8 +68,10 @@ to $50 get instant store credit; larger ones wait for a manager":
 5. **Build.** Press **Build this change** on the page. Surla saves the agreed
    revision, and the Chorus dialog asks you for agents for two more roles: the
    builder and the test writer. The test writer gets its own working copy of
-   the project, in `.surla-tests` on the branch `surla/tests`, and one
-   required test per finished flow of the Story. Draft flows require no test.
+   the project, in `.surla-tests` on the branch `surla/tests`, one required
+   test per finished flow of the Story, and your answers, examples and
+   preserved behaviors, which its tests must also hold the service to. Draft
+   flows require no test.
 6. **Tests.** The test writer writes those tests and reports. Surla does not
    take its word for it: it writes the required tests into the copy again,
    checks that nothing changed outside the test module (the project's `eval/`
@@ -149,8 +151,9 @@ curl -fsSL https://raw.githubusercontent.com/goadesign/chorus/main/scripts/insta
 
 Before it creates anything, `surla` checks for Herdr, Chorus and its version,
 and the browser opener. A missing Herdr or Chorus program is named with its
-install command; an older Chorus is named with `chorus update -yes`. The
-reference says what each prerequisite is for under
+install command, or with the folder to add to your `PATH` when it is
+installed in `~/.local/bin`; an older Chorus is named with
+`chorus update -yes`. The reference says what each prerequisite is for under
 [Prerequisites](docs/REFERENCE.md#prerequisites).
 
 Surla itself calls no model, so it needs no model key; each coding agent
@@ -198,8 +201,12 @@ The page opens through a single-use link and keeps its session only while it
 is open: reloading it, closing it or opening it in another tab needs a new
 link, which `surla` gives when you run it again. Running `surla` from a
 subfolder finds the same project. `surla stop` shuts the project's server
-down. If the server stops while starting, `surla` shows its last lines,
-including its error. See [`surla` and `surla stop`](docs/REFERENCE.md#surla-serve)
+down. After you install another build of `surla`, run `surla stop`, then
+`surla`: `surla` does not use a server that another build started. If the
+server stops while starting, `surla` shows its last lines, including its
+error. If the team cannot be prepared, `surla` still opens the page, then
+names what failed and the step that repairs it; **Start agents** on the page
+tries again. See [`surla` and `surla stop`](docs/REFERENCE.md#surla-serve)
 for the project's state, settings and recovery.
 
 ## Use the tools without a team

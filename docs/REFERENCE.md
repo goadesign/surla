@@ -25,7 +25,7 @@ an operation, who may call it, what it returns and how it refuses.
 | **`request_revision`** | The SHA-256 hex digest of a Change Card's content, including its design source and Story. Previews, builds, verification runs and approvals name the revision they are for, so editing the agreed answers or examples, or adopting another revision, leaves them attached to the earlier revision. |
 | **Agreed revision** | The confirmed revision of a change, the one *in force* (`in_force: true` on builds and assignments). It stays in force while the guide's proposed revision waits beside it. |
 | **Proposed revision** | A revision the guide saved beside an agreed change. The user adopts or declines it on the views page. |
-| **Build** | The user's decision to build one agreed revision. It saves that revision's Story and design and gives the builder and the test writer their assignments. |
+| **Build** | The user's decision to build one agreed revision. It saves that revision's Story and design, with the answers, examples and preserved behaviors the user confirmed, and gives the builder and the test writer their assignments. |
 | **The test writer's working copy** | A linked Git working copy of the project at `.surla-tests`, on the branch `surla/tests`, where the test writer works and where Surla commits accepted tests. |
 | **Evaluator** | A test program that follows the [evaluator suite command contract](#evaluator-suite-command-contract): it declares its scenarios, runs them against the application's binaries and prints a report. Surla generates the evaluator of a Surla test module, such as the one the test writer works in, from that module's tests; stored verification settings name an evaluator the user maintains. |
 | **Scenario** | One named test in an evaluator, such as `prices_tea`. A report gives each scenario's outcome: passed, failed, not run or a harness error. |
@@ -55,10 +55,13 @@ an operation, who may call it, what it returns and how it refuses.
 | **Temporal CLI** | Only for the full-suite tests that run the Orders evaluator: the `examples/orders` acceptance suite and the `e2e` tests of `./internal/verify` and `./cmd/surla`. | `brew install temporal` |
 
 Before it creates any state, `surla` checks for `herdr-core`, `herdr-app` and
-`chorus` and names the install command of the one that is missing. It then
-checks that Chorus is v0.11.0 or later (`chorus update -yes` updates it), that
-`hc` is on the path or in `~/.local/bin`, and that the browser opener (`open`)
-is on the path. A missing opener is named without an install command.
+`chorus` on the path and names the install command of the one that is
+missing. When that program is in `~/.local/bin`, where the installers put it,
+it says instead `<program> is installed in <folder>, which is not on PATH;
+add <folder> to PATH, then run surla again`. It then checks that Chorus is
+v0.11.0 or later (`chorus update -yes` updates it), that `hc` is on the path
+or in `~/.local/bin`, and that the browser opener (`open`) is on the path. A
+missing opener is named without an install command.
 
 **The sandbox and restricted shells.** When a sandboxed command exits with
 status 71, Surla keeps the error and adds: `The sandboxed command exited with
@@ -110,7 +113,13 @@ identifier. The third is the user's next step, chosen by the server:
 
 Then the browser opens the views page, and the last line prints. When the
 browser cannot be opened, `surla` stops with `open project views: …` instead
-of the last line; the server and the team keep running.
+of the last line; the server and the team keep running. When the team cannot
+be prepared, `surla` prints no team lines but still opens the views page,
+because confirming and approving there need no agent, prints the last line,
+and then fails with `surla: the project team is not ready: ` followed by
+what failed and the step that repairs it (see
+[`ensure_team`](#ensure_team-management)); **Start agents** on the views
+page tries again.
 
 **The team.** Once the server answers, `surla` starts the Chorus service
 (`chorus up`) and then the Herdr app when either is not running. The server
@@ -153,8 +162,9 @@ the user's configuration folder (on macOS, `~/Library/Application Support`).
 It holds the owner's account identity, one saved `127.0.0.1` port, the Change
 Cards and builds (`cards/`), verification runs (`runs/`), reports
 (`reports/`), agent credentials (`agents/`), stored settings, and the running
-server's record. No caller chooses an identity, address, token or storage
-path.
+server's record. A new project saves a free port that no other project of
+this account saved, running or not, and keeps it. No caller chooses an
+identity, address, token or storage path.
 
 `surla` finds that folder from the shell where it runs and starts the server
 with it. The server never looks the folder up itself, because Herdr starts it
@@ -165,10 +175,28 @@ refuses a state folder that is not private to your account, holds no project,
 belongs to another project folder, lies inside the project folder, or is not
 named by its physical path.
 
+When `surla`, `surla stop` or a settings command cannot use a project's
+record or state folder, it names them and the repair. `<record>` is the
+`project.json` in the project's state folder, and the folder that holds
+every project's state folder is `<UserConfigDir>/surla/operator`:
+
+| What cannot be used | The error |
+| --- | --- |
+| The record cannot be read, for example because it is not a private file of this account | `the record of the Surla project in <project folder> cannot be read: <record>: <cause>; make it a regular file of this account that only this account can read and write (chmod 600 <record>, and chown it to this account if another account owns it), then run surla again` |
+| The record is damaged | `the record of the Surla project in <project folder> is damaged: <record>: <cause>; restore it from a backup and run surla again, or move the folder <state folder> out of <UserConfigDir>/surla/operator and run surla in <project folder> to start that project folder again as a new, empty Surla project` |
+| `<UserConfigDir>/surla/operator` exists but is not a folder of this account that only this account can open; it is checked before any record is read | `prepare operator storage root <folder>: <cause>; make it a folder of this account that only this account can open (chmod 700 <folder>, and chown -R it to this account if another account owns it), then run surla again` |
+| A project's state folder is closed to this account or owned by another, or a new project cannot list the folder that holds them | `the Surla state folder <folder> cannot be used: <cause>; make it a folder of this account that only this account can open (chmod 700 <folder>, and chown -R it to this account if another account owns it), then run surla again` |
+| The project's state folder cannot be created | `project state folder <folder> could not be created: <cause>; make <UserConfigDir>/surla/operator a folder this account can write, then run surla again` |
+
 **Starting, attaching and failures.** A start lock serializes simultaneous
 commands. A running server is attached to only after it proves the project's
-identity. A record left by a server that died is stale and is removed by the
-next start. The server runs in its own Herdr terminal, labeled
+identity and reports the build it started from, the SHA-256 of its
+executable, which must be that of the `surla` attaching. A server another
+build started, such as the one still running after a new `surla` is
+installed, is refused with `surla: this project's server was started by
+another build of surla; run surla stop, then surla`; `surla stop` stops a
+server of any build. A record left by a server that died is stale and is
+removed by the next start. The server runs in its own Herdr terminal, labeled
 `surla_project=<project id>`, which outlives the shell that ran `surla`. That
 terminal shows the server's status lines: the address, the Change Card folder
 and, for each checkpoint, whether it is on. The `CP4` line says whether
@@ -176,8 +204,15 @@ verification uses the evaluator in stored verification settings or the tests
 accepted for each change's build.
 
 Before it starts the server's terminal, `surla` checks that the saved port is
-free; a taken port stops it with `surla: project port 52011 is occupied; no
-server was started: …`. When the server's terminal ends before the server
+free. When it is taken, `surla` starts nothing and names what holds it: the
+running server of another Surla project that saved the same port, with
+`surla: project port 52011 is held by the Surla server of the project in
+<folder>, which saved the same port, so only one of the two can run at a
+time; no server was started; run surla stop in that folder, then run surla
+here`, or otherwise another program, with `surla: another program is
+listening on 127.0.0.1:52011, the address saved for this project; no server
+was started; stop that program, then run surla (lsof -nP -iTCP:52011
+-sTCP:LISTEN names it)`. When the server's terminal ends before the server
 answers, for example because it cannot read its stored settings, or because
 another program took the port after that check, `surla` reads what that
 terminal printed, removes the terminal, and shows the last lines (at most 20
@@ -185,7 +220,7 @@ lines and 4 KiB, with control characters removed):
 
 ```text
 surla: the project server stopped while starting, and its last lines were:
-  surla: project port is occupied: listen tcp 127.0.0.1:52011: bind: address already in use
+  surla: project port 52011 is occupied: listen tcp 127.0.0.1:52011: bind: address already in use; stop the program listening on it, then run surla
 ```
 
 If those lines cannot be read, the error says so and keeps the original
@@ -1161,7 +1196,8 @@ status, including `unset`, which does not prove success. `unprocessable`
 
 **Input:** the user's start button in the Build section of the Decisions &
 Approval view, such as **Build this change** for a first build.
-**Who acts:** the server saves the agreed revision's Story and design,
+**Who acts:** the server saves the agreed revision's Story and design, with
+the answers, examples and preserved behaviors the user confirmed for it,
 prepares the test writer's working copy, gives the builder and the test
 writer their assignments, adds them to the team, and writes the required
 tests. **What the user sees:** the Build section shows the build, each
@@ -1359,8 +1395,23 @@ nothing. `not_found` means there is no usable build of that change.
 | `request_revision`, `in_force`, `progress` | As in `get_build`. |
 | `working_folder` | The project's folder inside the test writer's working copy. |
 | `design_source`, `stories` | The design and Story as agreed at the built revision; later revisions do not change them. |
+| `answers` | Each question of the agreed revision with the option the user confirmed (`id`, `question`, `answer`), in question order; empty when the revision asked none. |
+| `examples`, `preserved_behaviors` | The revision's confirmation examples and preserved behaviors, exactly as the user confirmed them. |
 | `required_tests` | One entry per finished flow: `story`, `flow_key`, `scenario`, `hook`. |
 | `findings` | The text of Surla's findings while `progress` is `needs_changes`; empty otherwise. The list carries only their number. |
+
+The build saves `answers`, `examples` and `preserved_behaviors` when it
+starts, so a revision proposed or adopted later does not change them. The
+test writer may not read the change with `get_change`, so these fields are
+how its tests learn what the user agreed: the tests must hold the service to
+them as well as to the Story's flows. For example, when the user answered
+"Without tax" to "Does the $50 limit include tax?", a test checks that an
+order of $50.00 before tax is refunded at once. Surla's check of a report
+confirms the required tests, not what they assert. Reading the assignment of
+a build that holds no example, such as one saved by a `surla` without these
+fields, fails with `the build of change "<change_id>" holds none of the
+agreed answers, examples and preserved behaviors; the user builds this change
+again on the views page`.
 
 The test writer aligns the service interface in its copy with the agreed
 design, writes the tests in `eval/` of `working_folder`, checks them with
@@ -1418,7 +1469,7 @@ that role's pane, only when the user asks.
 | --- | --- |
 | `window_busy` (`409`) | A Herdr dialog is open; close it first. Nothing in the window changed. |
 | `pane_unavailable` (`409`) | The role has no pane Surla can identify. |
-| `team_unavailable` (`503`) | Herdr could not establish the pane. |
+| `team_unavailable` (`503`) | Herdr could not establish the pane: `Herdr did not complete a team command; open the Herdr app, then try again`. |
 
 ### `start_team_agents`
 
@@ -1426,10 +1477,11 @@ that role's pane, only when the user asks.
 `dialog`, `step`). The **Start agents** action: the same team preparation
 `surla` runs, opening the Chorus dialog when a listed role is not running.
 Refusals: `ambiguous_space` (`409`, close the duplicate Herdr spaces, then
-start the agents), `window_busy` (`409`) and `team_unavailable` (`503`).
-`team_unavailable` can come after the server saved the team's name and space,
-registered the guide and wrote the roster; they stay saved, and the next start
-reuses them.
+start the agents), `window_busy` (`409`) and `team_unavailable` (`503`), whose
+message is the views page's step for its cause (see
+[`ensure_team`](#ensure_team-management)). `team_unavailable` can come after
+the server saved the team's name and space, registered the guide and wrote
+the roster; they stay saved, and the next start reuses them.
 
 ### `ensure_team` (management)
 
@@ -1440,6 +1492,23 @@ unchanged. Its refusals, `ambiguous_space` (with the count), `window_busy`
 and `team_unavailable`, are shown with fixed recovery text. As for
 `start_team_agents`, `team_unavailable` may leave the team's name, space,
 guide and roster saved for the next start.
+
+`team_unavailable` names its `cause`, and `surla` and the views page each
+show their own fixed step for it, never the failure's own text. `surla`
+adds the HTTP status, and its retry is **Start agents** on the views page,
+which opens anyway:
+
+| `cause` | What could not be used | `surla` prints | The views page shows |
+| --- | --- | --- | --- |
+| `stopping` | The server is shutting down. | `the project server is stopping; run surla again` | `the project server is stopping; run surla in the project folder to start it again` |
+| `herdr` | A Herdr command did not complete. | `Herdr did not complete a team command; open the Herdr app, then click Start agents on the views page` | `Herdr did not complete a team command; open the Herdr app, then try again` |
+| `roster_folder` | Herdr's launcher roster folder could not be written. | `Herdr's launcher roster folder could not be written; make data/chorus-launcher/rosters in Herdr's app folder (~/.config/herdr-app unless HERDR_APP_HOME is set) writable by this account, then click Start agents on the views page` | The same, ending `then start the agents again` |
+| `project_state` | The project's record or an agent credential could not be read or written. | `this project's private state in <state folder> could not be read or written; make that folder and the folders in it private to this account (chmod 700) and its files too (chmod 600), then click Start agents on the views page` | `this project's private state could not be read or written; run surla in the project folder to see which folder to repair` |
+| `role_folder` | A role's working folder could not be read. | `a team role's working folder could not be read; make sure this account can open the project folder <project folder> and its build working folders, then click Start agents on the views page` | `a team role's working folder could not be read; make sure this account can open the project folder and its build working folders, then start the agents again` |
+
+A team request from `surla` that runs out of time prints `project team
+request did not finish because Herdr did not answer in time; open the Herdr
+app, then click Start agents on the views page`.
 
 **Reminders.** The supervision rules allow only fixed text, sent to an idle
 agent that owes an assignment read or whose watcher is gone, never in the

@@ -85,13 +85,13 @@ Each change is saved as a Change Card: the record of the request, its open quest
 
 ### The server and its state
 
-A project is one physical folder. `surla` looks for the nearest folder that has a project record and otherwise creates a new, empty project, so moving or renaming the folder starts a new project. Each project has one private state folder under the user's configuration folder, outside the project. It holds the project record (its ID, folder, owning operating-system account, port, team name and Herdr space, and each registered agent's role and working folder), one credential file per agent, the Change Card folder, verification runs and reports, and the stored verification and promotion settings.
+A project is one physical folder. `surla` looks for the nearest folder that has a project record and otherwise creates a new, empty project, so moving or renaming the folder starts a new project. Each project has one private state folder under the user's configuration folder, outside the project. It holds the project record (its ID, folder, owning operating-system account, port, team name and Herdr space, and each registered agent's role and working folder), one credential file per agent, the Change Card folder, verification runs and reports, and the stored verification and promotion settings. A new project saves a free loopback port that no other project of the account saved, and keeps it, because its agents' connections and the Chorus roster name that address. When `surla` cannot use a project's record or state folder, it names the project folder, the path and the repair.
 
 When the user runs `surla`:
 
 1. A start lock lets one `surla` start the server at a time. The folder lock, an operating-system file lock on the Change Card folder that a running server holds for its whole life, is the only proof that a server is running.
 2. When no server is running, `surla` starts one in its own parentless Herdr terminal, labelled `surla_project=<project ID>`, and passes the state folder with `-state`. The server never derives that folder itself, because a Herdr terminal runs with the environment of Herdr's core, not the user's shell.
-3. After binding its port, the server publishes a fresh management credential in a private record. `surla` reads that credential for each request, confirms that the answering server names the same project, folder and owner, and only then continues. Before the listener closes, the server revokes the credential and withdraws the record, even when accepting connections failed.
+3. After binding its port, the server publishes a fresh management credential in a private record. `surla` reads that credential for each request, confirms that the answering server names the same project, folder and owner, and that the same build of `surla` started it (the server reports the SHA-256 of its executable, read when it started), and only then continues. `surla stop` accepts a server of any build. Before the listener closes, the server revokes the credential and withdraws the record, even when accepting connections failed.
 4. If the server's terminal ends before it answers, `surla` reads the server's last lines (at most 20 lines and 4 KiB), removes the terminal, and prints those lines with the error.
 
 The management credential lets `surla` prepare the team, stop the server and ask for a browser link; it cannot confirm or approve anything. The browser gets a single-use link that expires after two minutes. The page exchanges it for a session that lives only in the server's memory and the open page, and the server answers that session only for requests from its own page. Each agent authenticates with its own credential file. The caller's role comes from the credential, never from a name.
@@ -102,7 +102,7 @@ The management credential lets `surla` prepare the team, stop the server and ask
 
 Herdr is the terminal program the agents run in, one pane per agent. Chorus is the messaging service the agents use, and its dialog in Herdr is where the user picks which installed agent app plays each role.
 
-Before creating any state, `surla` checks that Herdr core (`herdr-core` and `hc`), the Herdr app (`herdr-app`), Chorus v0.11.0 or newer (`chorus`) and the browser opener are installed. For a missing Herdr or Chorus program it names the install command; for a missing browser opener it names the program. Once the server answers, `surla` starts Chorus and the Herdr app when they are not running, then asks the server to prepare the team. The server:
+Before creating any state, `surla` checks that Herdr core (`herdr-core` and `hc`), the Herdr app (`herdr-app`), Chorus v0.11.0 or newer (`chorus`) and the browser opener are installed. For a missing Herdr or Chorus program it names the install command, or the folder to add to the path when the program is in `~/.local/bin`; for a missing browser opener it names the program. Once the server answers, `surla` starts Chorus and the Herdr app when they are not running, then asks the server to prepare the team. When either step fails, `surla` still opens the views page, where confirming and approving need no agent, and then reports the failure. A failure of the server's team preparation names only its cause (`stopping`, `herdr`, `roster_folder`, `project_state` or `role_folder`), never its own text, and `surla` and the views page each turn that cause into a fixed step. The server:
 
 1. adopts the project's saved Herdr space, or the single space with the team's name and the project's folder, or creates one; several matching spaces are refused, and the user closes the duplicates;
 2. registers the guide, working in the project folder;
@@ -125,6 +125,7 @@ A build is the user's decision to build the agreed revision. The control plane s
 | --- | --- |
 | `change_id`, `request_revision`, `started_at` | The change, the agreed revision the build started from, and when the user pressed **Build this change** |
 | `stories`, `design_source` | The Story and design as agreed, copied when the build started; later revisions do not change them |
+| `answers`, `examples`, `preserved_behaviors` | Each question with the answer the user confirmed, the confirmation examples and the preserved behaviors, as agreed, copied at the same time; the test writer, which may not read the change, receives them in its assignment |
 | `roles` | `builder_and_test_writer`, or `builder_only` when stored verification settings supply the tests |
 | `builder`, `test_writer` | Each assignment; the test writer's carries its state, findings, accepted tests commit and working folder |
 | `report_number` | The test writer's latest report, 0 before the first |
@@ -135,7 +136,7 @@ When the user presses **Build this change** on the views page, `start_build`:
 
 1. checks that the caller is the project's owner, then takes the project's working-copy turn without waiting; while another start or a report check holds the turn, the start is refused and nothing is saved;
 2. checks the agreed revision, opens and refreshes the test writer's working copy when tests are written for this build, and checks the revision again;
-3. saves the build, then registers its roles with the server, so a saved build never lacks its agents;
+3. saves the build, with the Story, design, answers, examples and preserved behaviors of the revision that second check read, then registers its roles with the server, so a saved build never lacks its agents;
 4. writes the required tests into the working copy, releases the turn and asks the server to start the agents.
 
 The work under the turn has one five-minute limit; starting the agents has its own 45-second limit. Accepted work belongs to the server and survives the page closing. A build started with only the builder stays usable while stored verification settings supply its tests; when those settings are removed, the user builds again.

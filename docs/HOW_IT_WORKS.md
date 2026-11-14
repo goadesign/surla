@@ -97,7 +97,8 @@ Surla deploys nothing and merges nothing. The journey ends with you merging.
 
 You type `surla` in the project folder. The [README](../README.md#install)
 lists what to install first; when Herdr or Chorus is missing, `surla` stops
-and prints the command that installs it.
+and prints the command that installs it, or the folder to add to your
+`PATH` when the program is installed in `~/.local/bin`.
 
 1. **The server starts.** The first time, `surla` prints `Created a new,
    empty Surla project. Moving or renaming this folder starts a new project.`
@@ -105,23 +106,29 @@ and prints the command that installs it.
    `surla_project=<id>`, and tells it the private state folder it found for
    this project. That folder belongs to your account and lies outside the
    project folder. If a server for this folder already runs, `surla` attaches
-   to it instead of starting a second one. If the server stops while starting,
-   `surla` prints `the project server stopped while starting, and its last
-   lines were:` followed by those lines. Nothing else was started; fix what
-   they name and run `surla` again.
+   to it instead of starting a second one, when the same build of `surla`
+   started it. A server another build started, such as one still running
+   after you install a new `surla`, is refused with `this project's server
+   was started by another build of surla; run surla stop, then surla`. If the
+   server stops while starting, `surla` prints `the project server stopped
+   while starting, and its last lines were:` followed by those lines. Nothing
+   else was started; fix what they name and run `surla` again.
 2. **The team is prepared.** `surla` starts Chorus and the Herdr app if they
    are not running, gives the project a Herdr space (the set of tabs that
    holds the project's terminals) and registers the guide. It prints
    `Team <name>.` and your next step, for example `Choose an agent for each
-   role in the open Chorus dialog in Herdr.`
-3. **You choose the agents.** The Chorus dialog lists one row per role Surla
+   role in the open Chorus dialog in Herdr.` If the team cannot be prepared,
+   `surla` still opens the page, because confirming and approving need no
+   agent, and then prints `the project team is not ready:` with what failed
+   and the step that repairs it; **Start agents** on the page tries again.
+3. **The page opens.** `surla` opens the page in your browser through a
+   single-use link and prints `Surla is running for <folder> at <address>`.
+   To open the page again later, run `surla` again in the same folder.
+4. **You choose the agents.** The Chorus dialog lists one row per role Surla
    registered. On the first start that is the guide alone. You pick which
    installed agent plays it. The guide's pane opens in the project's Herdr
    space with Surla's first message, which points it to the Golden Path and
    to the project's changes.
-4. **The page opens.** `surla` opens the page in your browser through a
-   single-use link and prints `Surla is running for <folder> at <address>`.
-   To open the page again later, run `surla` again in the same folder.
 
 The page has one view per task. Changes, Team, Story and Live target are
 always there; the others appear once you open a change.
@@ -246,7 +253,8 @@ The reference gives the exact contract of
    what is missing and the step to take; the reference lists them under
    [`start_build`](REFERENCE.md#start_build).
 2. **The server opens the test writer's working copy** (described below) and
-   saves the build: the agreed revision, its Story and its design.
+   saves the build: the agreed revision, its Story and its design, and the
+   answers, examples and preserved behaviors you confirmed for it.
 3. **It registers the builder and the test writer**, each with its own
    credential and folder. The builder works in the project folder; the test
    writer works in its working copy.
@@ -292,12 +300,16 @@ the copy holds uncommitted work.
 ### The test writer writes the tests
 
 The test writer reads its assignment with `get_test_writer_assignment`: the
-working folder, the design and Story as agreed at the built revision, and one
-required test per finished flow. It writes the tests inside the test module,
-`eval/` in its working copy, and changes nothing outside it. It never
-regenerates that module itself, because Surla writes the required tests into
-it at the start and again at each report. It checks its work with `go build
-./...` in `eval/`, which fails naming any required method not yet written.
+working folder, the design and Story as agreed at the built revision, your
+answers, examples and preserved behaviors as you confirmed them, and one
+required test per finished flow. It may not read the change itself, so the
+assignment is how its tests learn what you agreed, and they must hold the
+service to it as well as to the Story's flows. It writes the tests inside the
+test module, `eval/` in its working copy, and changes nothing outside it. It
+never regenerates that module itself, because Surla writes the required
+tests into it at the start and again at each report. It checks its work
+with `go build ./...` in `eval/`, which fails naming any required method not
+yet written.
 Then it calls `report_tests_finished`. The report returns at once with the
 report's number; the build shows the test writer as **Reported**. In a
 starter project the test of the starter's own flow, the method `PricesCookie`
