@@ -206,8 +206,11 @@ if that second check refuses the start, the reusable copy remains, but no new
 build or agent is saved. After saving, Surla immediately registers the roles,
 then writes the required tests. A generation failure caused by the copy becomes
 `needs_changes`, with the finding and the step to correct it and report again.
-An operational failure becomes `could_not_run`. The generation's verdict cannot
-overwrite a report or a newer build saved while generation was running.
+An operational failure becomes `could_not_run`, with a reason that says which
+step failed (the start's limit or a server stop, the generator and its phase,
+or writing the generated folder into the copy) and the user's step. The
+generation's verdict cannot overwrite a report or a newer build saved while
+generation was running.
 
 Accepted preparation continues if the page disconnects. Work on the copy has a
 five-minute limit. Another build or a test check holding the project's turn
@@ -244,6 +247,9 @@ against the Story saved with the build, without running any of the copy's code
 outside the sandbox:
 
 1. It writes the required tests into the copy again from the build's Story.
+   Like a build start, it first removes any `.surla-gen-*` staging folder
+   that a write cut short by a server's death left in the test module. A
+   link or a file with such a name is the test writer's and is left alone.
 2. It checks that only files inside the test module changed since the copy's
    base, regenerates the generated folder in a private snapshot, builds the
    generated test program `./gen/cmd/<name>-evals` in the build sandbox
@@ -260,13 +266,27 @@ outside the sandbox:
    - `could_not_run`: a cause the test writer cannot fix, with the user's
      step.
 
+   Surla never shows the output of the dependency download, which may hold
+   proxy settings, so it decides whose failure a failed download is from what
+   it can compare. When the test module's `go.mod` and `go.sum` are the
+   project's own, or the project's own cannot be downloaded either, the
+   check could not run, and the step has the user run the download where its
+   output can be read. When the project's own download and only the test
+   writer's changed ones do not, it is the test writer's finding. A module
+   the test writer added that exists but cannot be reached from where Surla
+   runs reads the same as one that does not exist, so that finding also says
+   when to tell the user. A build start decides the same way when generation
+   fails while loading the module's dependencies.
+
 The check runs in the project's working-copy turn, one judgment at a time, so
 a build start during a judgment is refused as busy. A newer report during a
 judgment makes the server discard that judgment's verdict and judge the newer
 report next. A report waits while the checker commits accepted tests, so it
 keeps its number. Builds found reported when the checker starts are judged
-then, and a build whose verdict could not be saved is judged again a minute
-later, up to three times in a row; after that it stays `reported` until the
+then. A build whose verdict could not be saved is judged again a minute
+later, and when a build could not be read at all, at a start or before a
+judgment, the checker reads the builds again a minute later; each is tried up
+to three times in a row. After that the build stays `reported` until the
 next report or the next server start. Findings and reasons contain no absolute path. A saved build has report
 number 0 while its tests are assigned and at least 1 while they are reported.
 The report checker runs for as long as the project server does; stopping the

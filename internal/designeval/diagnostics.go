@@ -145,6 +145,19 @@ func FailedOnModule(err error) bool {
 	return errors.As(err, &operation) && slices.Contains(modulePhases, operation.phase)
 }
 
+// FailedLoadingDependencies reports whether err, from Evaluate, Generate or
+// GenerateWithStories, is a failure FailedOnModule reports that ended while
+// loading the target module's dependencies: the go commands that resolve the
+// packages its design imports and the versions its go.mod and go.sum select.
+// Those commands run outside the sandbox and may download modules, so such a
+// failure can come from the module's files or from where the evaluator runs
+// (no network, a proxy that cannot be reached, a Go older than the module
+// requires). Their output is withheld, and this function does not say which.
+func FailedLoadingDependencies(err error) bool {
+	operation := (*phaseError)(nil)
+	return FailedOnModule(err) && errors.As(err, &operation) && operation.phase == phaseLoadModules
+}
+
 // Error preserves the original CLI and trace error text without adding a phase.
 func (e *phaseError) Error() string { return e.err.Error() }
 
