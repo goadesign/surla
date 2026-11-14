@@ -115,7 +115,7 @@ page.$("#" + actionId).click();
 await until(() => page.$("#surla-cp1-editor")?.dataset.requestRevision !== input.revision, "the explicit revision action did not save");
 expect(page.sent("POST", "/changes/confirm").length === previousSaves + 1 && page.sent("POST", buildPath).length === 0, "the action was repeated or rebuilt automatically");
 if (input.read === "held") await control(origin, "release", { key: "GET " + buildPath });
-if (input.build) await until(() => page.text("#surla-build-section").includes("Built for an earlier revision."), "the saved owner result did not mark the previous build earlier");
+if (input.build) await until(() => page.text("#surla-build-section").includes("Earlier revision"), "the saved owner result did not mark the previous build earlier");
 page.close();
 `)
 		})

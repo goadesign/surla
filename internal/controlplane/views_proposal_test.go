@@ -30,7 +30,7 @@ const page = await openPage(origin, { link: input.link });
 const editor = () => page.$("#surla-cp1-editor");
 const outcome = () => page.$('textarea[data-example-id="check_01"][data-field="expected_outcome"]');
 const answer = () => page.$('#surla-proposal [data-question-id="chg-proposal-ambiguity-01"] [data-option="with_tax"]');
-await until(() => editor().dataset.changeId === "chg-proposal" && page.text("#surla-cp1-editor").includes("Confirmed Change Decision"), "the agreed change did not open");
+await until(() => editor().dataset.changeId === "chg-proposal" && page.text("#surla-cp1-editor").includes("Agreed:"), "the agreed change did not open");
 page.type(outcome(), "Typed on the agreed revision");
 
 await control(origin, "act", { key: "propose" });

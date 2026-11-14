@@ -672,6 +672,7 @@ paths:
                             - candidate_commit
                             - suite_commit
                             - accepted_at
+                            - inputs_current
                             - test_source
                             - state
                 "403":
@@ -2036,6 +2037,7 @@ paths:
                             - candidate_commit
                             - suite_commit
                             - accepted_at
+                            - inputs_current
                             - test_source
                             - state
                 "403":
@@ -20721,6 +20723,7 @@ definitions:
                     - accepted_at: "1984-07-01T17:36:31Z"
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      inputs_current: true
                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                       run_id: Qui distinctio.
                       state:
@@ -20793,6 +20796,7 @@ definitions:
                     - accepted_at: "1984-07-01T17:36:31Z"
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      inputs_current: true
                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                       run_id: Qui distinctio.
                       state:
@@ -20865,6 +20869,7 @@ definitions:
                     - accepted_at: "1984-07-01T17:36:31Z"
                       candidate_commit: Consequatur quisquam non et est reprehenderit.
                       change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      inputs_current: true
                       request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                       run_id: Qui distinctio.
                       state:
@@ -20941,6 +20946,7 @@ definitions:
                 - accepted_at: "1984-07-01T17:36:31Z"
                   candidate_commit: Consequatur quisquam non et est reprehenderit.
                   change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                  inputs_current: true
                   request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                   run_id: Qui distinctio.
                   state:
@@ -21013,6 +21019,7 @@ definitions:
                 - accepted_at: "1984-07-01T17:36:31Z"
                   candidate_commit: Consequatur quisquam non et est reprehenderit.
                   change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                  inputs_current: true
                   request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                   run_id: Qui distinctio.
                   state:
@@ -21085,6 +21092,7 @@ definitions:
                 - accepted_at: "1984-07-01T17:36:31Z"
                   candidate_commit: Consequatur quisquam non et est reprehenderit.
                   change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                  inputs_current: true
                   request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
                   run_id: Qui distinctio.
                   state:
@@ -21283,6 +21291,10 @@ definitions:
                 type: string
                 description: Change Card the run verifies.
                 example: Sunt ut sit omnis nobis.
+            inputs_current:
+                type: boolean
+                description: Whether this run's agreed revision and selected tests match the current Change Card and usable build or stored evaluator. This observation does not establish the current candidate working tree, deployment or approval.
+                example: true
             request_revision:
                 type: string
                 description: Change Card revision the run verifies.
@@ -21373,6 +21385,7 @@ definitions:
             accepted_at: "1996-01-07T22:40:11Z"
             candidate_commit: Molestiae totam nam nobis quidem reprehenderit quae.
             change_id: Sunt ut sit omnis nobis.
+            inputs_current: true
             request_revision: Enim et.
             run_id: Quas natus.
             state:
@@ -21389,6 +21402,7 @@ definitions:
             - candidate_commit
             - suite_commit
             - accepted_at
+            - inputs_current
             - test_source
             - state
     VerifyChangePayload:

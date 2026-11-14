@@ -136,7 +136,7 @@ func TestViewsPageTeamAndBuildUpdatesPreserveTheModelDraft(t *testing.T) {
 	})
 	runPageScript(t, ps, nil, `
 const page = await openPage(origin, { link: input.link });
-await until(() => page.$("#surla-build-section"), "the initial selected build was not read");
+await until(() => page.$("#surla-build-section")?.dataset.state === "not_started" && !page.$("#surla-build-loading"), "the initial selected build was not read");
 page.$("#surla-nav-live").click();
 await until(() => page.$("#surla-model-name"), "the model form did not open");
 const provider = page.$("#surla-model-provider");
@@ -151,7 +151,9 @@ gateway.focus();
 gateway.setSelectionRange(2, 7);
 const buildReads = page.sent("GET", "/changes/chg/build").length;
 await control(origin, "act", { key: "start-build-and-attention" });
-await until(() => page.sent("GET", "/changes/chg/build").length > buildReads && page.$("#surla-team-attention-builder"), "background build and team changes did not reach Live");
+await until(() => page.sent("GET", "/changes/chg/build").slice(buildReads).some((r) => r.status === 200 && JSON.parse(r.answer).build.state === "started") && page.$("#surla-team-attention-builder"), "background build and team changes did not reach Live");
+// Let the completed owner answer render before checking the retained fields.
+await sleep(0);
 expect(page.$("#surla-model-name") === name && name.value === "unsent-model-choice", "a new update reason replaced the model input");
 expect(page.$("#surla-model-provider") === provider && provider.value === "openai", "a new update reason lost the provider");
 expect(page.$("#surla-model-gateway") === gateway && gateway.value === "127.0.0.1:9455" && page.doc.activeElement === gateway && gateway.selectionStart === 2 && gateway.selectionEnd === 7, "a new update reason changed gateway text, focus or selection");

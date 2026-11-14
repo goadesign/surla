@@ -5832,6 +5832,7 @@ func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResul
 		CandidateCommit: *v.CandidateCommit,
 		SuiteCommit:     *v.SuiteCommit,
 		AcceptedAt:      *v.AcceptedAt,
+		InputsCurrent:   *v.InputsCurrent,
 	}
 	switch string(v.TestSource.Kind()) {
 	case "evaluator":
